@@ -1,0 +1,72 @@
+import type { ToWorker, FromWorker } from "../lib/workerProtocol";
+// @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
+import init, { get_page_count, extract_pages } from "mantis-wasm";
+
+function post(msg: FromWorker) {
+  self.postMessage(msg);
+}
+
+let ready = false;
+
+self.onmessage = async (e: MessageEvent<ToWorker>) => {
+  const msg = e.data;
+
+  switch (msg.type) {
+    case "init": {
+      try {
+        await init();
+        ready = true;
+        post({ type: "init-done" });
+      } catch (err) {
+        post({ type: "init-error", error: String(err) });
+      }
+      break;
+    }
+
+    case "split": {
+      if (!ready) {
+        post({ type: "split-error", error: "WASM not initialized" });
+        return;
+      }
+
+      try {
+        const { pdfBytes, splitAfterPages } = msg;
+        const totalPages = get_page_count(pdfBytes);
+
+        // Convert split-after-page indices into page ranges
+        // e.g. splitAfterPages=[2,5] with 8 pages → ranges: [1,2], [3,5], [6,8]
+        const sorted = [...splitAfterPages].sort((a, b) => a - b);
+        const ranges: [number, number][] = [];
+        let start = 1;
+        for (const splitAfter of sorted) {
+          ranges.push([start, splitAfter]);
+          start = splitAfter + 1;
+        }
+        ranges.push([start, totalPages]);
+
+        const parts: { name: string; bytes: Uint8Array }[] = [];
+
+        for (let i = 0; i < ranges.length; i++) {
+          const [rangeStart, rangeEnd] = ranges[i];
+          post({
+            type: "split-progress",
+            progress: i / ranges.length,
+            message: `Extracting part ${i + 1} of ${ranges.length} (pages ${rangeStart}–${rangeEnd})`,
+          });
+
+          const bytes = extract_pages(pdfBytes, rangeStart, rangeEnd);
+          parts.push({
+            name: `pages_${rangeStart}-${rangeEnd}.pdf`,
+            bytes: new Uint8Array(bytes),
+          });
+        }
+
+        post({ type: "split-progress", progress: 1, message: "Done" });
+        post({ type: "split-done", parts });
+      } catch (err) {
+        post({ type: "split-error", error: String(err) });
+      }
+      break;
+    }
+  }
+};

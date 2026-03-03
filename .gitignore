@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Vite
+*.local
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Rust / WASM build artifacts
+crates/mantis-wasm/target/
+crates/mantis-wasm/pkg/
+
+# Environment
+.env
+.env.local
+
+# Firebase
+firebase-debug.log
+
+# Playwright MCP
+.playwright-mcp/
+
+# Screenshots (dev artifacts)
+*.png
+
+# Test artifacts
+*.zip

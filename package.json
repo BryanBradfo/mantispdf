@@ -1,0 +1,40 @@
+{
+  "name": "mantispdf",
+  "version": "0.1.0",
+  "description": "Client-side PDF tools powered by WebAssembly. Your files never leave your browser.",
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "author": "Bryan",
+  "keywords": ["pdf", "split-pdf", "wasm", "webassembly", "rust", "client-side", "privacy", "react"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BryanBradfo/mantispdf.git"
+  },
+  "homepage": "https://github.com/BryanBradfo/mantispdf",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "build:wasm": "bash scripts/build-wasm.sh"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-pdf": "^9.2.1",
+    "react-router-dom": "^7.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.7.2",
+    "vite": "^6.0.5",
+    "vite-plugin-top-level-await": "^1.4.4",
+    "vite-plugin-wasm": "^3.3.0"
+  }
+}
