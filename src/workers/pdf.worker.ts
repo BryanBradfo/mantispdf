@@ -1,6 +1,6 @@
 import type { ToWorker, FromWorker } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages } from "mantis-wasm";
+import init, { get_page_count, extract_pages, merge_pdfs } from "mantis-wasm";
 
 function post(msg: FromWorker) {
   self.postMessage(msg);
@@ -65,6 +65,30 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         post({ type: "split-done", parts });
       } catch (err) {
         post({ type: "split-error", error: String(err) });
+      }
+      break;
+    }
+
+    case "merge": {
+      if (!ready) {
+        post({ type: "merge-error", error: "WASM not initialized" });
+        return;
+      }
+
+      try {
+        const { pdfBuffers } = msg;
+        post({
+          type: "merge-progress",
+          progress: 0.2,
+          message: `Merging ${pdfBuffers.length} documents…`,
+        });
+
+        const merged = merge_pdfs(pdfBuffers);
+
+        post({ type: "merge-progress", progress: 1, message: "Done" });
+        post({ type: "merge-done", bytes: new Uint8Array(merged) });
+      } catch (err) {
+        post({ type: "merge-error", error: String(err) });
       }
       break;
     }

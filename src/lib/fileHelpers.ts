@@ -18,3 +18,15 @@ export function readFileAsUint8Array(file: File): Promise<Uint8Array> {
     reader.readAsArrayBuffer(file);
   });
 }
+
+export function downloadBlob(bytes: Uint8Array, fileName: string) {
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

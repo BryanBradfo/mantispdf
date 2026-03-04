@@ -6,19 +6,23 @@ interface WorkerState {
   ready: boolean;
   initError: string | null;
   splitting: boolean;
+  merging: boolean;
   progress: number;
   progressMessage: string;
 }
 
 export function usePdfWorker() {
   const workerRef = useRef<Worker | null>(null);
-  const resolveRef = useRef<((parts: PdfPart[]) => void) | null>(null);
-  const rejectRef = useRef<((err: Error) => void) | null>(null);
+  const splitResolveRef = useRef<((parts: PdfPart[]) => void) | null>(null);
+  const splitRejectRef = useRef<((err: Error) => void) | null>(null);
+  const mergeResolveRef = useRef<((bytes: Uint8Array) => void) | null>(null);
+  const mergeRejectRef = useRef<((err: Error) => void) | null>(null);
 
   const [state, setState] = useState<WorkerState>({
     ready: false,
     initError: null,
     splitting: false,
+    merging: false,
     progress: 0,
     progressMessage: "",
   });
@@ -48,15 +52,34 @@ export function usePdfWorker() {
           break;
         case "split-done":
           setState((s) => ({ ...s, splitting: false }));
-          resolveRef.current?.(msg.parts);
-          resolveRef.current = null;
-          rejectRef.current = null;
+          splitResolveRef.current?.(msg.parts);
+          splitResolveRef.current = null;
+          splitRejectRef.current = null;
           break;
         case "split-error":
           setState((s) => ({ ...s, splitting: false }));
-          rejectRef.current?.(new Error(msg.error));
-          resolveRef.current = null;
-          rejectRef.current = null;
+          splitRejectRef.current?.(new Error(msg.error));
+          splitResolveRef.current = null;
+          splitRejectRef.current = null;
+          break;
+        case "merge-progress":
+          setState((s) => ({
+            ...s,
+            progress: msg.progress,
+            progressMessage: msg.message,
+          }));
+          break;
+        case "merge-done":
+          setState((s) => ({ ...s, merging: false }));
+          mergeResolveRef.current?.(msg.bytes);
+          mergeResolveRef.current = null;
+          mergeRejectRef.current = null;
+          break;
+        case "merge-error":
+          setState((s) => ({ ...s, merging: false }));
+          mergeRejectRef.current?.(new Error(msg.error));
+          mergeResolveRef.current = null;
+          mergeRejectRef.current = null;
           break;
       }
     };
@@ -74,8 +97,8 @@ export function usePdfWorker() {
           reject(new Error("Worker not initialized"));
           return;
         }
-        resolveRef.current = resolve;
-        rejectRef.current = reject;
+        splitResolveRef.current = resolve;
+        splitRejectRef.current = reject;
         setState((s) => ({
           ...s,
           splitting: true,
@@ -89,5 +112,27 @@ export function usePdfWorker() {
     [],
   );
 
-  return { ...state, splitPdf };
+  const mergePdfs = useCallback(
+    (pdfBuffers: Uint8Array[]): Promise<Uint8Array> => {
+      return new Promise((resolve, reject) => {
+        if (!workerRef.current) {
+          reject(new Error("Worker not initialized"));
+          return;
+        }
+        mergeResolveRef.current = resolve;
+        mergeRejectRef.current = reject;
+        setState((s) => ({
+          ...s,
+          merging: true,
+          progress: 0,
+          progressMessage: "Starting merge…",
+        }));
+        const msg: ToWorker = { type: "merge", pdfBuffers };
+        workerRef.current.postMessage(msg);
+      });
+    },
+    [],
+  );
+
+  return { ...state, splitPdf, mergePdfs };
 }

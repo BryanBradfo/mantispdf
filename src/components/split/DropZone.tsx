@@ -1,29 +1,43 @@
 import { useCallback, useState } from "react";
 
 interface DropZoneProps {
-  onFile: (file: File) => void;
+  onFile?: (file: File) => void;
+  onFiles?: (files: File[]) => void;
+  multiple?: boolean;
   error: string | null;
 }
 
-export default function DropZone({ onFile, error }: DropZoneProps) {
+export default function DropZone({ onFile, onFiles, multiple, error }: DropZoneProps) {
   const [dragging, setDragging] = useState(false);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file) onFile(file);
+      const files = Array.from(e.dataTransfer.files);
+      if (multiple && onFiles) {
+        if (files.length > 0) onFiles(files);
+      } else if (onFile) {
+        const file = files[0];
+        if (file) onFile(file);
+      }
     },
-    [onFile],
+    [onFile, onFiles, multiple],
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) onFile(file);
+      const files = Array.from(e.target.files ?? []);
+      if (multiple && onFiles) {
+        if (files.length > 0) onFiles(files);
+      } else if (onFile) {
+        const file = files[0];
+        if (file) onFile(file);
+      }
+      // Reset so the same file(s) can be re-selected
+      e.target.value = "";
     },
-    [onFile],
+    [onFile, onFiles, multiple],
   );
 
   return (
@@ -55,10 +69,16 @@ export default function DropZone({ onFile, error }: DropZoneProps) {
           />
         </svg>
         <p className="text-lg font-medium text-gray-700">
-          Drop your PDF here or <span className="text-mantis-600 underline">browse</span>
+          Drop your PDF{multiple ? "s" : ""} here or <span className="text-mantis-600 underline">browse</span>
         </p>
         <p className="mt-1 text-sm text-gray-500">PDF files up to 100 MB</p>
-        <input type="file" accept=".pdf,application/pdf" onChange={handleChange} className="hidden" />
+        <input
+          type="file"
+          accept=".pdf,application/pdf"
+          multiple={multiple}
+          onChange={handleChange}
+          className="hidden"
+        />
       </label>
       {error && (
         <p className="mt-3 text-center text-sm font-medium text-red-600">{error}</p>
