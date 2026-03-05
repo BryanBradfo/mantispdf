@@ -13,7 +13,7 @@ const tools = [
     description: "Combine multiple PDFs into a single document.",
     href: "/merge",
     icon: "📎",
-    available: false,
+    available: true,
   },
   {
     title: "Compress PDF",

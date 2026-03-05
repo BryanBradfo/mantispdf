@@ -2,13 +2,14 @@
 
 **Client-side PDF tools powered by WebAssembly. Your files never leave your browser.**
 
-> **Early MVP** — Split PDF is available today. Merge, compress, and rotate are planned.
+> **Early MVP** — Split and Merge are available today. Compress and rotate are planned.
 
 ---
 
 ## Features
 
 - **Split PDF** — Select exactly where to split and download the parts as a ZIP
+- **Merge PDF** — Combine multiple PDFs into one, with drag-and-drop reordering
 - **100% client-side** — All processing happens in your browser. No uploads, no server, no tracking
 - **Rust/WASM performance** — PDF manipulation runs in a Web Worker via compiled WebAssembly, keeping the UI responsive
 
@@ -52,18 +53,22 @@ The app opens at `http://localhost:5173`.
 ```
 mantispdf/
 ├── crates/mantis-wasm/         # Rust WASM crate
-│   ├── src/lib.rs              #   WASM entry point (get_page_count, extract_pages)
-│   └── src/split.rs            #   PDF splitting logic using lopdf
+│   ├── src/lib.rs              #   WASM entry point (get_page_count, extract_pages, merge_pdfs)
+│   ├── src/split.rs            #   PDF splitting logic using lopdf
+│   └── src/merge.rs            #   PDF merging logic using lopdf
 ├── src/
 │   ├── pages/                  # Route-level pages
 │   │   ├── HomePage.tsx        #   Landing page with tool grid
-│   │   └── SplitPdfPage.tsx    #   Split tool orchestrator
+│   │   ├── SplitPdfPage.tsx    #   Split tool orchestrator
+│   │   └── MergePdfPage.tsx    #   Merge tool orchestrator
 │   ├── components/
 │   │   ├── layout/             #   Header, Footer
-│   │   └── split/              #   DropZone, ThumbnailGrid, SplitActions, ProgressOverlay
+│   │   ├── split/              #   DropZone, ThumbnailGrid, SplitActions, ProgressOverlay
+│   │   └── merge/              #   MergeDropZone, FileList, MergeActions
 │   ├── hooks/
 │   │   ├── usePdfWorker.ts     #   Web Worker communication
-│   │   └── useSplitState.ts    #   Split state management (useReducer)
+│   │   ├── useSplitState.ts    #   Split state management (useReducer)
+│   │   └── useMergeState.ts    #   Merge state management
 │   ├── lib/
 │   │   ├── workerProtocol.ts   #   Main ↔ Worker message types
 │   │   ├── fileHelpers.ts      #   File validation (100 MB max)

@@ -18,6 +18,7 @@ Thumbs.db
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # Rust / WASM build artifacts
 crates/mantis-wasm/target/
