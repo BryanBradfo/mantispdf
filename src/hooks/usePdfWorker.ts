@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { ToWorker, FromWorker } from "../lib/workerProtocol";
 import type { PdfPart } from "../types/pdf";
 
@@ -17,6 +17,8 @@ export function usePdfWorker() {
   const splitRejectRef = useRef<((err: Error) => void) | null>(null);
   const mergeResolveRef = useRef<((bytes: Uint8Array) => void) | null>(null);
   const mergeRejectRef = useRef<((err: Error) => void) | null>(null);
+  const countResolveRef = useRef<((count: number) => void) | null>(null);
+  const countRejectRef = useRef<((err: Error) => void) | null>(null);
 
   const [state, setState] = useState<WorkerState>({
     ready: false,
@@ -81,6 +83,16 @@ export function usePdfWorker() {
           mergeResolveRef.current = null;
           mergeRejectRef.current = null;
           break;
+        case "count-done":
+          countResolveRef.current?.(msg.count);
+          countResolveRef.current = null;
+          countRejectRef.current = null;
+          break;
+        case "count-error":
+          countRejectRef.current?.(new Error(msg.error));
+          countResolveRef.current = null;
+          countRejectRef.current = null;
+          break;
       }
     };
 
@@ -134,5 +146,24 @@ export function usePdfWorker() {
     [],
   );
 
-  return { ...state, splitPdf, mergePdfs };
+  const countPages = useCallback(
+    (pdfBytes: Uint8Array): Promise<number> => {
+      return new Promise((resolve, reject) => {
+        if (!workerRef.current) {
+          reject(new Error("Worker not initialized"));
+          return;
+        }
+        countResolveRef.current = resolve;
+        countRejectRef.current = reject;
+        const msg: ToWorker = { type: "count-pages", pdfBytes };
+        workerRef.current.postMessage(msg);
+      });
+    },
+    [],
+  );
+
+  return useMemo(
+    () => ({ ...state, splitPdf, mergePdfs, countPages }),
+    [state, splitPdf, mergePdfs, countPages],
+  );
 }

@@ -1,3 +1,5 @@
+import React from "react";
+
 interface MergeActionsProps {
   fileCount: number;
   onMerge: () => void;
@@ -5,7 +7,7 @@ interface MergeActionsProps {
   disabled: boolean;
 }
 
-export default function MergeActions({ fileCount, onMerge, onReset, disabled }: MergeActionsProps) {
+export default React.memo(function MergeActions({ fileCount, onMerge, onReset, disabled }: MergeActionsProps) {
   const canMerge = fileCount >= 2 && !disabled;
 
   return (
@@ -25,4 +27,4 @@ export default function MergeActions({ fileCount, onMerge, onReset, disabled }: 
       </button>
     </div>
   );
-}
+});
