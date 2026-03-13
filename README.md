@@ -1,8 +1,19 @@
-# MantisPDF
+# 🦗 MantisPDF - Split, Merge Your PDFs Faster Than Ever
+
+<p align="center">
+    <picture>
+        <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/5b2ae020-557c-41e9-88ee-26b04e85c175">
+        <img src="https://github.com/user-attachments/assets/5b2ae020-557c-41e9-88ee-26b04e85c175" alt="MantisPDF" width="350">
+    </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/BryanBradfo/sweepkit/actions/workflows/ci.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/BryanBradfo/sweepkit/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
+  <a href="https://github.com/BryanBradfo/sweepkit/releases"><img src="https://img.shields.io/github/v/release/BryanBradfo/sweepkit?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+</p>
 
 **Client-side PDF tools powered by WebAssembly. Your files never leave your browser.**
-
-> **Early MVP** — Split and Merge are available today. Compress and rotate are planned.
 
 ---
 
@@ -114,3 +125,14 @@ downloadZip(parts) → browser saves ZIP
 ## License
 
 [GPL-3.0](LICENSE)
+
+## Star this repo!
+
+[![Star History Chart](https://api.star-history.com/image?repos=bryanbradfo/mantispdf&type=date&legend=top-left)](https://www.star-history.com/?repos=bryanbradfo%2Fmantispdf&type=date&legend=top-left)
+
+If you find this useful, give it a ⭐ — it helps others discover the project!
+
+
+
+
+
