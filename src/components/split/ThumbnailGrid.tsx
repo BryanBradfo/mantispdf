@@ -21,7 +21,7 @@ function VerticalDivider({
     <button
       onClick={() => onToggle(pageNumber)}
       className={`group flex w-6 shrink-0 cursor-pointer flex-col items-center justify-center self-stretch transition ${
-        isActive ? "text-mantis-600" : "text-gray-300 hover:text-gray-500"
+        isActive ? "text-mantis-600" : "text-gray-300 hover:text-gray-500 dark:text-[#333] dark:hover:text-[#666]"
       }`}
       title={isActive ? "Remove split point" : "Split after this page"}
     >
@@ -29,7 +29,7 @@ function VerticalDivider({
         className={`w-px flex-1 transition ${
           isActive
             ? "border-l-2 border-dashed border-mantis-400"
-            : "border-l border-dashed border-gray-200 group-hover:border-gray-400"
+            : "border-l border-dashed border-gray-200 group-hover:border-gray-400 dark:border-[#222] dark:group-hover:border-[#444]"
         }`}
       />
       <svg
@@ -43,7 +43,7 @@ function VerticalDivider({
         className={`w-px flex-1 transition ${
           isActive
             ? "border-l-2 border-dashed border-mantis-400"
-            : "border-l border-dashed border-gray-200 group-hover:border-gray-400"
+            : "border-l border-dashed border-gray-200 group-hover:border-gray-400 dark:border-[#222] dark:group-hover:border-[#444]"
         }`}
       />
     </button>

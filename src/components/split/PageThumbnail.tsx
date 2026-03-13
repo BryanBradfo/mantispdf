@@ -10,8 +10,8 @@ export default function PageThumbnail({ pageNumber }: PageThumbnailProps) {
 
   return (
     <div className="relative">
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="relative aspect-[8.5/11] w-full bg-gray-100">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#222] dark:bg-[#141414]">
+        <div className="relative aspect-[8.5/11] w-full bg-gray-100 dark:bg-[#1a1a1a]">
           <Thumbnail
             pageNumber={pageNumber}
             width={200}
@@ -24,11 +24,10 @@ export default function PageThumbnail({ pageNumber }: PageThumbnailProps) {
             </div>
           )}
         </div>
-        <div className="border-t border-gray-100 px-2 py-1 text-center text-xs text-gray-500">
+        <div className="border-t border-gray-100 px-2 py-1 text-center text-xs text-gray-500 dark:border-[#222] dark:text-[#555]">
           Page {pageNumber}
         </div>
       </div>
-
     </div>
   );
 }

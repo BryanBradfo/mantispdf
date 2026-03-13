@@ -20,6 +20,10 @@ Thumbs.db
 .claude/
 CLAUDE.md
 
+# Superpowers framework artifacts
+.superpowers/
+docs/superpowers/
+
 # Rust / WASM build artifacts
 crates/mantis-wasm/target/
 crates/mantis-wasm/pkg/
