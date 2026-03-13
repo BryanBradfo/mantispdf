@@ -29,7 +29,7 @@ export default function Header() {
     <header className="border-b border-gray-200 bg-white dark:border-[#1a1a1a] dark:bg-[#0c0c0c]">
       <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
         <Link to="/" className="flex items-center">
-          <img src="/mantispdf.png" alt="MantisPDF" className="h-9" />
+          <img src="/mantispdf.png" alt="MantisPDF" className="h-11" />
         </Link>
         <div className="flex items-center gap-3">
           <span className="hidden text-sm text-gray-400 dark:text-[#444] sm:block">
