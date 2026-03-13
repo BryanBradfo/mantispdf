@@ -3,5 +3,22 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-50 text-gray-900 antialiased;
+  @apply bg-white text-gray-900 antialiased;
+  @apply dark:bg-[#0c0c0c] dark:text-[#e5e5e5];
+}
+
+/* Hero gradient — supports both modes */
+.hero-gradient {
+  background: linear-gradient(160deg, #f2fde0 0%, #e3f9bb 45%, #ffffff 100%);
+}
+.dark .hero-gradient {
+  background: linear-gradient(160deg, #0c0c0c 0%, #141414 50%, #0c0c0c 100%);
+}
+
+/* Gradient text for hero h1 */
+.gradient-text {
+  background: linear-gradient(135deg, #407215, #6bbf2e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }

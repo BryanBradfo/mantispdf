@@ -87,13 +87,13 @@ export default function SplitPdfPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
-      <h1 className="text-3xl font-bold text-gray-900">Split PDF</h1>
-      <p className="mt-2 text-gray-600">
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Split PDF</h1>
+      <p className="mt-2 text-gray-600 dark:text-[#555]">
         Upload a PDF, click the scissors between pages to mark split points, then hit Split.
       </p>
 
       {worker.initError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
           WASM engine failed to load: {worker.initError}
         </div>
       )}
@@ -105,7 +105,7 @@ export default function SplitPdfPage() {
       ) : (
         <>
           <div className="mt-6 flex items-center justify-between">
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-[#555]">
               {state.file?.name} — {state.numPages} page{state.numPages !== 1 ? "s" : ""}
             </p>
             <SplitActions
@@ -129,7 +129,7 @@ export default function SplitPdfPage() {
             // Hidden Document just to get numPages via onLoadSuccess
             <div className="mt-8 flex items-center justify-center py-12">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
-              <span className="ml-3 text-gray-500">Loading PDF…</span>
+              <span className="ml-3 text-gray-500 dark:text-[#555]">Loading PDF…</span>
               <Document
                 file={pdfUrl}
                 onLoadSuccess={handleDocumentLoad}

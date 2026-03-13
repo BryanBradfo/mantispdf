@@ -2,20 +2,21 @@ import type { Config } from "tailwindcss";
 
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
         mantis: {
-          50: "#f0fdf4",
-          100: "#dcfce7",
-          200: "#bbf7d0",
-          300: "#86efac",
-          400: "#4ade80",
-          500: "#22c55e",
-          600: "#16a34a",
-          700: "#15803d",
-          800: "#166534",
-          900: "#14532d",
+          50:  "#f2fde0",
+          100: "#e3f9bb",
+          200: "#c8f28c",
+          300: "#a6e659",
+          400: "#87d233",
+          500: "#6bbf2e",
+          600: "#55991f",
+          700: "#407215",
+          800: "#32590e",
+          900: "#264008",
         },
       },
     },

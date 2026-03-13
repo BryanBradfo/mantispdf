@@ -82,13 +82,13 @@ export default function MergePdfPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
-      <h1 className="text-3xl font-bold text-gray-900">Merge PDF</h1>
-      <p className="mt-2 text-gray-600">
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Merge PDF</h1>
+      <p className="mt-2 text-gray-600 dark:text-[#555]">
         Upload multiple PDFs, drag to reorder, then merge into a single document.
       </p>
 
       {worker.initError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
           WASM engine failed to load: {worker.initError}
         </div>
       )}
@@ -104,7 +104,7 @@ export default function MergePdfPage() {
       {state.files.length > 0 && (
         <>
           <div className="mt-6 flex items-center justify-between">
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-[#555]">
               {state.files.length} file{state.files.length !== 1 ? "s" : ""} &middot;{" "}
               {totalPages} total page{totalPages !== 1 ? "s" : ""}
             </p>
