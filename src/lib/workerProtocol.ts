@@ -4,7 +4,8 @@ import type { PdfPart } from "../types/pdf";
 export type ToWorker =
   | { type: "init" }
   | { type: "split"; pdfBytes: Uint8Array; splitAfterPages: number[] }
-  | { type: "merge"; pdfBuffers: Uint8Array[] };
+  | { type: "merge"; pdfBuffers: Uint8Array[] }
+  | { type: "count-pages"; pdfBytes: Uint8Array };
 
 // Worker → Main messages
 export type FromWorker =
@@ -15,4 +16,6 @@ export type FromWorker =
   | { type: "split-error"; error: string }
   | { type: "merge-progress"; progress: number; message: string }
   | { type: "merge-done"; bytes: Uint8Array }
-  | { type: "merge-error"; error: string };
+  | { type: "merge-error"; error: string }
+  | { type: "count-done"; count: number }
+  | { type: "count-error"; error: string };

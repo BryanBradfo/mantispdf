@@ -5,7 +5,16 @@
   "type": "module",
   "license": "GPL-3.0-or-later",
   "author": "Bryan",
-  "keywords": ["pdf", "split-pdf", "wasm", "webassembly", "rust", "client-side", "privacy", "react"],
+  "keywords": [
+    "pdf",
+    "split-pdf",
+    "wasm",
+    "webassembly",
+    "rust",
+    "client-side",
+    "privacy",
+    "react"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/BryanBradfo/mantispdf.git"
@@ -18,6 +27,8 @@
     "build:wasm": "bash scripts/build-wasm.sh"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
     "jszip": "^3.10.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

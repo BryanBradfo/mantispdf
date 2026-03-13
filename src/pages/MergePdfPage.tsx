@@ -1,5 +1,4 @@
-import { useCallback, useState } from "react";
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+import { useCallback, useRef, useState } from "react";
 import { useMergeState } from "../hooks/useMergeState";
 import type { MergeFile } from "../hooks/useMergeState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
@@ -8,14 +7,6 @@ import DropZone from "../components/split/DropZone";
 import MergeFileList from "../components/merge/MergeFileList";
 import MergeActions from "../components/merge/MergeActions";
 import ProgressOverlay from "../components/split/ProgressOverlay";
-
-// Ensure pdfjs worker is configured (also done in main.tsx)
-if (!GlobalWorkerOptions.workerSrc) {
-  GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url,
-  ).toString();
-}
 
 let nextId = 0;
 
@@ -26,6 +17,10 @@ export default function MergePdfPage() {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
+      if (!worker.ready) {
+        dispatch({ type: "upload-error", error: "Engine is still loading — please wait a moment." });
+        return;
+      }
       const newMergeFiles: MergeFile[] = [];
       for (const file of files) {
         const validationError = validatePdfFile(file);
@@ -35,15 +30,8 @@ export default function MergePdfPage() {
         }
         try {
           const bytes = await readFileAsUint8Array(file);
-          // Use pdfjs-dist to get the page count on the main thread
-          const pdf = await getDocument({ data: bytes.slice() }).promise;
-          newMergeFiles.push({
-            id: String(++nextId),
-            file,
-            bytes,
-            numPages: pdf.numPages,
-          });
-          pdf.destroy();
+          const numPages = await worker.countPages(bytes);
+          newMergeFiles.push({ id: String(++nextId), file, bytes, numPages });
         } catch {
           dispatch({ type: "upload-error", error: `Failed to read ${file.name}.` });
           return;
@@ -51,20 +39,25 @@ export default function MergePdfPage() {
       }
       dispatch({ type: "files-added", files: newMergeFiles });
     },
-    [dispatch],
+    [dispatch, worker],
   );
 
+  const filesRef = useRef(state.files);
+  filesRef.current = state.files;
+
   const handleMerge = useCallback(async () => {
-    if (state.files.length < 2) return;
+    if (filesRef.current.length < 2) return;
     setMergeError(null);
     try {
-      const buffers = state.files.map((f) => f.bytes);
+      const buffers = filesRef.current.map((f) => f.bytes);
       const merged = await worker.mergePdfs(buffers);
       downloadBlob(merged, "merged.pdf");
     } catch (err) {
       setMergeError(String(err));
     }
-  }, [state.files, worker]);
+  }, [worker]);
+
+  const handleReset = useCallback(() => dispatch({ type: "reset" }), [dispatch]);
 
   const handleReorder = useCallback(
     (fromIndex: number, toIndex: number) =>
@@ -111,7 +104,7 @@ export default function MergePdfPage() {
             <MergeActions
               fileCount={state.files.length}
               onMerge={handleMerge}
-              onReset={() => dispatch({ type: "reset" })}
+              onReset={handleReset}
               disabled={!worker.ready}
             />
           </div>

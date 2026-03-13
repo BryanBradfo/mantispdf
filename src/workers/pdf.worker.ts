@@ -92,5 +92,19 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       }
       break;
     }
+
+    case "count-pages": {
+      if (!ready) {
+        post({ type: "count-error", error: "WASM not initialized" });
+        return;
+      }
+      try {
+        const count = get_page_count(msg.pdfBytes);
+        post({ type: "count-done", count });
+      } catch (err) {
+        post({ type: "count-error", error: String(err) });
+      }
+      break;
+    }
   }
 };
