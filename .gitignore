@@ -44,3 +44,4 @@ firebase-debug.log
 # Test artifacts
 *.zip
 test_4pages.pdf
+.vercel
