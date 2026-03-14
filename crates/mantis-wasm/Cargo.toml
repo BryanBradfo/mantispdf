@@ -11,3 +11,5 @@ lopdf = "0.39"
 wasm-bindgen = "0.2"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 js-sys = "0.3"
+zune-jpeg = { version = "0.4", default-features = false }
+jpeg-encoder = { version = "0.6", default-features = false }

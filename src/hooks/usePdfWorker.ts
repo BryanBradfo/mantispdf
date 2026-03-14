@@ -7,6 +7,7 @@ interface WorkerState {
   initError: string | null;
   splitting: boolean;
   merging: boolean;
+  compressing: boolean;
   progress: number;
   progressMessage: string;
 }
@@ -19,12 +20,15 @@ export function usePdfWorker() {
   const mergeRejectRef = useRef<((err: Error) => void) | null>(null);
   const countResolveRef = useRef<((count: number) => void) | null>(null);
   const countRejectRef = useRef<((err: Error) => void) | null>(null);
+  const compressResolveRef = useRef<((buf: ArrayBuffer) => void) | null>(null);
+  const compressRejectRef = useRef<((err: Error) => void) | null>(null);
 
   const [state, setState] = useState<WorkerState>({
     ready: false,
     initError: null,
     splitting: false,
     merging: false,
+    compressing: false,
     progress: 0,
     progressMessage: "",
   });
@@ -92,6 +96,18 @@ export function usePdfWorker() {
           countRejectRef.current?.(new Error(msg.error));
           countResolveRef.current = null;
           countRejectRef.current = null;
+          break;
+        case "compress-done":
+          setState((s) => ({ ...s, compressing: false }));
+          compressResolveRef.current?.(msg.result);
+          compressResolveRef.current = null;
+          compressRejectRef.current = null;
+          break;
+        case "compress-error":
+          setState((s) => ({ ...s, compressing: false }));
+          compressRejectRef.current?.(new Error(msg.error));
+          compressResolveRef.current = null;
+          compressRejectRef.current = null;
           break;
       }
     };
@@ -162,8 +178,31 @@ export function usePdfWorker() {
     [],
   );
 
+  const compressPdf = useCallback(
+    (file: File): Promise<ArrayBuffer> => {
+      return new Promise((resolve, reject) => {
+        if (!workerRef.current) {
+          reject(new Error("Worker not initialized"));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const pdfBytes = reader.result as ArrayBuffer;
+          compressResolveRef.current = resolve;
+          compressRejectRef.current = reject;
+          setState((s) => ({ ...s, compressing: true }));
+          const msg: ToWorker = { type: "compress", pdfBytes };
+          workerRef.current!.postMessage(msg, [pdfBytes]);
+        };
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsArrayBuffer(file);
+      });
+    },
+    [],
+  );
+
   return useMemo(
-    () => ({ ...state, splitPdf, mergePdfs, countPages }),
-    [state, splitPdf, mergePdfs, countPages],
+    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf }),
+    [state, splitPdf, mergePdfs, countPages, compressPdf],
   );
 }

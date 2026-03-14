@@ -20,7 +20,7 @@ const tools = [
     description: "Reduce file size while preserving quality.",
     href: "/compress",
     icon: "📦",
-    available: false,
+    available: true,
   },
   {
     title: "Rotate Pages",
