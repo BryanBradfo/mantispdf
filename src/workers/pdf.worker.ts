@@ -1,6 +1,6 @@
 import type { ToWorker, FromWorker } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, merge_pdfs, compress_pdf } from "mantis-wasm";
+import init, { get_page_count, extract_pages, merge_pdfs, compress_pdf, rotate_pdf } from "mantis-wasm";
 
 function post(msg: FromWorker) {
   self.postMessage(msg);
@@ -119,6 +119,24 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         post({ type: "compress-error", error: String(err) });
       }
       break;
+    }
+
+    case "rotate": {
+      if (!ready) {
+        post({ type: "rotate-error", error: "WASM not initialized" });
+        return;
+      }
+      try {
+        const bytes = new Uint8Array(msg.pdfBytes);
+        const result = rotate_pdf(bytes, new Int32Array(msg.rotations));
+        self.postMessage(
+          { type: "rotate-done", result: result.buffer } satisfies FromWorker,
+          [result.buffer],
+        );
+      } catch (err) {
+        post({ type: "rotate-error", error: String(err) });
+      }
+      return;
     }
   }
 };

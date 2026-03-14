@@ -27,7 +27,7 @@ const tools = [
     description: "Rotate individual pages or entire documents.",
     href: "/rotate",
     icon: "🔄",
-    available: false,
+    available: true,
   },
 ];
 

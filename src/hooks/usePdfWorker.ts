@@ -8,6 +8,7 @@ interface WorkerState {
   splitting: boolean;
   merging: boolean;
   compressing: boolean;
+  rotating: boolean;
   progress: number;
   progressMessage: string;
 }
@@ -22,6 +23,8 @@ export function usePdfWorker() {
   const countRejectRef = useRef<((err: Error) => void) | null>(null);
   const compressResolveRef = useRef<((buf: ArrayBuffer) => void) | null>(null);
   const compressRejectRef = useRef<((err: Error) => void) | null>(null);
+  const rotateResolveRef = useRef<((buf: ArrayBuffer) => void) | null>(null);
+  const rotateRejectRef = useRef<((err: Error) => void) | null>(null);
 
   const [state, setState] = useState<WorkerState>({
     ready: false,
@@ -29,6 +32,7 @@ export function usePdfWorker() {
     splitting: false,
     merging: false,
     compressing: false,
+    rotating: false,
     progress: 0,
     progressMessage: "",
   });
@@ -108,6 +112,18 @@ export function usePdfWorker() {
           compressRejectRef.current?.(new Error(msg.error));
           compressResolveRef.current = null;
           compressRejectRef.current = null;
+          break;
+        case "rotate-done":
+          setState((s) => ({ ...s, rotating: false }));
+          rotateResolveRef.current?.(msg.result);
+          rotateResolveRef.current = null;
+          rotateRejectRef.current = null;
+          break;
+        case "rotate-error":
+          setState((s) => ({ ...s, rotating: false }));
+          rotateRejectRef.current?.(new Error(msg.error));
+          rotateResolveRef.current = null;
+          rotateRejectRef.current = null;
           break;
       }
     };
@@ -201,8 +217,31 @@ export function usePdfWorker() {
     [],
   );
 
+  const rotatePdf = useCallback(
+    (file: File, rotations: number[]): Promise<ArrayBuffer> => {
+      return new Promise((resolve, reject) => {
+        if (!workerRef.current) {
+          reject(new Error("Worker not initialized"));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const pdfBytes = reader.result as ArrayBuffer;
+          rotateResolveRef.current = resolve;
+          rotateRejectRef.current = reject;
+          setState((s) => ({ ...s, rotating: true }));
+          const msg: ToWorker = { type: "rotate", pdfBytes, rotations };
+          workerRef.current!.postMessage(msg, [pdfBytes]);
+        };
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsArrayBuffer(file);
+      });
+    },
+    [],
+  );
+
   return useMemo(
-    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf }),
-    [state, splitPdf, mergePdfs, countPages, compressPdf],
+    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf }),
+    [state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf],
   );
 }
