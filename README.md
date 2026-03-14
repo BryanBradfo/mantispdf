@@ -8,9 +8,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/BryanBradfo/sweepkit/actions/workflows/ci.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/BryanBradfo/sweepkit/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
-  <a href="https://github.com/BryanBradfo/sweepkit/releases"><img src="https://img.shields.io/github/v/release/BryanBradfo/sweepkit?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+  <a href="https://mantispdf.vercel.app"><img src="https://img.shields.io/badge/Live-mantispdf.vercel.app-brightgreen?style=for-the-badge" alt="Live site"></a>
+  <a href="https://github.com/BryanBradfo/mantispdf/actions"><img src="https://img.shields.io/github/actions/workflow/status/BryanBradfo/mantispdf/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="GPL-3.0 License"></a>
 </p>
 
 **Client-side PDF tools powered by WebAssembly. Your files never leave your browser.**
