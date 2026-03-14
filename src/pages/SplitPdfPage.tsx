@@ -5,10 +5,10 @@ import { useSplitState } from "../hooks/useSplitState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, readFileAsUint8Array } from "../lib/fileHelpers";
 import { downloadAsZip } from "../lib/downloadZip";
-import DropZone from "../components/split/DropZone";
+import DropZone from "../components/common/DropZone";
 import ThumbnailGrid from "../components/split/ThumbnailGrid";
 import SplitActions from "../components/split/SplitActions";
-import ProgressOverlay from "../components/split/ProgressOverlay";
+import ProgressOverlay from "../components/common/ProgressOverlay";
 import { Document } from "react-pdf";
 
 export default function SplitPdfPage() {

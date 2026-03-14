@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
-import DropZone from "../components/split/DropZone";
+import DropZone from "../components/common/DropZone";
 
 interface CompressionResult {
   originalSize: number;

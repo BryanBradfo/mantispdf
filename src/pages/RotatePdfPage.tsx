@@ -4,7 +4,7 @@ import { PageSEO } from "../components/seo/PageSEO";
 import { Document, Thumbnail } from "react-pdf";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
-import DropZone from "../components/split/DropZone";
+import DropZone from "../components/common/DropZone";
 
 function thumbnailTransform(deg: number): string {
   const norm = ((deg % 360) + 360) % 360;

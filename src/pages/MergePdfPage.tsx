@@ -5,10 +5,10 @@ import { useMergeState } from "../hooks/useMergeState";
 import type { MergeFile } from "../hooks/useMergeState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, readFileAsUint8Array, downloadBlob } from "../lib/fileHelpers";
-import DropZone from "../components/split/DropZone";
+import DropZone from "../components/common/DropZone";
 import MergeFileList from "../components/merge/MergeFileList";
 import MergeActions from "../components/merge/MergeActions";
-import ProgressOverlay from "../components/split/ProgressOverlay";
+import ProgressOverlay from "../components/common/ProgressOverlay";
 
 let nextId = 0;
 
