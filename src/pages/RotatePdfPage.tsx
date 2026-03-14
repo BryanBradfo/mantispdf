@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { PageSEO } from "../components/seo/PageSEO";
 import { Document, Thumbnail } from "react-pdf";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
@@ -81,6 +82,11 @@ export default function RotatePdfPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
+      <PageSEO
+        title="Rotate PDF Pages — MantisPDF"
+        description="Rotate individual pages or entire PDF documents online. Client-side processing, nothing is uploaded."
+        path="/rotate"
+      />
       <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Rotate Pages</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
         Upload a PDF and rotate individual pages or the entire document. All processing happens in your browser.

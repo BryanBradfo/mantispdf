@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { PageSEO } from "../components/seo/PageSEO";
 import { useMergeState } from "../hooks/useMergeState";
 import type { MergeFile } from "../hooks/useMergeState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
@@ -75,6 +76,11 @@ export default function MergePdfPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
+      <PageSEO
+        title="Merge PDF Files — MantisPDF"
+        description="Combine multiple PDFs into one document. Drag to reorder pages. Free, private, no upload required."
+        path="/merge"
+      />
       <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Merge PDF</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
         Upload multiple PDFs, drag to reorder, then merge into a single document.

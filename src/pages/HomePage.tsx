@@ -1,8 +1,14 @@
 import ToolGrid from "../components/home/ToolGrid";
+import { PageSEO } from "../components/seo/PageSEO";
 
 export default function HomePage() {
   return (
     <div>
+      <PageSEO
+        title="MantisPDF — Free PDF Tools in Your Browser"
+        description="Split, merge, compress and rotate PDFs for free. 100% client-side — your files never leave your device."
+        path="/"
+      />
       {/* Gradient hero */}
       <div className="hero-gradient">
         <div className="mx-auto max-w-5xl px-4 pb-12 pt-16 text-center">
