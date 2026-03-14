@@ -113,7 +113,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         return;
       }
       try {
-        const result = compress_pdf(new Uint8Array(msg.pdfBytes), 75);
+        const result = compress_pdf(new Uint8Array(msg.pdfBytes), 40);
         self.postMessage({ type: "compress-done", result: result.buffer } satisfies FromWorker, [result.buffer]);
       } catch (err) {
         post({ type: "compress-error", error: String(err) });
