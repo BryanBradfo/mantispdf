@@ -114,7 +114,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       }
       try {
         const result = compress_pdf(new Uint8Array(msg.pdfBytes), 40);
-        self.postMessage({ type: "compress-done", result: result.buffer } satisfies FromWorker, [result.buffer]);
+        self.postMessage({ type: "compress-done", result: result.buffer } satisfies FromWorker, { transfer: [result.buffer as ArrayBuffer] });
       } catch (err) {
         post({ type: "compress-error", error: String(err) });
       }
@@ -131,7 +131,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         const result = rotate_pdf(bytes, new Int32Array(msg.rotations));
         self.postMessage(
           { type: "rotate-done", result: result.buffer } satisfies FromWorker,
-          [result.buffer],
+          { transfer: [result.buffer as ArrayBuffer] },
         );
       } catch (err) {
         post({ type: "rotate-error", error: String(err) });
