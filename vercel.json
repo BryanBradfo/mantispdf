@@ -1,0 +1,5 @@
+{
+  "buildCommand": "curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable && source $HOME/.cargo/env && curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh && npm run build:wasm && npm run build",
+  "outputDirectory": "dist",
+  "framework": null
+}
