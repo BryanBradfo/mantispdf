@@ -29,6 +29,13 @@ const tools = [
     icon: "🔄",
     available: true,
   },
+  {
+    title: "Edit PDF",
+    description: "Delete or reorder pages in your document.",
+    href: "/edit",
+    icon: "✏️",
+    available: true,
+  },
 ];
 
 export default function ToolGrid() {
