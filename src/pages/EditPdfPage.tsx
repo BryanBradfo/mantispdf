@@ -5,7 +5,7 @@ import { PageSEO } from "../components/seo/PageSEO";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { useEditState } from "../hooks/useEditState";
 import { validatePdfFile, readFileAsUint8Array, downloadBlob } from "../lib/fileHelpers";
-import DropZone from "../components/split/DropZone";
+import DropZone from "../components/common/DropZone";
 import EditThumbnailGrid from "../components/edit/EditThumbnailGrid";
 
 export default function EditPdfPage() {
