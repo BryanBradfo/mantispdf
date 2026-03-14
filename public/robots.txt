@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://mantispdf.com/sitemap.xml
+Sitemap: https://mantispdf.vercel.app/sitemap.xml

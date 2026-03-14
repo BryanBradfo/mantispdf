@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://mantispdf.com/</loc><priority>1.0</priority></url>
-  <url><loc>https://mantispdf.com/split</loc><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.com/merge</loc><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.com/compress</loc><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.com/rotate</loc><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/</loc><priority>1.0</priority></url>
+  <url><loc>https://mantispdf.vercel.app/split</loc><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/merge</loc><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/compress</loc><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/rotate</loc><priority>0.8</priority></url>
 </urlset>
