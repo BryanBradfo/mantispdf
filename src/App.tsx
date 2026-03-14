@@ -4,6 +4,7 @@ import Footer from "./components/layout/Footer";
 import HomePage from "./pages/HomePage";
 import SplitPdfPage from "./pages/SplitPdfPage";
 import MergePdfPage from "./pages/MergePdfPage";
+import CompressPdfPage from "./pages/CompressPdfPage";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/split" element={<SplitPdfPage />} />
             <Route path="/merge" element={<MergePdfPage />} />
+            <Route path="/compress" element={<CompressPdfPage />} />
           </Routes>
         </main>
         <Footer />

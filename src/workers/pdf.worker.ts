@@ -1,6 +1,6 @@
 import type { ToWorker, FromWorker } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, merge_pdfs } from "mantis-wasm";
+import init, { get_page_count, extract_pages, merge_pdfs, compress_pdf } from "mantis-wasm";
 
 function post(msg: FromWorker) {
   self.postMessage(msg);
@@ -103,6 +103,20 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         post({ type: "count-done", count });
       } catch (err) {
         post({ type: "count-error", error: String(err) });
+      }
+      break;
+    }
+
+    case "compress": {
+      if (!ready) {
+        post({ type: "compress-error", error: "WASM not initialized" });
+        return;
+      }
+      try {
+        const result = compress_pdf(new Uint8Array(msg.pdfBytes), 75);
+        self.postMessage({ type: "compress-done", result: result.buffer } satisfies FromWorker, [result.buffer]);
+      } catch (err) {
+        post({ type: "compress-error", error: String(err) });
       }
       break;
     }

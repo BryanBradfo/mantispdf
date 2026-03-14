@@ -1,6 +1,8 @@
+mod compress;
 mod merge;
 mod split;
 
+pub use compress::compress_pdf;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
