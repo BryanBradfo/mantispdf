@@ -7,7 +7,7 @@ interface PageSEOProps {
   ogImage?: string;
 }
 
-const SITE = "https://mantispdf.com";
+const SITE = "https://mantispdf.vercel.app";
 
 export function PageSEO({ title, description, path, ogImage = "/mantispdf.png" }: PageSEOProps) {
   const url = `${SITE}${path}`;
