@@ -1,6 +1,6 @@
 import type { ToWorker, FromWorker } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, merge_pdfs, compress_pdf, rotate_pdf } from "mantis-wasm";
+import init, { get_page_count, extract_pages, merge_pdfs, compress_pdf, rotate_pdf, reorder_pages } from "mantis-wasm";
 
 function post(msg: FromWorker) {
   self.postMessage(msg);
@@ -137,6 +137,23 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         post({ type: "rotate-error", error: String(err) });
       }
       return;
+    }
+
+    case "edit-pages": {
+      if (!ready) {
+        post({ type: "edit-error", message: "WASM not initialized" });
+        return;
+      }
+      try {
+        const result = reorder_pages(msg.pdfBytes, Uint32Array.from(msg.newOrder));
+        self.postMessage(
+          { type: "edit-done", result: result.buffer } satisfies FromWorker,
+          { transfer: [result.buffer as ArrayBuffer] },
+        );
+      } catch (err) {
+        post({ type: "edit-error", message: String(err) });
+      }
+      break;
     }
   }
 };

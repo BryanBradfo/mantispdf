@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
 import { useSplitState } from "../hooks/useSplitState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
@@ -14,6 +15,7 @@ export default function SplitPdfPage() {
   const [state, dispatch] = useSplitState();
   const worker = usePdfWorker();
   const [splitError, setSplitError] = useState<string | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
 
   // Create a stable Blob URL for react-pdf to avoid ArrayBuffer detachment.
   // pdf.js transfers the underlying ArrayBuffer to its worker, which would
@@ -74,6 +76,7 @@ export default function SplitPdfPage() {
       );
       const baseName = state.file?.name.replace(/\.pdf$/i, "") ?? "document";
       await downloadAsZip(parts, baseName);
+      setDownloaded(true);
     } catch (err) {
       setSplitError(String(err));
     }
@@ -114,12 +117,22 @@ export default function SplitPdfPage() {
             <p className="text-sm text-gray-500 dark:text-[#555]">
               {state.file?.name} — {state.numPages} page{state.numPages !== 1 ? "s" : ""}
             </p>
-            <SplitActions
-              splitCount={state.splitPoints.size}
-              onSplit={handleSplit}
-              onReset={() => dispatch({ type: "reset" })}
-              disabled={!worker.ready}
-            />
+            <div className="flex items-center gap-3">
+              {downloaded && (
+                <Link
+                  to="/"
+                  className="rounded-lg border border-mantis-500 px-3 py-1.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
+                >
+                  ← All tools
+                </Link>
+              )}
+              <SplitActions
+                splitCount={state.splitPoints.size}
+                onSplit={handleSplit}
+                onReset={() => { dispatch({ type: "reset" }); setDownloaded(false); }}
+                disabled={!worker.ready}
+              />
+            </div>
           </div>
 
           {state.numPages > 0 ? (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
 import { Document, Thumbnail } from "react-pdf";
 import { usePdfWorker } from "../hooks/usePdfWorker";
@@ -22,6 +23,7 @@ export default function RotatePdfPage() {
   const [rotations, setRotations] = useState<number[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [rotateError, setRotateError] = useState<string | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -64,6 +66,7 @@ export default function RotatePdfPage() {
       const result = await worker.rotatePdf(file, rotations);
       const outName = file.name.replace(/\.pdf$/i, "") + "_rotated.pdf";
       downloadBlob(new Uint8Array(result), outName);
+      setDownloaded(true);
     } catch (err) {
       setRotateError(String(err));
     }
@@ -76,6 +79,7 @@ export default function RotatePdfPage() {
     setNumPages(0);
     setRotations([]);
     setRotateError(null);
+    setDownloaded(false);
   }, [blobUrl]);
 
   const allZero = rotations.every((v) => v === 0);
@@ -137,6 +141,14 @@ export default function RotatePdfPage() {
               >
                 {worker.rotating ? "Processing…" : "Download"}
               </button>
+              {downloaded && (
+                <Link
+                  to="/"
+                  className="rounded-lg border border-mantis-500 px-3 py-1.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
+                >
+                  ← All tools
+                </Link>
+              )}
               <button
                 onClick={handleReset}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"

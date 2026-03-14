@@ -7,6 +7,7 @@ import SplitPdfPage from "./pages/SplitPdfPage";
 import MergePdfPage from "./pages/MergePdfPage";
 import CompressPdfPage from "./pages/CompressPdfPage";
 import RotatePdfPage from "./pages/RotatePdfPage";
+import EditPdfPage from "./pages/EditPdfPage";
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
             <Route path="/merge" element={<MergePdfPage />} />
             <Route path="/compress" element={<CompressPdfPage />} />
             <Route path="/rotate" element={<RotatePdfPage />} />
+            <Route path="/edit" element={<EditPdfPage />} />
           </Routes>
         </main>
         <Footer />

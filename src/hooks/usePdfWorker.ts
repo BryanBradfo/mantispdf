@@ -9,6 +9,7 @@ interface WorkerState {
   merging: boolean;
   compressing: boolean;
   rotating: boolean;
+  editing: boolean;
   progress: number;
   progressMessage: string;
 }
@@ -25,6 +26,8 @@ export function usePdfWorker() {
   const compressRejectRef = useRef<((err: Error) => void) | null>(null);
   const rotateResolveRef = useRef<((buf: ArrayBuffer) => void) | null>(null);
   const rotateRejectRef = useRef<((err: Error) => void) | null>(null);
+  const editResolveRef = useRef<((buf: ArrayBuffer) => void) | null>(null);
+  const editRejectRef = useRef<((err: Error) => void) | null>(null);
 
   const [state, setState] = useState<WorkerState>({
     ready: false,
@@ -33,6 +36,7 @@ export function usePdfWorker() {
     merging: false,
     compressing: false,
     rotating: false,
+    editing: false,
     progress: 0,
     progressMessage: "",
   });
@@ -124,6 +128,18 @@ export function usePdfWorker() {
           rotateRejectRef.current?.(new Error(msg.error));
           rotateResolveRef.current = null;
           rotateRejectRef.current = null;
+          break;
+        case "edit-done":
+          setState((s) => ({ ...s, editing: false }));
+          editResolveRef.current?.(msg.result);
+          editResolveRef.current = null;
+          editRejectRef.current = null;
+          break;
+        case "edit-error":
+          setState((s) => ({ ...s, editing: false }));
+          editRejectRef.current?.(new Error(msg.message));
+          editResolveRef.current = null;
+          editRejectRef.current = null;
           break;
       }
     };
@@ -240,8 +256,25 @@ export function usePdfWorker() {
     [],
   );
 
+  const editPages = useCallback(
+    (pdfBytes: Uint8Array, newOrder: number[]): Promise<ArrayBuffer> => {
+      return new Promise((resolve, reject) => {
+        if (!workerRef.current) {
+          reject(new Error("Worker not initialized"));
+          return;
+        }
+        editResolveRef.current = resolve;
+        editRejectRef.current = reject;
+        setState((s) => ({ ...s, editing: true }));
+        const msg: ToWorker = { type: "edit-pages", pdfBytes, newOrder };
+        workerRef.current.postMessage(msg);
+      });
+    },
+    [],
+  );
+
   return useMemo(
-    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf }),
-    [state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf],
+    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages }),
+    [state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages],
   );
 }

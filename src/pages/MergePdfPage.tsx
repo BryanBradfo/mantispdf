@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
 import { useMergeState } from "../hooks/useMergeState";
 import type { MergeFile } from "../hooks/useMergeState";
@@ -15,6 +16,7 @@ export default function MergePdfPage() {
   const [state, dispatch] = useMergeState();
   const worker = usePdfWorker();
   const [mergeError, setMergeError] = useState<string | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
 
   const handleFiles = useCallback(
     async (files: File[]) => {
@@ -53,12 +55,16 @@ export default function MergePdfPage() {
       const buffers = filesRef.current.map((f) => f.bytes);
       const merged = await worker.mergePdfs(buffers);
       downloadBlob(merged, "merged.pdf");
+      setDownloaded(true);
     } catch (err) {
       setMergeError(String(err));
     }
   }, [worker]);
 
-  const handleReset = useCallback(() => dispatch({ type: "reset" }), [dispatch]);
+  const handleReset = useCallback(() => {
+    dispatch({ type: "reset" });
+    setDownloaded(false);
+  }, [dispatch]);
 
   const handleReorder = useCallback(
     (fromIndex: number, toIndex: number) =>
@@ -107,12 +113,22 @@ export default function MergePdfPage() {
               {state.files.length} file{state.files.length !== 1 ? "s" : ""} &middot;{" "}
               {totalPages} total page{totalPages !== 1 ? "s" : ""}
             </p>
-            <MergeActions
-              fileCount={state.files.length}
-              onMerge={handleMerge}
-              onReset={handleReset}
-              disabled={!worker.ready}
-            />
+            <div className="flex items-center gap-3">
+              {downloaded && (
+                <Link
+                  to="/"
+                  className="rounded-lg border border-mantis-500 px-3 py-1.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
+                >
+                  ← All tools
+                </Link>
+              )}
+              <MergeActions
+                fileCount={state.files.length}
+                onMerge={handleMerge}
+                onReset={handleReset}
+                disabled={!worker.ready}
+              />
+            </div>
           </div>
 
           <div className="mt-4">
