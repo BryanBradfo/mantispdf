@@ -1,9 +1,11 @@
 mod compress;
+mod edit;
 mod merge;
 mod rotate;
 mod split;
 
 pub use compress::compress_pdf;
+pub use edit::reorder_pages;
 pub use rotate::rotate_pdf;
 use wasm_bindgen::prelude::*;
 

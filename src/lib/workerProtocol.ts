@@ -7,7 +7,8 @@ export type ToWorker =
   | { type: "merge"; pdfBuffers: Uint8Array[] }
   | { type: "count-pages"; pdfBytes: Uint8Array }
   | { type: "compress"; pdfBytes: ArrayBuffer }
-  | { type: "rotate"; pdfBytes: ArrayBuffer; rotations: number[] };
+  | { type: "rotate"; pdfBytes: ArrayBuffer; rotations: number[] }
+  | { type: "edit-pages"; pdfBytes: Uint8Array; newOrder: number[] };
 
 // Worker → Main messages
 export type FromWorker =
@@ -24,4 +25,6 @@ export type FromWorker =
   | { type: "compress-done"; result: ArrayBuffer }
   | { type: "compress-error"; error: string }
   | { type: "rotate-done"; result: ArrayBuffer }
-  | { type: "rotate-error"; error: string };
+  | { type: "rotate-error"; error: string }
+  | { type: "edit-done"; result: ArrayBuffer }
+  | { type: "edit-error"; message: string };
