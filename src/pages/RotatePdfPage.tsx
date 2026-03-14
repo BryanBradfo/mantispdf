@@ -4,6 +4,14 @@ import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/split/DropZone";
 
+function thumbnailTransform(deg: number): string {
+  const norm = ((deg % 360) + 360) % 360;
+  // When rotated 90°/270° the page is landscape — scale down to fit the portrait container.
+  // Scale factor = short_side / long_side = 8.5 / 11 ≈ 0.773
+  const scale = norm === 90 || norm === 270 ? 8.5 / 11 : 1;
+  return `rotate(${norm}deg) scale(${scale})`;
+}
+
 export default function RotatePdfPage() {
   const worker = usePdfWorker();
 
@@ -156,12 +164,16 @@ export default function RotatePdfPage() {
                   <div key={i} className="flex flex-col items-center gap-2">
                     <div className="relative w-full">
                       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#222] dark:bg-[#141414]">
-                        <div className="relative aspect-[8.5/11] w-full bg-gray-100 dark:bg-[#1a1a1a]">
-                          <Thumbnail
-                            pageNumber={i + 1}
-                            width={160}
-                            className="h-full w-full object-contain"
-                          />
+                        <div className="relative aspect-[8.5/11] w-full overflow-hidden bg-gray-100 dark:bg-[#1a1a1a]">
+                          <div
+                            className="absolute inset-0 flex items-center justify-center"
+                            style={{
+                              transform: thumbnailTransform(rotations[i] ?? 0),
+                              transition: "transform 0.3s ease",
+                            }}
+                          >
+                            <Thumbnail pageNumber={i + 1} width={160} />
+                          </div>
                         </div>
                         <div className="border-t border-gray-100 px-2 py-1 text-center text-xs text-gray-500 dark:border-[#222] dark:text-[#555]">
                           Page {i + 1}
