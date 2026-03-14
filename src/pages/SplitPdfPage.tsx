@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PageSEO } from "../components/seo/PageSEO";
 import { useSplitState } from "../hooks/useSplitState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, readFileAsUint8Array } from "../lib/fileHelpers";
@@ -87,6 +88,11 @@ export default function SplitPdfPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
+      <PageSEO
+        title="Split PDF Online — MantisPDF"
+        description="Split a PDF into multiple files instantly. Choose exact split points. Runs in your browser, no upload needed."
+        path="/split"
+      />
       <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Split PDF</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
         Upload a PDF, click the scissors between pages to mark split points, then hit Split.
