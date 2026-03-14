@@ -8,4 +8,5 @@ declare module "mantis-wasm" {
   ): Uint8Array;
   export function merge_pdfs(pdf_list: Uint8Array[]): Uint8Array;
   export function compress_pdf(pdf_bytes: Uint8Array, quality: number): Uint8Array;
+  export function rotate_pdf(pdf_bytes: Uint8Array, rotations: Int32Array): Uint8Array;
 }

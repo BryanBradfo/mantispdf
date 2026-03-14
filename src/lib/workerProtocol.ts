@@ -6,7 +6,8 @@ export type ToWorker =
   | { type: "split"; pdfBytes: Uint8Array; splitAfterPages: number[] }
   | { type: "merge"; pdfBuffers: Uint8Array[] }
   | { type: "count-pages"; pdfBytes: Uint8Array }
-  | { type: "compress"; pdfBytes: ArrayBuffer };
+  | { type: "compress"; pdfBytes: ArrayBuffer }
+  | { type: "rotate"; pdfBytes: ArrayBuffer; rotations: number[] };
 
 // Worker → Main messages
 export type FromWorker =
@@ -21,4 +22,6 @@ export type FromWorker =
   | { type: "count-done"; count: number }
   | { type: "count-error"; error: string }
   | { type: "compress-done"; result: ArrayBuffer }
-  | { type: "compress-error"; error: string };
+  | { type: "compress-error"; error: string }
+  | { type: "rotate-done"; result: ArrayBuffer }
+  | { type: "rotate-error"; error: string };
