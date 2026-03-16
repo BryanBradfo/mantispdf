@@ -87,34 +87,6 @@ mantispdf/
 └── package.json
 ```
 
-## How It Works
-
-1. **Upload** — Drop a PDF onto the DropZone. The file is validated (type + 100 MB limit) and read as a `Uint8Array`
-2. **Preview** — `react-pdf` renders page thumbnails. Click the dividers between pages to mark split points
-3. **Split** — The main thread sends the PDF bytes and split indices to a Web Worker
-4. **WASM processing** — The worker calls Rust-compiled `extract_pages()` for each page range, running off the main thread
-5. **Download** — The split parts are packaged into a ZIP via JSZip and downloaded automatically
-
-```
-UI Thread                          Web Worker
-────────────                       ──────────
-DropZone → validate & read
-react-pdf → thumbnails
-User marks split points
-  │
-  ├── postMessage(pdfBytes, splitPoints)
-  │                                  ↓
-  │                            init WASM
-  │                            compute ranges
-  │                            for each range:
-  │                              extract_pages() ← Rust/WASM
-  │                              post progress
-  │                                  │
-  ← postMessage(parts) ─────────────┘
-  │
-downloadZip(parts) → browser saves ZIP
-```
-
 ## Contributing
 
 Contributions are welcome! For ideas or bug reports, open a [Discussion](https://github.com/BryanBradfo/mantispdf/discussions) or [Issue](https://github.com/BryanBradfo/mantispdf/issues).
@@ -142,13 +114,37 @@ Then open a PR against `main`. Please keep PRs focused — one feature or fix pe
 
 [MIT](LICENSE)
 
-## Star this repo!
+## Star History
 
 [![Star History Chart](https://api.star-history.com/image?repos=bryanbradfo/mantispdf&type=date&legend=top-left)](https://www.star-history.com/?repos=bryanbradfo%2Fmantispdf&type=date&legend=top-left)
 
-If you find this useful, give it a ⭐ — it helps others discover the project!
+## How it works (short)
 
+1. **Upload** — Drop a PDF onto the DropZone. The file is validated (type + 100 MB limit) and read as a `Uint8Array`
+2. **Preview** — `react-pdf` renders page thumbnails. Click the dividers between pages to mark split points
+3. **Split** — The main thread sends the PDF bytes and split indices to a Web Worker
+4. **WASM processing** — The worker calls Rust-compiled `extract_pages()` for each page range, running off the main thread
+5. **Download** — The split parts are packaged into a ZIP via JSZip and downloaded automatically
 
+```
+UI Thread                          Web Worker
+────────────                       ──────────
+DropZone → validate & read
+react-pdf → thumbnails
+User marks split points
+  │
+  ├── postMessage(pdfBytes, splitPoints)
+  │                                  ↓
+  │                            init WASM
+  │                            compute ranges
+  │                            for each range:
+  │                              extract_pages() ← Rust/WASM
+  │                              post progress
+  │                                  │
+  ← postMessage(parts) ─────────────┘
+  │
+downloadZip(parts) → browser saves ZIP
+```
 
 
 
