@@ -36,6 +36,13 @@ const tools = [
     icon: "✏️",
     available: true,
   },
+  {
+    title: "PDF to Images",
+    description: "Export each PDF page as a PNG or JPEG image.",
+    href: "/pdf-to-image",
+    icon: "🖼️",
+    available: true,
+  },
 ];
 
 export default function ToolGrid() {
