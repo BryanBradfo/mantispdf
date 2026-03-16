@@ -35,7 +35,9 @@ Most online PDF tools (ilovepdf, smallpdf, etc.) upload your files to their serv
 - **Edit PDF** — Delete or reorder pages, download result as `_edited.pdf`
 - **Compress PDF** — Reduce PDF file size entirely client-side
 - **Rotate PDF** — Rotate individual pages (90°, 180°, or 270°)
-- **100% client-side** — All processing happens in your browser. No uploads, no server, no tracking
+- **PDF to Images** — Export each page as a PNG or JPEG image
+- **Watermark PDF** — Stamp custom text on every page (size, opacity, angle, color)
+- **Encrypt PDF** — Password-protect a PDF so only authorized readers can open it
 
 ## Tech Stack
 
@@ -118,32 +120,25 @@ Then open a PR against `main`. Please keep PRs focused — one feature or fix pe
 
 [![Star History Chart](https://api.star-history.com/image?repos=bryanbradfo/mantispdf&type=date&legend=top-left)](https://www.star-history.com/?repos=bryanbradfo%2Fmantispdf&type=date&legend=top-left)
 
-## How it works (short)
+## How it works
 
-1. **Upload** — Drop a PDF onto the DropZone. The file is validated (type + 100 MB limit) and read as a `Uint8Array`
-2. **Preview** — `react-pdf` renders page thumbnails. Click the dividers between pages to mark split points
-3. **Split** — The main thread sends the PDF bytes and split indices to a Web Worker
-4. **WASM processing** — The worker calls Rust-compiled `extract_pages()` for each page range, running off the main thread
-5. **Download** — The split parts are packaged into a ZIP via JSZip and downloaded automatically
+1. **Upload** — Drop a PDF onto the DropZone. The file is validated (type + 100 MB limit) and read into an `ArrayBuffer`.
+2. **Configure** — Choose tool-specific options (split points, passwords, watermark text, …).
+3. **Process** — The main thread transfers the PDF bytes to a Web Worker via `postMessage`. The worker calls the relevant Rust/WASM function (`extract_pages`, `merge_pdfs`, `encrypt_pdf`, …) off the main thread.
+4. **Download** — The result is transferred back and saved: single files via a Blob URL, multi-part results via JSZip.
 
 ```
 UI Thread                          Web Worker
 ────────────                       ──────────
 DropZone → validate & read
-react-pdf → thumbnails
-User marks split points
+Configure tool options
   │
-  ├── postMessage(pdfBytes, splitPoints)
-  │                                  ↓
-  │                            init WASM
-  │                            compute ranges
-  │                            for each range:
-  │                              extract_pages() ← Rust/WASM
-  │                              post progress
-  │                                  │
-  ← postMessage(parts) ─────────────┘
+  ├── postMessage(pdfBytes, options)  ──→
+  │                                  init WASM (once)
+  │                                  call WASM fn (lopdf)
+  │                                  ←── postMessage(result)
   │
-downloadZip(parts) → browser saves ZIP
+downloadBlob / downloadZip → browser saves file
 ```
 
 

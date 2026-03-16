@@ -1,6 +1,6 @@
 import type { ToWorker, FromWorker } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, merge_pdfs, compress_pdf, rotate_pdf, reorder_pages, add_watermark } from "mantis-wasm";
+import init, { get_page_count, extract_pages, merge_pdfs, compress_pdf, rotate_pdf, reorder_pages, add_watermark, encrypt_pdf } from "mantis-wasm";
 
 function post(msg: FromWorker) {
   self.postMessage(msg);
@@ -167,6 +167,21 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         );
       } catch (e) {
         post({ type: "watermark-error", error: String(e) });
+      }
+      break;
+    }
+
+    case "encrypt": {
+      if (!ready) { post({ type: "encrypt-error", error: "WASM not ready" }); break; }
+      try {
+        const bytes = new Uint8Array(msg.pdfBytes);
+        const result = encrypt_pdf(bytes, msg.userPassword, msg.ownerPassword);
+        self.postMessage(
+          { type: "encrypt-done", result: result.buffer } satisfies FromWorker,
+          { transfer: [result.buffer as ArrayBuffer] },
+        );
+      } catch (e) {
+        post({ type: "encrypt-error", error: String(e) });
       }
       break;
     }

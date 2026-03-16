@@ -50,6 +50,13 @@ const tools = [
     icon: "🔏",
     available: true,
   },
+  {
+    title: "Encrypt PDF",
+    description: "Password-protect your PDF so only authorized readers can open it.",
+    href: "/encrypt",
+    icon: "🔒",
+    available: true,
+  },
 ];
 
 export default function ToolGrid() {

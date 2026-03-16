@@ -9,7 +9,8 @@ export type ToWorker =
   | { type: "compress"; pdfBytes: ArrayBuffer }
   | { type: "rotate"; pdfBytes: ArrayBuffer; rotations: number[] }
   | { type: "edit-pages"; pdfBytes: Uint8Array; newOrder: number[] }
-  | { type: "watermark"; pdfBytes: ArrayBuffer; text: string; fontSize: number; opacity: number; angle: number; r: number; g: number; b: number };
+  | { type: "watermark"; pdfBytes: ArrayBuffer; text: string; fontSize: number; opacity: number; angle: number; r: number; g: number; b: number }
+  | { type: "encrypt"; pdfBytes: ArrayBuffer; userPassword: string; ownerPassword: string };
 
 // Worker → Main messages
 export type FromWorker =
@@ -30,4 +31,6 @@ export type FromWorker =
   | { type: "edit-done"; result: ArrayBuffer }
   | { type: "edit-error"; message: string }
   | { type: "watermark-done"; result: ArrayBuffer }
-  | { type: "watermark-error"; error: string };
+  | { type: "watermark-error"; error: string }
+  | { type: "encrypt-done"; result: ArrayBuffer }
+  | { type: "encrypt-error"; error: string };

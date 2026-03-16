@@ -11,6 +11,7 @@ interface WorkerState {
   rotating: boolean;
   editing: boolean;
   watermarking: boolean;
+  encrypting: boolean;
   progress: number;
   progressMessage: string;
 }
@@ -31,6 +32,8 @@ export function usePdfWorker() {
   const editRejectRef = useRef<((err: Error) => void) | null>(null);
   const watermarkResolveRef = useRef<((buf: ArrayBuffer) => void) | null>(null);
   const watermarkRejectRef = useRef<((err: Error) => void) | null>(null);
+  const encryptResolveRef = useRef<((buf: ArrayBuffer) => void) | null>(null);
+  const encryptRejectRef = useRef<((err: Error) => void) | null>(null);
 
   const [state, setState] = useState<WorkerState>({
     ready: false,
@@ -41,6 +44,7 @@ export function usePdfWorker() {
     rotating: false,
     editing: false,
     watermarking: false,
+    encrypting: false,
     progress: 0,
     progressMessage: "",
   });
@@ -156,6 +160,18 @@ export function usePdfWorker() {
           watermarkRejectRef.current?.(new Error(msg.error));
           watermarkResolveRef.current = null;
           watermarkRejectRef.current = null;
+          break;
+        case "encrypt-done":
+          setState((s) => ({ ...s, encrypting: false }));
+          encryptResolveRef.current?.(msg.result);
+          encryptResolveRef.current = null;
+          encryptRejectRef.current = null;
+          break;
+        case "encrypt-error":
+          setState((s) => ({ ...s, encrypting: false }));
+          encryptRejectRef.current?.(new Error(msg.error));
+          encryptResolveRef.current = null;
+          encryptRejectRef.current = null;
           break;
       }
     };
@@ -312,8 +328,31 @@ export function usePdfWorker() {
     [],
   );
 
+  const encryptPdf = useCallback(
+    (file: File, userPassword: string, ownerPassword: string): Promise<ArrayBuffer> => {
+      return new Promise((resolve, reject) => {
+        if (!workerRef.current) {
+          reject(new Error("Worker not initialized"));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const pdfBytes = reader.result as ArrayBuffer;
+          encryptResolveRef.current = resolve;
+          encryptRejectRef.current = reject;
+          setState((s) => ({ ...s, encrypting: true }));
+          const msg: ToWorker = { type: "encrypt", pdfBytes, userPassword, ownerPassword };
+          workerRef.current!.postMessage(msg, [pdfBytes]);
+        };
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsArrayBuffer(file);
+      });
+    },
+    [],
+  );
+
   return useMemo(
-    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages, watermarkPdf }),
-    [state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages, watermarkPdf],
+    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages, watermarkPdf, encryptPdf }),
+    [state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages, watermarkPdf, encryptPdf],
   );
 }
