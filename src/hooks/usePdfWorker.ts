@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { ToWorker, FromWorker } from "../lib/workerProtocol";
 import type { PdfPart } from "../types/pdf";
+import { readFileAsArrayBuffer } from "../lib/fileHelpers";
 
 interface WorkerState {
   ready: boolean;
@@ -145,7 +146,7 @@ export function usePdfWorker() {
           break;
         case "edit-error":
           setState((s) => ({ ...s, editing: false }));
-          editRejectRef.current?.(new Error(msg.message));
+          editRejectRef.current?.(new Error(msg.error));
           editResolveRef.current = null;
           editRejectRef.current = null;
           break;
@@ -243,46 +244,30 @@ export function usePdfWorker() {
   );
 
   const compressPdf = useCallback(
-    (file: File): Promise<ArrayBuffer> => {
+    async (file: File): Promise<ArrayBuffer> => {
+      if (!workerRef.current) throw new Error("Worker not initialized");
+      const pdfBytes = await readFileAsArrayBuffer(file);
       return new Promise((resolve, reject) => {
-        if (!workerRef.current) {
-          reject(new Error("Worker not initialized"));
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const pdfBytes = reader.result as ArrayBuffer;
-          compressResolveRef.current = resolve;
-          compressRejectRef.current = reject;
-          setState((s) => ({ ...s, compressing: true }));
-          const msg: ToWorker = { type: "compress", pdfBytes };
-          workerRef.current!.postMessage(msg, [pdfBytes]);
-        };
-        reader.onerror = () => reject(new Error("Failed to read file"));
-        reader.readAsArrayBuffer(file);
+        compressResolveRef.current = resolve;
+        compressRejectRef.current = reject;
+        setState((s) => ({ ...s, compressing: true }));
+        const msg: ToWorker = { type: "compress", pdfBytes };
+        workerRef.current!.postMessage(msg, [pdfBytes]);
       });
     },
     [],
   );
 
   const rotatePdf = useCallback(
-    (file: File, rotations: number[]): Promise<ArrayBuffer> => {
+    async (file: File, rotations: number[]): Promise<ArrayBuffer> => {
+      if (!workerRef.current) throw new Error("Worker not initialized");
+      const pdfBytes = await readFileAsArrayBuffer(file);
       return new Promise((resolve, reject) => {
-        if (!workerRef.current) {
-          reject(new Error("Worker not initialized"));
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const pdfBytes = reader.result as ArrayBuffer;
-          rotateResolveRef.current = resolve;
-          rotateRejectRef.current = reject;
-          setState((s) => ({ ...s, rotating: true }));
-          const msg: ToWorker = { type: "rotate", pdfBytes, rotations };
-          workerRef.current!.postMessage(msg, [pdfBytes]);
-        };
-        reader.onerror = () => reject(new Error("Failed to read file"));
-        reader.readAsArrayBuffer(file);
+        rotateResolveRef.current = resolve;
+        rotateRejectRef.current = reject;
+        setState((s) => ({ ...s, rotating: true }));
+        const msg: ToWorker = { type: "rotate", pdfBytes, rotations };
+        workerRef.current!.postMessage(msg, [pdfBytes]);
       });
     },
     [],
@@ -306,46 +291,30 @@ export function usePdfWorker() {
   );
 
   const watermarkPdf = useCallback(
-    (file: File, text: string, fontSize: number, opacity: number, angle: number, r: number, g: number, b: number): Promise<ArrayBuffer> => {
+    async (file: File, text: string, fontSize: number, opacity: number, angle: number, r: number, g: number, b: number): Promise<ArrayBuffer> => {
+      if (!workerRef.current) throw new Error("Worker not initialized");
+      const pdfBytes = await readFileAsArrayBuffer(file);
       return new Promise((resolve, reject) => {
-        if (!workerRef.current) {
-          reject(new Error("Worker not initialized"));
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const pdfBytes = reader.result as ArrayBuffer;
-          watermarkResolveRef.current = resolve;
-          watermarkRejectRef.current = reject;
-          setState((s) => ({ ...s, watermarking: true }));
-          const msg: ToWorker = { type: "watermark", pdfBytes, text, fontSize, opacity, angle, r, g, b };
-          workerRef.current!.postMessage(msg, [pdfBytes]);
-        };
-        reader.onerror = () => reject(new Error("Failed to read file"));
-        reader.readAsArrayBuffer(file);
+        watermarkResolveRef.current = resolve;
+        watermarkRejectRef.current = reject;
+        setState((s) => ({ ...s, watermarking: true }));
+        const msg: ToWorker = { type: "watermark", pdfBytes, text, fontSize, opacity, angle, r, g, b };
+        workerRef.current!.postMessage(msg, [pdfBytes]);
       });
     },
     [],
   );
 
   const encryptPdf = useCallback(
-    (file: File, userPassword: string, ownerPassword: string): Promise<ArrayBuffer> => {
+    async (file: File, userPassword: string, ownerPassword: string): Promise<ArrayBuffer> => {
+      if (!workerRef.current) throw new Error("Worker not initialized");
+      const pdfBytes = await readFileAsArrayBuffer(file);
       return new Promise((resolve, reject) => {
-        if (!workerRef.current) {
-          reject(new Error("Worker not initialized"));
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const pdfBytes = reader.result as ArrayBuffer;
-          encryptResolveRef.current = resolve;
-          encryptRejectRef.current = reject;
-          setState((s) => ({ ...s, encrypting: true }));
-          const msg: ToWorker = { type: "encrypt", pdfBytes, userPassword, ownerPassword };
-          workerRef.current!.postMessage(msg, [pdfBytes]);
-        };
-        reader.onerror = () => reject(new Error("Failed to read file"));
-        reader.readAsArrayBuffer(file);
+        encryptResolveRef.current = resolve;
+        encryptRejectRef.current = reject;
+        setState((s) => ({ ...s, encrypting: true }));
+        const msg: ToWorker = { type: "encrypt", pdfBytes, userPassword, ownerPassword };
+        workerRef.current!.postMessage(msg, [pdfBytes]);
       });
     },
     [],

@@ -5,6 +5,7 @@ import { Document, Thumbnail } from "react-pdf";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
+import ErrorAlert from "../components/common/ErrorAlert";
 
 function thumbnailTransform(deg: number): string {
   const norm = ((deg % 360) + 360) % 360;
@@ -96,11 +97,7 @@ export default function RotatePdfPage() {
         Upload a PDF and rotate individual pages or the entire document. All processing happens in your browser.
       </p>
 
-      {worker.initError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          WASM engine failed to load: {worker.initError}
-        </div>
-      )}
+      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       {!file ? (
         <div className="mt-8">
@@ -116,6 +113,7 @@ export default function RotatePdfPage() {
               <button
                 onClick={() => rotateAll(-90)}
                 disabled={numPages === 0}
+                aria-label="Rotate all pages 90° counter-clockwise"
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
               >
                 ↺ All CCW
@@ -123,6 +121,7 @@ export default function RotatePdfPage() {
               <button
                 onClick={() => rotateAll(90)}
                 disabled={numPages === 0}
+                aria-label="Rotate all pages 90° clockwise"
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
               >
                 ↻ All CW
@@ -158,14 +157,7 @@ export default function RotatePdfPage() {
             </div>
           </div>
 
-          {rotateError && (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-              {rotateError}
-              <button onClick={() => setRotateError(null)} className="ml-4 underline">
-                Dismiss
-              </button>
-            </div>
-          )}
+          <ErrorAlert error={rotateError} onDismiss={() => setRotateError(null)} className="mt-4" />
 
           {numPages === 0 ? (
             <div className="mt-8 flex items-center justify-center py-12">
@@ -208,6 +200,7 @@ export default function RotatePdfPage() {
                         onClick={() => rotatePage(i, -90)}
                         className="rounded border border-gray-200 px-2.5 py-1 text-sm hover:bg-gray-50 dark:border-[#333] dark:hover:bg-[#1a1a1a]"
                         title="Rotate counter-clockwise"
+                        aria-label={`Rotate page ${i + 1} 90° counter-clockwise`}
                       >
                         ↺
                       </button>
@@ -215,6 +208,7 @@ export default function RotatePdfPage() {
                         onClick={() => rotatePage(i, 90)}
                         className="rounded border border-gray-200 px-2.5 py-1 text-sm hover:bg-gray-50 dark:border-[#333] dark:hover:bg-[#1a1a1a]"
                         title="Rotate clockwise"
+                        aria-label={`Rotate page ${i + 1} 90° clockwise`}
                       >
                         ↻
                       </button>

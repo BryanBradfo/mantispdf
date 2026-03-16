@@ -6,6 +6,7 @@ import type { MergeFile } from "../hooks/useMergeState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, readFileAsUint8Array, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
+import ErrorAlert from "../components/common/ErrorAlert";
 import MergeFileList from "../components/merge/MergeFileList";
 import MergeActions from "../components/merge/MergeActions";
 import ProgressOverlay from "../components/common/ProgressOverlay";
@@ -92,11 +93,7 @@ export default function MergePdfPage() {
         Upload multiple PDFs, drag to reorder, then merge into a single document.
       </p>
 
-      {worker.initError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          WASM engine failed to load: {worker.initError}
-        </div>
-      )}
+      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       <div className="mt-8">
         <DropZone

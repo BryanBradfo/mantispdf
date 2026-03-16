@@ -4,6 +4,7 @@ import { PageSEO } from "../components/seo/PageSEO";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
+import ErrorAlert from "../components/common/ErrorAlert";
 
 export default function EncryptPdfPage() {
   const worker = usePdfWorker();
@@ -81,11 +82,7 @@ export default function EncryptPdfPage() {
         Set a password to restrict who can open your PDF. Processed entirely in your browser.
       </p>
 
-      {worker.initError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          WASM engine failed to load: {worker.initError}
-        </div>
-      )}
+      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       {!file && (
         <div className="mt-8">
@@ -146,11 +143,7 @@ export default function EncryptPdfPage() {
             </div>
           </div>
 
-          {encryptError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-              {encryptError}
-            </div>
-          )}
+          <ErrorAlert error={encryptError} />
 
           <div className="flex gap-3">
             <button

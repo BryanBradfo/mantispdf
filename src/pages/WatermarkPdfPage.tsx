@@ -5,6 +5,7 @@ import { PageSEO } from "../components/seo/PageSEO";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
+import ErrorAlert from "../components/common/ErrorAlert";
 
 const COLOR_PRESETS = [
   { label: "Gray", r: 0.5, g: 0.5, b: 0.5 },
@@ -97,11 +98,7 @@ export default function WatermarkPdfPage() {
         Stamp text on every page — CONFIDENTIAL, DRAFT, or any label. Processed entirely in your browser.
       </p>
 
-      {worker.initError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          WASM engine failed to load: {worker.initError}
-        </div>
-      )}
+      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       {!file && (
         <div className="mt-8">
@@ -151,11 +148,7 @@ export default function WatermarkPdfPage() {
             </div>
           </div>
 
-          {watermarkError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-              {watermarkError}
-            </div>
-          )}
+          <ErrorAlert error={watermarkError} />
 
           <div className="flex gap-3">
             <button
