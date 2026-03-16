@@ -1,4 +1,4 @@
-# 🦗 MantisPDF - Modify Your PDFs Faster Than Ever
+# 🦗 MantisPDF — Modify Your PDFs Faster Than Ever
 
 <p align="center">
     <picture>
@@ -13,7 +13,18 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="GPL-3.0 License"></a>
 </p>
 
-**Client-side PDF tools powered by WebAssembly. Your files never leave your browser.**
+**Your files never leave your browser. All PDF processing runs locally via Rust-compiled WebAssembly.**
+
+---
+
+## Why MantisPDF?
+
+Most online PDF tools (ilovepdf, smallpdf, etc.) upload your files to their servers. MantisPDF is different:
+
+- **No uploads.** Your PDFs stay on your machine — always.
+- **No server, no tracking.** There's nothing to breach and nothing to log.
+- **Rust performance in the browser.** PDF operations run in a Web Worker via `wasm-pack`-compiled Rust, so the UI stays responsive even on large files.
+- **Open source.** GPL-3.0 — audit it, fork it, self-host it.
 
 ---
 
@@ -21,8 +32,10 @@
 
 - **Split PDF** — Select exactly where to split and download the parts as a ZIP
 - **Merge PDF** — Combine multiple PDFs into one, with drag-and-drop reordering
+- **Edit PDF** — Delete or reorder pages, download result as `_edited.pdf`
+- **Compress PDF** — Reduce PDF file size entirely client-side
+- **Rotate PDF** — Rotate individual pages (90°, 180°, or 270°)
 - **100% client-side** — All processing happens in your browser. No uploads, no server, no tracking
-- **Rust/WASM performance** — PDF manipulation runs in a Web Worker via compiled WebAssembly, keeping the UI responsive
 
 ## Tech Stack
 
@@ -63,34 +76,14 @@ The app opens at `http://localhost:5173`.
 
 ```
 mantispdf/
-├── crates/mantis-wasm/         # Rust WASM crate
-│   ├── src/lib.rs              #   WASM entry point (get_page_count, extract_pages, merge_pdfs)
-│   ├── src/split.rs            #   PDF splitting logic using lopdf
-│   └── src/merge.rs            #   PDF merging logic using lopdf
+├── crates/mantis-wasm/   # Rust crate — PDF ops compiled to WASM via wasm-pack
 ├── src/
-│   ├── pages/                  # Route-level pages
-│   │   ├── HomePage.tsx        #   Landing page with tool grid
-│   │   ├── SplitPdfPage.tsx    #   Split tool orchestrator
-│   │   └── MergePdfPage.tsx    #   Merge tool orchestrator
-│   ├── components/
-│   │   ├── layout/             #   Header, Footer
-│   │   ├── split/              #   DropZone, ThumbnailGrid, SplitActions, ProgressOverlay
-│   │   └── merge/              #   MergeDropZone, FileList, MergeActions
-│   ├── hooks/
-│   │   ├── usePdfWorker.ts     #   Web Worker communication
-│   │   ├── useSplitState.ts    #   Split state management (useReducer)
-│   │   └── useMergeState.ts    #   Merge state management
-│   ├── lib/
-│   │   ├── workerProtocol.ts   #   Main ↔ Worker message types
-│   │   ├── fileHelpers.ts      #   File validation (100 MB max)
-│   │   └── downloadZip.ts      #   ZIP creation and download trigger
-│   ├── workers/
-│   │   └── pdf.worker.ts       #   Web Worker — WASM init + PDF splitting
-│   └── App.tsx                 # Router setup
-├── scripts/
-│   └── build-wasm.sh           # wasm-pack build script
-├── index.html                  # Vite entry point
-├── vite.config.ts              # WASM aliases and plugins
+│   ├── pages/            # Route-level page components (one per tool)
+│   ├── components/       # UI components grouped by tool + shared common/
+│   ├── hooks/            # usePdfWorker, useSplitState, useMergeState, …
+│   ├── workers/          # pdf.worker.ts — WASM init + PDF processing off main thread
+│   └── lib/              # workerProtocol.ts, fileHelpers.ts, downloadZip.ts
+├── vite.config.ts        # WASM plugin config (worker.plugins + optimizeDeps exclude)
 └── package.json
 ```
 
@@ -121,6 +114,29 @@ User marks split points
   │
 downloadZip(parts) → browser saves ZIP
 ```
+
+## Contributing
+
+Contributions are welcome! For ideas or bug reports, open a [Discussion](https://github.com/BryanBradfo/mantispdf/discussions) or [Issue](https://github.com/BryanBradfo/mantispdf/issues).
+
+To contribute code:
+
+```bash
+# Fork the repo, then:
+git clone https://github.com/<your-fork>/mantispdf.git
+cd mantispdf
+npm run build:wasm   # build WASM first
+npm install
+npm run dev          # start dev server at localhost:5173
+```
+
+Run Rust tests with:
+
+```bash
+cd crates/mantis-wasm && cargo test
+```
+
+Then open a PR against `main`. Please keep PRs focused — one feature or fix per PR.
 
 ## License
 
