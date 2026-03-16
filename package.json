@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Client-side PDF tools powered by WebAssembly. Your files never leave your browser.",
   "type": "module",
-  "license": "GPL-3.0-or-later",
+  "license": "MIT",
   "author": "Bryan",
   "keywords": [
     "pdf",
