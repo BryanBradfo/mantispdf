@@ -1,4 +1,4 @@
-# 🦗 MantisPDF - Split, Merge Your PDFs Faster Than Ever
+# 🦗 MantisPDF - Modify Your PDFs Faster Than Ever
 
 <p align="center">
     <picture>
