@@ -29,7 +29,7 @@ export type FromWorker =
   | { type: "rotate-done"; result: ArrayBuffer }
   | { type: "rotate-error"; error: string }
   | { type: "edit-done"; result: ArrayBuffer }
-  | { type: "edit-error"; message: string }
+  | { type: "edit-error"; error: string }
   | { type: "watermark-done"; result: ArrayBuffer }
   | { type: "watermark-error"; error: string }
   | { type: "encrypt-done"; result: ArrayBuffer }

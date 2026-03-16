@@ -6,6 +6,7 @@ import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, readFileAsUint8Array } from "../lib/fileHelpers";
 import { downloadAsZip } from "../lib/downloadZip";
 import DropZone from "../components/common/DropZone";
+import ErrorAlert from "../components/common/ErrorAlert";
 import ThumbnailGrid from "../components/split/ThumbnailGrid";
 import SplitActions from "../components/split/SplitActions";
 import ProgressOverlay from "../components/common/ProgressOverlay";
@@ -101,11 +102,7 @@ export default function SplitPdfPage() {
         Upload a PDF, click the scissors between pages to mark split points, then hit Split.
       </p>
 
-      {worker.initError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          WASM engine failed to load: {worker.initError}
-        </div>
-      )}
+      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       {!state.pdfBytes ? (
         <div className="mt-8">

@@ -4,6 +4,7 @@ import { PageSEO } from "../components/seo/PageSEO";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
+import ErrorAlert from "../components/common/ErrorAlert";
 
 interface CompressionResult {
   originalSize: number;
@@ -72,11 +73,7 @@ export default function CompressPdfPage() {
         Reduce file size by downsampling and re-encoding images, stripping metadata, and compressing streams — no upload required.
       </p>
 
-      {worker.initError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          WASM engine failed to load: {worker.initError}
-        </div>
-      )}
+      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       {!result && !worker.compressing && (
         <div className="mt-8">
@@ -91,17 +88,7 @@ export default function CompressPdfPage() {
         </div>
       )}
 
-      {compressError && (
-        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          {compressError}
-          <button
-            onClick={() => { setCompressError(null); }}
-            className="ml-4 underline"
-          >
-            Try again
-          </button>
-        </div>
-      )}
+      <ErrorAlert error={compressError} onDismiss={() => setCompressError(null)} className="mt-6" />
 
       {result && (
         <div className="mt-8 rounded-xl border border-mantis-200 bg-mantis-50/50 p-6 dark:border-mantis-900 dark:bg-[#0f1a0f]">

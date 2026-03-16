@@ -141,7 +141,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
 
     case "edit-pages": {
       if (!ready) {
-        post({ type: "edit-error", message: "WASM not initialized" });
+        post({ type: "edit-error", error: "WASM not initialized" });
         return;
       }
       try {
@@ -151,7 +151,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
           { transfer: [result.buffer as ArrayBuffer] },
         );
       } catch (err) {
-        post({ type: "edit-error", message: String(err) });
+        post({ type: "edit-error", error: String(err) });
       }
       break;
     }

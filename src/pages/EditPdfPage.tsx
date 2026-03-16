@@ -6,6 +6,7 @@ import { usePdfWorker } from "../hooks/usePdfWorker";
 import { useEditState } from "../hooks/useEditState";
 import { validatePdfFile, readFileAsUint8Array, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
+import ErrorAlert from "../components/common/ErrorAlert";
 import EditThumbnailGrid from "../components/edit/EditThumbnailGrid";
 
 export default function EditPdfPage() {
@@ -98,11 +99,7 @@ export default function EditPdfPage() {
         Delete unwanted pages or reorder them with the arrow buttons. All processing happens in your browser.
       </p>
 
-      {worker.initError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          WASM engine failed to load: {worker.initError}
-        </div>
-      )}
+      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       {!state.file ? (
         <div className="mt-8">
@@ -144,14 +141,7 @@ export default function EditPdfPage() {
             </div>
           </div>
 
-          {editError && (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-              {editError}
-              <button onClick={() => setEditError(null)} className="ml-4 underline">
-                Dismiss
-              </button>
-            </div>
-          )}
+          <ErrorAlert error={editError} onDismiss={() => setEditError(null)} className="mt-4" />
 
           {state.numPages === 0 ? (
             <div className="mt-8 flex items-center justify-center py-12">
