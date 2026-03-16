@@ -8,6 +8,7 @@ import MergePdfPage from "./pages/MergePdfPage";
 import CompressPdfPage from "./pages/CompressPdfPage";
 import RotatePdfPage from "./pages/RotatePdfPage";
 import EditPdfPage from "./pages/EditPdfPage";
+import PdfToImagePage from "./pages/PdfToImagePage";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="/compress" element={<CompressPdfPage />} />
             <Route path="/rotate" element={<RotatePdfPage />} />
             <Route path="/edit" element={<EditPdfPage />} />
+            <Route path="/pdf-to-image" element={<PdfToImagePage />} />
           </Routes>
         </main>
         <Footer />
