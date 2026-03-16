@@ -20,4 +20,9 @@ declare module "mantis-wasm" {
     g: number,
     b: number,
   ): Uint8Array;
+  export function encrypt_pdf(
+    pdf_bytes: Uint8Array,
+    user_password: string,
+    owner_password: string,
+  ): Uint8Array;
 }
