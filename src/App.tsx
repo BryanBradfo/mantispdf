@@ -9,6 +9,7 @@ import CompressPdfPage from "./pages/CompressPdfPage";
 import RotatePdfPage from "./pages/RotatePdfPage";
 import EditPdfPage from "./pages/EditPdfPage";
 import PdfToImagePage from "./pages/PdfToImagePage";
+import WatermarkPdfPage from "./pages/WatermarkPdfPage";
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="/rotate" element={<RotatePdfPage />} />
             <Route path="/edit" element={<EditPdfPage />} />
             <Route path="/pdf-to-image" element={<PdfToImagePage />} />
+            <Route path="/watermark" element={<WatermarkPdfPage />} />
           </Routes>
         </main>
         <Footer />
