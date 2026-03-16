@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://mantispdf.vercel.app"><img src="https://img.shields.io/badge/Live-mantispdf.vercel.app-brightgreen?style=for-the-badge" alt="Live site"></a>
   <a href="https://github.com/BryanBradfo/mantispdf/actions"><img src="https://img.shields.io/github/actions/workflow/status/BryanBradfo/mantispdf/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="GPL-3.0 License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
 **Your files never leave your browser. All PDF processing runs locally via Rust-compiled WebAssembly.**
@@ -24,7 +24,7 @@ Most online PDF tools (ilovepdf, smallpdf, etc.) upload your files to their serv
 - **No uploads.** Your PDFs stay on your machine — always.
 - **No server, no tracking.** There's nothing to breach and nothing to log.
 - **Rust performance in the browser.** PDF operations run in a Web Worker via `wasm-pack`-compiled Rust, so the UI stays responsive even on large files.
-- **Open source.** GPL-3.0 — audit it, fork it, self-host it.
+- **Open source.** MIT — audit it, fork it, self-host it.
 
 ---
 
@@ -140,7 +140,7 @@ Then open a PR against `main`. Please keep PRs focused — one feature or fix pe
 
 ## License
 
-[GPL-3.0](LICENSE)
+[MIT](LICENSE)
 
 ## Star this repo!
 
