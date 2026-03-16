@@ -13,6 +13,9 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
+**MantisPDF** is a free, open-source PDF toolkit that runs entirely in your browser.
+Split, merge, compress, rotate, encrypt, and watermark PDFs using WebAssembly — no uploads, no servers, no tracking.
+
 **Your files never leave your browser. All PDF processing runs locally via Rust-compiled WebAssembly.**
 
 ---
