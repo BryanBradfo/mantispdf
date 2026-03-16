@@ -10,4 +10,14 @@ declare module "mantis-wasm" {
   export function compress_pdf(pdf_bytes: Uint8Array, quality: number): Uint8Array;
   export function rotate_pdf(pdf_bytes: Uint8Array, rotations: Int32Array): Uint8Array;
   export function reorder_pages(pdf_bytes: Uint8Array, new_order: Uint32Array): Uint8Array;
+  export function add_watermark(
+    pdf_bytes: Uint8Array,
+    text: string,
+    font_size: number,
+    opacity: number,
+    angle_deg: number,
+    r: number,
+    g: number,
+    b: number,
+  ): Uint8Array;
 }

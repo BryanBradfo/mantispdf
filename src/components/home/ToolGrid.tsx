@@ -43,6 +43,13 @@ const tools = [
     icon: "🖼️",
     available: true,
   },
+  {
+    title: "Watermark PDF",
+    description: "Stamp text on every page — confidential, draft, or any label.",
+    href: "/watermark",
+    icon: "🔏",
+    available: true,
+  },
 ];
 
 export default function ToolGrid() {

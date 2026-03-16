@@ -8,7 +8,8 @@ export type ToWorker =
   | { type: "count-pages"; pdfBytes: Uint8Array }
   | { type: "compress"; pdfBytes: ArrayBuffer }
   | { type: "rotate"; pdfBytes: ArrayBuffer; rotations: number[] }
-  | { type: "edit-pages"; pdfBytes: Uint8Array; newOrder: number[] };
+  | { type: "edit-pages"; pdfBytes: Uint8Array; newOrder: number[] }
+  | { type: "watermark"; pdfBytes: ArrayBuffer; text: string; fontSize: number; opacity: number; angle: number; r: number; g: number; b: number };
 
 // Worker → Main messages
 export type FromWorker =
@@ -27,4 +28,6 @@ export type FromWorker =
   | { type: "rotate-done"; result: ArrayBuffer }
   | { type: "rotate-error"; error: string }
   | { type: "edit-done"; result: ArrayBuffer }
-  | { type: "edit-error"; message: string };
+  | { type: "edit-error"; message: string }
+  | { type: "watermark-done"; result: ArrayBuffer }
+  | { type: "watermark-error"; error: string };

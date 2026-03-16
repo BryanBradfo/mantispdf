@@ -10,6 +10,7 @@ interface WorkerState {
   compressing: boolean;
   rotating: boolean;
   editing: boolean;
+  watermarking: boolean;
   progress: number;
   progressMessage: string;
 }
@@ -28,6 +29,8 @@ export function usePdfWorker() {
   const rotateRejectRef = useRef<((err: Error) => void) | null>(null);
   const editResolveRef = useRef<((buf: ArrayBuffer) => void) | null>(null);
   const editRejectRef = useRef<((err: Error) => void) | null>(null);
+  const watermarkResolveRef = useRef<((buf: ArrayBuffer) => void) | null>(null);
+  const watermarkRejectRef = useRef<((err: Error) => void) | null>(null);
 
   const [state, setState] = useState<WorkerState>({
     ready: false,
@@ -37,6 +40,7 @@ export function usePdfWorker() {
     compressing: false,
     rotating: false,
     editing: false,
+    watermarking: false,
     progress: 0,
     progressMessage: "",
   });
@@ -140,6 +144,18 @@ export function usePdfWorker() {
           editRejectRef.current?.(new Error(msg.message));
           editResolveRef.current = null;
           editRejectRef.current = null;
+          break;
+        case "watermark-done":
+          setState((s) => ({ ...s, watermarking: false }));
+          watermarkResolveRef.current?.(msg.result);
+          watermarkResolveRef.current = null;
+          watermarkRejectRef.current = null;
+          break;
+        case "watermark-error":
+          setState((s) => ({ ...s, watermarking: false }));
+          watermarkRejectRef.current?.(new Error(msg.error));
+          watermarkResolveRef.current = null;
+          watermarkRejectRef.current = null;
           break;
       }
     };
@@ -273,8 +289,31 @@ export function usePdfWorker() {
     [],
   );
 
+  const watermarkPdf = useCallback(
+    (file: File, text: string, fontSize: number, opacity: number, angle: number, r: number, g: number, b: number): Promise<ArrayBuffer> => {
+      return new Promise((resolve, reject) => {
+        if (!workerRef.current) {
+          reject(new Error("Worker not initialized"));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const pdfBytes = reader.result as ArrayBuffer;
+          watermarkResolveRef.current = resolve;
+          watermarkRejectRef.current = reject;
+          setState((s) => ({ ...s, watermarking: true }));
+          const msg: ToWorker = { type: "watermark", pdfBytes, text, fontSize, opacity, angle, r, g, b };
+          workerRef.current!.postMessage(msg, [pdfBytes]);
+        };
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsArrayBuffer(file);
+      });
+    },
+    [],
+  );
+
   return useMemo(
-    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages }),
-    [state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages],
+    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages, watermarkPdf }),
+    [state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages, watermarkPdf],
   );
 }

@@ -3,10 +3,12 @@ mod edit;
 mod merge;
 mod rotate;
 mod split;
+mod watermark;
 
 pub use compress::compress_pdf;
 pub use edit::reorder_pages;
 pub use rotate::rotate_pdf;
+pub use watermark::add_watermark;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
