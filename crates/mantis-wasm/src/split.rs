@@ -20,6 +20,9 @@ pub fn extract_page_range(pdf_bytes: &[u8], start: u32, end: u32) -> Result<Vec<
 
     let mut doc = doc;
     doc.delete_pages(&pages_to_delete);
+    // delete_pages updates /Kids+/Count but leaves the dropped pages' content,
+    // fonts, and images as orphans. Prune them so the extracted file shrinks.
+    doc.prune_objects();
 
     let mut buf = Vec::new();
     doc.save_to(&mut buf)
@@ -34,6 +37,10 @@ pub fn extract_range_from_doc(doc: &Document, total_pages: u32, start: u32, end:
     let pages_to_delete: Vec<u32> = (1..=total_pages).filter(|p| *p < start || *p > end).collect();
     let mut part = doc.clone();
     part.delete_pages(&pages_to_delete);
+    // Prune orphaned objects from the dropped pages so each extracted range is
+    // lean (this is also the real speed win for the parse-once optimization:
+    // far less to serialize and transfer than the full cloned document).
+    part.prune_objects();
     let mut buf = Vec::new();
     part.save_to(&mut buf).map_err(|e| format!("Failed to save PDF: {e}"))?;
     Ok(buf)
@@ -149,5 +156,45 @@ mod tests {
     fn test_invalid_pdf_bytes() {
         assert!(page_count(b"not a pdf").is_err());
         assert!(extract_page_range(b"not a pdf", 1, 1).is_err());
+    }
+
+    #[test]
+    fn test_extract_prunes_other_pages_content() {
+        // 5 pages, each with its own ~10KB content stream.
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+        let mut page_ids = Vec::new();
+        for i in 0..5u32 {
+            let big = vec![b' '; 10_000]; // distinct, page-unique content
+            let mut stream = Stream::new(dictionary! {}, big);
+            stream.dict.set("PageMarker", Object::Integer(i as i64));
+            let content_id = doc.add_object(stream);
+            let page = dictionary! {
+                "Type" => "Page", "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Contents" => content_id,
+            };
+            page_ids.push(doc.add_object(page));
+        }
+        let kids: Vec<Object> = page_ids.iter().map(|&id| id.into()).collect();
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => 5 }),
+        );
+        let catalog_id = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", catalog_id);
+        let mut full = Vec::new();
+        doc.save_to(&mut full).unwrap();
+
+        let one_page = extract_page_range(&full, 1, 1).unwrap();
+        assert_eq!(page_count(&one_page).unwrap(), 1);
+        // Without pruning the output carries all 5 content streams (~50KB).
+        // With pruning it carries ~1. Assert it dropped at least 3 pages' worth.
+        assert!(
+            one_page.len() < full.len() - 30_000,
+            "pruned 1-page extract ({} bytes) should be far smaller than the 5-page source ({} bytes)",
+            one_page.len(),
+            full.len()
+        );
     }
 }
