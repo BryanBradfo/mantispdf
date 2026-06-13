@@ -21,10 +21,16 @@ fn reorder_inner(pdf_bytes: &[u8], new_order: &[u32]) -> Result<Vec<u8>, String>
     let pages_map: std::collections::BTreeMap<u32, ObjectId> = doc.get_pages();
     let total = pages_map.len() as u32;
 
+    let mut seen = std::collections::HashSet::new();
     for &p in new_order {
         if p < 1 || p > total {
             return Err(format!(
                 "Page {p} is out of range (document has {total} pages)"
+            ));
+        }
+        if !seen.insert(p) {
+            return Err(format!(
+                "Page {p} appears more than once; duplicates are not allowed"
             ));
         }
     }
@@ -48,6 +54,11 @@ fn reorder_inner(pdf_bytes: &[u8], new_order: &[u32]) -> Result<Vec<u8>, String>
 
     pages_dict.set("Kids", Object::Array(new_kids));
     pages_dict.set("Count", Object::Integer(new_count));
+
+    // The mutable borrow of pages_dict ends above; now drop the pages that are
+    // no longer referenced from /Kids (deleted pages) along with their orphaned
+    // content/resource objects.
+    doc.prune_objects();
 
     let mut buf = Vec::new();
     doc.save_to(&mut buf)
@@ -158,5 +169,48 @@ mod tests {
         let pdf = make_test_pdf(5);
         let result = reorder_inner(&pdf, &[2]).unwrap();
         assert_eq!(page_count(&result), 1);
+    }
+
+    #[test]
+    fn test_duplicate_pages_rejected() {
+        let pdf = make_test_pdf(3);
+        // The same page twice is an invalid page tree (one ObjectId in /Kids twice).
+        assert!(reorder_inner(&pdf, &[1, 1]).is_err());
+        assert!(reorder_inner(&pdf, &[2, 1, 2]).is_err());
+    }
+
+    #[test]
+    fn test_dropped_pages_are_pruned() {
+        // 4 pages each with a unique 10KB content stream; keep only page 1.
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+        let mut page_ids = Vec::new();
+        for _ in 0..4u32 {
+            let content_id = doc.add_object(Stream::new(dictionary! {}, vec![b' '; 10_000]));
+            let page = dictionary! {
+                "Type" => "Page", "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Contents" => content_id,
+            };
+            page_ids.push(doc.add_object(page));
+        }
+        let kids: Vec<Object> = page_ids.iter().map(|&id| id.into()).collect();
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => 4 }),
+        );
+        let catalog_id = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", catalog_id);
+        let mut full = Vec::new();
+        doc.save_to(&mut full).unwrap();
+
+        let kept = reorder_inner(&full, &[1]).unwrap();
+        assert_eq!(page_count(&kept), 1);
+        assert!(
+            kept.len() < full.len() - 25_000,
+            "dropped pages' content must be pruned ({} vs {})",
+            kept.len(),
+            full.len()
+        );
     }
 }
