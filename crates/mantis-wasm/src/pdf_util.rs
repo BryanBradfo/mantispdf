@@ -31,8 +31,19 @@ pub fn get_inherited_attr(doc: &Document, page_id: ObjectId, key: &[u8]) -> Opti
 /// `/MediaBox` on every leaf) cannot. Defined at module level (not inside the
 /// `tests` submodule) so other modules' `#[cfg(test)]` code can import it via
 /// `crate::pdf_util::make_inherited_test_pdf`.
+/// Convenience wrapper: an inherited-attribute PDF with US-Letter pages.
 #[cfg(test)]
 pub fn make_inherited_test_pdf(n: u32) -> Vec<u8> {
+    make_inherited_test_pdf_sized(n, 612, 792)
+}
+
+/// Build a PDF whose `n` pages do NOT carry `/MediaBox` or `/Resources` on the
+/// leaf — they inherit both from the intermediate `/Pages` node, which is sized
+/// `width`×`height`. Parameterizing the size lets merge tests give the base and
+/// the appended source *different* page sizes, so a regression test can prove
+/// appended pages keep the source's size (not the base's).
+#[cfg(test)]
+pub fn make_inherited_test_pdf_sized(n: u32, width: i64, height: i64) -> Vec<u8> {
     use lopdf::{content::Content, dictionary, Stream};
 
     let mut doc = Document::with_version("1.5");
@@ -66,7 +77,7 @@ pub fn make_inherited_test_pdf(n: u32) -> Vec<u8> {
         "Type" => "Pages",
         "Kids" => kids,
         "Count" => n,
-        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "MediaBox" => vec![0.into(), 0.into(), width.into(), height.into()],
         "Resources" => shared_resources,
     };
     doc.objects.insert(pages_id, Object::Dictionary(pages));
