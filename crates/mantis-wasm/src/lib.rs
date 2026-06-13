@@ -2,6 +2,7 @@ mod compress;
 mod edit;
 mod encrypt;
 mod merge;
+mod pdf_util;
 mod rotate;
 mod split;
 mod watermark;
