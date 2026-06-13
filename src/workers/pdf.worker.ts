@@ -1,6 +1,6 @@
 import type { ToWorker, FromWorker } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, merge_pdfs, compress_pdf, rotate_pdf, reorder_pages, add_watermark, encrypt_pdf } from "mantis-wasm";
+import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, reorder_pages, add_watermark, encrypt_pdf } from "mantis-wasm";
 
 function post(msg: FromWorker) {
   self.postMessage(msg);
@@ -30,12 +30,14 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       }
 
       try {
-        const { pdfBytes, splitAfterPages } = msg;
-        const totalPages = get_page_count(pdfBytes);
-
-        // Convert split-after-page indices into page ranges
-        // e.g. splitAfterPages=[2,5] with 8 pages → ranges: [1,2], [3,5], [6,8]
+        const pdfBytes = new Uint8Array(msg.pdfBytes);
+        const { splitAfterPages } = msg;
         const sorted = [...splitAfterPages].sort((a, b) => a - b);
+
+        // Parse once — WasmPdf holds the document through the entire extraction loop
+        const pdf = new WasmPdf(pdfBytes);
+        const totalPages = pdf.page_count();
+
         const ranges: [number, number][] = [];
         let start = 1;
         for (const splitAfter of sorted) {
@@ -44,25 +46,24 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         }
         ranges.push([start, totalPages]);
 
-        const parts: { name: string; bytes: Uint8Array }[] = [];
+        post({ type: "split-progress", progress: 0.05, message: `Splitting into ${ranges.length} parts…` });
 
+        const parts: { name: string; bytes: Uint8Array }[] = [];
         for (let i = 0; i < ranges.length; i++) {
           const [rangeStart, rangeEnd] = ranges[i];
-          post({
-            type: "split-progress",
-            progress: i / ranges.length,
-            message: `Extracting part ${i + 1} of ${ranges.length} (pages ${rangeStart}–${rangeEnd})`,
-          });
-
-          const bytes = extract_pages(pdfBytes, rangeStart, rangeEnd);
-          parts.push({
-            name: `pages_${rangeStart}-${rangeEnd}.pdf`,
-            bytes: new Uint8Array(bytes),
-          });
+          // Each call clones only the range pages; clone is freed after extract_range returns
+          const bytes = pdf.extract_range(rangeStart, rangeEnd);
+          parts.push({ name: `pages_${rangeStart}-${rangeEnd}.pdf`, bytes });
+          const progress = 0.05 + 0.85 * (i + 1) / ranges.length;
+          post({ type: "split-progress", progress, message: `Extracting part ${i + 1} of ${ranges.length}…` });
         }
 
-        post({ type: "split-progress", progress: 1, message: "Done" });
-        post({ type: "split-done", parts });
+        // Free the base document now that all ranges are extracted
+        pdf.free();
+
+        post({ type: "split-progress", progress: 1, message: "Preparing download…" });
+        const transferables = parts.map((p) => p.bytes.buffer as ArrayBuffer);
+        self.postMessage({ type: "split-done", parts } satisfies FromWorker, transferables);
       } catch (err) {
         post({ type: "split-error", error: String(err) });
       }

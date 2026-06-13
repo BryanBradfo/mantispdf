@@ -5,6 +5,15 @@ export default {
   darkMode: "class",
   theme: {
     extend: {
+      keyframes: {
+        shimmer: {
+          '0%':   { transform: 'translateX(-200%)' },
+          '100%': { transform: 'translateX(400%)' },
+        },
+      },
+      animation: {
+        shimmer: 'shimmer 1.5s ease-in-out infinite',
+      },
       colors: {
         mantis: {
           50:  "#f2fde0",

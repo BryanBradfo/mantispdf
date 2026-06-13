@@ -27,6 +27,18 @@ pub fn extract_page_range(pdf_bytes: &[u8], start: u32, end: u32) -> Result<Vec<
     Ok(buf)
 }
 
+pub fn extract_range_from_doc(doc: &Document, total_pages: u32, start: u32, end: u32) -> Result<Vec<u8>, String> {
+    if start < 1 || end < start || end > total_pages {
+        return Err(format!("Invalid range {start}–{end} for a {total_pages}-page document"));
+    }
+    let pages_to_delete: Vec<u32> = (1..=total_pages).filter(|p| *p < start || *p > end).collect();
+    let mut part = doc.clone();
+    part.delete_pages(&pages_to_delete);
+    let mut buf = Vec::new();
+    part.save_to(&mut buf).map_err(|e| format!("Failed to save PDF: {e}"))?;
+    Ok(buf)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

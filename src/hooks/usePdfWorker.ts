@@ -184,7 +184,7 @@ export function usePdfWorker() {
   }, []);
 
   const splitPdf = useCallback(
-    (pdfBytes: Uint8Array, splitAfterPages: number[]): Promise<PdfPart[]> => {
+    (pdfBytes: ArrayBuffer, splitAfterPages: number[]): Promise<PdfPart[]> => {
       return new Promise((resolve, reject) => {
         if (!workerRef.current) {
           reject(new Error("Worker not initialized"));
@@ -199,7 +199,7 @@ export function usePdfWorker() {
           progressMessage: "Starting…",
         }));
         const msg: ToWorker = { type: "split", pdfBytes, splitAfterPages };
-        workerRef.current.postMessage(msg);
+        workerRef.current.postMessage(msg, [pdfBytes]);
       });
     },
     [],

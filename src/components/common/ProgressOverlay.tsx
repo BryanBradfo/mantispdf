@@ -21,15 +21,19 @@ export default function ProgressOverlay({ progress, message, error, onDismissErr
           </>
         ) : (
           <>
-            <p className="mb-3 text-sm font-medium text-gray-700 dark:text-[#aaa]">{message}</p>
+            <p className={`mb-3 text-sm font-medium text-gray-700 dark:text-[#aaa]${progress < 0.1 ? " animate-pulse" : ""}`}>{message}</p>
             <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-[#222]">
-              <div
-                className="h-full rounded-full bg-mantis-500 transition-all duration-300"
-                style={{ width: `${Math.round(progress * 100)}%` }}
-              />
+              {progress < 0.1 ? (
+                <div className="h-full w-1/2 rounded-full bg-mantis-500 animate-shimmer" />
+              ) : (
+                <div
+                  className="h-full rounded-full bg-mantis-500 transition-all duration-300"
+                  style={{ width: `${Math.round(progress * 100)}%` }}
+                />
+              )}
             </div>
             <p className="mt-2 text-right text-xs text-gray-400 dark:text-[#555]">
-              {Math.round(progress * 100)}%
+              {progress < 0.1 ? "Working…" : `${Math.round(progress * 100)}%`}
             </p>
           </>
         )}

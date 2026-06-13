@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Thumbnail } from "react-pdf";
 
 interface PageThumbnailProps {
@@ -7,22 +7,45 @@ interface PageThumbnailProps {
 
 export default function PageThumbnail({ pageNumber }: PageThumbnailProps) {
   const [loaded, setLoaded] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect(); // one-shot: once visible, stop observing
+        }
+      },
+      { rootMargin: "400px" }, // pre-load one viewport ahead
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#222] dark:bg-[#141414]">
         <div className="relative aspect-[8.5/11] w-full bg-gray-100 dark:bg-[#1a1a1a]">
-          <Thumbnail
-            pageNumber={pageNumber}
-            width={200}
-            onRenderSuccess={() => setLoaded(true)}
-            className="h-full w-full object-contain"
-          />
-          {!loaded && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
-            </div>
-          )}
+          {isVisible ? (
+            <>
+              <Thumbnail
+                pageNumber={pageNumber}
+                width={280}
+                onRenderSuccess={() => setLoaded(true)}
+                className="h-full w-full object-contain"
+              />
+              {!loaded && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
+                </div>
+              )}
+            </>
+          ) : null}
+          {/* aspect-[8.5/11] on the parent div holds the correct height even when empty */}
         </div>
         <div className="border-t border-gray-100 px-2 py-1 text-center text-xs text-gray-500 dark:border-[#222] dark:text-[#555]">
           Page {pageNumber}

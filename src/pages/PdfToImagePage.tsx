@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import JSZip from "jszip";
+import { downloadBlobsAsZip } from "../lib/downloadZip";
 import { PageSEO } from "../components/seo/PageSEO";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
@@ -42,11 +42,8 @@ export default function PdfToImagePage() {
         const bytes = new Uint8Array(await parts[0].blob.arrayBuffer());
         downloadBlob(bytes, parts[0].name);
       } else {
-        const zip = new JSZip();
-        parts.forEach((p) => zip.file(p.name, p.blob));
         const baseName = file.name.replace(/\.pdf$/i, "");
-        const zipBytes = new Uint8Array(await zip.generateAsync({ type: "arraybuffer" }));
-        downloadBlob(zipBytes, `${baseName}_images.zip`);
+        await downloadBlobsAsZip(parts, `${baseName}_images.zip`);
       }
 
       setDownloaded(true);

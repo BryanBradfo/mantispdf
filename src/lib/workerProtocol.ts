@@ -3,7 +3,7 @@ import type { PdfPart } from "../types/pdf";
 // Main → Worker messages
 export type ToWorker =
   | { type: "init" }
-  | { type: "split"; pdfBytes: Uint8Array; splitAfterPages: number[] }
+  | { type: "split"; pdfBytes: ArrayBuffer; splitAfterPages: number[] }
   | { type: "merge"; pdfBuffers: Uint8Array[] }
   | { type: "count-pages"; pdfBytes: Uint8Array }
   | { type: "compress"; pdfBytes: ArrayBuffer }
