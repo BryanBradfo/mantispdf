@@ -1,3 +1,4 @@
+use crate::pdf_util::get_inherited_attr;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 use std::f64::consts::PI;
 use wasm_bindgen::prelude::*;
@@ -13,8 +14,22 @@ pub fn add_watermark(
     g: f32,
     b: f32,
 ) -> Result<Vec<u8>, JsValue> {
-    let mut doc = Document::load_mem(pdf_bytes)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    add_watermark_impl(pdf_bytes, text, font_size, opacity, angle_deg, r, g, b)
+        .map_err(|e| JsValue::from_str(&e))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_watermark_impl(
+    pdf_bytes: &[u8],
+    text: &str,
+    font_size: u32,
+    opacity: f32,
+    angle_deg: i32,
+    r: f32,
+    g: f32,
+    b: f32,
+) -> Result<Vec<u8>, String> {
+    let mut doc = Document::load_mem(pdf_bytes).map_err(|e| e.to_string())?;
 
     let page_ids: Vec<ObjectId> = doc.get_pages().values().copied().collect();
 
@@ -45,17 +60,14 @@ pub fn add_watermark(
     }
 
     let mut buf = Vec::new();
-    doc.save_to(&mut buf)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    doc.save_to(&mut buf).map_err(|e| e.to_string())?;
     Ok(buf)
 }
 
 fn page_rotation(doc: &Document, page_id: ObjectId) -> i32 {
-    match doc.objects.get(&page_id) {
-        Some(Object::Dictionary(d)) => match d.get(b"Rotate") {
-            Ok(Object::Integer(r)) => ((*r % 360 + 360) % 360) as i32,
-            _ => 0,
-        },
+    // /Rotate is inheritable from an intermediate /Pages node.
+    match get_inherited_attr(doc, page_id, b"Rotate") {
+        Some(Object::Integer(r)) => ((r % 360 + 360) % 360) as i32,
         _ => 0,
     }
 }
@@ -69,10 +81,9 @@ fn obj_num(o: &Object) -> f64 {
 }
 
 fn page_size(doc: &Document, page_id: ObjectId) -> (f64, f64) {
-    let Some(Object::Dictionary(d)) = doc.objects.get(&page_id) else {
-        return (612.0, 792.0);
-    };
-    let Ok(Object::Array(a)) = d.get(b"MediaBox") else {
+    // /MediaBox is inheritable from an intermediate /Pages node; resolve it
+    // rather than reading the leaf only (else inherited pages get the default).
+    let Some(Object::Array(a)) = get_inherited_attr(doc, page_id, b"MediaBox") else {
         return (612.0, 792.0);
     };
     if a.len() < 4 {
@@ -171,13 +182,31 @@ fn patch_resources(doc: &mut Document, page_id: ObjectId, font_id: ObjectId, gs_
         inject_wm_res(&mut res, font_id, gs_id);
         doc.objects.insert(res_id, Object::Dictionary(res));
     } else {
-        // Resources is inline in page dict (or absent) — clone, update, rewrite
-        let mut res = match doc.objects.get(&page_id) {
-            Some(Object::Dictionary(d)) => match d.get(b"Resources") {
-                Ok(Object::Dictionary(r)) => r.clone(),
+        // Resources is inline on the leaf, inherited from /Pages, or absent.
+        // Seed from the inherited Resources (if any) so the page's existing
+        // fonts/xobjects survive being written inline — otherwise a fresh empty
+        // dict would shadow the inherited one and the original content loses its
+        // resources. Then inject ours and write it inline on the leaf.
+        let has_inline = matches!(
+            doc.objects.get(&page_id),
+            Some(Object::Dictionary(d)) if matches!(d.get(b"Resources"), Ok(Object::Dictionary(_)))
+        );
+        let mut res = if has_inline {
+            match doc.objects.get(&page_id) {
+                Some(Object::Dictionary(d)) => match d.get(b"Resources") {
+                    Ok(Object::Dictionary(r)) => r.clone(),
+                    _ => Dictionary::new(),
+                },
+                _ => return,
+            }
+        } else {
+            match get_inherited_attr(doc, page_id, b"Resources") {
+                Some(Object::Dictionary(r)) => r,
+                Some(Object::Reference(rid)) => {
+                    doc.get_dictionary(rid).ok().cloned().unwrap_or_else(Dictionary::new)
+                }
                 _ => Dictionary::new(),
-            },
-            _ => return,
+            }
         };
         inject_wm_res(&mut res, font_id, gs_id);
         if let Some(Object::Dictionary(d)) = doc.objects.get_mut(&page_id) {
@@ -200,4 +229,56 @@ fn inject_wm_res(res: &mut Dictionary, font_id: ObjectId, gs_id: ObjectId) {
     };
     gs_dict.set("WMgs", Object::Reference(gs_id));
     res.set("ExtGState", Object::Dictionary(gs_dict));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pdf_util::make_inherited_test_pdf_sized;
+
+    #[test]
+    fn test_page_size_resolves_inherited_mediabox() {
+        // Pages inherit MediaBox from /Pages; page_size must resolve it, not
+        // fall back to the 612x792 default.
+        let pdf = make_inherited_test_pdf_sized(1, 842, 1190);
+        let doc = Document::load_mem(&pdf).unwrap();
+        let pid = *doc.get_pages().get(&1).unwrap();
+        let (w, h) = page_size(&doc, pid);
+        assert_eq!((w, h), (842.0, 1190.0));
+    }
+
+    #[test]
+    fn test_watermark_preserves_inherited_resources() {
+        // The fixture's pages inherit /Resources (with font /F1) from /Pages.
+        // After watermarking, each page must carry an inline /Resources whose
+        // /Font dict contains BOTH the original /F1 and the watermark /WMfont.
+        let pdf = make_inherited_test_pdf_sized(2, 612, 792);
+        let out = add_watermark_impl(&pdf, "CONFIDENTIAL", 48, 0.3, 45, 0.5, 0.5, 0.5)
+            .expect("watermark should succeed on an inheritance-based PDF");
+        let doc = Document::load_mem(&out).unwrap();
+        assert_eq!(doc.get_pages().len(), 2);
+        for (_, page_id) in doc.get_pages() {
+            let page = doc.get_dictionary(page_id).unwrap();
+            let res = page
+                .get(b"Resources")
+                .expect("watermarked page must carry an inline Resources dict");
+            let res = match res {
+                Object::Dictionary(d) => d.clone(),
+                Object::Reference(id) => doc.get_dictionary(*id).unwrap().clone(),
+                _ => panic!("Resources must be a dict or reference"),
+            };
+            let fonts = res
+                .get(b"Font")
+                .and_then(Object::as_dict)
+                .expect("Resources must have a /Font dict");
+            assert!(
+                fonts.get(b"WMfont").is_ok(),
+                "watermark font /WMfont must be registered"
+            );
+            assert!(
+                fonts.get(b"F1").is_ok(),
+                "inherited original font /F1 must be preserved, not shadowed"
+            );
+        }
+    }
 }
