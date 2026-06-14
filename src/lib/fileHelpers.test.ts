@@ -24,4 +24,20 @@ describe("readFileAsArrayBuffer / readFileAsUint8Array", () => {
     const u8 = await readFileAsUint8Array(file);
     expect(u8).toEqual(bytes);
   });
+
+  it("rejects (does not hang) when the read errors", async () => {
+    // A FileReader whose read fails should reject the promise rather than leave
+    // it pending forever.
+    const file = new File([new Uint8Array([1])], "doc.pdf", { type: "application/pdf" });
+    const originalReadAsArrayBuffer = FileReader.prototype.readAsArrayBuffer;
+    FileReader.prototype.readAsArrayBuffer = function () {
+      // Simulate an async error.
+      setTimeout(() => this.onerror?.(new ProgressEvent("error")), 0);
+    };
+    try {
+      await expect(readFileAsArrayBuffer(file)).rejects.toThrow(/Failed to read file/);
+    } finally {
+      FileReader.prototype.readAsArrayBuffer = originalReadAsArrayBuffer;
+    }
+  });
 });

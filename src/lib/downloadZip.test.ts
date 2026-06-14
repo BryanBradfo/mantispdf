@@ -1,6 +1,32 @@
 import { describe, it, expect } from "vitest";
 import { unzipSync, strFromU8 } from "fflate";
-import { buildZip } from "./downloadZip";
+import { buildZip, sanitizeZipNames } from "./downloadZip";
+
+describe("sanitizeZipNames", () => {
+  it("preserves legal names including spaces and hyphens", () => {
+    expect(sanitizeZipNames(["pages_1-2.pdf", "my report.pdf"])).toEqual([
+      "pages_1-2.pdf",
+      "my report.pdf",
+    ]);
+  });
+
+  it("strips path separators and Windows-illegal characters", () => {
+    expect(sanitizeZipNames(["a/b:c*?.pdf"])).toEqual(["a_b_c__.pdf"]);
+  });
+
+  it("disambiguates duplicate names before the extension", () => {
+    expect(sanitizeZipNames(["doc.pdf", "doc.pdf", "doc.pdf"])).toEqual([
+      "doc.pdf",
+      "doc (1).pdf",
+      "doc (2).pdf",
+    ]);
+  });
+
+  it("dedupes case-insensitively and after sanitization", () => {
+    // "a/b.pdf" and "a:b.pdf" both sanitize to "a_b.pdf" → must not collide.
+    expect(sanitizeZipNames(["a/b.pdf", "a:b.pdf"])).toEqual(["a_b.pdf", "a_b (1).pdf"]);
+  });
+});
 
 describe("buildZip", () => {
   it("produces a valid zip whose entries round-trip", async () => {
