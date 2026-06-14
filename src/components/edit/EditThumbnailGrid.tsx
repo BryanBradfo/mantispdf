@@ -19,7 +19,7 @@ export default function EditThumbnailGrid({ blobUrl, state, dispatch }: Props) {
         {pageOrder.map((originalPage, index) => {
           const isDeleted = deletedPages.has(originalPage);
           return (
-            <div key={`${originalPage}-${index}`} className="flex flex-col items-center gap-2">
+            <div key={originalPage} className="flex flex-col items-center gap-2">
               <div className="relative w-full">
                 <div
                   className={`overflow-hidden rounded-lg border shadow-sm transition-all ${

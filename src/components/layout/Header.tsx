@@ -34,7 +34,13 @@ export default function Header() {
   useEffect(() => {
     fetch("https://api.github.com/repos/BryanBradfo/mantispdf")
       .then((r) => r.json())
-      .then((data) => setStars(formatStars(data.stargazers_count)))
+      .then((data) => {
+        // On rate-limit (HTTP 403) the body has no stargazers_count; guard it so
+        // we never render the literal string "undefined".
+        if (typeof data?.stargazers_count === "number") {
+          setStars(formatStars(data.stargazers_count));
+        }
+      })
       .catch(() => {});
   }, []);
 

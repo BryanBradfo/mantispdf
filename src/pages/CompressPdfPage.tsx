@@ -108,9 +108,11 @@ export default function CompressPdfPage() {
             </div>
             <div className="rounded-lg bg-mantis-100 px-3 py-2 text-center dark:bg-mantis-900/40">
               <p className="text-2xl font-bold text-mantis-700 dark:text-mantis-400">
-                {savings > 0 ? `-${savings}%` : "~0%"}
+                {savings > 0 ? `-${savings}%` : savings < 0 ? `+${-savings}%` : "~0%"}
               </p>
-              <p className="text-xs text-mantis-600 dark:text-mantis-500">smaller</p>
+              <p className="text-xs text-mantis-600 dark:text-mantis-500">
+                {savings > 0 ? "smaller" : savings < 0 ? "larger" : "no change"}
+              </p>
             </div>
           </div>
 
