@@ -45,3 +45,9 @@ firebase-debug.log
 # Test artifacts
 *.zip
 .vercel
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
