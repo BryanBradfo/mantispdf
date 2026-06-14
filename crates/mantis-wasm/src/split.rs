@@ -158,6 +158,66 @@ mod tests {
         assert!(extract_page_range(b"not a pdf", 1, 1).is_err());
     }
 
+    /// Benchmark: parse-once (WasmPdf path) vs re-parse-per-range (old path),
+    /// both with pruning. Ignored by default — run with:
+    ///   cargo test --release -- --ignored --nocapture bench_split_strategies
+    #[test]
+    #[ignore]
+    fn bench_split_strategies() {
+        use std::time::Instant;
+
+        // A 100-page document; each page carries a ~5KB content stream so parsing
+        // and cloning both have real work to do.
+        const PAGES: u32 = 100;
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+        let mut page_ids = Vec::new();
+        for _ in 0..PAGES {
+            let content_id = doc.add_object(Stream::new(dictionary! {}, vec![b'x'; 5_000]));
+            let page = dictionary! {
+                "Type" => "Page", "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Contents" => content_id,
+            };
+            page_ids.push(doc.add_object(page));
+        }
+        let kids: Vec<Object> = page_ids.iter().map(|&id| id.into()).collect();
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => PAGES as i64 }),
+        );
+        let catalog_id = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", catalog_id);
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).unwrap();
+
+        // Strategy A: re-parse the bytes for every single-page extract.
+        let t0 = Instant::now();
+        let mut total_a = 0usize;
+        for p in 1..=PAGES {
+            total_a += extract_page_range(&bytes, p, p).unwrap().len();
+        }
+        let dur_a = t0.elapsed();
+
+        // Strategy B: parse once, clone+prune per range.
+        let t1 = Instant::now();
+        let parsed = Document::load_mem(&bytes).unwrap();
+        let total_pages = parsed.get_pages().len() as u32;
+        let mut total_b = 0usize;
+        for p in 1..=PAGES {
+            total_b += extract_range_from_doc(&parsed, total_pages, p, p).unwrap().len();
+        }
+        let dur_b = t1.elapsed();
+
+        println!("split bench over {PAGES} single-page extracts ({} KB source):", bytes.len() / 1024);
+        println!("  A re-parse-per-range : {dur_a:?}  (total {} KB out)", total_a / 1024);
+        println!("  B parse-once+clone   : {dur_b:?}  (total {} KB out)", total_b / 1024);
+        let ratio = dur_a.as_secs_f64() / dur_b.as_secs_f64();
+        println!("  speedup (A/B)        : {ratio:.2}x");
+        // Sanity: both strategies must produce identical-size single-page output.
+        assert_eq!(total_a, total_b, "both strategies must produce equal output");
+    }
+
     #[test]
     fn test_extract_prunes_other_pages_content() {
         // 5 pages, each with its own ~10KB content stream.
