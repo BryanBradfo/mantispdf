@@ -1,7 +1,12 @@
 use lopdf::{
     Document,
-    encryption::{EncryptionVersion, EncryptionState, Permissions},
+    encryption::{
+        EncryptionVersion, EncryptionState, Permissions,
+        crypt_filters::{Aes256CryptFilter, CryptFilter},
+    },
 };
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -22,11 +27,21 @@ fn encrypt_pdf_impl(
     let mut doc = Document::load_mem(pdf_bytes)
         .map_err(|e| e.to_string())?;
 
-    let version = EncryptionVersion::V2 {
-        document: &doc,
+    // AES-256 (PDF 2.0 security handler V5/R6) instead of the legacy, broken
+    // RC4. Generate a random 32-byte file encryption key.
+    let mut file_encryption_key = [0u8; 32];
+    getrandom::fill(&mut file_encryption_key)
+        .map_err(|e| format!("Failed to generate encryption key: {e}"))?;
+
+    let crypt_filter: Arc<dyn CryptFilter> = Arc::new(Aes256CryptFilter);
+    let version = EncryptionVersion::V5 {
+        encrypt_metadata: true,
+        crypt_filters: BTreeMap::from([(b"StdCF".to_vec(), crypt_filter)]),
+        file_encryption_key: &file_encryption_key,
+        stream_filter: b"StdCF".to_vec(),
+        string_filter: b"StdCF".to_vec(),
         owner_password,
         user_password,
-        key_length: 128,
         permissions: Permissions::all(),
     };
     let state = EncryptionState::try_from(version)
@@ -97,11 +112,20 @@ mod tests {
     fn test_encrypt_round_trip() {
         let pdf = make_test_pdf(2);
         let result = encrypt_pdf_impl(&pdf, "password", "owner").unwrap();
-        // Output should be a non-empty byte sequence
-        assert!(!result.is_empty());
-        // The encrypted PDF is larger than or similar in size to the original
-        // (encryption adds metadata)
-        assert!(result.len() > 0);
+        // The output must actually decrypt with the user password and recover
+        // the original content (page count). This is what proves the encryption
+        // is correct, not merely that bytes were produced.
+        let reopened = Document::load_mem_with_password(&result, "password")
+            .expect("encrypted PDF must open with the correct user password");
+        assert_eq!(reopened.get_pages().len(), 2);
+    }
+
+    #[test]
+    fn test_encrypt_wrong_password_rejected() {
+        let pdf = make_test_pdf(1);
+        let result = encrypt_pdf_impl(&pdf, "secret", "owner").unwrap();
+        // A wrong password (neither user nor owner) must fail to open.
+        assert!(Document::load_mem_with_password(&result, "definitely-wrong").is_err());
     }
 
     #[test]
