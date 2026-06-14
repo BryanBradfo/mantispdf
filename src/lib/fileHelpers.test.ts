@@ -30,9 +30,10 @@ describe("readFileAsArrayBuffer / readFileAsUint8Array", () => {
     // it pending forever.
     const file = new File([new Uint8Array([1])], "doc.pdf", { type: "application/pdf" });
     const originalReadAsArrayBuffer = FileReader.prototype.readAsArrayBuffer;
-    FileReader.prototype.readAsArrayBuffer = function () {
+    FileReader.prototype.readAsArrayBuffer = function (this: FileReader) {
       // Simulate an async error.
-      setTimeout(() => this.onerror?.(new ProgressEvent("error")), 0);
+      const ev = new ProgressEvent("error") as unknown as ProgressEvent<FileReader>;
+      setTimeout(() => this.onerror?.(ev), 0);
     };
     try {
       await expect(readFileAsArrayBuffer(file)).rejects.toThrow(/Failed to read file/);
