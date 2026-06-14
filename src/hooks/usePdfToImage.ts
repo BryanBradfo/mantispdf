@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { pdfjs } from "react-pdf";
+import { pdfjs } from "../lib/pdf";
 
 export type ImageFormat = "png" | "jpeg";
 export type RenderScale = 1 | 2 | 3 | 4 | 5;

@@ -1,4 +1,4 @@
-import { Document, Thumbnail } from "react-pdf";
+import { Document, Thumbnail } from "../../lib/pdf";
 import type { EditState } from "../../hooks/useEditState";
 
 interface Props {

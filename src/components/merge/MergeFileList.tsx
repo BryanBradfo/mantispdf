@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import React from "react";
-import { Document, Thumbnail } from "react-pdf";
+import { Document, Thumbnail } from "../../lib/pdf";
 import type { MergeFile } from "../../hooks/useMergeState";
 import {
   DndContext,

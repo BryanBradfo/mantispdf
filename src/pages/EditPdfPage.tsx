@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Document } from "react-pdf";
+import { Document } from "../lib/pdf";
 import { PageSEO } from "../components/seo/PageSEO";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { useEditState } from "../hooks/useEditState";

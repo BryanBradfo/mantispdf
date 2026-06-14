@@ -10,7 +10,7 @@ import ErrorAlert from "../components/common/ErrorAlert";
 import ThumbnailGrid from "../components/split/ThumbnailGrid";
 import SplitActions from "../components/split/SplitActions";
 import ProgressOverlay from "../components/common/ProgressOverlay";
-import { Document } from "react-pdf";
+import { Document } from "../lib/pdf";
 
 export default function SplitPdfPage() {
   const [state, dispatch] = useSplitState();

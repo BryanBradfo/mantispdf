@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Thumbnail } from "react-pdf";
+import { Thumbnail } from "../../lib/pdf";
 
 interface PageThumbnailProps {
   pageNumber: number;

@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { Document } from "react-pdf";
+import { Document } from "../../lib/pdf";
 import PageThumbnail from "./PageThumbnail";
 
 interface ThumbnailGridProps {
