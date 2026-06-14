@@ -1,40 +1,47 @@
-import type { ToWorker, FromWorker } from "../lib/workerProtocol";
+import type { ToWorker, FromWorker, ReqId, SuccessPayload } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
 import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, reorder_pages, add_watermark, encrypt_pdf } from "mantis-wasm";
 
-function post(msg: FromWorker) {
-  self.postMessage(msg);
+let ready = false;
+
+function postProgress(id: ReqId, progress: number, message: string) {
+  self.postMessage({ type: "progress", id, progress, message } satisfies FromWorker);
 }
 
-let ready = false;
+function postSuccess(id: ReqId, payload: SuccessPayload, transfer: Transferable[] = []) {
+  self.postMessage({ type: "success", id, payload } satisfies FromWorker, { transfer });
+}
+
+function postFailure(id: ReqId, error: unknown) {
+  self.postMessage({ type: "failure", id, error: String(error) } satisfies FromWorker);
+}
 
 self.onmessage = async (e: MessageEvent<ToWorker>) => {
   const msg = e.data;
 
-  switch (msg.type) {
-    case "init": {
-      try {
-        await init();
-        ready = true;
-        post({ type: "init-done" });
-      } catch (err) {
-        post({ type: "init-error", error: String(err) });
-      }
-      break;
+  if (msg.type === "init") {
+    try {
+      await init();
+      ready = true;
+      self.postMessage({ type: "init-done" } satisfies FromWorker);
+    } catch (err) {
+      self.postMessage({ type: "init-error", error: String(err) } satisfies FromWorker);
     }
+    return;
+  }
 
-    case "split": {
-      if (!ready) {
-        post({ type: "split-error", error: "WASM not initialized" });
-        return;
-      }
+  if (!ready) {
+    postFailure(msg.id, "WASM engine not initialized");
+    return;
+  }
 
-      try {
+  try {
+    switch (msg.type) {
+      case "split": {
         const pdfBytes = new Uint8Array(msg.pdfBytes);
-        const { splitAfterPages } = msg;
-        const sorted = [...splitAfterPages].sort((a, b) => a - b);
+        const sorted = [...msg.splitAfterPages].sort((a, b) => a - b);
 
-        // Parse once — WasmPdf holds the document through the entire extraction loop
+        // Parse once — WasmPdf holds the document through the whole loop.
         const pdf = new WasmPdf(pdfBytes);
         const totalPages = pdf.page_count();
 
@@ -46,145 +53,68 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         }
         ranges.push([start, totalPages]);
 
-        post({ type: "split-progress", progress: 0.05, message: `Splitting into ${ranges.length} parts…` });
+        postProgress(msg.id, 0.05, `Splitting into ${ranges.length} parts…`);
 
         const parts: { name: string; bytes: Uint8Array }[] = [];
         for (let i = 0; i < ranges.length; i++) {
           const [rangeStart, rangeEnd] = ranges[i];
-          // Each call clones only the range pages; clone is freed after extract_range returns
           const bytes = pdf.extract_range(rangeStart, rangeEnd);
           parts.push({ name: `pages_${rangeStart}-${rangeEnd}.pdf`, bytes });
-          const progress = 0.05 + 0.85 * (i + 1) / ranges.length;
-          post({ type: "split-progress", progress, message: `Extracting part ${i + 1} of ${ranges.length}…` });
+          postProgress(msg.id, 0.05 + (0.85 * (i + 1)) / ranges.length, `Extracting part ${i + 1} of ${ranges.length}…`);
         }
-
-        // Free the base document now that all ranges are extracted
         pdf.free();
 
-        post({ type: "split-progress", progress: 1, message: "Preparing download…" });
-        const transferables = parts.map((p) => p.bytes.buffer as ArrayBuffer);
-        self.postMessage({ type: "split-done", parts } satisfies FromWorker, { transfer: transferables });
-      } catch (err) {
-        post({ type: "split-error", error: String(err) });
-      }
-      break;
-    }
-
-    case "merge": {
-      if (!ready) {
-        post({ type: "merge-error", error: "WASM not initialized" });
-        return;
+        postProgress(msg.id, 1, "Preparing download…");
+        const transfer = parts.map((p) => p.bytes.buffer as ArrayBuffer);
+        postSuccess(msg.id, { kind: "split", parts }, transfer);
+        break;
       }
 
-      try {
-        const { pdfBuffers } = msg;
-        post({
-          type: "merge-progress",
-          progress: 0.2,
-          message: `Merging ${pdfBuffers.length} documents…`,
-        });
-
-        const merged = merge_pdfs(pdfBuffers);
-
-        post({ type: "merge-progress", progress: 1, message: "Done" });
-        post({ type: "merge-done", bytes: new Uint8Array(merged) });
-      } catch (err) {
-        post({ type: "merge-error", error: String(err) });
+      case "merge": {
+        postProgress(msg.id, 0.2, `Merging ${msg.pdfBuffers.length} documents…`);
+        const merged = merge_pdfs(msg.pdfBuffers);
+        postProgress(msg.id, 1, "Done");
+        postSuccess(msg.id, { kind: "merge", bytes: new Uint8Array(merged) });
+        break;
       }
-      break;
-    }
 
-    case "count-pages": {
-      if (!ready) {
-        post({ type: "count-error", error: "WASM not initialized" });
-        return;
-      }
-      try {
+      case "count-pages": {
         const count = get_page_count(msg.pdfBytes);
-        post({ type: "count-done", count });
-      } catch (err) {
-        post({ type: "count-error", error: String(err) });
+        postSuccess(msg.id, { kind: "count", count });
+        break;
       }
-      break;
-    }
 
-    case "compress": {
-      if (!ready) {
-        post({ type: "compress-error", error: "WASM not initialized" });
-        return;
-      }
-      try {
+      case "compress": {
         const result = compress_pdf(new Uint8Array(msg.pdfBytes), 40);
-        self.postMessage({ type: "compress-done", result: result.buffer } satisfies FromWorker, { transfer: [result.buffer as ArrayBuffer] });
-      } catch (err) {
-        post({ type: "compress-error", error: String(err) });
+        postSuccess(msg.id, { kind: "buffer", result: result.buffer }, [result.buffer as ArrayBuffer]);
+        break;
       }
-      break;
-    }
 
-    case "rotate": {
-      if (!ready) {
-        post({ type: "rotate-error", error: "WASM not initialized" });
-        return;
+      case "rotate": {
+        const result = rotate_pdf(new Uint8Array(msg.pdfBytes), new Int32Array(msg.rotations));
+        postSuccess(msg.id, { kind: "buffer", result: result.buffer }, [result.buffer as ArrayBuffer]);
+        break;
       }
-      try {
-        const bytes = new Uint8Array(msg.pdfBytes);
-        const result = rotate_pdf(bytes, new Int32Array(msg.rotations));
-        self.postMessage(
-          { type: "rotate-done", result: result.buffer } satisfies FromWorker,
-          { transfer: [result.buffer as ArrayBuffer] },
-        );
-      } catch (err) {
-        post({ type: "rotate-error", error: String(err) });
-      }
-      return;
-    }
 
-    case "edit-pages": {
-      if (!ready) {
-        post({ type: "edit-error", error: "WASM not initialized" });
-        return;
-      }
-      try {
+      case "edit-pages": {
         const result = reorder_pages(msg.pdfBytes, Uint32Array.from(msg.newOrder));
-        self.postMessage(
-          { type: "edit-done", result: result.buffer } satisfies FromWorker,
-          { transfer: [result.buffer as ArrayBuffer] },
-        );
-      } catch (err) {
-        post({ type: "edit-error", error: String(err) });
+        postSuccess(msg.id, { kind: "buffer", result: result.buffer }, [result.buffer as ArrayBuffer]);
+        break;
       }
-      break;
-    }
 
-    case "watermark": {
-      if (!ready) { post({ type: "watermark-error", error: "WASM not ready" }); break; }
-      try {
-        const bytes = new Uint8Array(msg.pdfBytes);
-        const result = add_watermark(bytes, msg.text, msg.fontSize, msg.opacity, msg.angle, msg.r, msg.g, msg.b);
-        self.postMessage(
-          { type: "watermark-done", result: result.buffer } satisfies FromWorker,
-          { transfer: [result.buffer as ArrayBuffer] },
-        );
-      } catch (e) {
-        post({ type: "watermark-error", error: String(e) });
+      case "watermark": {
+        const result = add_watermark(new Uint8Array(msg.pdfBytes), msg.text, msg.fontSize, msg.opacity, msg.angle, msg.r, msg.g, msg.b);
+        postSuccess(msg.id, { kind: "buffer", result: result.buffer }, [result.buffer as ArrayBuffer]);
+        break;
       }
-      break;
-    }
 
-    case "encrypt": {
-      if (!ready) { post({ type: "encrypt-error", error: "WASM not ready" }); break; }
-      try {
-        const bytes = new Uint8Array(msg.pdfBytes);
-        const result = encrypt_pdf(bytes, msg.userPassword, msg.ownerPassword);
-        self.postMessage(
-          { type: "encrypt-done", result: result.buffer } satisfies FromWorker,
-          { transfer: [result.buffer as ArrayBuffer] },
-        );
-      } catch (e) {
-        post({ type: "encrypt-error", error: String(e) });
+      case "encrypt": {
+        const result = encrypt_pdf(new Uint8Array(msg.pdfBytes), msg.userPassword, msg.ownerPassword);
+        postSuccess(msg.id, { kind: "buffer", result: result.buffer }, [result.buffer as ArrayBuffer]);
+        break;
       }
-      break;
     }
+  } catch (err) {
+    postFailure(msg.id, err);
   }
 };
