@@ -106,12 +106,9 @@ fn wm_content(
     g: f32,
     b: f32,
 ) -> Vec<u8> {
-    let escaped = text
-        .replace('\\', "\\\\")
-        .replace('(', "\\(")
-        .replace(')', "\\)");
-    format!(
-        "q\n/WMgs gs\n{r:.4} {g:.4} {b:.4} rg\nBT\n/WMfont {fs} Tf\n{ma:.6} {mb:.6} {mc:.6} {md:.6} {me:.2} {mf:.2} Tm\n({esc}) Tj\nET\nQ\n",
+    // Header up to the opening "(" of the literal string.
+    let mut out = format!(
+        "q\n/WMgs gs\n{r:.4} {g:.4} {b:.4} rg\nBT\n/WMfont {fs} Tf\n{ma:.6} {mb:.6} {mc:.6} {md:.6} {me:.2} {mf:.2} Tm\n(",
         r = r, g = g, b = b,
         fs = font_size,
         ma = cos_a,
@@ -120,9 +117,29 @@ fn wm_content(
         md = cos_a,
         me = tx,
         mf = ty,
-        esc = escaped,
     )
-    .into_bytes()
+    .into_bytes();
+    // The string body, as single-byte WinAnsi codes (not UTF-8).
+    out.extend_from_slice(&encode_winansi_literal(text));
+    out.extend_from_slice(b") Tj\nET\nQ\n");
+    out
+}
+
+/// Encode `text` as a PDF literal-string body using single-byte WinAnsi codes.
+/// Characters outside the single-byte range become '?'. Emitting one byte per
+/// glyph (rather than the string's UTF-8 bytes) prevents multibyte mojibake.
+fn encode_winansi_literal(text: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    for ch in text.chars() {
+        let byte = if (ch as u32) <= 0xFF { ch as u8 } else { b'?' };
+        match byte {
+            b'\\' => out.extend_from_slice(b"\\\\"),
+            b'(' => out.extend_from_slice(b"\\("),
+            b')' => out.extend_from_slice(b"\\)"),
+            _ => out.push(byte),
+        }
+    }
+    out
 }
 
 fn helvetica_font() -> Object {
@@ -130,6 +147,9 @@ fn helvetica_font() -> Object {
     d.set("Type", Object::Name(b"Font".to_vec()));
     d.set("Subtype", Object::Name(b"Type1".to_vec()));
     d.set("BaseFont", Object::Name(b"Helvetica".to_vec()));
+    // Declare WinAnsiEncoding so the single-byte codes from wm_content map to the
+    // expected glyphs (default StandardEncoding mis-renders Latin-1 bytes).
+    d.set("Encoding", Object::Name(b"WinAnsiEncoding".to_vec()));
     Object::Dictionary(d)
 }
 
@@ -280,5 +300,33 @@ mod tests {
                 "inherited original font /F1 must be preserved, not shadowed"
             );
         }
+    }
+
+    #[test]
+    fn test_watermark_non_ascii_uses_winansi_bytes() {
+        // "café" — 'é' (U+00E9) must be emitted as the single WinAnsi byte 0xE9,
+        // not the UTF-8 pair 0xC3 0xA9 (which would render as two wrong glyphs).
+        let pdf = make_inherited_test_pdf_sized(1, 612, 792);
+        let out = add_watermark_impl(&pdf, "café", 24, 0.5, 0, 0.0, 0.0, 0.0).unwrap();
+        let doc = Document::load_mem(&out).unwrap();
+
+        let mut found = false;
+        for obj in doc.objects.values() {
+            if let Object::Stream(s) = obj {
+                let content = s.decompressed_content().unwrap_or_else(|_| s.content.clone());
+                if content.windows(6).any(|w| w == b"WMfont") {
+                    found = true;
+                    assert!(
+                        content.contains(&0xE9),
+                        "watermark stream must contain WinAnsi 'é' (0xE9)"
+                    );
+                    assert!(
+                        !content.windows(2).any(|w| w == [0xC3, 0xA9]),
+                        "watermark stream must NOT contain UTF-8 'é' (0xC3 0xA9)"
+                    );
+                }
+            }
+        }
+        assert!(found, "watermark content stream not found");
     }
 }
