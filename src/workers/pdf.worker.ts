@@ -63,7 +63,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
 
         post({ type: "split-progress", progress: 1, message: "Preparing download…" });
         const transferables = parts.map((p) => p.bytes.buffer as ArrayBuffer);
-        self.postMessage({ type: "split-done", parts } satisfies FromWorker, transferables);
+        self.postMessage({ type: "split-done", parts } satisfies FromWorker, { transfer: transferables });
       } catch (err) {
         post({ type: "split-error", error: String(err) });
       }
