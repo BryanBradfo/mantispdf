@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
 import { useSplitState } from "../hooks/useSplitState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
-import { validatePdfFile, readFileAsArrayBuffer } from "../lib/fileHelpers";
+import { validatePdfFile, readFileAsArrayBuffer, readFileAsUint8Array } from "../lib/fileHelpers";
 import { downloadAsZip } from "../lib/downloadZip";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
@@ -46,13 +46,38 @@ export default function SplitPdfPage() {
     [dispatch],
   );
 
+  // Source the page count from the WASM engine (lopdf) — the same library that
+  // performs the split — so the page count the user sees and selects split points
+  // against always matches what the split actually produces. react-pdf's
+  // onLoadSuccess (below) is only a fallback if the engine count is unavailable.
+  const { ready: engineReady, countPages } = worker;
+  useEffect(() => {
+    if (!state.file || !engineReady || state.numPages > 0) return;
+    let cancelled = false;
+    const file = state.file;
+    (async () => {
+      try {
+        const count = await countPages(await readFileAsUint8Array(file));
+        if (!cancelled && count > 0) {
+          dispatch({ type: "file-loaded", file, numPages: count });
+        }
+      } catch {
+        // Leave numPages at 0 so react-pdf's onLoadSuccess can fill it in.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state.file, engineReady, state.numPages, countPages, dispatch]);
+
   const handleDocumentLoad = useCallback(
     ({ numPages }: { numPages: number }) => {
-      if (state.file) {
+      // Fallback only: if the engine already set the count, don't override it.
+      if (state.file && state.numPages === 0) {
         dispatch({ type: "file-loaded", file: state.file, numPages });
       }
     },
-    [dispatch, state.file],
+    [dispatch, state.file, state.numPages],
   );
 
   const handleSplit = useCallback(async () => {
