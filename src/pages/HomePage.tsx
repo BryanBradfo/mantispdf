@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { PageSEO } from "../components/seo/PageSEO";
 import Hero from "../components/landing/Hero";
 import Dropzone from "../components/landing/Dropzone";
@@ -15,6 +16,31 @@ type Status = "idle" | "parsing" | "workspace";
 // mirrors the mock Markdown/LaTeX in Workspace for a seamless demo.
 const SAMPLE_DOC = "poisson-pinns.pdf";
 const SAMPLE_URL = "/sample-paper.pdf";
+
+// Desktop-only: run the real Stage-1 extraction in the Tauri Rust backend and
+// log the result. The PDF is sent as raw bytes (a browser-dropped File has no
+// filesystem path) straight into LiteParse's PdfInput::Bytes. For now we only
+// log to verify the pipe; the UI still shows mock content.
+async function runExtraction(source?: File | string): Promise<void> {
+  try {
+    let buf: ArrayBuffer;
+    if (source instanceof File) {
+      buf = await source.arrayBuffer();
+    } else {
+      const res = await fetch(source ?? SAMPLE_URL);
+      buf = await res.arrayBuffer();
+    }
+    // Plain number[] keeps the spike simple; for large PDFs switch to a raw IPC
+    // body to avoid JSON-encoding the byte array.
+    const bytes = Array.from(new Uint8Array(buf));
+    const json = await invoke<string>("extract_document", { bytes });
+    // eslint-disable-next-line no-console
+    console.log("[extract_document] parsed:", JSON.parse(json));
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[extract_document] failed:", err);
+  }
+}
 
 export default function HomePage() {
   const [status, setStatus] = useState<Status>("idle");
@@ -65,10 +91,20 @@ export default function HomePage() {
       setStatus("parsing");
       scrollToExtract();
       if (timer.current) window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => {
+
+      const reveal = () => {
         setStatus("workspace");
         window.scrollTo({ top: 0, behavior: "auto" });
-      }, 2000);
+      };
+
+      if (isTauri()) {
+        // Desktop: run the real Rust extraction, then reveal the workspace when
+        // it resolves (replaces the fixed 2s mock).
+        void runExtraction(source).finally(reveal);
+      } else {
+        // Web: no Tauri backend — keep the simulated 2s loading.
+        timer.current = window.setTimeout(reveal, 2000);
+      }
     },
     [revokeUrl, scrollToExtract],
   );
