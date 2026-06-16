@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { Analytics } from "@vercel/analytics/react";
 import Header from "./components/layout/Header";
 import Footer from "./components/layout/Footer";
@@ -22,6 +22,24 @@ function PageSpinner() {
   );
 }
 
+function NotFound() {
+  return (
+    <div className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-4 text-center">
+      <p className="text-5xl font-black text-mantis-500">404</p>
+      <h1 className="mt-4 text-2xl font-bold text-gray-900 dark:text-[#e5e5e5]">Page not found</h1>
+      <p className="mt-2 text-gray-600 dark:text-[#555]">
+        That page doesn’t exist. Let’s get you back to the PDF tools.
+      </p>
+      <Link
+        to="/"
+        className="mt-6 rounded-lg bg-mantis-500 px-4 py-2 font-medium text-white hover:bg-mantis-600"
+      >
+        ← Back to all tools
+      </Link>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -39,6 +57,7 @@ export default function App() {
               <Route path="/pdf-to-image" element={<PdfToImagePage />} />
               <Route path="/watermark" element={<WatermarkPdfPage />} />
               <Route path="/encrypt" element={<EncryptPdfPage />} />
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
         </main>

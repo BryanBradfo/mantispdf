@@ -71,7 +71,7 @@ export default function DropZone({ onFile, onFiles, multiple, error }: DropZoneP
         <p className="text-lg font-medium text-gray-700 dark:text-[#aaa]">
           Drop your PDF{multiple ? "s" : ""} here or <span className="text-mantis-600 underline">browse</span>
         </p>
-        <p className="mt-1 text-sm text-gray-500 dark:text-[#555]">PDF files up to 100 MB</p>
+        <p className="mt-1 text-sm text-gray-500 dark:text-[#555]">PDF files</p>
         <input
           type="file"
           accept=".pdf,application/pdf"

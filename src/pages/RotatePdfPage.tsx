@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
-import { Document, Thumbnail } from "react-pdf";
+import { Document, Thumbnail } from "../lib/pdf";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";

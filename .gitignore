@@ -45,3 +45,12 @@ firebase-debug.log
 # Test artifacts
 *.zip
 .vercel
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# pdf.js worker copied from node_modules at build time
+public/pdf.worker.min.mjs

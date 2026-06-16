@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { pdfjs } from "react-pdf";
+import { pdfjs } from "../lib/pdf";
 
 export type ImageFormat = "png" | "jpeg";
 export type RenderScale = 1 | 2 | 3 | 4 | 5;
@@ -23,8 +23,17 @@ export function usePdfToImage() {
     async (file: File, { format, scale, onProgress }: ConvertOptions): Promise<ImagePart[]> => {
       setConverting(true);
       setError(null);
+      // Reuse a single canvas across pages (resized per page) instead of leaking
+      // one large canvas per page. The pdf.js document is destroyed in finally.
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        setConverting(false);
+        throw new Error("Could not get a 2D canvas context");
+      }
+      let pdf: Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]> | null = null;
       try {
-        const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+        pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
         const parts: ImagePart[] = [];
         const baseName = file.name.replace(/\.pdf$/i, "");
         const ext = format === "png" ? "png" : "jpg";
@@ -34,13 +43,12 @@ export function usePdfToImage() {
           onProgress(i - 1, pdf.numPages);
           const page = await pdf.getPage(i);
           const viewport = page.getViewport({ scale });
-          const canvas = document.createElement("canvas");
           canvas.width = viewport.width;
           canvas.height = viewport.height;
-          await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+          await page.render({ canvasContext: ctx, viewport }).promise;
           const blob = await new Promise<Blob>((res, rej) =>
             canvas.toBlob(
-              (b) => (b ? res(b) : rej(new Error("toBlob failed"))),
+              (b) => (b ? res(b) : rej(new Error("Failed to render page to image (page may exceed the browser's canvas size limit — try a lower scale)"))),
               mimeType,
               format === "jpeg" ? 0.92 : undefined,
             ),
@@ -55,6 +63,10 @@ export function usePdfToImage() {
         setError(String(err));
         throw err;
       } finally {
+        // Release pdf.js worker-side resources and the canvas backing store.
+        await pdf?.destroy();
+        canvas.width = 0;
+        canvas.height = 0;
         setConverting(false);
       }
     },

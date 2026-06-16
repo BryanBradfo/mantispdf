@@ -1,0 +1,8 @@
+# Enable WebAssembly SIMD (128-bit). Lets LLVM autovectorize the image hot-paths
+# (JPEG decode/encode, the downsample box-filter) for faster compress / pdf-to-image.
+# Every browser engine has supported wasm SIMD since ~2021 (Chrome/Edge 91,
+# Firefox 89, Safari 16.4). Validated: the module builds and initializes in
+# headless Chromium via the Playwright smoke test. If an exotic runtime ever
+# traps on SIMD, flip this back to "-simd128".
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]

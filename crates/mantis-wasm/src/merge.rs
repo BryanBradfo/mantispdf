@@ -1,3 +1,4 @@
+use crate::pdf_util::get_inherited_attr;
 use lopdf::{Document, Object, ObjectId};
 use std::collections::BTreeMap;
 
@@ -33,6 +34,10 @@ pub fn merge_documents(pdfs: &[&[u8]]) -> Result<Vec<u8>, String> {
     if let Ok(pages_dict) = base.get_object_mut(base_pages_id).and_then(|o| o.as_dict_mut()) {
         pages_dict.set("Count", Object::Integer(total_pages));
     }
+
+    // Drop orphaned objects copied from the sources — their catalogs, outlines,
+    // and intermediate /Pages nodes are now unreachable from base's trailer.
+    base.prune_objects();
 
     let mut buf = Vec::new();
     base.save_to(&mut buf)
@@ -81,6 +86,39 @@ fn append_document(
     for &page_id in &source_pages {
         if let Ok(page_dict) = base.get_object_mut(page_id).and_then(|o| o.as_dict_mut()) {
             page_dict.set("Parent", Object::Reference(base_pages_id));
+        }
+    }
+
+    // Materialize inherited /MediaBox, /Resources, /CropBox, /Rotate onto each
+    // copied leaf. Source pages may inherit these from an intermediate /Pages
+    // node; once reparented under base's /Pages that ancestor is gone, so without
+    // this the pages render blank, mis-sized, or unrotated.
+    let inheritable: [&[u8]; 4] = [b"MediaBox", b"Resources", b"CropBox", b"Rotate"];
+    let source_leaf_ids: Vec<ObjectId> = source
+        .get_pages()
+        .into_iter()
+        .collect::<BTreeMap<_, _>>()
+        .into_values()
+        .collect();
+    for src_leaf in source_leaf_ids {
+        let new_leaf = id_map[&src_leaf];
+        for key in inheritable {
+            // Skip if the leaf already carries the attribute inline.
+            let leaf_has = source
+                .get_dictionary(src_leaf)
+                .map(|d| d.get(key).is_ok())
+                .unwrap_or(false);
+            if leaf_has {
+                continue;
+            }
+            // Resolve from the source (original id space), remap any references
+            // into base's id space, then set on the copied leaf.
+            if let Some(mut value) = get_inherited_attr(&source, src_leaf, key) {
+                remap_references(&mut value, &id_map);
+                if let Ok(dict) = base.get_object_mut(new_leaf).and_then(|o| o.as_dict_mut()) {
+                    dict.set(key.to_vec(), value);
+                }
+            }
         }
     }
 
@@ -221,5 +259,59 @@ mod tests {
         let slices: Vec<&[u8]> = docs.iter().map(|d| d.as_slice()).collect();
         let merged = merge_documents(&slices).unwrap();
         assert_eq!(page_count(&merged), 5);
+    }
+
+    fn count_catalogs(doc: &Document) -> usize {
+        doc.objects
+            .values()
+            .filter(|o| {
+                o.as_dict()
+                    .ok()
+                    .and_then(|d| d.get(b"Type").ok())
+                    .and_then(|t| t.as_name().ok())
+                    .map(|n| n == b"Catalog")
+                    .unwrap_or(false)
+            })
+            .count()
+    }
+
+    #[test]
+    fn test_merge_preserves_inherited_attributes() {
+        use crate::pdf_util::{get_inherited_attr, make_inherited_test_pdf_sized};
+
+        // Base pages inherit Letter (612x792); source pages inherit A4-ish
+        // (842x1190). After merge the source pages are reparented under base's
+        // /Pages — without materializing inheritance they'd wrongly inherit the
+        // base's 612x792. Assert each appended page still resolves to 842x1190.
+        let base = make_inherited_test_pdf_sized(2, 612, 792);
+        let src = make_inherited_test_pdf_sized(2, 842, 1190);
+        let merged = merge_documents(&[&base, &src]).unwrap();
+        assert_eq!(page_count(&merged), 4);
+
+        let doc = Document::load_mem(&merged).unwrap();
+        let widths: Vec<i64> = doc
+            .get_pages()
+            .values()
+            .map(|&pid| {
+                let mb = get_inherited_attr(&doc, pid, b"MediaBox")
+                    .expect("every page must resolve a MediaBox");
+                mb.as_array().unwrap()[2].as_i64().unwrap()
+            })
+            .collect();
+        // Pages 1-2 from base (612), pages 3-4 from source (842).
+        assert_eq!(widths, vec![612, 612, 842, 842], "got page widths {widths:?}");
+
+        // Every appended page must resolve its Resources too (was inherited).
+        for (_, page_id) in doc.get_pages() {
+            assert!(
+                get_inherited_attr(&doc, page_id, b"Resources").is_some(),
+                "every merged page must resolve a Resources dict"
+            );
+        }
+        assert_eq!(
+            count_catalogs(&doc),
+            1,
+            "merged doc must have exactly one catalog (source catalog pruned)"
+        );
     }
 }

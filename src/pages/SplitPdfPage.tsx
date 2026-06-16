@@ -3,30 +3,28 @@ import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
 import { useSplitState } from "../hooks/useSplitState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
-import { validatePdfFile, readFileAsUint8Array } from "../lib/fileHelpers";
+import { validatePdfFile, readFileAsArrayBuffer, readFileAsUint8Array } from "../lib/fileHelpers";
 import { downloadAsZip } from "../lib/downloadZip";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import ThumbnailGrid from "../components/split/ThumbnailGrid";
 import SplitActions from "../components/split/SplitActions";
 import ProgressOverlay from "../components/common/ProgressOverlay";
-import { Document } from "react-pdf";
+import { Document } from "../lib/pdf";
 
 export default function SplitPdfPage() {
   const [state, dispatch] = useSplitState();
   const worker = usePdfWorker();
   const [splitError, setSplitError] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
+  const [isZipping, setIsZipping] = useState(false);
 
-  // Create a stable Blob URL for react-pdf to avoid ArrayBuffer detachment.
-  // pdf.js transfers the underlying ArrayBuffer to its worker, which would
-  // detach it and break subsequent renders. A Blob URL sidesteps this.
+  // Create a stable Blob URL for react-pdf directly from the File reference.
+  // This avoids loading the entire file into JS heap just for thumbnail rendering.
   const pdfUrl = useMemo(() => {
-    if (!state.pdfBytes) return null;
-    return URL.createObjectURL(
-      new Blob([state.pdfBytes], { type: "application/pdf" }),
-    );
-  }, [state.pdfBytes]);
+    if (!state.file) return null;
+    return URL.createObjectURL(state.file);
+  }, [state.file]);
 
   useEffect(() => {
     return () => {
@@ -35,60 +33,76 @@ export default function SplitPdfPage() {
   }, [pdfUrl]);
 
   const handleFile = useCallback(
-    async (file: File) => {
+    (file: File) => {
       const validationError = validatePdfFile(file);
       if (validationError) {
         dispatch({ type: "upload-error", error: validationError });
         return;
       }
-      try {
-        const bytes = await readFileAsUint8Array(file);
-        // We'll get the page count from react-pdf's onLoadSuccess
-        // Store bytes and file now, numPages set via onLoadSuccess
-        dispatch({ type: "file-loaded", file, pdfBytes: bytes, numPages: 0 });
-      } catch {
-        dispatch({ type: "upload-error", error: "Failed to read file." });
-      }
+      // Dispatch immediately with just the File reference.
+      // numPages is set later via react-pdf's onLoadSuccess.
+      dispatch({ type: "file-loaded", file, numPages: 0 });
     },
     [dispatch],
   );
 
+  // Source the page count from the WASM engine (lopdf) — the same library that
+  // performs the split — so the page count the user sees and selects split points
+  // against always matches what the split actually produces. react-pdf's
+  // onLoadSuccess (below) is only a fallback if the engine count is unavailable.
+  const { ready: engineReady, countPages } = worker;
+  useEffect(() => {
+    if (!state.file || !engineReady || state.numPages > 0) return;
+    let cancelled = false;
+    const file = state.file;
+    (async () => {
+      try {
+        const count = await countPages(await readFileAsUint8Array(file));
+        if (!cancelled && count > 0) {
+          dispatch({ type: "file-loaded", file, numPages: count });
+        }
+      } catch {
+        // Leave numPages at 0 so react-pdf's onLoadSuccess can fill it in.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state.file, engineReady, state.numPages, countPages, dispatch]);
+
   const handleDocumentLoad = useCallback(
     ({ numPages }: { numPages: number }) => {
-      if (state.file && state.pdfBytes) {
-        dispatch({
-          type: "file-loaded",
-          file: state.file,
-          pdfBytes: state.pdfBytes,
-          numPages,
-        });
+      // Fallback only: if the engine already set the count, don't override it.
+      if (state.file && state.numPages === 0) {
+        dispatch({ type: "file-loaded", file: state.file, numPages });
       }
     },
-    [dispatch, state.file, state.pdfBytes],
+    [dispatch, state.file, state.numPages],
   );
 
   const handleSplit = useCallback(async () => {
-    if (!state.pdfBytes || state.splitPoints.size === 0) return;
+    if (!state.file || state.splitPoints.size === 0) return;
     setSplitError(null);
     try {
-      const parts = await worker.splitPdf(
-        state.pdfBytes,
-        Array.from(state.splitPoints),
-      );
-      const baseName = state.file?.name.replace(/\.pdf$/i, "") ?? "document";
+      const arrayBuffer = await readFileAsArrayBuffer(state.file);
+      const parts = await worker.splitPdf(arrayBuffer, Array.from(state.splitPoints));
+      setIsZipping(true);
+      const baseName = state.file.name.replace(/\.pdf$/i, "") ?? "document";
       await downloadAsZip(parts, baseName);
+      setIsZipping(false);
       setDownloaded(true);
     } catch (err) {
+      setIsZipping(false);
       setSplitError(String(err));
     }
-  }, [state.pdfBytes, state.splitPoints, state.file, worker]);
+  }, [state.file, state.splitPoints, worker]);
 
   const handleToggleSplit = useCallback(
     (page: number) => dispatch({ type: "toggle-split", page }),
     [dispatch],
   );
 
-  const showOverlay = worker.splitting || splitError !== null;
+  const showOverlay = worker.splitting || isZipping || splitError !== null;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -104,7 +118,7 @@ export default function SplitPdfPage() {
 
       <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
-      {!state.pdfBytes ? (
+      {!state.file ? (
         <div className="mt-8">
           <DropZone onFile={handleFile} error={state.uploadError} />
         </div>

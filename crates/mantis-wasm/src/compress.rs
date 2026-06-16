@@ -119,6 +119,16 @@ fn is_flate_image(stream: &lopdf::Stream) -> bool {
 /// On failure or no size gain: leaves stream decompressed (no filter) for
 /// doc.compress() to re-FlateDecode-compress in pass 2.
 fn try_jpeg_encode_flate(stream: &mut lopdf::Stream, quality: u8) {
+    // Skip images carrying transparency or pixel-remapping metadata. Re-encoding
+    // to baseline JPEG (DCTDecode) and/or downsampling would desync a /SMask or
+    // /Mask (alpha at the original dimensions) and silently misapply a /Decode
+    // invert array or /ImageMask, corrupting the result. Leave these untouched.
+    for key in [b"SMask".as_slice(), b"Mask", b"Decode", b"ImageMask"] {
+        if stream.dict.get(key).is_ok() {
+            return;
+        }
+    }
+
     let original_size = stream.content.len();
 
     // Read image dimensions from the stream dictionary
@@ -241,4 +251,67 @@ pub fn compress_pdf(pdf_bytes: &[u8], quality: u8) -> Result<Vec<u8>, JsValue> {
     doc.save_to(&mut buf)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lopdf::{dictionary, Stream};
+
+    fn filter_name(s: &Stream) -> Vec<u8> {
+        match s.dict.get(b"Filter") {
+            Ok(Object::Name(n)) => n.clone(),
+            Ok(Object::Array(a)) => a
+                .first()
+                .and_then(|o| o.as_name().ok())
+                .map(|n| n.to_vec())
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// A FlateDecode RGB image, optionally carrying an /SMask reference.
+    /// Sized large enough (>MAX_DIM) that the re-encoder would downsample it.
+    fn make_flate_image(w: usize, h: usize, smask: bool) -> Stream {
+        let pixels = vec![128u8; w * h * 3];
+        let mut dict = dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => w as i64,
+            "Height" => h as i64,
+            "BitsPerComponent" => 8,
+            "ColorSpace" => "DeviceRGB",
+        };
+        if smask {
+            dict.set("SMask", Object::Reference((99, 0)));
+        }
+        let mut s = Stream::new(dict, pixels);
+        s.compress().unwrap();
+        s
+    }
+
+    #[test]
+    fn test_compress_skips_smask_images() {
+        let mut s = make_flate_image(1601, 2, true);
+        assert!(is_flate_image(&s));
+        try_jpeg_encode_flate(&mut s, 40);
+        assert_eq!(
+            filter_name(&s),
+            b"FlateDecode".to_vec(),
+            "an image with /SMask must NOT be re-encoded to DCTDecode (would desync alpha)"
+        );
+    }
+
+    #[test]
+    fn test_compress_reencodes_plain_large_image() {
+        // The same image WITHOUT /SMask is downsampled and converted — proving the
+        // guard above actually changes behavior.
+        let mut s = make_flate_image(1601, 2, false);
+        try_jpeg_encode_flate(&mut s, 40);
+        assert_eq!(
+            filter_name(&s),
+            b"DCTDecode".to_vec(),
+            "a plain large image should be re-encoded to DCTDecode"
+        );
+    }
 }

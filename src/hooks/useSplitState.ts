@@ -2,21 +2,19 @@ import { useReducer } from "react";
 
 interface SplitState {
   file: File | null;
-  pdfBytes: Uint8Array | null;
   numPages: number;
   splitPoints: Set<number>; // page numbers after which to split
   uploadError: string | null;
 }
 
 type SplitAction =
-  | { type: "file-loaded"; file: File; pdfBytes: Uint8Array; numPages: number }
+  | { type: "file-loaded"; file: File; numPages: number }
   | { type: "upload-error"; error: string }
   | { type: "toggle-split"; page: number }
   | { type: "reset" };
 
 const initialState: SplitState = {
   file: null,
-  pdfBytes: null,
   numPages: 0,
   splitPoints: new Set(),
   uploadError: null,
@@ -28,7 +26,6 @@ function reducer(state: SplitState, action: SplitAction): SplitState {
       return {
         ...initialState,
         file: action.file,
-        pdfBytes: action.pdfBytes,
         numPages: action.numPages,
       };
     case "upload-error":
