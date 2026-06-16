@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { Analytics } from "@vercel/analytics/react";
+import TitleBar from "./components/desktop/TitleBar";
 import Header from "./components/layout/Header";
 import Footer from "./components/layout/Footer";
 
@@ -44,6 +45,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="flex min-h-screen flex-col">
+        <TitleBar />
         <Header />
         <main className="flex-1">
           <Suspense fallback={<PageSpinner />}>
