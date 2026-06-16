@@ -87,8 +87,8 @@ export default function Dropzone({ onFile, acceptedName }: DropzoneProps) {
         transition={{ type: "spring", stiffness: 300, damping: 24 }}
         className={`group relative flex cursor-pointer flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed px-6 py-12 text-center outline-none transition-colors duration-300 sm:py-14 ${
           active
-            ? "border-accent bg-accent/[0.04] shadow-glow-lg"
-            : "border-white/10 bg-white/[0.02] hover:border-white/20 focus-visible:border-accent/70"
+            ? "border-accent bg-accent/[0.06] shadow-glow-lg dark:bg-accent/[0.04]"
+            : "border-zinc-300 bg-white/60 hover:border-zinc-400 focus-visible:border-accent/70 dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-white/20"
         }`}
       >
         {/* Icon badge */}
@@ -97,8 +97,8 @@ export default function Dropzone({ onFile, acceptedName }: DropzoneProps) {
           transition={{ type: "spring", stiffness: 250, damping: 18 }}
           className={`relative flex h-14 w-14 items-center justify-center rounded-xl border transition-colors duration-300 ${
             active
-              ? "border-accent/40 bg-accent/10 text-accent"
-              : "border-white/10 bg-white/[0.03] text-zinc-300 group-hover:text-white"
+              ? "border-accent/40 bg-accent/10 text-accent-deep dark:text-accent"
+              : "border-zinc-200 bg-white text-zinc-500 group-hover:text-zinc-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:group-hover:text-white"
           }`}
         >
           {active ? (
@@ -109,12 +109,12 @@ export default function Dropzone({ onFile, acceptedName }: DropzoneProps) {
         </motion.div>
 
         <div>
-          <p className="text-lg font-semibold text-zinc-100 sm:text-xl">
+          <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 sm:text-xl">
             Drop research papers here, get perfect Markdown.
           </p>
-          <p className="mt-2 text-sm text-zinc-500">
+          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-500">
             Drag &amp; drop a PDF, or{" "}
-            <span className="font-medium text-accent">browse your files</span>.
+            <span className="font-medium text-accent-deep dark:text-accent">browse your files</span>.
             Everything runs locally.
           </p>
         </div>

@@ -24,13 +24,13 @@ interface ParsingTerminalProps {
 // "correct" rather than noisy — info is sky, the extracted artifact is amber,
 // success is the brand accent green.
 const C = {
-  prompt: "text-zinc-600",
-  muted: "text-zinc-500",
-  text: "text-zinc-300",
-  info: "text-sky-300/90",
-  file: "text-sky-300",
-  latex: "text-amber-300",
-  ok: "text-accent",
+  prompt: "text-zinc-400 dark:text-zinc-600",
+  muted: "text-zinc-400 dark:text-zinc-500",
+  text: "text-zinc-600 dark:text-zinc-300",
+  info: "text-sky-600 dark:text-sky-300/90",
+  file: "text-sky-600 dark:text-sky-300",
+  latex: "text-amber-600 dark:text-amber-300",
+  ok: "text-green-600 dark:text-accent",
 } as const;
 
 function buildLog(fileName: string): LogLine[] {
@@ -109,16 +109,16 @@ export default function ParsingTerminal({
 
   return (
     <div
-      className={`overflow-hidden rounded-xl border border-white/10 bg-black shadow-2xl shadow-black/60 ${className}`}
+      className={`overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl shadow-zinc-300/30 dark:border-white/10 dark:bg-black dark:shadow-2xl dark:shadow-black/60 ${className}`}
     >
       {/* Window chrome: traffic-light controls left, muted centered path. */}
-      <div className="relative flex items-center border-b border-white/10 bg-zinc-900/50 px-4 py-3">
+      <div className="relative flex items-center border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-white/10 dark:bg-zinc-900/50">
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
           <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
           <span className="h-3 w-3 rounded-full bg-[#28c840]" />
         </div>
-        <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 select-none font-mono text-[11px] tracking-tight text-zinc-600">
+        <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 select-none font-mono text-[11px] tracking-tight text-zinc-400 dark:text-zinc-600">
           ~/mantis-core/extract
         </span>
       </div>
@@ -142,7 +142,7 @@ export default function ParsingTerminal({
                 </span>
               ))}
               {isLast && !done && (
-                <span className="ml-0.5 inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-accent animate-caret-blink" />
+                <span className="ml-0.5 inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-green-500 animate-caret-blink dark:bg-accent" />
               )}
             </motion.div>
           );
@@ -155,7 +155,7 @@ export default function ParsingTerminal({
             className="mt-1 flex items-center py-0.5"
           >
             <span className={C.prompt}>{"> "}</span>
-            <span className="ml-0.5 inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-accent animate-caret-blink" />
+            <span className="ml-0.5 inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-green-500 animate-caret-blink dark:bg-accent" />
           </motion.div>
         )}
       </div>

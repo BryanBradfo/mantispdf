@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { PageSEO } from "../components/seo/PageSEO";
 import Hero from "../components/landing/Hero";
 import Dropzone from "../components/landing/Dropzone";
@@ -10,17 +10,6 @@ export default function HomePage() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [runId, setRunId] = useState(0);
   const extractRef = useRef<HTMLDivElement>(null);
-
-  // True dark mode for the landing regardless of the global theme toggle.
-  // Restore the visitor's prior theme when they navigate to a tool page.
-  useEffect(() => {
-    const root = document.documentElement;
-    const hadDark = root.classList.contains("dark");
-    root.classList.add("dark");
-    return () => {
-      if (!hadDark) root.classList.remove("dark");
-    };
-  }, []);
 
   const scrollToExtract = useCallback(() => {
     extractRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -37,7 +26,7 @@ export default function HomePage() {
   );
 
   return (
-    <div className="landing-bg relative min-h-screen overflow-hidden text-zinc-100">
+    <div className="landing-bg relative min-h-screen overflow-hidden text-zinc-900 dark:text-zinc-100">
       <PageSEO
         title="MantisPDF: PDF to Markdown & LaTeX for LLMs"
         description="The developer-first document parser. Turn complex research papers into clean Markdown and perfect LaTeX, LLM-ready in milliseconds. Runs in your browser."
@@ -68,10 +57,10 @@ export default function HomePage() {
         {/* The existing client-side toolkit, kept fully accessible. */}
         <section className="mt-24">
           <div className="max-w-2xl">
-            <h2 className="text-2xl font-bold tracking-tight text-zinc-100">
+            <h2 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
               PDF Tools
             </h2>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+            <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-500">
               The full client-side toolkit. Split, merge, compress, and more,
               still free and still private, running entirely in your browser.
             </p>
