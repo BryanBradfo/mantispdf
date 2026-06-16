@@ -46,7 +46,7 @@ export default function Header() {
 
   return (
     <header className="border-b border-gray-200 bg-white dark:border-[#1a1a1a] dark:bg-[#0c0c0c]">
-      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
+      <div className="flex h-16 items-center justify-between px-5 sm:px-7">
         <Link to="/" className="flex items-center">
           <img src="/mantispdf.png" alt="MantisPDF" className="h-11" />
         </Link>
@@ -65,9 +65,6 @@ export default function Header() {
               <span className="font-semibold text-violet-600 dark:text-violet-400">{stars}</span>
             )}
           </a>
-          <span className="hidden text-sm text-gray-400 dark:text-[#444] sm:block">
-            100% client-side. Your files never leave your browser
-          </span>
           <button
             onClick={() => setDark(!dark)}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-500 transition hover:bg-gray-100 dark:border-[#1a1a1a] dark:bg-[#141414] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
