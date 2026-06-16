@@ -8,6 +8,7 @@ import ParsingTerminal from "../components/landing/ParsingTerminal";
 import FeatureStrip from "../components/landing/FeatureStrip";
 import Workspace from "../components/landing/Workspace";
 import ToolGrid from "../components/home/ToolGrid";
+import { detectMathRegions, type ExtractionResult } from "../lib/mathHeuristic";
 
 type Status = "idle" | "parsing" | "workspace";
 
@@ -17,29 +18,23 @@ type Status = "idle" | "parsing" | "workspace";
 const SAMPLE_DOC = "poisson-pinns.pdf";
 const SAMPLE_URL = "/sample-paper.pdf";
 
-// Desktop-only: run the real Stage-1 extraction in the Tauri Rust backend and
-// log the result. The PDF is sent as raw bytes (a browser-dropped File has no
-// filesystem path) straight into LiteParse's PdfInput::Bytes. For now we only
-// log to verify the pipe; the UI still shows mock content.
-async function runExtraction(source?: File | string): Promise<void> {
-  try {
-    let buf: ArrayBuffer;
-    if (source instanceof File) {
-      buf = await source.arrayBuffer();
-    } else {
-      const res = await fetch(source ?? SAMPLE_URL);
-      buf = await res.arrayBuffer();
-    }
-    // Plain number[] keeps the spike simple; for large PDFs switch to a raw IPC
-    // body to avoid JSON-encoding the byte array.
-    const bytes = Array.from(new Uint8Array(buf));
-    const json = await invoke<string>("extract_document", { bytes });
-    // eslint-disable-next-line no-console
-    console.log("[extract_document] parsed:", JSON.parse(json));
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[extract_document] failed:", err);
+// Desktop-only: run the real Stage-1 extraction in the Tauri Rust backend.
+// The PDF is sent as raw bytes (a browser-dropped File has no filesystem path)
+// straight into LiteParse's PdfInput::Bytes. Throws on failure; the caller
+// handles the error/empty states.
+async function callExtract(source?: File | string): Promise<ExtractionResult> {
+  let buf: ArrayBuffer;
+  if (source instanceof File) {
+    buf = await source.arrayBuffer();
+  } else {
+    const res = await fetch(source ?? SAMPLE_URL);
+    buf = await res.arrayBuffer();
   }
+  // Plain number[] keeps the spike simple; for large PDFs switch to a raw IPC
+  // body to avoid JSON-encoding the byte array.
+  const bytes = Array.from(new Uint8Array(buf));
+  const json = await invoke<string>("extract_document", { bytes });
+  return JSON.parse(json) as ExtractionResult;
 }
 
 export default function HomePage() {
@@ -47,6 +42,11 @@ export default function HomePage() {
   const [fileName, setFileName] = useState<string>(SAMPLE_DOC);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [runId, setRunId] = useState(0);
+  // Real extraction results (desktop/Tauri only). Null on web, where the mock
+  // content is shown instead.
+  const [extractedText, setExtractedText] = useState<string | null>(null);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [mathCount, setMathCount] = useState<number | null>(null);
   const extractRef = useRef<HTMLDivElement>(null);
   const timer = useRef<number | null>(null);
   // Track the live object URL so we can revoke exactly one (avoids leaks when
@@ -98,9 +98,29 @@ export default function HomePage() {
       };
 
       if (isTauri()) {
-        // Desktop: run the real Rust extraction, then reveal the workspace when
-        // it resolves (replaces the fixed 2s mock).
-        void runExtraction(source).finally(reveal);
+        // Desktop: run the real Rust extraction, populate the workspace from it,
+        // run the Stage-2 math heuristic, then reveal.
+        setExtractedText(null);
+        setExtractError(null);
+        setMathCount(null);
+        callExtract(source)
+          .then((res) => {
+            const text = res.text ?? "";
+            if (!text.trim()) {
+              setExtractError("No text could be extracted from this document.");
+              return;
+            }
+            setExtractedText(text);
+            const regions = detectMathRegions(res.pages ?? []);
+            setMathCount(regions.length);
+            // eslint-disable-next-line no-console
+            console.log(
+              `[math-heuristic] ${regions.length} potential math block(s):`,
+              regions,
+            );
+          })
+          .catch((err) => setExtractError(String(err)))
+          .finally(reveal);
       } else {
         // Web: no Tauri backend — keep the simulated 2s loading.
         timer.current = window.setTimeout(reveal, 2000);
@@ -113,6 +133,9 @@ export default function HomePage() {
     if (timer.current) window.clearTimeout(timer.current);
     revokeUrl();
     setPdfUrl(null);
+    setExtractedText(null);
+    setExtractError(null);
+    setMathCount(null);
     setStatus("idle");
   }, [revokeUrl]);
 
@@ -130,6 +153,9 @@ export default function HomePage() {
             key="workspace"
             fileName={fileName}
             pdfUrl={pdfUrl}
+            extractedText={extractedText}
+            extractError={extractError}
+            mathRegionCount={mathCount}
             onReset={reset}
           />
         ) : (

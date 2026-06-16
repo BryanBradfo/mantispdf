@@ -1,6 +1,15 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Check, Copy, Download, FileText, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  Copy,
+  Download,
+  FileText,
+  Loader2,
+  Sigma,
+  TriangleAlert,
+} from "lucide-react";
 
 // react-pdf is heavy; load the preview only when a workspace actually mounts,
 // keeping it out of the landing page's initial bundle.
@@ -11,6 +20,12 @@ interface WorkspaceProps {
   fileName: string;
   /** Blob URL of the uploaded PDF, or null for the sample (no real file). */
   pdfUrl: string | null;
+  /** Real extracted text from the engine (desktop). Null → show mock content. */
+  extractedText?: string | null;
+  /** Error message if extraction failed/returned empty. */
+  extractError?: string | null;
+  /** Count of math regions flagged by the Stage-2 heuristic (desktop). */
+  mathRegionCount?: number | null;
   /** Return to the landing / dropzone. */
   onReset: () => void;
 }
@@ -138,11 +153,22 @@ function downloadText(name: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function Workspace({ fileName, pdfUrl, onReset }: WorkspaceProps) {
+export default function Workspace({
+  fileName,
+  pdfUrl,
+  extractedText,
+  extractError,
+  mathRegionCount,
+  onReset,
+}: WorkspaceProps) {
   const [tab, setTab] = useState<Tab>("markdown");
   const [copied, setCopied] = useState(false);
 
-  const content = tab === "markdown" ? MOCK_MARKDOWN : MOCK_LATEX;
+  // Markdown tab shows real extracted text when available; LaTeX stays mock
+  // until Stage 3 (pix2tex) lands. Mock is the fallback on web / sample.
+  const hasReal = Boolean(extractedText && extractedText.trim());
+  const markdownContent = hasReal ? (extractedText as string) : MOCK_MARKDOWN;
+  const content = tab === "markdown" ? markdownContent : MOCK_LATEX;
   const lines = useMemo(() => content.split("\n"), [content]);
   const baseName = fileName.replace(/\.pdf$/i, "") || "document";
   const ext = tab === "markdown" ? ".md" : ".tex";
@@ -182,8 +208,18 @@ export default function Workspace({ fileName, pdfUrl, onReset }: WorkspaceProps)
             <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-500">
               Source Document
             </span>
+            {/* Temporary Stage-2 indicator: how many math blocks the heuristic flagged. */}
+            {typeof mathRegionCount === "number" && (
+              <span
+                title="Potential math regions detected (Stage-2 heuristic)"
+                className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent-deep dark:text-accent"
+              >
+                <Sigma className="h-3 w-3" />
+                {mathRegionCount} math
+              </span>
+            )}
           </div>
-          <span className="max-w-[55%] truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
+          <span className="max-w-[45%] truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
             {fileName}
           </span>
         </div>
@@ -272,6 +308,15 @@ export default function Workspace({ fileName, pdfUrl, onReset }: WorkspaceProps)
 
         {/* Code surface */}
         <div className="min-h-0 flex-1 overflow-auto bg-white font-mono text-[13px] leading-relaxed dark:bg-[#0b0b0b]">
+          {extractError ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center font-sans">
+              <TriangleAlert className="h-8 w-8 text-amber-500" strokeWidth={1.5} />
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                Extraction failed
+              </p>
+              <p className="max-w-sm text-xs text-zinc-500 dark:text-zinc-500">{extractError}</p>
+            </div>
+          ) : (
           <div className="py-3">
             {lines.map((line, i) => (
               <div
@@ -287,6 +332,7 @@ export default function Workspace({ fileName, pdfUrl, onReset }: WorkspaceProps)
               </div>
             ))}
           </div>
+          )}
         </div>
       </section>
     </motion.div>
