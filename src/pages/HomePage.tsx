@@ -10,8 +10,11 @@ import ToolGrid from "../components/home/ToolGrid";
 
 type Status = "idle" | "parsing" | "workspace";
 
-// Used when the user hits "Parse a PDF" without dropping their own file.
-const SAMPLE_DOC = "attention_is_all_you_need.pdf";
+// Used when the user hits "Parse a PDF" without dropping their own file. Served
+// statically from public/ (see scripts/make-sample-pdf.mjs); its content
+// mirrors the mock Markdown/LaTeX in Workspace for a seamless demo.
+const SAMPLE_DOC = "poisson-pinns.pdf";
+const SAMPLE_URL = "/sample-paper.pdf";
 
 export default function HomePage() {
   const [status, setStatus] = useState<Status>("idle");
@@ -44,13 +47,18 @@ export default function HomePage() {
 
   // Simulated extraction: replay the terminal logs, then reveal the workspace.
   // The 2s stub stands in for the Rust/WASM engine that's still in development.
-  // A dropped File gets a blob URL for the live preview; the sample button has
-  // no real file, so the viewer falls back to an empty state.
+  // `source` is a dropped File (blob URL, revoked on cleanup) or a static URL
+  // string for the bundled sample (must NOT be revoked).
   const startParse = useCallback(
-    (name: string, file?: File) => {
+    (name: string, source?: File | string) => {
       revokeUrl();
-      const url = file ? URL.createObjectURL(file) : null;
-      objUrl.current = url;
+      let url: string | null = null;
+      if (source instanceof File) {
+        url = URL.createObjectURL(source);
+        objUrl.current = url; // track so we revoke exactly this blob URL
+      } else if (typeof source === "string") {
+        url = source; // static asset from public/, not an object URL
+      }
       setPdfUrl(url);
       setFileName(name);
       setRunId((n) => n + 1);
@@ -100,7 +108,7 @@ export default function HomePage() {
             <div className="accent-bloom pointer-events-none absolute inset-x-0 top-0 h-[640px]" aria-hidden />
 
             <div className="relative mx-auto max-w-5xl px-4 pb-28 pt-16 sm:pt-24">
-              <Hero onUploadClick={() => startParse(SAMPLE_DOC)} />
+              <Hero onUploadClick={() => startParse(SAMPLE_DOC, SAMPLE_URL)} />
 
               {/* Interactive core: dropzone + live parsing terminal. */}
               <div ref={extractRef} className="mx-auto mt-12 max-w-2xl scroll-mt-24">

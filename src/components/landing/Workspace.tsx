@@ -18,53 +18,80 @@ interface WorkspaceProps {
 type Tab = "markdown" | "latex";
 
 // ── Mock extraction output (the real WASM engine will replace this) ──────────
-const MOCK_MARKDOWN = `# Attention Is All You Need
+// These MUST match the content of public/sample-paper.pdf (see
+// scripts/make-sample-pdf.mjs) so the rendered PDF on the left and the
+// "extracted" text on the right are exactly the same document.
+const MOCK_MARKDOWN = `# Physics-Informed Neural Networks for the Poisson Equation
 
-## 3.2 Scaled Dot-Product Attention
+**A. Mantis · B. Chen** — MantisPDF Research
 
-We compute the attention over a set of queries packed into a matrix $Q$.
-The keys and values are packed into matrices $K$ and $V$:
+## Abstract
+
+We study physics-informed neural networks (PINNs) for solving the Poisson
+equation on a bounded domain $\\Omega \\subset \\mathbb{R}^2$. The network
+$u_\\theta$ is trained to satisfy the PDE residual together with the boundary
+data, removing the need for a meshed solver.
+
+## 2. Method
+
+We seek $u_\\theta$ approximating the solution of the Poisson problem:
 
 $$
-\\mathrm{Attention}(Q, K, V) = \\mathrm{softmax}\\!\\left(
-  \\frac{Q K^{\\top}}{\\sqrt{d_k}}
-\\right) V
+-\\Delta u(x) = f(x), \\quad x \\in \\Omega, \\qquad u(x) = g(x), \\quad x \\in \\partial\\Omega.
 $$
 
-## 4. Physics-Informed Objective
-
-The total training loss combines a **data** term with a **PDE residual**:
+The composite training objective combines a data term and a PDE residual:
 
 $$
-\\mathcal{L}_{\\text{PINN}} = \\mathcal{L}_{\\text{data}} + \\lambda \\, \\mathcal{L}_{\\text{PDE}}
+\\mathcal{L}(\\theta) = \\mathcal{L}_{\\text{data}}(\\theta) + \\lambda \\, \\mathcal{L}_{\\text{pde}}(\\theta),
 $$
 
-| Symbol      | Meaning                    |
-| ----------- | -------------------------- |
-| $\\lambda$   | PDE regularization weight  |
-| $d_k$       | key / query dimension      |
+where the residual is evaluated at $N_r$ collocation points:
+
+$$
+\\mathcal{L}_{\\text{pde}}(\\theta) = \\frac{1}{N_r} \\sum_{i=1}^{N_r} \\left| \\Delta u_\\theta(x_i) + f(x_i) \\right|^2 .
+$$
+
+Minimizing $\\mathcal{L}(\\theta)$ drives the network toward a solution that is
+consistent with both the observed data and the governing equation, while the
+weight $\\lambda$ balances the two terms.
 `;
 
 const MOCK_LATEX = `\\documentclass{article}
 \\usepackage{amsmath, amssymb}
 
+\\title{Physics-Informed Neural Networks for the Poisson Equation}
+\\author{A. Mantis \\and B. Chen}
+
 \\begin{document}
+\\maketitle
 
-\\section{Scaled Dot-Product Attention}
+\\begin{abstract}
+We study physics-informed neural networks (PINNs) for solving the Poisson
+equation on a bounded domain $\\Omega \\subset \\mathbb{R}^2$. The network
+$u_\\theta$ is trained to satisfy the PDE residual together with the boundary
+data, removing the need for a meshed solver.
+\\end{abstract}
 
+\\section{Method}
+
+We seek $u_\\theta$ approximating the solution of the Poisson problem:
 \\begin{equation}
-  \\mathrm{Attention}(Q, K, V)
-    = \\mathrm{softmax}\\!\\left(
-        \\frac{Q K^{\\top}}{\\sqrt{d_k}}
-      \\right) V
+  -\\Delta u(x) = f(x), \\quad x \\in \\Omega,
+  \\qquad u(x) = g(x), \\quad x \\in \\partial\\Omega.
 \\end{equation}
 
-\\section{Physics-Informed Objective}
-
+The composite training objective combines a data term and a PDE residual:
 \\begin{equation}
-  \\mathcal{L}_{\\text{PINN}}
-    = \\mathcal{L}_{\\text{data}}
-    + \\lambda \\, \\mathcal{L}_{\\text{PDE}}
+  \\mathcal{L}(\\theta) = \\mathcal{L}_{\\text{data}}(\\theta)
+    + \\lambda \\, \\mathcal{L}_{\\text{pde}}(\\theta),
+\\end{equation}
+
+where the residual is evaluated at $N_r$ collocation points:
+\\begin{equation}
+  \\mathcal{L}_{\\text{pde}}(\\theta)
+    = \\frac{1}{N_r} \\sum_{i=1}^{N_r}
+      \\left| \\Delta u_\\theta(x_i) + f(x_i) \\right|^2 .
 \\end{equation}
 
 \\end{document}
