@@ -17,13 +17,15 @@ test("home page renders the AI-parser landing and the tool grid", async ({ page 
   await expect(page.getByRole("link", { name: /Split PDF/i })).toBeVisible();
 });
 
-test("Parse a PDF (sample, no file) transitions into the workspace with an empty preview", async ({ page }) => {
+test("Parse a PDF (sample) renders the bundled paper and matching extraction", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Parse a PDF/i }).click();
   // After the ~2s simulated extraction, the split-screen workspace appears.
   await expect(page.getByText("Source Document")).toBeVisible({ timeout: 8000 });
-  // No real file was dropped, so the source panel shows the empty state.
-  await expect(page.getByText("No document to preview")).toBeVisible();
+  // The bundled sample paper loads and renders (no empty state).
+  await expect(page.getByText("poisson-pinns.pdf")).toBeVisible();
+  await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("No document to preview")).toHaveCount(0);
   // The code panel defaults to Markdown; switching tabs retargets the export.
   await expect(page.getByRole("button", { name: /Export \.md/i })).toBeVisible();
   await page.getByRole("button", { name: "LaTeX" }).click();
