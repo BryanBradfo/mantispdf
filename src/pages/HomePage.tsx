@@ -16,15 +16,27 @@ const SAMPLE_DOC = "attention_is_all_you_need.pdf";
 export default function HomePage() {
   const [status, setStatus] = useState<Status>("idle");
   const [fileName, setFileName] = useState<string>(SAMPLE_DOC);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [runId, setRunId] = useState(0);
   const extractRef = useRef<HTMLDivElement>(null);
   const timer = useRef<number | null>(null);
+  // Track the live object URL so we can revoke exactly one (avoids leaks when
+  // a second file is dropped before the first workspace is closed).
+  const objUrl = useRef<string | null>(null);
+
+  const revokeUrl = useCallback(() => {
+    if (objUrl.current) {
+      URL.revokeObjectURL(objUrl.current);
+      objUrl.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
       if (timer.current) window.clearTimeout(timer.current);
+      revokeUrl();
     };
-  }, []);
+  }, [revokeUrl]);
 
   const scrollToExtract = useCallback(() => {
     extractRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -32,8 +44,14 @@ export default function HomePage() {
 
   // Simulated extraction: replay the terminal logs, then reveal the workspace.
   // The 2s stub stands in for the Rust/WASM engine that's still in development.
+  // A dropped File gets a blob URL for the live preview; the sample button has
+  // no real file, so the viewer falls back to an empty state.
   const startParse = useCallback(
-    (name: string) => {
+    (name: string, file?: File) => {
+      revokeUrl();
+      const url = file ? URL.createObjectURL(file) : null;
+      objUrl.current = url;
+      setPdfUrl(url);
       setFileName(name);
       setRunId((n) => n + 1);
       setStatus("parsing");
@@ -44,13 +62,15 @@ export default function HomePage() {
         window.scrollTo({ top: 0, behavior: "auto" });
       }, 2000);
     },
-    [scrollToExtract],
+    [revokeUrl, scrollToExtract],
   );
 
   const reset = useCallback(() => {
     if (timer.current) window.clearTimeout(timer.current);
+    revokeUrl();
+    setPdfUrl(null);
     setStatus("idle");
-  }, []);
+  }, [revokeUrl]);
 
   return (
     <div className="landing-bg relative min-h-screen overflow-hidden text-zinc-900 dark:text-zinc-100">
@@ -62,7 +82,12 @@ export default function HomePage() {
 
       <AnimatePresence mode="wait">
         {status === "workspace" ? (
-          <Workspace key="workspace" fileName={fileName} onReset={reset} />
+          <Workspace
+            key="workspace"
+            fileName={fileName}
+            pdfUrl={pdfUrl}
+            onReset={reset}
+          />
         ) : (
           <motion.div
             key="landing"
@@ -80,7 +105,7 @@ export default function HomePage() {
               {/* Interactive core: dropzone + live parsing terminal. */}
               <div ref={extractRef} className="mx-auto mt-12 max-w-2xl scroll-mt-24">
                 <Dropzone
-                  onFile={(file) => startParse(file.name)}
+                  onFile={(file) => startParse(file.name, file)}
                   acceptedName={status === "parsing" ? fileName : null}
                   isParsing={status === "parsing"}
                 />
