@@ -22,7 +22,7 @@ export default function MergePdfPage() {
   const handleFiles = useCallback(
     async (files: File[]) => {
       if (!worker.ready) {
-        dispatch({ type: "upload-error", error: "Engine is still loading — please wait a moment." });
+        dispatch({ type: "upload-error", error: "Engine is still loading, please wait a moment." });
         return;
       }
       const newMergeFiles: MergeFile[] = [];
@@ -84,7 +84,7 @@ export default function MergePdfPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <PageSEO
-        title="Merge PDF Files — MantisPDF"
+        title="Merge PDF Files | MantisPDF"
         description="Combine multiple PDFs into one document. Drag to reorder pages. Free, private, no upload required."
         path="/merge"
       />

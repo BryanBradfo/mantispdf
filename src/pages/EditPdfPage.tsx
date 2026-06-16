@@ -90,7 +90,7 @@ export default function EditPdfPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <PageSEO
-        title="Edit PDF Pages — MantisPDF"
+        title="Edit PDF Pages | MantisPDF"
         description="Delete or reorder pages in a PDF online. Client-side processing, nothing is uploaded."
         path="/edit"
       />
@@ -109,7 +109,7 @@ export default function EditPdfPage() {
         <>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-gray-500 dark:text-[#555]">
-              {state.file.name} — {state.numPages} page{state.numPages !== 1 ? "s" : ""}
+              {state.file.name} · {state.numPages} page{state.numPages !== 1 ? "s" : ""}
               {deletedCount > 0 && (
                 <span className="ml-2 font-medium text-red-600 dark:text-red-400">
                   ({deletedCount} marked for deletion)

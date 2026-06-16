@@ -73,7 +73,7 @@ export default function EncryptPdfPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <PageSEO
-        title="Encrypt PDF — MantisPDF"
+        title="Encrypt PDF | MantisPDF"
         description="Password-protect your PDF so only authorized readers can open it. Client-side only, nothing is uploaded."
         path="/encrypt"
       />
@@ -131,7 +131,7 @@ export default function EncryptPdfPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-[#aaa]">
                 Owner password{" "}
-                <span className="font-normal text-gray-400 dark:text-[#666]">(optional — restricts editing/printing)</span>
+                <span className="font-normal text-gray-400 dark:text-[#666]">(optional, restricts editing/printing)</span>
               </label>
               <input
                 type="password"

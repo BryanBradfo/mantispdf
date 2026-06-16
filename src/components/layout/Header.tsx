@@ -66,7 +66,7 @@ export default function Header() {
             )}
           </a>
           <span className="hidden text-sm text-gray-400 dark:text-[#444] sm:block">
-            100% client-side — your files never leave your browser
+            100% client-side. Your files never leave your browser
           </span>
           <button
             onClick={() => setDark(!dark)}

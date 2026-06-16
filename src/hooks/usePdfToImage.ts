@@ -48,7 +48,7 @@ export function usePdfToImage() {
           await page.render({ canvasContext: ctx, viewport }).promise;
           const blob = await new Promise<Blob>((res, rej) =>
             canvas.toBlob(
-              (b) => (b ? res(b) : rej(new Error("Failed to render page to image (page may exceed the browser's canvas size limit — try a lower scale)"))),
+              (b) => (b ? res(b) : rej(new Error("Failed to render page to image (page may exceed the browser's canvas size limit, so try a lower scale)"))),
               mimeType,
               format === "jpeg" ? 0.92 : undefined,
             ),

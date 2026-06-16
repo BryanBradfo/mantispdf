@@ -70,13 +70,13 @@ export default function PdfToImagePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <PageSEO
-        title="PDF to Images — Export PDF Pages as PNG or JPEG — MantisPDF"
+        title="PDF to Images: Export Pages as PNG or JPEG | MantisPDF"
         description="Convert each PDF page to a PNG or JPEG image. No upload, no data sent to any server."
         path="/pdf-to-image"
       />
       <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">PDF to Images</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        Export each page of your PDF as a PNG or JPEG image — all processing happens locally in your browser.
+        Export each page of your PDF as a PNG or JPEG image. All processing happens locally in your browser.
       </p>
 
       {!file && (
