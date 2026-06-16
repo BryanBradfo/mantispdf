@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 body {
-  @apply bg-white text-gray-900 antialiased;
+  @apply bg-white font-sans text-gray-900 antialiased;
   @apply dark:bg-[#0c0c0c] dark:text-[#e5e5e5];
 }
 
@@ -13,6 +13,39 @@ body {
 }
 .dark .hero-gradient {
   background: linear-gradient(160deg, #0c0c0c 0%, #141414 50%, #0c0c0c 100%);
+}
+
+/* ── Premium dark landing scaffolding ───────────────────────────────────── */
+
+/* Deep near-black canvas (zinc-950-ish) used by the AI-parser landing. */
+.landing-bg {
+  background-color: #0a0a0a;
+}
+
+/* Faint dotted grid that reads as "engineered surface" without competing with
+   content. Sits behind the hero; mask fades it toward the edges. */
+.grid-backdrop {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 80%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 80%);
+}
+
+/* Soft accent bloom behind the hero / dropzone. */
+.accent-bloom {
+  background: radial-gradient(
+    ellipse 50% 45% at 50% 40%,
+    rgba(124, 252, 77, 0.16) 0%,
+    rgba(124, 252, 77, 0) 70%
+  );
+}
+
+/* Headline gradient: bright white falling off to muted zinc for depth. */
+.headline-gradient {
+  background: linear-gradient(180deg, #ffffff 0%, #d4d4d8 55%, #71717a 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 /* Gradient text for hero h1 */

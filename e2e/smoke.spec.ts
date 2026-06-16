@@ -1,10 +1,16 @@
 import { test, expect } from "@playwright/test";
 
-test("home page renders the tool grid", async ({ page }) => {
+test("home page renders the AI-parser landing and the tool grid", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveTitle(/MantisPDF/i);
+  // New hero headline (the AI doc-prep positioning).
+  await expect(
+    page.getByRole("heading", { name: /Extract clean Markdown/i }),
+  ).toBeVisible();
+  // The interactive dropzone is present.
+  await expect(page.getByText(/Drop research papers here/i)).toBeVisible();
+  // The existing toolkit is still reachable: a core tool card links to /split.
   await expect(page.getByRole("heading", { name: "PDF Tools" })).toBeVisible();
-  // A core tool card links to /split.
   await expect(page.getByRole("link", { name: /Split PDF/i })).toBeVisible();
 });
 
