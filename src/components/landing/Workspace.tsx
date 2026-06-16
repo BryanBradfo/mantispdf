@@ -1,10 +1,16 @@
-import { useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Check, Copy, Download, FileText } from "lucide-react";
+import { ArrowLeft, Check, Copy, Download, FileText, Loader2 } from "lucide-react";
+
+// react-pdf is heavy; load the preview only when a workspace actually mounts,
+// keeping it out of the landing page's initial bundle.
+const PdfPreview = lazy(() => import("./PdfPreview"));
 
 interface WorkspaceProps {
   /** Name of the "parsed" document, shown as the source label. */
   fileName: string;
+  /** Blob URL of the uploaded PDF, or null for the sample (no real file). */
+  pdfUrl: string | null;
   /** Return to the landing / dropzone. */
   onReset: () => void;
 }
@@ -105,7 +111,7 @@ function downloadText(name: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function Workspace({ fileName, onReset }: WorkspaceProps) {
+export default function Workspace({ fileName, pdfUrl, onReset }: WorkspaceProps) {
   const [tab, setTab] = useState<Tab>("markdown");
   const [copied, setCopied] = useState(false);
 
@@ -155,18 +161,33 @@ export default function Workspace({ fileName, onReset }: WorkspaceProps) {
           </span>
         </div>
 
-        <div className="flex min-h-0 flex-1 items-center justify-center bg-zinc-100/60 p-6 dark:bg-black/40">
-          <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border border-dashed border-zinc-300 px-6 py-16 text-center dark:border-white/10">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-400 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-500">
-              <FileText className="h-6 w-6" strokeWidth={1.5} />
+        <div className="min-h-0 flex-1">
+          {pdfUrl ? (
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center bg-zinc-100 dark:bg-black/50">
+                  <Loader2 className="h-7 w-7 animate-spin text-accent-deep dark:text-accent" />
+                </div>
+              }
+            >
+              <PdfPreview url={pdfUrl} />
+            </Suspense>
+          ) : (
+            // No real file (e.g. the "Parse a PDF" sample) — show an empty state.
+            <div className="flex h-full items-center justify-center bg-zinc-100/60 p-6 dark:bg-black/40">
+              <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border border-dashed border-zinc-300 px-6 py-16 text-center dark:border-white/10">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-400 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-500">
+                  <FileText className="h-6 w-6" strokeWidth={1.5} />
+                </div>
+                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
+                  No document to preview
+                </p>
+                <p className="text-xs text-zinc-400 dark:text-zinc-600">
+                  Drop a PDF on the home page to see it rendered here.
+                </p>
+              </div>
             </div>
-            <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
-              PDF Viewer Sandbox
-            </p>
-            <p className="text-xs text-zinc-400 dark:text-zinc-600">
-              The rendered document will appear here.
-            </p>
-          </div>
+          )}
         </div>
       </section>
 
