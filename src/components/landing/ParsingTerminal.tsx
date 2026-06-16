@@ -111,23 +111,15 @@ export default function ParsingTerminal({
     <div
       className={`overflow-hidden rounded-xl border border-white/10 bg-black shadow-2xl shadow-black/60 ${className}`}
     >
-      {/* Window chrome with Mac-style controls. */}
-      <div className="flex items-center gap-2 border-b border-white/10 bg-zinc-900/60 px-4 py-3">
-        <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
-        <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
-        <span className="h-3 w-3 rounded-full bg-[#28c840]" />
-        <span className="ml-3 select-none font-mono text-xs text-zinc-500">
-          mantis@parser: ~/extract
-        </span>
-        <span className="ml-auto flex items-center gap-1.5">
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              done ? "bg-accent" : "bg-amber-400 animate-pulse"
-            }`}
-          />
-          <span className="select-none font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-            {done ? "ready" : "parsing"}
-          </span>
+      {/* Window chrome: traffic-light controls left, muted centered path. */}
+      <div className="relative flex items-center border-b border-white/10 bg-zinc-900/50 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+          <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+          <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+        </div>
+        <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 select-none font-mono text-[11px] tracking-tight text-zinc-600">
+          ~/mantis-core/extract
         </span>
       </div>
 

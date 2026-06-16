@@ -52,12 +52,12 @@ export default function HomePage() {
         <Hero onUploadClick={scrollToExtract} />
 
         {/* Interactive core: dropzone + live parsing terminal. */}
-        <div ref={extractRef} className="mx-auto mt-16 max-w-2xl scroll-mt-24">
+        <div ref={extractRef} className="mx-auto mt-12 max-w-2xl scroll-mt-24">
           <Dropzone onFile={handleFile} acceptedName={fileName} />
           <ParsingTerminal
             fileName={fileName ?? undefined}
             runId={runId}
-            className="mt-4"
+            className="mt-3"
           />
         </div>
 

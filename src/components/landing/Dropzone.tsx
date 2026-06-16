@@ -85,7 +85,7 @@ export default function Dropzone({ onFile, acceptedName }: DropzoneProps) {
           reduceMotion ? undefined : { scale: active ? 1.01 : 1 }
         }
         transition={{ type: "spring", stiffness: 300, damping: 24 }}
-        className={`group relative flex cursor-pointer flex-col items-center justify-center gap-5 rounded-2xl border-2 border-dashed px-6 py-16 text-center outline-none transition-colors duration-300 sm:py-20 ${
+        className={`group relative flex cursor-pointer flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed px-6 py-12 text-center outline-none transition-colors duration-300 sm:py-14 ${
           active
             ? "border-accent bg-accent/[0.04] shadow-glow-lg"
             : "border-white/10 bg-white/[0.02] hover:border-white/20 focus-visible:border-accent/70"
@@ -95,7 +95,7 @@ export default function Dropzone({ onFile, acceptedName }: DropzoneProps) {
         <motion.div
           animate={reduceMotion ? undefined : { y: active ? -4 : 0 }}
           transition={{ type: "spring", stiffness: 250, damping: 18 }}
-          className={`relative flex h-16 w-16 items-center justify-center rounded-2xl border transition-colors duration-300 ${
+          className={`relative flex h-14 w-14 items-center justify-center rounded-xl border transition-colors duration-300 ${
             active
               ? "border-accent/40 bg-accent/10 text-accent"
               : "border-white/10 bg-white/[0.03] text-zinc-300 group-hover:text-white"

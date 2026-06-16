@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Sparkles, ArrowDown, Star } from "lucide-react";
+import { ArrowDown, Star } from "lucide-react";
 
 interface HeroProps {
   /** Scrolls to / focuses the dropzone. */
@@ -19,21 +19,10 @@ export default function Hero({ onUploadClick }: HeroProps) {
       transition={{ staggerChildren: 0.09 }}
       className="mx-auto flex max-w-3xl flex-col items-center text-center"
     >
-      <motion.span
-        variants={fade}
-        transition={{ duration: 0.4 }}
-        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-xs font-medium text-zinc-300 backdrop-blur"
-      >
-        <Sparkles className="h-3.5 w-3.5 text-accent" />
-        AI-ready document parsing
-        <span className="h-1 w-1 rounded-full bg-zinc-600" />
-        <span className="text-zinc-500">Private beta</span>
-      </motion.span>
-
       <motion.h1
         variants={fade}
         transition={{ duration: 0.5 }}
-        className="headline-gradient mt-6 text-balance text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl"
+        className="headline-gradient text-balance text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-[3.5rem]"
       >
         Extract clean Markdown &amp; perfect LaTeX from any PDF.
       </motion.h1>
@@ -50,22 +39,22 @@ export default function Hero({ onUploadClick }: HeroProps) {
       <motion.div
         variants={fade}
         transition={{ duration: 0.5 }}
-        className="mt-9 flex flex-col items-center gap-3 sm:flex-row"
+        className="mt-7 flex flex-col items-center gap-2.5 sm:flex-row"
       >
         <button
           onClick={onUploadClick}
-          className="group inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-black shadow-glow transition-all hover:bg-accent-soft hover:shadow-glow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+          className="group inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-black shadow-glow transition-all hover:bg-accent-soft hover:shadow-glow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
         >
           Parse a PDF
-          <ArrowDown className="h-4 w-4 transition-transform group-hover:translate-y-0.5" />
+          <ArrowDown className="h-3.5 w-3.5 transition-transform group-hover:translate-y-0.5" />
         </button>
         <a
           href="https://github.com/BryanBradfo/mantispdf"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-5 py-3 text-sm font-medium text-zinc-300 transition-colors hover:border-white/20 hover:text-white"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2 text-[13px] font-medium text-zinc-300 transition-colors hover:border-white/20 hover:text-white"
         >
-          <Star className="h-4 w-4" />
+          <Star className="h-3.5 w-3.5" />
           Star on GitHub
         </a>
       </motion.div>
