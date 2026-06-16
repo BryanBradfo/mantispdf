@@ -6,6 +6,14 @@ import wasm from "vite-plugin-wasm";
 
 export default defineConfig({
   plugins: [react(), wasm()],
+  // Tauri's desktop shell loads the dev server at a fixed devUrl
+  // (http://localhost:5173), so pin the port and disable fallback. This only
+  // affects `vite` dev; `vite build`/`preview` (and the web flow) are unchanged.
+  clearScreen: false,
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
   build: {
     target: "esnext",
   },
