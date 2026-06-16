@@ -64,13 +64,13 @@ export default function CompressPdfPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <PageSEO
-        title="Compress PDF — Reduce PDF File Size — MantisPDF"
+        title="Compress PDF: Reduce File Size | MantisPDF"
         description="Reduce PDF file size by compressing images and streams. No upload, no data sent to any server."
         path="/compress"
       />
       <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Compress PDF</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        Reduce file size by downsampling and re-encoding images, stripping metadata, and compressing streams — no upload required.
+        Reduce file size by downsampling and re-encoding images, stripping metadata, and compressing streams, no upload required.
       </p>
 
       <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />

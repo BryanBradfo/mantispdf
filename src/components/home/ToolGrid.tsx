@@ -45,7 +45,7 @@ const tools = [
   },
   {
     title: "Watermark PDF",
-    description: "Stamp text on every page — confidential, draft, or any label.",
+    description: "Stamp text on every page: confidential, draft, or any label.",
     href: "/watermark",
     icon: "🔏",
     available: true,

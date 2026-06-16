@@ -107,7 +107,7 @@ export default function SplitPdfPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <PageSEO
-        title="Split PDF Online — MantisPDF"
+        title="Split PDF Online | MantisPDF"
         description="Split a PDF into multiple files instantly. Choose exact split points. Runs in your browser, no upload needed."
         path="/split"
       />
@@ -126,7 +126,7 @@ export default function SplitPdfPage() {
         <>
           <div className="mt-6 flex items-center justify-between">
             <p className="text-sm text-gray-500 dark:text-[#555]">
-              {state.file?.name} — {state.numPages} page{state.numPages !== 1 ? "s" : ""}
+              {state.file?.name} · {state.numPages} page{state.numPages !== 1 ? "s" : ""}
             </p>
             <div className="flex items-center gap-3">
               {downloaded && (

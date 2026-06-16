@@ -5,8 +5,8 @@ export default function HomePage() {
   return (
     <div>
       <PageSEO
-        title="MantisPDF — Free PDF Tools in Your Browser"
-        description="Split, merge, compress and rotate PDFs for free. 100% client-side — your files never leave your device."
+        title="MantisPDF: Free PDF Tools in Your Browser"
+        description="Split, merge, compress and rotate PDFs for free. 100% client-side. Your files never leave your device."
         path="/"
       />
       {/* Gradient hero */}
@@ -23,7 +23,7 @@ export default function HomePage() {
           </p>
           <p className="mx-auto mt-4 max-w-lg text-base leading-relaxed text-gray-500 dark:text-[#555]">
             All processing runs directly in your browser via WebAssembly.
-            Your files never leave your device — not even for a millisecond.
+            Your files never leave your device, not even for a millisecond.
           </p>
         </div>
       </div>

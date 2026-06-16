@@ -19,7 +19,7 @@ test("uploading a PDF loads it (no fake-worker fallback) and shows the page coun
   await page.locator('input[type="file"]').setInputFiles(ONE_PAGE);
 
   // The page count resolves...
-  await expect(page.getByText(/—\s*1 page\b/)).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText(/·\s*1 page\b/)).toBeVisible({ timeout: 10000 });
   // ...the document loads (react-pdf's error UI must NOT appear)...
   await expect(page.getByText("Failed to load PDF file.")).toHaveCount(0);
   await expect(page.getByText("Loading PDF…")).toHaveCount(0);

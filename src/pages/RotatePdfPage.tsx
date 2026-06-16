@@ -88,7 +88,7 @@ export default function RotatePdfPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <PageSEO
-        title="Rotate PDF Pages — MantisPDF"
+        title="Rotate PDF Pages | MantisPDF"
         description="Rotate individual pages or entire PDF documents online. Client-side processing, nothing is uploaded."
         path="/rotate"
       />
@@ -107,7 +107,7 @@ export default function RotatePdfPage() {
         <>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-gray-500 dark:text-[#555]">
-              {file.name} — {numPages} page{numPages !== 1 ? "s" : ""}
+              {file.name} · {numPages} page{numPages !== 1 ? "s" : ""}
             </p>
             <div className="flex flex-wrap gap-2">
               <button

@@ -89,13 +89,13 @@ export default function WatermarkPdfPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <PageSEO
-        title="Watermark PDF — MantisPDF"
+        title="Watermark PDF | MantisPDF"
         description="Add a diagonal text watermark to every page of your PDF. Client-side only, nothing is uploaded."
         path="/watermark"
       />
       <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Watermark PDF</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        Stamp text on every page — CONFIDENTIAL, DRAFT, or any label. Processed entirely in your browser.
+        Stamp text on every page: CONFIDENTIAL, DRAFT, or any label. Processed entirely in your browser.
       </p>
 
       <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
@@ -179,7 +179,7 @@ export default function WatermarkPdfPage() {
         <div className="mt-8 space-y-4">
           <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-[#2a2a2a]">
             <p className="border-b border-gray-200 px-4 py-2 text-xs text-gray-500 dark:border-[#2a2a2a] dark:text-[#555]">
-              Preview — page 1{previewPageCount > 1 ? ` of ${previewPageCount}` : ""}
+              Preview: page 1{previewPageCount > 1 ? ` of ${previewPageCount}` : ""}
             </p>
             <div className="flex justify-center bg-gray-100 p-4 dark:bg-[#111]">
               <Document
