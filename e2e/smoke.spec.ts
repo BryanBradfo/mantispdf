@@ -14,6 +14,18 @@ test("home page renders the AI-parser landing and the tool grid", async ({ page 
   await expect(page.getByRole("link", { name: /Split PDF/i })).toBeVisible();
 });
 
+test("Parse a PDF transitions through loading into the extraction workspace", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Parse a PDF/i }).click();
+  // After the ~2s simulated extraction, the split-screen workspace appears.
+  await expect(page.getByText("Source Document")).toBeVisible({ timeout: 8000 });
+  await expect(page.getByText("PDF Viewer Sandbox")).toBeVisible();
+  // The code panel defaults to Markdown; switching tabs retargets the export.
+  await expect(page.getByRole("button", { name: /Export \.md/i })).toBeVisible();
+  await page.getByRole("button", { name: "LaTeX" }).click();
+  await expect(page.getByRole("button", { name: /Export \.tex/i })).toBeVisible();
+});
+
 test("split page loads and the WASM engine initializes without error", async ({ page }) => {
   await page.goto("/split");
 
