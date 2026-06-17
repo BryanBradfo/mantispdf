@@ -250,6 +250,52 @@ choice is now an accuracy/license evaluation (front-runner `fklska/trocr_latex`,
 stronger MIT/Apache models next, pix2tex as the port-if-needed fallback) fully
 decoupled from the pipeline.
 
+## Update: real-paper test and pivot to pix2tex via ONNX (2026-06-18)
+
+### NeurIPS test — pipeline passes, model fails
+Ran the full pipeline on page 3 of a real NeurIPS ML4PS paper (genuine
+Computer-Modern typesetting, the in-domain case §3 of the appendix called for).
+The **pipeline passed end-to-end**: PDFium rendered the page at 300 DPI, the
+display-equation crops were pixel-clean (verified visually), and
+render → crop → `MathOcr::recognize` → LaTeX ran in-process.
+
+The selected model `fklska/trocr_latex` **failed the structural reconstruction
+test** on clean, in-domain equations:
+
+| Equation (truth) | Model output | Verdict |
+|---|---|---|
+| `\beta = \theta - \theta_E \frac{\theta}{\|\theta\|}` | `\frac{\beta=0}{\alpha_i}^2}\frac{\alpha_i}{\alpha_1}}}` | read `\beta`, hallucinated the rest |
+| `\alpha(\theta) = \theta_E \frac{\theta}{\|\theta\|}` | `e \pm ins+ei}^n \frac{n(n}{n})=\frac{d\sum...` | garbage |
+
+It emits valid LaTeX *tokens* but does not faithfully reconstruct structure, even
+on the Computer-Modern math it was trained for. **Conclusion: the permissively
+licensed TrOCR-LaTeX community fine-tunes are inadequate for production.** The
+pipeline is proven; the model is the bottleneck. "Emits LaTeX-shaped tokens" is
+not a quality signal — faithful reconstruction is the only metric.
+
+### Decision: adopt pix2tex, run it via ONNX (Path C)
+Stop evaluating TrOCR fine-tunes; adopt ADR 01's primary model **pix2tex
+(LaTeX-OCR, MIT, arXiv-trained)** — the industry standard for image→LaTeX. Since
+`candle-transformers` has no pix2tex implementation, there are two ways to run it:
+
+- **Path B — port the pix2tex architecture to candle (Rust).** Rejected for now:
+  high effort and risk (ResNet+ViT hybrid encoder + `x_transformers` decoder) —
+  precisely the manual port we set out to avoid.
+- **Path C — export pix2tex to ONNX and run it via the `ort` crate (ONNX
+  Runtime). CHOSEN.** `ort` runs in-process in the Tauri backend (local, no
+  cloud, no Python), preserving the privacy guarantee, and the `MathOcr` trait
+  absorbs it as a new `impl` with **zero pipeline changes**. ADR 01 already named
+  `ort` as the fallback "if a model exports to ONNX more easily"; that
+  contingency is now the plan.
+
+Trade-off accepted: a second inference runtime (`ort` alongside `candle`, which
+still serves any future ViT+TrOCR model) plus a one-time ONNX export step, in
+exchange for the gold-standard math model without a manual Rust port. pix2tex is
+typically exported as three graphs — `image_resizer`, `encoder`, `decoder` — and
+the autoregressive decode loop is driven from Rust, mirroring the loop the spike
+already implements. Pre-converted ONNX builds exist (RapidLaTeXOCR), which may
+remove the export step entirely; to be verified at integration.
+
 ## References
 
 - ADR 01 — Local Markdown/LaTeX Extraction Engine: [`01-extraction-engine.md`](./01-extraction-engine.md)
