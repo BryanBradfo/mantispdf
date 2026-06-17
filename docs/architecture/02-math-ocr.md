@@ -195,6 +195,61 @@ spike before the production math model is chosen.
 - Stage boundaries stay clean: swapping TrOCR → pix2tex-class model is a new
   `impl MathOcr`, nothing else changes.
 
+## Appendix: Stage-3 model selection (spike findings, 2026-06-17)
+
+The Path-A spike went past "does it run" and tested whether a LaTeX-fine-tuned
+model could drop into the candle TrOCR harness with **no new model code**. Three
+findings shaped the model choice.
+
+### 1. The Swin/Donut trap — inspect the nested encoder, not the wrapper
+HuggingFace labels most image→text models `VisionEncoderDecoderModel`, but that
+wrapper hides incompatible architectures. candle's `trocr` requires
+`encoder.model_type ∈ {vit, deit}` **and** `decoder.model_type = trocr`. Of the
+strongest "im2latex" / "latex ocr" Hub hits, most were a different family:
+
+| Model | encoder / decoder | Loads in candle `trocr`? |
+|-------|-------------------|--------------------------|
+| `DGurgurov/im2latex` (MIT, 16 likes) | **swin / gpt2** | No (Donut family) |
+| `Matthijs0/im2latex_base` | **swin / gpt2** | No |
+| `MixTex/ZhEn-Latex-OCR` (Apache, most popular) | **swin / roberta** | No |
+| `fklska/trocr_latex` | **vit-384 / trocr** | **Yes** |
+| `ManBib/trocr-large-printed-im2latex` | vit-384 / trocr | Yes (but see §2) |
+
+Always read `config.json`'s nested `encoder`/`decoder`, never the
+`architectures` string.
+
+### 2. License is the hard filter (paid B2B)
+- `Matthijs0/im2latex_base`: **AGPL-3.0** — copyleft, unusable in a paid product.
+- `ManBib/trocr-large-printed-im2latex`: **license unspecified** — same risk,
+  excluded even though it is architecturally compatible.
+- Survivors with a permissive license **and** a ViT+TrOCR config:
+  `fklska/trocr_latex` (**MIT**) and `Rodr16020/...`.
+
+**Selected: `fklska/trocr_latex`** — MIT, ViT-384 + TrOCR decoder,
+`image_mean/std = 0.5` (identical to candle's default TrOCR preprocessing), ships
+its own `tokenizer.json` (LaTeX vocab). It produced LaTeX with **zero new model
+code** — only the weights, `repo_id`, and tokenizer source changed. This is the
+concrete proof of Path A: **no pix2tex architecture port to Rust is required.**
+
+### 3. The font domain shift is real and measurable
+Feeding the *same* equation (the PINN loss) two ways through the selected model:
+
+| Input | Model output | Symbols read |
+|-------|--------------|--------------|
+| HTML/Unicode crop (`ℒ` = U+2112, web serif) | `sigma s(\theta)=\lim\limits...` | none correct |
+| Computer-Modern render (matplotlib `mathtext.fontset='cm'`) | `f(\theta)=\leq data(\theta)+\lambda...` | `\theta`, `=`, `+`, `\lambda`, `data` correct |
+
+The identical LaTeX reads correctly in Computer Modern and fails in Unicode.
+This empirically confirms ADR 01's caveat: a born-digital **Unicode** sample
+understates real performance, because im2latex-class models train on
+Computer-Modern-typeset math. **The valid accuracy benchmark is a real
+arXiv/Computer-Modern PDF, not the HTML demo sample.**
+
+**Consequence:** the `MathOcr` trait accepts any ViT+TrOCR LaTeX model, so model
+choice is now an accuracy/license evaluation (front-runner `fklska/trocr_latex`,
+stronger MIT/Apache models next, pix2tex as the port-if-needed fallback) fully
+decoupled from the pipeline.
+
 ## References
 
 - ADR 01 — Local Markdown/LaTeX Extraction Engine: [`01-extraction-engine.md`](./01-extraction-engine.md)
