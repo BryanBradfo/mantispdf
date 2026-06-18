@@ -6,6 +6,12 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib"]
 
+# Skip the wasm-opt pass: the wasm-pack-bundled wasm-opt fails to parse our
+# SIMD-enabled wasm in CI ("Fatal: error in parsing input"). rustc already
+# emits valid wasm with +simd128, so the module is correct without it.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 [dependencies]
 lopdf = "0.39"
 wasm-bindgen = "0.2"

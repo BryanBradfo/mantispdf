@@ -41,6 +41,8 @@ firebase-debug.log
 # Screenshots (dev artifacts)
 *.png
 !public/*.png
+# Tauri bundle icons are real assets — generate_context! reads them at build time.
+!src-tauri/icons/*.png
 
 # Test artifacts
 *.zip
