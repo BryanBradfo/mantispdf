@@ -7,6 +7,7 @@
 use crate::math_heuristic::BBox;
 use anyhow::{anyhow, Context, Result};
 use pdfium_render::prelude::*;
+use std::path::{Path, PathBuf};
 
 /// A rendered page plus the points→pixels scale used to render it.
 pub struct PageRaster {
@@ -15,30 +16,50 @@ pub struct PageRaster {
     pub scale: f32,
 }
 
-fn bind_pdfium() -> Result<Pdfium> {
-    let mut candidates: Vec<String> = Vec::new();
+/// Bind PDFium, trying candidates in priority order:
+///   1. `explicit` — the library bundled with the installer (resolved by the
+///      caller from Tauri's resource dir); the production path.
+///   2. `PDFIUM_LIB` env var — an operator override.
+///   3. the local pdfium-rs dev cache — convenience for local development.
+///   4. the system library — last resort.
+fn bind_pdfium(explicit: Option<&Path>) -> Result<Pdfium> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(p) = explicit {
+        candidates.push(p.to_path_buf());
+    }
     if let Ok(p) = std::env::var("PDFIUM_LIB") {
-        candidates.push(p);
+        candidates.push(PathBuf::from(p));
     }
     if let Some(home) = std::env::var_os("HOME") {
         let home = home.to_string_lossy();
-        candidates.push(format!(
+        candidates.push(PathBuf::from(format!(
             "{home}/.cache/pdfium-rs/chromium_7870/pdfium-linux-x64/lib/libpdfium.so"
-        ));
+        )));
     }
     for path in &candidates {
-        if let Ok(bindings) = Pdfium::bind_to_library(path) {
-            return Ok(Pdfium::new(bindings));
+        if path.exists() {
+            if let Ok(bindings) = Pdfium::bind_to_library(path) {
+                log::info!("PDFium bound to {}", path.display());
+                return Ok(Pdfium::new(bindings));
+            }
         }
     }
-    let bindings = Pdfium::bind_to_system_library()
-        .map_err(|e| anyhow!("could not bind PDFium (set PDFIUM_LIB): {e}"))?;
+    let bindings = Pdfium::bind_to_system_library().map_err(|e| {
+        anyhow!("could not bind PDFium (bundle libpdfium or set PDFIUM_LIB): {e}")
+    })?;
     Ok(Pdfium::new(bindings))
 }
 
-/// Render one page (0-based index) of the PDF bytes at `dpi`.
-pub fn render_page(pdf_bytes: &[u8], page_index: u16, dpi: f32) -> Result<PageRaster> {
-    let pdfium = bind_pdfium()?;
+/// Render one page (0-based index) of the PDF bytes at `dpi`. `pdfium_lib` is
+/// the bundled library path (from the Tauri resource dir), or None to fall back
+/// to env/dev-cache/system binding.
+pub fn render_page(
+    pdf_bytes: &[u8],
+    page_index: u16,
+    dpi: f32,
+    pdfium_lib: Option<&Path>,
+) -> Result<PageRaster> {
+    let pdfium = bind_pdfium(pdfium_lib)?;
     let document = pdfium
         .load_pdf_from_byte_slice(pdf_bytes, None)
         .context("load pdf from bytes")?;

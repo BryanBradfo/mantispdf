@@ -36,6 +36,9 @@ regex = "1"
 tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
 # Stage-3 backend cropping: render the page and crop math regions at 300 DPI.
 pdfium-render = "0.8"
+# Stage-3 weight download-on-first-run + SHA-256 integrity verification.
+ureq = "2"
+sha2 = "0.10"
 
 [dev-dependencies]
 # Drive the async extract_document pipeline in the ignored integration test.

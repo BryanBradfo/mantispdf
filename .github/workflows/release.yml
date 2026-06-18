@@ -19,20 +19,33 @@ jobs:
       matrix:
         include:
           # Two macOS targets so both Apple Silicon and Intel Macs get a build.
+          # pdfium_* fields select the matching libpdfium from bblanchon/pdfium-binaries.
           - platform: macos-latest
             args: "--target aarch64-apple-darwin"
             rust_targets: "aarch64-apple-darwin,wasm32-unknown-unknown"
+            pdfium_asset: "pdfium-mac-arm64.tgz"
+            pdfium_inner: "lib/libpdfium.dylib"
+            pdfium_out: "libpdfium.dylib"
           - platform: macos-latest
             args: "--target x86_64-apple-darwin"
             rust_targets: "x86_64-apple-darwin,wasm32-unknown-unknown"
+            pdfium_asset: "pdfium-mac-x64.tgz"
+            pdfium_inner: "lib/libpdfium.dylib"
+            pdfium_out: "libpdfium.dylib"
           # 22.04 (not 24.04) for a lower glibc baseline → the AppImage runs on
           # more distros.
           - platform: ubuntu-22.04
             args: ""
             rust_targets: "wasm32-unknown-unknown"
+            pdfium_asset: "pdfium-linux-x64.tgz"
+            pdfium_inner: "lib/libpdfium.so"
+            pdfium_out: "libpdfium.so"
           - platform: windows-latest
             args: ""
             rust_targets: "wasm32-unknown-unknown"
+            pdfium_asset: "pdfium-win-x64.tgz"
+            pdfium_inner: "bin/pdfium.dll"
+            pdfium_out: "pdfium.dll"
 
     runs-on: ${{ matrix.platform }}
 
@@ -90,6 +103,24 @@ jobs:
       # fails to resolve `mantis-wasm`.
       - name: Build WASM engine
         run: npm run build:wasm
+
+      # Bundle libpdfium so the installer is standalone: pdfium-render dlopens it
+      # at runtime, and the app resolves it from the resource dir. Matrix values
+      # are passed via env (never interpolated into the shell) to stay safe.
+      - name: Bundle PDFium library
+        shell: bash
+        env:
+          PDFIUM_ASSET: ${{ matrix.pdfium_asset }}
+          PDFIUM_INNER: ${{ matrix.pdfium_inner }}
+          PDFIUM_OUT: ${{ matrix.pdfium_out }}
+        run: |
+          mkdir -p src-tauri/resources
+          url="https://github.com/bblanchon/pdfium-binaries/releases/latest/download/${PDFIUM_ASSET}"
+          echo "Downloading $url"
+          curl -fL "$url" -o /tmp/pdfium.tgz
+          tar -xzf /tmp/pdfium.tgz -C /tmp "${PDFIUM_INNER}"
+          cp "/tmp/${PDFIUM_INNER}" "src-tauri/resources/${PDFIUM_OUT}"
+          ls -la src-tauri/resources
 
       - name: Build and release
         uses: tauri-apps/tauri-action@v0

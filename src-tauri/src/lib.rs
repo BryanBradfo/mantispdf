@@ -1,5 +1,6 @@
 mod math_heuristic;
 mod math_ocr;
+mod model_assets;
 mod pdf_render;
 
 use liteparse::types::PdfInput;
@@ -8,34 +9,75 @@ use math_heuristic::MathRegion;
 use math_ocr::{MathOcr, Pix2TexOnnx};
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
+use tauri::{AppHandle, Manager};
 
 // Stage-3 engine is heavy (three ONNX graphs, ~178 MB), so it is loaded once on
 // first use and reused. Serialized behind a Mutex; a single equation decodes in
 // well under a second, so contention is a non-issue.
 static MATH_ENGINE: Mutex<Option<Pix2TexOnnx>> = Mutex::new(None);
 
-/// Where the pix2tex ONNX weights live. ADR 02's sideload hook: override with
-/// MANTIS_MODEL_DIR (the air-gapped / packaged path); default to the in-repo
-/// `src-tauri/weights/` used in development.
-fn model_dir() -> PathBuf {
-    match std::env::var_os("MANTIS_MODEL_DIR") {
-        Some(p) => PathBuf::from(p),
-        None => PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/weights")),
+/// Resolve the weights directory and whether we may download into it:
+/// - MANTIS_MODEL_DIR (ADR 02 sideload / air-gapped): used as-is, never fetched.
+/// - otherwise: the OS app-data dir (Tauri's AppLocalData), where the weights
+///   are downloaded + SHA-256-verified on first run.
+fn resolve_model_dir(app: &AppHandle) -> Result<(PathBuf, bool), String> {
+    if let Some(p) = std::env::var_os("MANTIS_MODEL_DIR") {
+        return Ok((PathBuf::from(p), false));
     }
+    let dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("resolve app data dir: {e}"))?
+        .join("weights");
+    Ok((dir, true))
+}
+
+/// Locate the libpdfium bundled in the installer (via Tauri's resource dir),
+/// trying the layouts the bundler may produce. None in dev — `pdf_render` then
+/// falls back to PDFIUM_LIB / the pdfium-rs cache / the system library.
+fn resolve_pdfium(app: &AppHandle) -> Option<PathBuf> {
+    let base = app.path().resource_dir().ok()?;
+    let names = ["libpdfium.so", "libpdfium.dylib", "pdfium.dll"];
+    for sub in ["", "resources", "lib"] {
+        for name in names {
+            let p = if sub.is_empty() {
+                base.join(name)
+            } else {
+                base.join(sub).join(name)
+            };
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+/// Lazily initialize and lock the shared engine. On first init, ensure the
+/// weights are present (download + SHA-256 verify when `download`), then open
+/// the ONNX sessions. Subsequent calls reuse the loaded engine.
+fn locked_engine(
+    model_dir: &Path,
+    download: bool,
+) -> Result<MutexGuard<'static, Option<Pix2TexOnnx>>, String> {
+    let mut guard = MATH_ENGINE.lock().map_err(|e| format!("engine lock: {e}"))?;
+    if guard.is_none() {
+        if download {
+            model_assets::ensure_weights(model_dir).map_err(|e| e.to_string())?;
+        }
+        *guard = Some(Pix2TexOnnx::from_dir(model_dir).map_err(|e| e.to_string())?);
+    }
+    Ok(guard)
 }
 
 /// Stage 3: recognize one cropped math region (PNG/JPEG bytes) as LaTeX.
-/// The crop is produced by the (backend PDFium) cropper per ADR 02; this command
-/// is the `MathOcr` entry point the workspace calls for each detected region.
 #[tauri::command]
-async fn recognize_math(image: Vec<u8>) -> Result<String, String> {
+async fn recognize_math(app: AppHandle, image: Vec<u8>) -> Result<String, String> {
     let img = image::load_from_memory(&image).map_err(|e| format!("decode image: {e}"))?;
-    let mut guard = MATH_ENGINE.lock().map_err(|e| format!("engine lock: {e}"))?;
-    if guard.is_none() {
-        *guard = Some(Pix2TexOnnx::from_dir(model_dir()).map_err(|e| e.to_string())?);
-    }
+    let (dir, download) = resolve_model_dir(&app)?;
+    let mut guard = locked_engine(&dir, download)?;
     let engine = guard.as_mut().expect("engine initialized above");
     engine.recognize(&img).map_err(|e| e.to_string())
 }
@@ -64,15 +106,17 @@ struct ExtractResponse {
     pages: Vec<ParsedPage>,
 }
 
-/// Full extraction pipeline (ADR 01/02). Stage 1: LiteParse text + geometry.
-/// Stage 2: detect math regions via the heuristic. Stage 3: render each region
-/// at 300 DPI with PDFium, crop it, OCR it with pix2tex (ONNX), and stitch the
-/// LaTeX back into the Markdown. Returns the integrated Markdown+LaTeX as JSON.
-///
-/// Bytes (not a path) are taken because a browser-dropped `File` has no real
-/// filesystem path; the ArrayBuffer feeds both LiteParse and PDFium.
-#[tauri::command]
-async fn extract_document(bytes: Vec<u8>) -> Result<String, String> {
+/// Core extraction pipeline (Stages 1→3), independent of Tauri so it is unit
+/// testable. Stage 1: LiteParse text + geometry. Stage 2: detect math regions.
+/// Stage 3: render each region at 300 DPI with PDFium (`pdfium_lib`), crop, OCR
+/// with pix2tex (weights in `model_dir`, fetched on first run when `download`),
+/// and stitch the LaTeX into the Markdown.
+async fn extract_pipeline(
+    bytes: Vec<u8>,
+    model_dir: &Path,
+    pdfium_lib: Option<&Path>,
+    download: bool,
+) -> Result<ExtractResponse, String> {
     let config = LiteParseConfig {
         ocr_enabled: false,
         output_format: OutputFormat::Json,
@@ -92,10 +136,7 @@ async fn extract_document(bytes: Vec<u8>) -> Result<String, String> {
     let mut math_out: Vec<MathOut> = Vec::new();
     let mut stitch_items: Vec<(MathRegion, String)> = Vec::new();
     if !regions.is_empty() {
-        let mut guard = MATH_ENGINE.lock().map_err(|e| format!("engine lock: {e}"))?;
-        if guard.is_none() {
-            *guard = Some(Pix2TexOnnx::from_dir(model_dir()).map_err(|e| e.to_string())?);
-        }
+        let mut guard = locked_engine(model_dir, download)?;
         let engine = guard.as_mut().expect("engine initialized above");
 
         let mut by_page: BTreeMap<usize, Vec<MathRegion>> = BTreeMap::new();
@@ -104,7 +145,7 @@ async fn extract_document(bytes: Vec<u8>) -> Result<String, String> {
         }
         for (page_number, regs) in by_page {
             let page_index = page_number.saturating_sub(1) as u16; // LiteParse is 1-based
-            let raster = match pdf_render::render_page(&bytes, page_index, 300.0) {
+            let raster = match pdf_render::render_page(&bytes, page_index, 300.0, pdfium_lib) {
                 Ok(r) => r,
                 Err(e) => {
                     log::warn!("render page {page_number} failed: {e}");
@@ -133,12 +174,23 @@ async fn extract_document(bytes: Vec<u8>) -> Result<String, String> {
     }
 
     let markdown = stitch_latex(&result.text, &stitch_items);
-    let response = ExtractResponse {
+    Ok(ExtractResponse {
         markdown,
         text: result.text,
         math: math_out,
         pages: result.pages,
-    };
+    })
+}
+
+/// Full extraction pipeline exposed to the frontend. Resolves the weights dir
+/// (download-on-first-run into Tauri's AppLocalData) and the bundled libpdfium
+/// (from the resource dir), runs the pipeline, and returns the integrated
+/// Markdown+LaTeX as JSON.
+#[tauri::command]
+async fn extract_document(app: AppHandle, bytes: Vec<u8>) -> Result<String, String> {
+    let (model_dir, download) = resolve_model_dir(&app)?;
+    let pdfium = resolve_pdfium(&app);
+    let response = extract_pipeline(bytes, &model_dir, pdfium.as_deref(), download).await?;
     serde_json::to_string(&response).map_err(|e| e.to_string())
 }
 
@@ -245,7 +297,13 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        let json = rt.block_on(extract_document(bytes)).expect("extract");
+        // Use the dev weights dir directly (no download), and let PDFium bind
+        // via the dev fallback (pdfium-rs cache / system).
+        let weights = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/weights"));
+        let resp = rt
+            .block_on(extract_pipeline(bytes, weights, None, false))
+            .expect("extract");
+        let json = serde_json::to_string(&resp).unwrap();
         println!("{json}");
         // The integrated markdown must carry at least one LaTeX command.
         assert!(json.contains("\\\\"), "expected LaTeX in the integrated output");

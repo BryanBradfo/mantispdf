@@ -58,5 +58,9 @@ public/pdf.worker.min.mjs
 # Stage-3 ONNX model weights (downloaded/extracted, not committed)
 src-tauri/weights/
 
+# Stage-3 bundled PDFium (downloaded per-platform in CI, not committed)
+src-tauri/resources/*
+!src-tauri/resources/.gitkeep
+
 # Throwaway spikes (ADR 02)
 /spikes/
