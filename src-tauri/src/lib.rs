@@ -1,6 +1,40 @@
+mod math_ocr;
+
 use liteparse::types::PdfInput;
 use liteparse::{LiteParse, LiteParseConfig, OutputFormat, ParsedPage};
+use math_ocr::{MathOcr, Pix2TexOnnx};
 use serde::Serialize;
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+// Stage-3 engine is heavy (three ONNX graphs, ~178 MB), so it is loaded once on
+// first use and reused. Serialized behind a Mutex; a single equation decodes in
+// well under a second, so contention is a non-issue.
+static MATH_ENGINE: Mutex<Option<Pix2TexOnnx>> = Mutex::new(None);
+
+/// Where the pix2tex ONNX weights live. ADR 02's sideload hook: override with
+/// MANTIS_MODEL_DIR (the air-gapped / packaged path); default to the in-repo
+/// `src-tauri/weights/` used in development.
+fn model_dir() -> PathBuf {
+    match std::env::var_os("MANTIS_MODEL_DIR") {
+        Some(p) => PathBuf::from(p),
+        None => PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/weights")),
+    }
+}
+
+/// Stage 3: recognize one cropped math region (PNG/JPEG bytes) as LaTeX.
+/// The crop is produced by the (backend PDFium) cropper per ADR 02; this command
+/// is the `MathOcr` entry point the workspace calls for each detected region.
+#[tauri::command]
+async fn recognize_math(image: Vec<u8>) -> Result<String, String> {
+    let img = image::load_from_memory(&image).map_err(|e| format!("decode image: {e}"))?;
+    let mut guard = MATH_ENGINE.lock().map_err(|e| format!("engine lock: {e}"))?;
+    if guard.is_none() {
+        *guard = Some(Pix2TexOnnx::from_dir(model_dir()).map_err(|e| e.to_string())?);
+    }
+    let engine = guard.as_mut().expect("engine initialized above");
+    engine.recognize(&img).map_err(|e| e.to_string())
+}
 
 /// JSON shape returned to the frontend for the extraction spike. Mirrors
 /// LiteParse's `ParseResult` (which isn't `Serialize` itself).
@@ -52,7 +86,7 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![extract_document])
+    .invoke_handler(tauri::generate_handler![extract_document, recognize_math])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

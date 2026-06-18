@@ -27,3 +27,10 @@ tauri-plugin-log = "2"
 # default-features = false drops the `tesseract` feature — born-digital text
 # extraction needs no OCR, and it avoids the tesseract-rs/leptonica build.
 liteparse = { version = "2.0.8", default-features = false }
+
+# Stage 3 — Math OCR (ADR 02, Path C): pix2tex exported to ONNX, run via ort.
+anyhow = "1"
+ort = { version = "=2.0.0-rc.10", features = ["download-binaries"] }
+image = "0.25"
+regex = "1"
+tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
