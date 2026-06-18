@@ -17,13 +17,17 @@ test("home page renders the AI-parser landing and the tool grid", async ({ page 
   await expect(page.getByRole("link", { name: /Split PDF/i })).toBeVisible();
 });
 
-test("Parse a PDF (sample) renders the bundled paper and matching extraction", async ({ page }) => {
+test("Parse a PDF opens a file picker and renders the chosen file", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /Parse a PDF/i }).click();
-  // After the ~2s simulated extraction, the split-screen workspace appears.
+  // The hero button now opens a native file picker (no bundled demo PDF).
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.getByRole("button", { name: /Parse a PDF/i }).click(),
+  ]);
+  await chooser.setFiles(ONE_PAGE);
+  // The split-screen workspace appears with the chosen file.
   await expect(page.getByText("Source Document")).toBeVisible({ timeout: 8000 });
-  // The bundled sample paper loads and renders (no empty state).
-  await expect(page.getByText("poisson-pinns.pdf")).toBeVisible();
+  await expect(page.getByText("one-page.pdf")).toBeVisible();
   await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10000 });
   await expect(page.getByText("No document to preview")).toHaveCount(0);
   // The code panel defaults to Markdown; switching tabs retargets the export.
@@ -34,8 +38,9 @@ test("Parse a PDF (sample) renders the bundled paper and matching extraction", a
 
 test("dropping a PDF renders it in the Workspace source panel", async ({ page }) => {
   await page.goto("/");
-  // Set the file directly on the dropzone's hidden input.
-  await page.locator('input[type="file"]').setInputFiles(ONE_PAGE);
+  // Set the file on the dropzone's hidden input (the last file input on the
+  // page; the first belongs to the hero "Parse a PDF" picker).
+  await page.locator('input[type="file"]').last().setInputFiles(ONE_PAGE);
   // The workspace opens with the real filename.
   await expect(page.getByText("Source Document")).toBeVisible({ timeout: 8000 });
   await expect(page.getByText("one-page.pdf")).toBeVisible();
