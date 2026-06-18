@@ -20,8 +20,10 @@ interface WorkspaceProps {
   fileName: string;
   /** Blob URL of the uploaded PDF, or null for the sample (no real file). */
   pdfUrl: string | null;
-  /** Real extracted text from the engine (desktop). Null → show mock content. */
+  /** Integrated Markdown (Stage-1 text + stitched LaTeX). Null → mock content. */
   extractedText?: string | null;
+  /** The recognized LaTeX equations, joined, for the LaTeX tab. */
+  latex?: string | null;
   /** Error message if extraction failed/returned empty. */
   extractError?: string | null;
   /** Count of math regions flagged by the Stage-2 heuristic (desktop). */
@@ -157,6 +159,7 @@ export default function Workspace({
   fileName,
   pdfUrl,
   extractedText,
+  latex,
   extractError,
   mathRegionCount,
   onReset,
@@ -164,17 +167,20 @@ export default function Workspace({
   const [tab, setTab] = useState<Tab>("markdown");
   const [copied, setCopied] = useState(false);
 
-  // Markdown tab shows real extracted text when available; LaTeX stays mock
-  // until Stage 3 (pix2tex) lands. Mock is the fallback on web / sample.
+  // For a real document the backend returns integrated Markdown (Stage 1 text +
+  // stitched LaTeX) and the recognized equations; the sample/web demo falls back
+  // to the mock content.
   const hasReal = Boolean(extractedText && extractedText.trim());
   const markdownContent = hasReal ? (extractedText as string) : MOCK_MARKDOWN;
-  const content = tab === "markdown" ? markdownContent : MOCK_LATEX;
+  const latexContent = hasReal
+    ? latex && latex.trim()
+      ? latex
+      : "% No equations were detected in this document."
+    : MOCK_LATEX;
+  const content = tab === "markdown" ? markdownContent : latexContent;
   const lines = useMemo(() => content.split("\n"), [content]);
   const baseName = fileName.replace(/\.pdf$/i, "") || "document";
   const ext = tab === "markdown" ? ".md" : ".tex";
-  // For a real document we have no LaTeX yet (that's Stage 3 / pix2tex), so the
-  // LaTeX tab shows a "coming soon" placeholder instead of mismatched mock math.
-  const latexPending = hasReal && tab === "latex";
 
   const copy = useCallback(async () => {
     try {
@@ -289,9 +295,7 @@ export default function Workspace({
           {/* Actions */}
           <div className="flex items-center gap-2 pr-1">
             <button
-              onClick={copy}
-              disabled={latexPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:text-white"
+              onClick={copy}              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:text-white"
             >
               {copied ? (
                 <Check className="h-3.5 w-3.5 text-accent-deep dark:text-accent" />
@@ -301,9 +305,7 @@ export default function Workspace({
               <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
             </button>
             <button
-              onClick={exportFile}
-              disabled={latexPending}
-              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-xs font-semibold text-black shadow-glow transition-all hover:bg-accent-soft hover:shadow-glow-lg disabled:pointer-events-none disabled:opacity-40"
+              onClick={exportFile}              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-xs font-semibold text-black shadow-glow transition-all hover:bg-accent-soft hover:shadow-glow-lg disabled:pointer-events-none disabled:opacity-40"
             >
               <Download className="h-3.5 w-3.5" />
               Export {ext}
@@ -320,21 +322,6 @@ export default function Workspace({
                 Extraction failed
               </p>
               <p className="max-w-sm text-xs text-zinc-500 dark:text-zinc-500">{extractError}</p>
-            </div>
-          ) : latexPending ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center font-sans">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-accent/30 bg-accent/10 text-accent-deep dark:text-accent">
-                <Sigma className="h-6 w-6" strokeWidth={1.5} />
-              </div>
-              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                LaTeX generation powered by Candle is coming in Stage 3
-              </p>
-              <p className="max-w-sm text-xs text-zinc-500 dark:text-zinc-500">
-                Deep-math OCR will reconstruct precise LaTeX from the
-                {typeof mathRegionCount === "number" ? ` ${mathRegionCount}` : ""} detected
-                math region{mathRegionCount === 1 ? "" : "s"}. The Markdown tab shows the
-                extracted text today.
-              </p>
             </div>
           ) : (
           <div className="py-3">

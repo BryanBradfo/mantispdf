@@ -29,6 +29,32 @@ pub struct MathRegion {
 
 const MATH_THRESHOLD: i32 = 3;
 
+// v1 precision filters (ADR 02 follow-up): reject regions that are too small to
+// be a display equation, too wide / text-heavy to be anything but an
+// over-clustered prose or figure blob, or essentially empty. Tuned to keep tight
+// single display equations and drop the heuristic's false positives.
+const MIN_REGION_W: f32 = 24.0; // points
+const MIN_REGION_H: f32 = 16.0; // points (display math is taller than a prose line fragment)
+const MAX_REGION_W_FRAC: f32 = 0.85; // of page width
+const MIN_REGION_CHARS: usize = 3;
+const MAX_REGION_CHARS: usize = 80; // display equations are short; over-clusters are long
+// A bare-minimum score (3) is the weakest signal; requiring 4 means the region
+// also cleared the centered+narrow geometry test — i.e. it looks like a
+// standalone display equation, not a wide scattered prose/figure band. This is
+// the v1 precision/recall lever: high precision now, smarter recall later.
+const MIN_REGION_SCORE: i32 = 4;
+
+/// Whether a clustered region looks like a genuine standalone equation.
+fn region_is_plausible(width: f32, height: f32, text: &str, score: i32, page_width: f32) -> bool {
+    let nonspace = text.chars().filter(|c| !c.is_whitespace()).count();
+    score >= MIN_REGION_SCORE
+        && width >= MIN_REGION_W
+        && height >= MIN_REGION_H
+        && width <= MAX_REGION_W_FRAC * page_width
+        && nonspace >= MIN_REGION_CHARS
+        && nonspace <= MAX_REGION_CHARS
+}
+
 // Mirrors the MATH_CHAR class in mathHeuristic.ts: operators/relations, Greek,
 // script/blackboard letters, set/logic symbols, structural marks.
 const MATH_ASCII: &str = "=+-*/^_(){}[]|<>";
@@ -171,17 +197,20 @@ pub fn detect_math_regions(pages: &[ParsedPage]) -> Vec<MathRegion> {
                 .trim()
                 .to_string();
             let score = current.iter().map(|(_, s)| *s).max().unwrap_or(0);
-            regions.push(MathRegion {
-                page: page.page_number,
-                bbox: BBox {
-                    x,
-                    y,
-                    width: right - x,
-                    height: bottom - y,
-                },
-                text,
-                score,
-            });
+            let (width, height) = (right - x, bottom - y);
+            if region_is_plausible(width, height, &text, score, page.page_width) {
+                regions.push(MathRegion {
+                    page: page.page_number,
+                    bbox: BBox {
+                        x,
+                        y,
+                        width,
+                        height,
+                    },
+                    text,
+                    score,
+                });
+            }
             current.clear();
         };
 
