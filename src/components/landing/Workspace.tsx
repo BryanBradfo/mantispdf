@@ -14,6 +14,7 @@ import {
   FileText,
   Loader2,
   Sigma,
+  Sparkles,
   TriangleAlert,
 } from "lucide-react";
 
@@ -34,6 +35,10 @@ interface WorkspaceProps {
   extractError?: string | null;
   /** Count of math regions flagged by the Stage-2 heuristic (desktop). */
   mathRegionCount?: number | null;
+  /** Pro is locked (unlicensed desktop): gate the preview, show the upgrade CTA. */
+  locked?: boolean;
+  /** Open the license dialog (from the upgrade CTA). */
+  onUpgrade?: () => void;
   /** Return to the landing / dropzone. */
   onReset: () => void;
 }
@@ -169,6 +174,8 @@ export default function Workspace({
   latex,
   extractError,
   mathRegionCount,
+  locked = false,
+  onUpgrade,
   onReset,
 }: WorkspaceProps) {
   const [tab, setTab] = useState<Tab>("markdown");
@@ -178,7 +185,9 @@ export default function Workspace({
   const [view, setView] = useState<ViewMode>("preview");
   const [copied, setCopied] = useState(false);
 
-  const showPreview = tab === "markdown" && view === "preview";
+  // The KaTeX preview is a Pro feature; an unlicensed desktop app sees the
+  // raw text and an upgrade CTA instead.
+  const showPreview = tab === "markdown" && view === "preview" && !locked;
 
   // For a real document the backend returns integrated Markdown (Stage 1 text +
   // stitched LaTeX) and the recognized equations; the sample/web demo falls back
@@ -307,8 +316,18 @@ export default function Workspace({
 
           {/* Actions */}
           <div className="flex items-center gap-2 pr-1">
-            {/* Code / Preview toggle — Markdown only (LaTeX stays raw source). */}
-            {tab === "markdown" && (
+            {/* Pro upgrade CTA when the desktop app is unlicensed. */}
+            {tab === "markdown" && locked && (
+              <button
+                onClick={onUpgrade}
+                className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-xs font-semibold text-accent-deep transition-colors hover:bg-accent/20 dark:text-accent"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Upgrade to Pro
+              </button>
+            )}
+            {/* Code / Preview toggle — Markdown only, Pro only (LaTeX stays raw). */}
+            {tab === "markdown" && !locked && (
               <div className="flex items-center rounded-md border border-zinc-200 bg-zinc-100/70 p-0.5 dark:border-white/10 dark:bg-white/[0.03]">
                 {(
                   [
@@ -380,6 +399,21 @@ export default function Workspace({
               </ReactMarkdown>
             </div>
           ) : (
+          <>
+            {locked && typeof mathRegionCount === "number" && mathRegionCount > 0 && (
+              <button
+                onClick={onUpgrade}
+                className="flex w-full items-center gap-3 border-b border-accent/20 bg-accent/[0.06] px-5 py-3 text-left font-sans transition-colors hover:bg-accent/10"
+              >
+                <Sparkles className="h-4 w-4 shrink-0 text-accent-deep dark:text-accent" />
+                <span className="text-xs text-zinc-700 dark:text-zinc-200">
+                  <span className="font-semibold">
+                    {mathRegionCount} math {mathRegionCount === 1 ? "equation" : "equations"} detected.
+                  </span>{" "}
+                  Upgrade to Pro to convert them to LaTeX and render them live.
+                </span>
+              </button>
+            )}
           <div className="py-3 font-mono text-[13px] leading-relaxed">
             {lines.map((line, i) => (
               <div
@@ -395,6 +429,7 @@ export default function Workspace({
               </div>
             ))}
           </div>
+          </>
           )}
         </div>
       </section>

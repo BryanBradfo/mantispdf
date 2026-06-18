@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Sparkles } from "lucide-react";
 import { PageSEO } from "../components/seo/PageSEO";
 import Hero from "../components/landing/Hero";
 import Dropzone from "../components/landing/Dropzone";
@@ -8,6 +9,8 @@ import ParsingTerminal from "../components/landing/ParsingTerminal";
 import FeatureStrip from "../components/landing/FeatureStrip";
 import Workspace from "../components/landing/Workspace";
 import ToolGrid from "../components/home/ToolGrid";
+import LicenseDialog from "../components/license/LicenseDialog";
+import { useLicense, CHECKOUT_URL } from "../hooks/useLicense";
 
 type Status = "idle" | "parsing" | "workspace";
 
@@ -49,6 +52,8 @@ async function callExtract(file: File): Promise<ExtractResponse> {
 }
 
 export default function HomePage() {
+  const license = useLicense();
+  const [licenseOpen, setLicenseOpen] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [fileName, setFileName] = useState<string>("");
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -163,6 +168,8 @@ export default function HomePage() {
             latex={mathLatex}
             extractError={extractError}
             mathRegionCount={mathCount}
+            locked={license.locked}
+            onUpgrade={() => setLicenseOpen(true)}
             onReset={reset}
           />
         ) : (
@@ -172,6 +179,17 @@ export default function HomePage() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25 }}
           >
+            {/* Desktop-only license entry point (web is a free demo). */}
+            {license.onDesktop && (
+              <button
+                onClick={() => setLicenseOpen(true)}
+                className="absolute right-4 top-4 z-20 inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 backdrop-blur transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:text-white"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-accent-deep dark:text-accent" />
+                {license.isPro ? "Pro" : "Upgrade to Pro"}
+              </button>
+            )}
+
             {/* Ambient background layers (non-interactive). */}
             <div className="grid-backdrop pointer-events-none absolute inset-0" aria-hidden />
             <div className="accent-bloom pointer-events-none absolute inset-x-0 top-0 h-[640px]" aria-hidden />
@@ -225,6 +243,15 @@ export default function HomePage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <LicenseDialog
+        open={licenseOpen}
+        onClose={() => setLicenseOpen(false)}
+        status={license.status}
+        onActivate={license.activate}
+        onDeactivate={license.deactivate}
+        checkoutUrl={CHECKOUT_URL}
+      />
     </div>
   );
 }

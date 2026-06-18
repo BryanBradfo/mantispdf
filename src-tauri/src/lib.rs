@@ -1,3 +1,4 @@
+mod license;
 mod math_heuristic;
 mod math_ocr;
 mod model_assets;
@@ -72,9 +73,36 @@ fn locked_engine(
     Ok(guard)
 }
 
+/// Resolve the app-config dir where the license state lives.
+fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map_err(|e| format!("resolve app config dir: {e}"))
+}
+
+/// License (ADR 03) — entitlement is resolved and enforced in the backend.
+#[tauri::command]
+async fn get_license_status(app: AppHandle) -> Result<license::LicenseStatus, String> {
+    Ok(license::current_status(&config_dir(&app)?))
+}
+
+#[tauri::command]
+async fn activate_license(app: AppHandle, key: String) -> Result<license::LicenseStatus, String> {
+    license::activate(&key, &config_dir(&app)?).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn deactivate_license(app: AppHandle) -> Result<(), String> {
+    license::deactivate(&config_dir(&app)?).map_err(|e| e.to_string())
+}
+
 /// Stage 3: recognize one cropped math region (PNG/JPEG bytes) as LaTeX.
+/// Pro-gated: returns an error to free users (the workspace gates this in UI).
 #[tauri::command]
 async fn recognize_math(app: AppHandle, image: Vec<u8>) -> Result<String, String> {
+    if !license::current_status(&config_dir(&app)?).is_pro() {
+        return Err("MantisPDF Pro required for math OCR.".into());
+    }
     let img = image::load_from_memory(&image).map_err(|e| format!("decode image: {e}"))?;
     let (dir, download) = resolve_model_dir(&app)?;
     let mut guard = locked_engine(&dir, download)?;
@@ -104,6 +132,9 @@ struct ExtractResponse {
     text: String,
     math: Vec<MathOut>,
     pages: Vec<ParsedPage>,
+    /// True when math regions were detected but Stage-3 OCR was skipped because
+    /// the app is unlicensed — the frontend shows the "Upgrade to Pro" CTA.
+    pro_locked: bool,
 }
 
 /// Core extraction pipeline (Stages 1→3), independent of Tauri so it is unit
@@ -116,6 +147,7 @@ async fn extract_pipeline(
     model_dir: &Path,
     pdfium_lib: Option<&Path>,
     download: bool,
+    pro: bool,
 ) -> Result<ExtractResponse, String> {
     let config = LiteParseConfig {
         ocr_enabled: false,
@@ -129,13 +161,28 @@ async fn extract_pipeline(
         .await
         .map_err(|e| format!("extraction failed: {e}"))?;
 
-    // Stage 2: which boxes are math?
+    // Stage 2: which boxes are math? (Always runs — cheap, and powers the
+    // "N math regions detected" upsell for free users.)
     let regions = math_heuristic::detect_math_regions(&result.pages);
 
-    // Stage 3: crop + OCR each region, grouping by page so each page renders once.
     let mut math_out: Vec<MathOut> = Vec::new();
     let mut stitch_items: Vec<(MathRegion, String)> = Vec::new();
-    if !regions.is_empty() {
+
+    if !pro {
+        // Free tier: report detected regions (empty LaTeX) but skip Stage 3.
+        for region in &regions {
+            math_out.push(MathOut {
+                page: region.page,
+                x: region.bbox.x,
+                y: region.bbox.y,
+                width: region.bbox.width,
+                height: region.bbox.height,
+                score: region.score,
+                latex: String::new(),
+            });
+        }
+    } else if !regions.is_empty() {
+        // Pro tier — Stage 3: crop + OCR each region, one render per page.
         let mut guard = locked_engine(model_dir, download)?;
         let engine = guard.as_mut().expect("engine initialized above");
 
@@ -177,6 +224,7 @@ async fn extract_pipeline(
     Ok(ExtractResponse {
         markdown,
         text: result.text,
+        pro_locked: !pro && !math_out.is_empty(),
         math: math_out,
         pages: result.pages,
     })
@@ -188,9 +236,11 @@ async fn extract_pipeline(
 /// Markdown+LaTeX as JSON.
 #[tauri::command]
 async fn extract_document(app: AppHandle, bytes: Vec<u8>) -> Result<String, String> {
+    // Stage-3 is Pro-gated; Stages 1-2 (text + region detection) stay free.
+    let pro = license::current_status(&config_dir(&app)?).is_pro();
     let (model_dir, download) = resolve_model_dir(&app)?;
     let pdfium = resolve_pdfium(&app);
-    let response = extract_pipeline(bytes, &model_dir, pdfium.as_deref(), download).await?;
+    let response = extract_pipeline(bytes, &model_dir, pdfium.as_deref(), download, pro).await?;
     serde_json::to_string(&response).map_err(|e| e.to_string())
 }
 
@@ -300,8 +350,9 @@ mod tests {
         // Use the dev weights dir directly (no download), and let PDFium bind
         // via the dev fallback (pdfium-rs cache / system).
         let weights = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/weights"));
+        // pro = true to exercise Stage 3 (licensing is gated at the command layer).
         let resp = rt
-            .block_on(extract_pipeline(bytes, weights, None, false))
+            .block_on(extract_pipeline(bytes, weights, None, false, true))
             .expect("extract");
         let json = serde_json::to_string(&resp).unwrap();
         println!("{json}");
@@ -323,7 +374,13 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![extract_document, recognize_math])
+    .invoke_handler(tauri::generate_handler![
+      extract_document,
+      recognize_math,
+      get_license_status,
+      activate_license,
+      deactivate_license
+    ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
