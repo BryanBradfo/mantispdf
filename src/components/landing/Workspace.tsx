@@ -41,10 +41,10 @@ interface WorkspaceProps {
 type Tab = "markdown" | "latex";
 type ViewMode = "code" | "preview";
 
-// ── Mock extraction output (the real WASM engine will replace this) ──────────
-// These MUST match the content of public/sample-paper.pdf (see
-// scripts/make-sample-pdf.mjs) so the rendered PDF on the left and the
-// "extracted" text on the right are exactly the same document.
+// ── Placeholder output for the web (non-Tauri) demo ──────────────────────────
+// On the web there is no local extraction engine, so the workspace shows this
+// sample Markdown/LaTeX. The desktop (Tauri) build replaces it with the real
+// integrated `markdown` returned by `extract_document`.
 const MOCK_MARKDOWN = `# Physics-Informed Neural Networks for the Poisson Equation
 
 **A. Mantis · B. Chen** — MantisPDF Research
