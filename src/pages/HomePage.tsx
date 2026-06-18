@@ -8,9 +8,29 @@ import ParsingTerminal from "../components/landing/ParsingTerminal";
 import FeatureStrip from "../components/landing/FeatureStrip";
 import Workspace from "../components/landing/Workspace";
 import ToolGrid from "../components/home/ToolGrid";
-import { detectMathRegions, type ExtractionResult } from "../lib/mathHeuristic";
 
 type Status = "idle" | "parsing" | "workspace";
+
+/** One recognized math region, mirrors the Rust `MathOut`. */
+interface MathOut {
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  score: number;
+  latex: string;
+}
+
+/** JSON returned by the Rust `extract_document` command (Stage 1→3). */
+interface ExtractResponse {
+  /** Stage-1 text with recognized LaTeX stitched inline. */
+  markdown: string;
+  /** Raw Stage-1 text (no LaTeX). */
+  text: string;
+  /** Every recognized math region. */
+  math: MathOut[];
+}
 
 // Used when the user hits "Parse a PDF" without dropping their own file. Served
 // statically from public/ (see scripts/make-sample-pdf.mjs); its content
@@ -22,7 +42,7 @@ const SAMPLE_URL = "/sample-paper.pdf";
 // The PDF is sent as raw bytes (a browser-dropped File has no filesystem path)
 // straight into LiteParse's PdfInput::Bytes. Throws on failure; the caller
 // handles the error/empty states.
-async function callExtract(source?: File | string): Promise<ExtractionResult> {
+async function callExtract(source?: File | string): Promise<ExtractResponse> {
   let buf: ArrayBuffer;
   if (source instanceof File) {
     buf = await source.arrayBuffer();
@@ -34,7 +54,7 @@ async function callExtract(source?: File | string): Promise<ExtractionResult> {
   // body to avoid JSON-encoding the byte array.
   const bytes = Array.from(new Uint8Array(buf));
   const json = await invoke<string>("extract_document", { bytes });
-  return JSON.parse(json) as ExtractionResult;
+  return JSON.parse(json) as ExtractResponse;
 }
 
 export default function HomePage() {
@@ -44,7 +64,10 @@ export default function HomePage() {
   const [runId, setRunId] = useState(0);
   // Real extraction results (desktop/Tauri only). Null on web, where the mock
   // content is shown instead.
+  // Integrated Markdown (Stage-1 text + stitched LaTeX) from the Rust backend.
   const [extractedText, setExtractedText] = useState<string | null>(null);
+  // The recognized equations, joined, for the LaTeX tab.
+  const [mathLatex, setMathLatex] = useState<string | null>(null);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [mathCount, setMathCount] = useState<number | null>(null);
   const extractRef = useRef<HTMLDivElement>(null);
@@ -101,23 +124,20 @@ export default function HomePage() {
         // Desktop: run the real Rust extraction, populate the workspace from it,
         // run the Stage-2 math heuristic, then reveal.
         setExtractedText(null);
+        setMathLatex(null);
         setExtractError(null);
         setMathCount(null);
         callExtract(source)
           .then((res) => {
-            const text = res.text ?? "";
-            if (!text.trim()) {
+            if (!res.text?.trim()) {
               setExtractError("No text could be extracted from this document.");
               return;
             }
-            setExtractedText(text);
-            const regions = detectMathRegions(res.pages ?? []);
-            setMathCount(regions.length);
-            // eslint-disable-next-line no-console
-            console.log(
-              `[math-heuristic] ${regions.length} potential math block(s):`,
-              regions,
-            );
+            // The backend already ran Stages 2+3: detect math, OCR, and stitch
+            // the LaTeX into `markdown`. We just render its results.
+            setExtractedText(res.markdown);
+            setMathLatex(res.math.map((m) => m.latex).join("\n\n"));
+            setMathCount(res.math.length);
           })
           .catch((err) => setExtractError(String(err)))
           .finally(reveal);
@@ -134,6 +154,7 @@ export default function HomePage() {
     revokeUrl();
     setPdfUrl(null);
     setExtractedText(null);
+    setMathLatex(null);
     setExtractError(null);
     setMathCount(null);
     setStatus("idle");
@@ -154,6 +175,7 @@ export default function HomePage() {
             fileName={fileName}
             pdfUrl={pdfUrl}
             extractedText={extractedText}
+            latex={mathLatex}
             extractError={extractError}
             mathRegionCount={mathCount}
             onReset={reset}
