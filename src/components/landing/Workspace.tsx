@@ -1,10 +1,16 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import {
   ArrowLeft,
   Check,
+  Code2,
   Copy,
   Download,
+  Eye,
   FileText,
   Loader2,
   Sigma,
@@ -33,6 +39,7 @@ interface WorkspaceProps {
 }
 
 type Tab = "markdown" | "latex";
+type ViewMode = "code" | "preview";
 
 // ── Mock extraction output (the real WASM engine will replace this) ──────────
 // These MUST match the content of public/sample-paper.pdf (see
@@ -165,7 +172,13 @@ export default function Workspace({
   onReset,
 }: WorkspaceProps) {
   const [tab, setTab] = useState<Tab>("markdown");
+  // Default to the rendered Preview so the OCR'd math is visible at a glance;
+  // the Code view stays one click away for copy/verification. LaTeX tab is
+  // always raw (it's a .tex source, not renderable as a Markdown document).
+  const [view, setView] = useState<ViewMode>("preview");
   const [copied, setCopied] = useState(false);
+
+  const showPreview = tab === "markdown" && view === "preview";
 
   // For a real document the backend returns integrated Markdown (Stage 1 text +
   // stitched LaTeX) and the recognized equations; the sample/web demo falls back
@@ -294,8 +307,44 @@ export default function Workspace({
 
           {/* Actions */}
           <div className="flex items-center gap-2 pr-1">
+            {/* Code / Preview toggle — Markdown only (LaTeX stays raw source). */}
+            {tab === "markdown" && (
+              <div className="flex items-center rounded-md border border-zinc-200 bg-zinc-100/70 p-0.5 dark:border-white/10 dark:bg-white/[0.03]">
+                {(
+                  [
+                    ["preview", "Preview", Eye],
+                    ["code", "Code", Code2],
+                  ] as [ViewMode, string, typeof Eye][]
+                ).map(([mode, label, Icon]) => {
+                  const active = view === mode;
+                  return (
+                    <button
+                      key={mode}
+                      onClick={() => setView(mode)}
+                      aria-pressed={active}
+                      className={`relative inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                        active
+                          ? "text-zinc-900 dark:text-zinc-100"
+                          : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-500 dark:hover:text-zinc-300"
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="view-toggle-pill"
+                          className="absolute inset-0 rounded bg-white shadow-sm dark:bg-white/10"
+                          transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                        />
+                      )}
+                      <Icon className="relative z-10 h-3.5 w-3.5" />
+                      <span className="relative z-10 hidden sm:inline">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <button
-              onClick={copy}              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:text-white"
+              onClick={copy}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:text-white"
             >
               {copied ? (
                 <Check className="h-3.5 w-3.5 text-accent-deep dark:text-accent" />
@@ -305,7 +354,8 @@ export default function Workspace({
               <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
             </button>
             <button
-              onClick={exportFile}              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-xs font-semibold text-black shadow-glow transition-all hover:bg-accent-soft hover:shadow-glow-lg disabled:pointer-events-none disabled:opacity-40"
+              onClick={exportFile}
+              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-xs font-semibold text-black shadow-glow transition-all hover:bg-accent-soft hover:shadow-glow-lg"
             >
               <Download className="h-3.5 w-3.5" />
               Export {ext}
@@ -313,8 +363,8 @@ export default function Workspace({
           </div>
         </div>
 
-        {/* Code surface */}
-        <div className="min-h-0 flex-1 overflow-auto bg-white font-mono text-[13px] leading-relaxed dark:bg-[#0b0b0b]">
+        {/* Render surface: error → rendered Preview → raw Code */}
+        <div className="min-h-0 flex-1 overflow-auto bg-white dark:bg-[#0b0b0b]">
           {extractError ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center font-sans">
               <TriangleAlert className="h-8 w-8 text-amber-500" strokeWidth={1.5} />
@@ -323,8 +373,14 @@ export default function Workspace({
               </p>
               <p className="max-w-sm text-xs text-zinc-500 dark:text-zinc-500">{extractError}</p>
             </div>
+          ) : showPreview ? (
+            <div className="md-preview px-5 py-4">
+              <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                {markdownContent}
+              </ReactMarkdown>
+            </div>
           ) : (
-          <div className="py-3">
+          <div className="py-3 font-mono text-[13px] leading-relaxed">
             {lines.map((line, i) => (
               <div
                 key={i}

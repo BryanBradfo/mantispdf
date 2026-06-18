@@ -77,3 +77,63 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ── Workspace Markdown preview (react-markdown + KaTeX) ─────────────────────
+   Rendered view of the integrated Markdown. KaTeX inherits `currentColor`, so
+   setting the container text color is what makes equations theme-aware. */
+.md-preview {
+  @apply text-[13.5px] leading-relaxed text-zinc-700 dark:text-zinc-200;
+}
+.md-preview > :first-child {
+  @apply mt-0;
+}
+.md-preview h1 {
+  @apply mb-3 mt-6 text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50;
+}
+.md-preview h2 {
+  @apply mb-2 mt-6 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100;
+}
+.md-preview h3 {
+  @apply mb-2 mt-5 text-base font-semibold text-zinc-800 dark:text-zinc-200;
+}
+.md-preview p {
+  @apply my-3;
+}
+.md-preview ul {
+  @apply my-3 list-disc pl-5;
+}
+.md-preview ol {
+  @apply my-3 list-decimal pl-5;
+}
+.md-preview li {
+  @apply my-1;
+}
+.md-preview a {
+  @apply text-accent-deep underline underline-offset-2 dark:text-accent;
+}
+.md-preview strong {
+  @apply font-semibold text-zinc-900 dark:text-zinc-50;
+}
+.md-preview code {
+  @apply rounded bg-zinc-100 px-1 py-0.5 font-mono text-[0.85em] text-zinc-800 dark:bg-white/10 dark:text-zinc-100;
+}
+.md-preview pre {
+  @apply my-3 overflow-auto rounded-lg bg-zinc-100 p-3 dark:bg-black/40;
+}
+.md-preview pre code {
+  @apply bg-transparent p-0 text-zinc-700 dark:text-zinc-300;
+}
+.md-preview blockquote {
+  @apply border-l-2 border-zinc-300 pl-3 italic text-zinc-500 dark:border-white/15 dark:text-zinc-400;
+}
+.md-preview hr {
+  @apply my-6 border-zinc-200 dark:border-white/10;
+}
+/* Display equations: give them room and let long ones scroll horizontally. */
+.md-preview .katex-display {
+  @apply my-4 overflow-x-auto overflow-y-hidden py-1;
+}
+/* A subtle accent rule under display math reinforces the "OCR'd block" feel. */
+.md-preview .katex-display > .katex {
+  @apply text-zinc-900 dark:text-zinc-50;
+}
