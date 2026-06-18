@@ -120,7 +120,8 @@ impl Pix2TexOnnx {
 
     /// Detokenize like rapid_latex_ocr: concatenate raw tokens (no inter-token
     /// spaces), turn the byte-level space marker `Ġ` into a real space, strip
-    /// the special tokens, then run pix2tex `post_process`.
+    /// the special tokens, run pix2tex `post_process`, then clean up the
+    /// bounding-box artifacts (stray citations/punctuation/leading subscript).
     fn detokenize(&self, ids: &[u32]) -> String {
         let mut s = String::new();
         for &id in ids {
@@ -133,7 +134,7 @@ impl Pix2TexOnnx {
             .replace("[EOS]", "")
             .replace("[BOS]", "")
             .replace("[PAD]", "");
-        post_process(s.trim())
+        clean_artifacts(&post_process(s.trim()))
     }
 }
 
@@ -367,9 +368,55 @@ fn post_process(s: &str) -> String {
     news
 }
 
+/// Strip bounding-box artifacts the OCR picks up when a crop includes adjacent
+/// text: a trailing numeric citation (`[24]`), trailing punctuation read as math
+/// (`_{.}`, `_.`, `.`, `,`), and a stray leading subscript underscore. These are
+/// crop-edge noise, not part of the equation. Conservative on purpose — only a
+/// single-integer trailing `[n]` is treated as a citation, so genuine intervals
+/// like `[0,1]` are left intact.
+fn clean_artifacts(s: &str) -> String {
+    use regex::Regex;
+    let cite = Regex::new(r"\s*\[\s*\d+\s*\]\s*$").unwrap();
+    let trailing_punct = Regex::new(r"(?:_\{\.\}|_\.|[.,])\s*$").unwrap();
+    let leading_underscore = Regex::new(r"^_+").unwrap();
+
+    let mut t = s.trim().to_string();
+    // A crop edge can leave both a citation and a period; strip until stable.
+    loop {
+        let before = t.clone();
+        t = cite.replace(&t, "").trim().to_string();
+        t = trailing_punct.replace(&t, "").trim().to_string();
+        if t == before {
+            break;
+        }
+    }
+    leading_underscore.replace(&t, "").trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cleans_bounding_box_artifacts() {
+        // trailing citation + stray leading subscript underscore
+        assert_eq!(
+            clean_artifacts(r"_{\alpha}(\theta)=\theta_{E}{\frac{\theta}{|\theta|}}[24]"),
+            r"{\alpha}(\theta)=\theta_{E}{\frac{\theta}{|\theta|}}"
+        );
+        // trailing period read as a subscript
+        assert_eq!(
+            clean_artifacts(r"\beta=\theta-\theta_{E}{\frac{\theta}{\left|\theta\right|}}_{.}"),
+            r"\beta=\theta-\theta_{E}{\frac{\theta}{\left|\theta\right|}}"
+        );
+        // idempotent on already-clean output
+        assert_eq!(
+            clean_artifacts(r"\beta=\theta-\theta_{E}\frac{\theta}{|\theta|}"),
+            r"\beta=\theta-\theta_{E}\frac{\theta}{|\theta|}"
+        );
+        // leaves a genuine trailing interval intact
+        assert_eq!(clean_artifacts(r"x\in[0,1]"), r"x\in[0,1]");
+    }
 
     /// Validates the Rust ONNX port against the Python `rapid_latex_ocr` golden.
     /// Ignored by default: needs the gitignored weights and the spike's saved
