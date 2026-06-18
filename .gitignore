@@ -57,3 +57,6 @@ public/pdf.worker.min.mjs
 
 # Stage-3 ONNX model weights (downloaded/extracted, not committed)
 src-tauri/weights/
+
+# Throwaway spikes (ADR 02)
+/spikes/

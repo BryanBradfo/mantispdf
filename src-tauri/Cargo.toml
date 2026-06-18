@@ -34,3 +34,9 @@ ort = { version = "=2.0.0-rc.10", features = ["download-binaries"] }
 image = "0.25"
 regex = "1"
 tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
+# Stage-3 backend cropping: render the page and crop math regions at 300 DPI.
+pdfium-render = "0.8"
+
+[dev-dependencies]
+# Drive the async extract_document pipeline in the ignored integration test.
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
