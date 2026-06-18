@@ -192,7 +192,15 @@ fn stitch_latex(text: &str, items: &[(MathRegion, String)]) -> String {
         }
     }
 
-    let mut out = lines.join("\n");
+    // Strip leading indentation from every line. LiteParse preserves the PDF's
+    // visual indentation, which CommonMark would render as gray indented code
+    // blocks instead of prose. The stitched `$$` blocks start at column 0, so
+    // they're unaffected.
+    let mut out = lines
+        .iter()
+        .map(|l| l.trim_start())
+        .collect::<Vec<_>>()
+        .join("\n");
     if !appended.is_empty() {
         out.push_str("\n\n");
         out.push_str(&appended.join("\n\n"));
@@ -203,6 +211,20 @@ fn stitch_latex(text: &str, items: &[(MathRegion, String)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stitch_strips_leading_indentation() {
+        // LiteParse preserves the PDF's indentation; CommonMark would render
+        // these as code blocks. After stitching, no line keeps leading spaces.
+        let text = "             A. Author\n    Indented abstract line.\nNormal line.";
+        let out = stitch_latex(text, &[]);
+        assert!(
+            out.lines().all(|l| !l.starts_with(' ') && !l.starts_with('\t')),
+            "expected no leading indentation, got: {out:?}"
+        );
+        assert!(out.contains("A. Author"));
+        assert!(out.contains("Indented abstract line."));
+    }
 
     /// End-to-end Stage 1→3 on a real Computer-Modern paper. Ignored by default
     /// (needs local ONNX weights + PDFium + a test PDF). Run with:

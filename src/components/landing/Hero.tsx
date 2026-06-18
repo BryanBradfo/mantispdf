@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
-import { ArrowDown, Star } from "lucide-react";
+import { Star, Upload } from "lucide-react";
 
 interface HeroProps {
-  /** Scrolls to / focuses the dropzone. */
+  /** Opens the file picker to choose a PDF to parse. */
   onUploadClick?: () => void;
 }
 
@@ -45,8 +45,8 @@ export default function Hero({ onUploadClick }: HeroProps) {
           onClick={onUploadClick}
           className="group inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-black shadow-glow transition-all hover:bg-accent-soft hover:shadow-glow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#0a0a0a]"
         >
+          <Upload className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5" />
           Parse a PDF
-          <ArrowDown className="h-3.5 w-3.5 transition-transform group-hover:translate-y-0.5" />
         </button>
         <a
           href="https://github.com/BryanBradfo/mantispdf"

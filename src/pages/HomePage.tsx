@@ -32,26 +32,17 @@ interface ExtractResponse {
   math: MathOut[];
 }
 
-// Used when the user hits "Parse a PDF" without dropping their own file. Served
-// statically from public/ (see scripts/make-sample-pdf.mjs); its content
-// mirrors the mock Markdown/LaTeX in Workspace for a seamless demo.
-const SAMPLE_DOC = "poisson-pinns.pdf";
-const SAMPLE_URL = "/sample-paper.pdf";
+function isPdf(file: File): boolean {
+  return file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+}
 
-// Desktop-only: run the real Stage-1 extraction in the Tauri Rust backend.
-// The PDF is sent as raw bytes (a browser-dropped File has no filesystem path)
+// Desktop-only: run the real extraction in the Tauri Rust backend. The PDF is
+// sent as raw bytes (a browser-picked/dropped File has no filesystem path)
 // straight into LiteParse's PdfInput::Bytes. Throws on failure; the caller
 // handles the error/empty states.
-async function callExtract(source?: File | string): Promise<ExtractResponse> {
-  let buf: ArrayBuffer;
-  if (source instanceof File) {
-    buf = await source.arrayBuffer();
-  } else {
-    const res = await fetch(source ?? SAMPLE_URL);
-    buf = await res.arrayBuffer();
-  }
-  // Plain number[] keeps the spike simple; for large PDFs switch to a raw IPC
-  // body to avoid JSON-encoding the byte array.
+async function callExtract(file: File): Promise<ExtractResponse> {
+  const buf = await file.arrayBuffer();
+  // Plain number[] keeps it simple; for large PDFs switch to a raw IPC body.
   const bytes = Array.from(new Uint8Array(buf));
   const json = await invoke<string>("extract_document", { bytes });
   return JSON.parse(json) as ExtractResponse;
@@ -59,8 +50,10 @@ async function callExtract(source?: File | string): Promise<ExtractResponse> {
 
 export default function HomePage() {
   const [status, setStatus] = useState<Status>("idle");
-  const [fileName, setFileName] = useState<string>(SAMPLE_DOC);
+  const [fileName, setFileName] = useState<string>("");
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  // Hidden file input behind the Hero's "Parse a PDF" button (browse-to-upload).
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [runId, setRunId] = useState(0);
   // Real extraction results (desktop/Tauri only). Null on web, where the mock
   // content is shown instead.
@@ -94,22 +87,15 @@ export default function HomePage() {
     extractRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
-  // Simulated extraction: replay the terminal logs, then reveal the workspace.
-  // The 2s stub stands in for the Rust/WASM engine that's still in development.
-  // `source` is a dropped File (blob URL, revoked on cleanup) or a static URL
-  // string for the bundled sample (must NOT be revoked).
+  // Parse a user-provided PDF (from the file picker or drag-and-drop): show the
+  // rendered PDF, then reveal the workspace once extraction completes.
   const startParse = useCallback(
-    (name: string, source?: File | string) => {
+    (file: File) => {
       revokeUrl();
-      let url: string | null = null;
-      if (source instanceof File) {
-        url = URL.createObjectURL(source);
-        objUrl.current = url; // track so we revoke exactly this blob URL
-      } else if (typeof source === "string") {
-        url = source; // static asset from public/, not an object URL
-      }
+      const url = URL.createObjectURL(file);
+      objUrl.current = url; // track so we revoke exactly this blob URL
       setPdfUrl(url);
-      setFileName(name);
+      setFileName(file.name);
       setRunId((n) => n + 1);
       setStatus("parsing");
       scrollToExtract();
@@ -121,13 +107,12 @@ export default function HomePage() {
       };
 
       if (isTauri()) {
-        // Desktop: run the real Rust extraction, populate the workspace from it,
-        // run the Stage-2 math heuristic, then reveal.
+        // Desktop: run the real Rust extraction (Stages 1→3), then reveal.
         setExtractedText(null);
         setMathLatex(null);
         setExtractError(null);
         setMathCount(null);
-        callExtract(source)
+        callExtract(file)
           .then((res) => {
             if (!res.text?.trim()) {
               setExtractError("No text could be extracted from this document.");
@@ -192,12 +177,25 @@ export default function HomePage() {
             <div className="accent-bloom pointer-events-none absolute inset-x-0 top-0 h-[640px]" aria-hidden />
 
             <div className="relative mx-auto max-w-5xl px-4 pb-28 pt-16 sm:pt-24">
-              <Hero onUploadClick={() => startParse(SAMPLE_DOC, SAMPLE_URL)} />
+              <Hero onUploadClick={() => fileInputRef.current?.click()} />
+
+              {/* Hidden picker for the Hero "Parse a PDF" button (browse-to-upload). */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = ""; // allow re-picking the same file
+                  if (file && isPdf(file)) startParse(file);
+                }}
+              />
 
               {/* Interactive core: dropzone + live parsing terminal. */}
               <div ref={extractRef} className="mx-auto mt-12 max-w-2xl scroll-mt-24">
                 <Dropzone
-                  onFile={(file) => startParse(file.name, file)}
+                  onFile={(file) => startParse(file)}
                   acceptedName={status === "parsing" ? fileName : null}
                   isParsing={status === "parsing"}
                 />
