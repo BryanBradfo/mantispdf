@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "1.0.3"
+version = "1.0.4"
 description = "MantisPDF desktop — privacy-first PDF toolkit and AI document extraction."
 authors = ["Bryan Chen"]
 license = "MIT"
@@ -27,6 +27,9 @@ tauri-plugin-log = "2"
 # default-features = false drops the `tesseract` feature — born-digital text
 # extraction needs no OCR, and it avoids the tesseract-rs/leptonica build.
 liteparse = { version = "2.0.8", default-features = false }
+# Same version liteparse uses transitively — Cargo unifies it to ONE instance,
+# so loading PDFium by explicit path here populates the OneLock liteparse reads.
+liteparse-pdfium-sys = "1.1.2"
 
 # Stage 3 — Math OCR (ADR 02, Path C): pix2tex exported to ONNX, run via ort.
 anyhow = "1"

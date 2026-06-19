@@ -361,74 +361,65 @@ mod tests {
     }
 }
 
-/// Point liteparse-pdfium (Stage 1) at the bundled libpdfium. It loads the
-/// library at runtime by searching `PDFIUM_LIB_PATH` (a directory) — it does NOT
-/// know about Tauri's resource dir — so without this, Stage-1 extraction panics
-/// with "could not find pdfium shared library". `resource_dir()` alone proved
-/// unreliable across packaging layouts, so we probe several known locations
-/// (incl. the exact FHS install path) and set the var to wherever the lib
-/// actually is. A user-set value wins. (pdf_render for Stage 3 resolves the same
-/// lib independently via the resource dir.)
-fn ensure_pdfium_path(app: &AppHandle) {
+/// Make the bundled PDFium usable at runtime. Stage 1 (liteparse) loads PDFium
+/// via `liteparse-pdfium-sys`, which searches `PDFIUM_LIB_PATH` at extraction
+/// time on a worker thread — and setting that env var from Tauri's setup hook
+/// proved unreliable (the worker didn't observe the cross-thread write, so the
+/// packaged app panicked with "could not find pdfium shared library").
+///
+/// Fix: load PDFium **by explicit path** into the shared `OnceLock` that
+/// liteparse checks (`liteparse-pdfium-sys` is unified to one instance) —
+/// deterministic, no env var, no thread race. We also set `PDFIUM_LIB_PATH`
+/// (for Stage-3 pdf_render and as a fallback). We probe known locations because
+/// `resource_dir()` alone isn't reliable across packaging layouts; a user-set
+/// `PDFIUM_LIB_PATH` is tried first.
+fn preload_pdfium(app: &AppHandle) {
     let names = ["libpdfium.so", "libpdfium.dylib", "pdfium.dll"];
-    let has_lib = |dir: &std::path::Path| names.iter().any(|n| dir.join(n).exists());
+    let mut dirs: Vec<PathBuf> = Vec::new();
 
-    // Diagnostics (printed to stderr even in release builds) — visible by
-    // launching the app from a terminal.
-    match std::env::var("PDFIUM_LIB_PATH") {
-        Ok(v) => eprintln!("[mantis] PDFIUM_LIB_PATH (pre) = {v:?}"),
-        Err(_) => eprintln!("[mantis] PDFIUM_LIB_PATH (pre) = <unset>"),
-    }
-    // Respect an existing value ONLY if it actually contains the library;
-    // otherwise (unset / empty / stale / wrong) we override it below.
-    if let Ok(v) = std::env::var("PDFIUM_LIB_PATH") {
-        if !v.is_empty() && has_lib(std::path::Path::new(&v)) {
-            eprintln!("[mantis] keeping valid PDFIUM_LIB_PATH = {v}");
-            return;
+    if let Ok(d) = std::env::var("PDFIUM_LIB_PATH") {
+        if !d.is_empty() {
+            dirs.push(PathBuf::from(d));
         }
     }
-
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    match app.path().resource_dir() {
-        Ok(rd) => {
-            candidates.push(rd.join("resources"));
-            candidates.push(rd);
-        }
-        Err(e) => eprintln!("[mantis] resource_dir() error: {e}"),
+    if let Ok(rd) = app.path().resource_dir() {
+        dirs.push(rd.join("resources"));
+        dirs.push(rd);
     }
     if let Ok(exe) = std::env::current_exe() {
         eprintln!("[mantis] current_exe = {}", exe.display());
         if let Some(bin) = exe.parent() {
-            candidates.push(bin.join("resources")); // Windows: next-to-exe
-            candidates.push(bin.to_path_buf());
+            dirs.push(bin.join("resources")); // Windows: next-to-exe
+            dirs.push(bin.to_path_buf());
             if let Some(prefix) = bin.parent() {
-                candidates.push(prefix.join("lib/MantisPDF/resources")); // .deb/.rpm/AppImage
-                candidates.push(prefix.join("Resources/resources")); // macOS .app/Contents
-                candidates.push(prefix.join("lib/app/resources"));
+                dirs.push(prefix.join("lib/MantisPDF/resources")); // .deb/.rpm/AppImage
+                dirs.push(prefix.join("Resources/resources")); // macOS .app/Contents
+                dirs.push(prefix.join("lib/app/resources"));
             }
         }
     }
-    for dir in &candidates {
-        let found = has_lib(dir);
-        eprintln!(
-            "[mantis] candidate {} -> {}",
-            dir.display(),
-            if found { "FOUND" } else { "no" }
-        );
-        if found {
+
+    for dir in &dirs {
+        if let Some(name) = names.iter().find(|n| dir.join(n).exists()) {
+            let libfile = dir.join(name);
+            // For Stage-3 pdf_render (pdfium-render) + as a fallback search dir.
             std::env::set_var("PDFIUM_LIB_PATH", dir);
-            eprintln!("[mantis] set PDFIUM_LIB_PATH = {}", dir.display());
+            // Deterministic load for Stage-1 liteparse (no env race).
+            match liteparse_pdfium_sys::dynamic::load(&libfile) {
+                Ok(()) => eprintln!("[mantis] pdfium loaded from {}", libfile.display()),
+                Err(e) => eprintln!("[mantis] pdfium load failed ({}): {e}", libfile.display()),
+            }
             return;
         }
     }
-    eprintln!("[mantis] WARNING: libpdfium not found in any candidate location");
+    eprintln!("[mantis] WARNING: bundled libpdfium not found in any known location");
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     .setup(|app| {
-      ensure_pdfium_path(app.handle());
+      preload_pdfium(app.handle());
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
