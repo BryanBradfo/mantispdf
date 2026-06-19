@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "1.0.2"
+version = "1.0.3"
 description = "MantisPDF desktop — privacy-first PDF toolkit and AI document extraction."
 authors = ["Bryan Chen"]
 license = "MIT"

@@ -370,16 +370,34 @@ mod tests {
 /// actually is. A user-set value wins. (pdf_render for Stage 3 resolves the same
 /// lib independently via the resource dir.)
 fn ensure_pdfium_path(app: &AppHandle) {
-    if std::env::var_os("PDFIUM_LIB_PATH").is_some() {
-        return;
-    }
     let names = ["libpdfium.so", "libpdfium.dylib", "pdfium.dll"];
+    let has_lib = |dir: &std::path::Path| names.iter().any(|n| dir.join(n).exists());
+
+    // Diagnostics (printed to stderr even in release builds) — visible by
+    // launching the app from a terminal.
+    match std::env::var("PDFIUM_LIB_PATH") {
+        Ok(v) => eprintln!("[mantis] PDFIUM_LIB_PATH (pre) = {v:?}"),
+        Err(_) => eprintln!("[mantis] PDFIUM_LIB_PATH (pre) = <unset>"),
+    }
+    // Respect an existing value ONLY if it actually contains the library;
+    // otherwise (unset / empty / stale / wrong) we override it below.
+    if let Ok(v) = std::env::var("PDFIUM_LIB_PATH") {
+        if !v.is_empty() && has_lib(std::path::Path::new(&v)) {
+            eprintln!("[mantis] keeping valid PDFIUM_LIB_PATH = {v}");
+            return;
+        }
+    }
+
     let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(rd) = app.path().resource_dir() {
-        candidates.push(rd.join("resources"));
-        candidates.push(rd);
+    match app.path().resource_dir() {
+        Ok(rd) => {
+            candidates.push(rd.join("resources"));
+            candidates.push(rd);
+        }
+        Err(e) => eprintln!("[mantis] resource_dir() error: {e}"),
     }
     if let Ok(exe) = std::env::current_exe() {
+        eprintln!("[mantis] current_exe = {}", exe.display());
         if let Some(bin) = exe.parent() {
             candidates.push(bin.join("resources")); // Windows: next-to-exe
             candidates.push(bin.to_path_buf());
@@ -390,12 +408,20 @@ fn ensure_pdfium_path(app: &AppHandle) {
             }
         }
     }
-    for dir in candidates {
-        if names.iter().any(|n| dir.join(n).exists()) {
-            std::env::set_var("PDFIUM_LIB_PATH", &dir);
+    for dir in &candidates {
+        let found = has_lib(dir);
+        eprintln!(
+            "[mantis] candidate {} -> {}",
+            dir.display(),
+            if found { "FOUND" } else { "no" }
+        );
+        if found {
+            std::env::set_var("PDFIUM_LIB_PATH", dir);
+            eprintln!("[mantis] set PDFIUM_LIB_PATH = {}", dir.display());
             return;
         }
     }
+    eprintln!("[mantis] WARNING: libpdfium not found in any candidate location");
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
