@@ -361,26 +361,48 @@ mod tests {
     }
 }
 
+/// Point liteparse-pdfium (Stage 1) at the bundled libpdfium. It loads the
+/// library at runtime by searching `PDFIUM_LIB_PATH` (a directory) — it does NOT
+/// know about Tauri's resource dir — so without this, Stage-1 extraction panics
+/// with "could not find pdfium shared library". `resource_dir()` alone proved
+/// unreliable across packaging layouts, so we probe several known locations
+/// (incl. the exact FHS install path) and set the var to wherever the lib
+/// actually is. A user-set value wins. (pdf_render for Stage 3 resolves the same
+/// lib independently via the resource dir.)
+fn ensure_pdfium_path(app: &AppHandle) {
+    if std::env::var_os("PDFIUM_LIB_PATH").is_some() {
+        return;
+    }
+    let names = ["libpdfium.so", "libpdfium.dylib", "pdfium.dll"];
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(rd) = app.path().resource_dir() {
+        candidates.push(rd.join("resources"));
+        candidates.push(rd);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(bin) = exe.parent() {
+            candidates.push(bin.join("resources")); // Windows: next-to-exe
+            candidates.push(bin.to_path_buf());
+            if let Some(prefix) = bin.parent() {
+                candidates.push(prefix.join("lib/MantisPDF/resources")); // .deb/.rpm/AppImage
+                candidates.push(prefix.join("Resources/resources")); // macOS .app/Contents
+                candidates.push(prefix.join("lib/app/resources"));
+            }
+        }
+    }
+    for dir in candidates {
+        if names.iter().any(|n| dir.join(n).exists()) {
+            std::env::set_var("PDFIUM_LIB_PATH", &dir);
+            return;
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     .setup(|app| {
-      // Point liteparse-pdfium (Stage 1) at the bundled libpdfium. It loads the
-      // library at runtime by searching PDFIUM_LIB_PATH — it does NOT know about
-      // Tauri's resource dir — so without this Stage-1 extraction panics with
-      // "could not find pdfium shared library". (Our own pdf_render for Stage 3
-      // resolves the same lib via the resource dir.) A user-set value wins.
-      if std::env::var_os("PDFIUM_LIB_PATH").is_none() {
-        if let Ok(res) = app.handle().path().resource_dir() {
-          let dir = res.join("resources");
-          if dir.join("libpdfium.so").exists()
-            || dir.join("libpdfium.dylib").exists()
-            || dir.join("pdfium.dll").exists()
-          {
-            std::env::set_var("PDFIUM_LIB_PATH", &dir);
-          }
-        }
-      }
+      ensure_pdfium_path(app.handle());
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
