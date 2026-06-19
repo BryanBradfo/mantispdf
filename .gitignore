@@ -66,3 +66,6 @@ src-tauri/resources/*
 
 # Throwaway spikes (ADR 02)
 /spikes/
+
+# tauri-icon Android mipmaps (no Android build)
+src-tauri/icons/android/
