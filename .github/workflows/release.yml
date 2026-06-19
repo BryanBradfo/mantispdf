@@ -19,7 +19,11 @@ jobs:
       matrix:
         include:
           # Two macOS targets so both Apple Silicon and Intel Macs get a build.
-          # pdfium_* fields select the matching libpdfium from bblanchon/pdfium-binaries.
+          # pdfium_* fields select the matching libpdfium from run-llama/pdfium-binaries
+          # at the EXACT tag liteparse-pdfium-sys's build.rs downloads (chromium/7870).
+          # A mismatched build (e.g. bblanchon latest) exports a different ABI and the
+          # eager symbol resolution in PdfiumBindings::load() fails with
+          # "undefined symbol: FPDFText_GetCharCode" at runtime.
           - platform: macos-latest
             args: "--target aarch64-apple-darwin"
             rust_targets: "aarch64-apple-darwin,wasm32-unknown-unknown"
@@ -110,12 +114,18 @@ jobs:
       - name: Bundle PDFium library
         shell: bash
         env:
+          # MUST match liteparse-pdfium-sys/build.rs: same repo + same tag, or the
+          # bundled lib's ABI won't match the symbols PdfiumBindings::load() resolves.
+          PDFIUM_REPO: "run-llama/pdfium-binaries"
+          PDFIUM_TAG: "chromium/7870"
           PDFIUM_ASSET: ${{ matrix.pdfium_asset }}
           PDFIUM_INNER: ${{ matrix.pdfium_inner }}
           PDFIUM_OUT: ${{ matrix.pdfium_out }}
         run: |
           mkdir -p src-tauri/resources
-          url="https://github.com/bblanchon/pdfium-binaries/releases/latest/download/${PDFIUM_ASSET}"
+          # The tag contains a slash (chromium/7870) → URL-encode it as %2F.
+          tag_encoded="${PDFIUM_TAG//\//%2F}"
+          url="https://github.com/${PDFIUM_REPO}/releases/download/${tag_encoded}/${PDFIUM_ASSET}"
           echo "Downloading $url"
           curl -fL "$url" -o /tmp/pdfium.tgz
           tar -xzf /tmp/pdfium.tgz -C /tmp "${PDFIUM_INNER}"
