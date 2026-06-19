@@ -365,6 +365,22 @@ mod tests {
 pub fn run() {
   tauri::Builder::default()
     .setup(|app| {
+      // Point liteparse-pdfium (Stage 1) at the bundled libpdfium. It loads the
+      // library at runtime by searching PDFIUM_LIB_PATH — it does NOT know about
+      // Tauri's resource dir — so without this Stage-1 extraction panics with
+      // "could not find pdfium shared library". (Our own pdf_render for Stage 3
+      // resolves the same lib via the resource dir.) A user-set value wins.
+      if std::env::var_os("PDFIUM_LIB_PATH").is_none() {
+        if let Ok(res) = app.handle().path().resource_dir() {
+          let dir = res.join("resources");
+          if dir.join("libpdfium.so").exists()
+            || dir.join("libpdfium.dylib").exists()
+            || dir.join("pdfium.dll").exists()
+          {
+            std::env::set_var("PDFIUM_LIB_PATH", &dir);
+          }
+        }
+      }
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
