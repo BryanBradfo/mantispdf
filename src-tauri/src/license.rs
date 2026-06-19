@@ -69,6 +69,27 @@ impl LicenseStatus {
             key_masked: Some(mask_key(key)),
         }
     }
+    /// Pro entitlement granted by the local developer override (no real key).
+    #[cfg(debug_assertions)]
+    fn dev_pro() -> Self {
+        Self {
+            tier: "pro".into(),
+            status: "dev".into(),
+            key_masked: None,
+        }
+    }
+}
+
+/// Developer-only Pro override: `MANTIS_DEV_PRO=1` unlocks Stage-3 math OCR
+/// without a license, for local testing. Compiled out of release builds
+/// (`#[cfg(debug_assertions)]`), so the env var is inert in the shipped
+/// installers — the public app has no paywall bypass.
+#[cfg(debug_assertions)]
+fn dev_pro_enabled() -> bool {
+    matches!(
+        std::env::var("MANTIS_DEV_PRO").as_deref(),
+        Ok("1") | Ok("true")
+    )
 }
 
 fn now_secs() -> u64 {
@@ -183,6 +204,12 @@ fn bail_invalid() -> Result<()> {
 /// Current entitlement: trust a recently-validated cache, else re-validate
 /// online, else fall back to the offline grace window.
 pub fn current_status(config_dir: &Path) -> LicenseStatus {
+    // Local dev override (debug builds only) — unlock Pro for Stage-3 testing.
+    #[cfg(debug_assertions)]
+    if dev_pro_enabled() {
+        return LicenseStatus::dev_pro();
+    }
+
     let Some(mut state) = load_state(config_dir) else {
         return LicenseStatus::free("unlicensed");
     };
