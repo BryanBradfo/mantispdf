@@ -136,6 +136,16 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Lemon Squeezy product scope (ADR 03). PUBLIC identifiers — set as
+          # GitHub repo *Variables* (Settings → Secrets and variables → Actions
+          # → Variables). Baked at build time:
+          #  - LS_VARIANT_ID / LS_STORE_ID → option_env! in license.rs; scope Pro
+          #    keys to THIS product (unset = scope check skipped = any key unlocks).
+          #  - VITE_MANTIS_CHECKOUT_URL → the "Upgrade to Pro" CTA target; read by
+          #    Vite during the beforeBuildCommand (npm run build).
+          LS_VARIANT_ID: ${{ vars.LS_VARIANT_ID }}
+          LS_STORE_ID: ${{ vars.LS_STORE_ID }}
+          VITE_MANTIS_CHECKOUT_URL: ${{ vars.MANTIS_CHECKOUT_URL }}
           # --- Optional code-signing / notarization (see notes). If unset, the
           # build is unsigned and still produces installers. ---
           # macOS:
