@@ -13,6 +13,9 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
 const ZOOM_STEP = 0.25;
 
+// Presets offered by the percentage dropdown. 100% == fit-panel-width.
+const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+
 function Centered({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-zinc-500">
@@ -34,9 +37,11 @@ function Centered({ children }: { children: React.ReactNode }) {
  */
 export default function PdfPreview({ url }: PdfPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [numPages, setNumPages] = useState(0);
   const [width, setWidth] = useState(0);
   const [zoom, setZoom] = useState(1);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [errored, setErrored] = useState(false);
 
   // Track the container width so each Page renders at the panel size.
@@ -55,7 +60,23 @@ export default function PdfPreview({ url }: PdfPreviewProps) {
     setNumPages(0);
     setErrored(false);
     setZoom(1);
+    setMenuOpen(false);
   }, [url]);
+
+  // Close the zoom menu on outside click or Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   // Container has px-4 (16px) padding each side; cap so huge panels stay sane.
   const fitWidth = width > 0 ? Math.min(width - 32, 1000) : undefined;
@@ -66,7 +87,10 @@ export default function PdfPreview({ url }: PdfPreviewProps) {
     setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)));
   const zoomIn = () =>
     setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)));
-  const resetZoom = () => setZoom(1);
+  const pickZoom = (z: number) => {
+    setZoom(z);
+    setMenuOpen(false);
+  };
 
   const showControls = numPages > 0 && !errored;
 
@@ -126,7 +150,10 @@ export default function PdfPreview({ url }: PdfPreviewProps) {
 
       {showControls && (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
-          <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-zinc-900/85 px-1.5 py-1 text-zinc-100 shadow-lg ring-1 ring-white/10 backdrop-blur dark:bg-black/80">
+          <div
+            ref={menuRef}
+            className="pointer-events-auto flex items-center gap-1 rounded-full bg-zinc-900/85 px-1.5 py-1 text-zinc-100 shadow-lg ring-1 ring-white/10 backdrop-blur dark:bg-black/80"
+          >
             <button
               type="button"
               onClick={zoomOut}
@@ -136,14 +163,44 @@ export default function PdfPreview({ url }: PdfPreviewProps) {
             >
               <ZoomOut className="h-4 w-4" strokeWidth={2} />
             </button>
-            <button
-              type="button"
-              onClick={resetZoom}
-              aria-label="Reset zoom to fit width"
-              className="min-w-[3.25rem] rounded-full px-2 py-1 text-xs font-medium tabular-nums transition hover:bg-white/10"
-            >
-              {Math.round(zoom * 100)}%
-            </button>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMenuOpen((o) => !o)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-label="Choose zoom level"
+                className="min-w-[3.25rem] rounded-full px-2 py-1 text-xs font-medium tabular-nums transition hover:bg-white/10"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              {menuOpen && (
+                <div
+                  role="menu"
+                  className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 overflow-hidden rounded-xl bg-zinc-900/95 py-1 shadow-xl ring-1 ring-white/10 backdrop-blur dark:bg-black/90"
+                >
+                  {ZOOM_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={zoom === preset}
+                      onClick={() => pickZoom(preset)}
+                      className={`flex w-full items-center justify-between gap-4 px-4 py-1.5 text-xs tabular-nums transition hover:bg-white/10 ${
+                        zoom === preset ? "font-semibold text-accent" : "text-zinc-100"
+                      }`}
+                    >
+                      <span>{Math.round(preset * 100)}%</span>
+                      {preset === 1 && (
+                        <span className="text-[10px] text-zinc-400">Fit</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={zoomIn}
