@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://mantispdf.vercel.app"><img src="https://img.shields.io/badge/Live-mantispdf.vercel.app-brightgreen?style=for-the-badge" alt="Live site"></a>
+  <a href="https://mantispdf.bryanbradfo.me/"><img src="https://img.shields.io/badge/Live-mantispdf.bryanbradfo.me-brightgreen?style=for-the-badge" alt="Live site"></a>
   <a href="https://github.com/BryanBradfo/mantispdf/actions"><img src="https://img.shields.io/github/actions/workflow/status/BryanBradfo/mantispdf/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
@@ -121,7 +121,13 @@ Then open a PR against `main`. Please keep PRs focused — one feature or fix pe
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/image?repos=bryanbradfo/mantispdf&type=date&legend=top-left)](https://www.star-history.com/?repos=bryanbradfo%2Fmantispdf&type=date&legend=top-left)
+<a href="https://www.star-history.com/?repos=BryanBradfo%2Fmantispdf&type=date&logscale=&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=BryanBradfo/mantispdf&type=date&theme=dark&logscale&legend=bottom-right&sealed_token=xvoJQvt2fO5_HD39G19nf7HBLYtWNSxcKYRxwMu3Tyl3VcM81s5Wiv6O1I-sLIluLEr8ycBqWa73njx7Z9_isgz1gj0DP0qPiVnFxH5Y_zXmVz1y7_XZiCNK41c-BZKbttZa5Hwi-inx58lEhXvUwyLjHqtd0fhwZvcfOJLMODpB6Fkcxwo3_9hCBBSy" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=BryanBradfo/mantispdf&type=date&logscale&legend=bottom-right&sealed_token=xvoJQvt2fO5_HD39G19nf7HBLYtWNSxcKYRxwMu3Tyl3VcM81s5Wiv6O1I-sLIluLEr8ycBqWa73njx7Z9_isgz1gj0DP0qPiVnFxH5Y_zXmVz1y7_XZiCNK41c-BZKbttZa5Hwi-inx58lEhXvUwyLjHqtd0fhwZvcfOJLMODpB6Fkcxwo3_9hCBBSy" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=BryanBradfo/mantispdf&type=date&logscale&legend=bottom-right&sealed_token=xvoJQvt2fO5_HD39G19nf7HBLYtWNSxcKYRxwMu3Tyl3VcM81s5Wiv6O1I-sLIluLEr8ycBqWa73njx7Z9_isgz1gj0DP0qPiVnFxH5Y_zXmVz1y7_XZiCNK41c-BZKbttZa5Hwi-inx58lEhXvUwyLjHqtd0fhwZvcfOJLMODpB6Fkcxwo3_9hCBBSy" />
+ </picture>
+</a>
 
 ## How it works
 
