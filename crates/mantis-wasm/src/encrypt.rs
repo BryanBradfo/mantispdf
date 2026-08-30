@@ -50,10 +50,47 @@ fn encrypt_pdf_impl(
     doc.encrypt(&state)
         .map_err(|e| e.to_string())?;
 
+    // lopdf's Aes256CryptFilter omits /Length from the crypt filter dictionary.
+    // Poppler-based viewers (Evince, Okular, and most Linux/GNOME readers) read
+    // it to size the AES key; without it they derive a shorter, wrong key. The
+    // document then authenticates and opens, but every stream and string
+    // decrypts to garbage - the file renders blank. Acrobat writes the key
+    // length in BYTES here, so /Length 32 for AES-256.
+    set_crypt_filter_length(&mut doc)?;
+
     let mut buf = Vec::new();
     doc.save_to(&mut buf)
         .map_err(|e| e.to_string())?;
     Ok(buf)
+}
+
+/// Add `/Length 32` to the `/StdCF` crypt filter written by lopdf.
+///
+/// See the call site for why this matters. Kept separate so the fix is one
+/// named step rather than a block of dereferencing inside the main flow.
+fn set_crypt_filter_length(doc: &mut Document) -> Result<(), String> {
+    let encrypt_id = doc
+        .trailer
+        .get(b"Encrypt")
+        .map_err(|e| format!("no /Encrypt after encrypting: {e}"))?
+        .as_reference()
+        .map_err(|e| format!("/Encrypt is not a reference: {e}"))?;
+
+    let dict = doc
+        .get_object_mut(encrypt_id)
+        .map_err(|e| format!("resolve /Encrypt: {e}"))?
+        .as_dict_mut()
+        .map_err(|e| format!("/Encrypt is not a dictionary: {e}"))?;
+
+    let std_cf = dict
+        .get_mut(b"CF")
+        .and_then(|o| o.as_dict_mut())
+        .and_then(|cf| cf.get_mut(b"StdCF"))
+        .and_then(|o| o.as_dict_mut())
+        .map_err(|e| format!("/CF /StdCF crypt filter missing: {e}"))?;
+
+    std_cf.set("Length", 32i64);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -142,6 +179,49 @@ mod tests {
         let pdf = make_test_pdf(1);
         let result = encrypt_pdf_impl(&pdf, "secret", "secret");
         assert!(result.is_ok());
+    }
+
+
+    /// The crypt filter dictionary MUST declare the key length.
+    ///
+    /// Poppler (Evince, Okular, and most Linux/GNOME viewers) reads `/Length`
+    /// from the crypt filter to size the AES key. Without it, it derives a
+    /// shorter key, so every stream and string decrypts to garbage while
+    /// *authentication still succeeds* - the document opens, then renders
+    /// nothing. Verified on a real paper: 114 "Unknown compression method in
+    /// flate stream" errors and 7 characters of extractable text; adding
+    /// `/Length 32` makes the same file render perfectly.
+    ///
+    /// lopdf's `Aes256CryptFilter` does not emit it, so `encrypt_pdf_impl`
+    /// adds it. The other tests here cannot catch this: they read the output
+    /// back with lopdf, which ignores `/Length` and so agrees with itself.
+    #[test]
+    fn test_crypt_filter_declares_key_length() {
+        let pdf = make_test_pdf(1);
+        let out = encrypt_pdf_impl(&pdf, "pw", "owner").expect("encrypt");
+        // Assert on the SERIALIZED bytes: lopdf drops /Encrypt from the
+        // trailer once it has decrypted on load, and the bytes are what a
+        // viewer actually parses. Work on bytes, not str - the neighbouring
+        // /OE and /UE entries are binary and split UTF-8 boundaries.
+        let needle = b"/CF";
+        let cf_start = out
+            .windows(needle.len())
+            .position(|w| w == needle)
+            .expect("/CF crypt filter dictionary");
+        let cf = &out[cf_start..(cf_start + 80).min(out.len())];
+        let contains = |hay: &[u8], pat: &[u8]| hay.windows(pat.len()).any(|w| w == pat);
+
+        assert!(
+            contains(cf, b"/AESV3"),
+            "expected an AES-256 crypt filter, got: {}",
+            String::from_utf8_lossy(cf)
+        );
+        assert!(
+            contains(cf, b"/Length 32"),
+            "crypt filter must declare /Length 32 (bytes) or poppler-based \
+             viewers derive the wrong key and render an empty document; got: {}",
+            String::from_utf8_lossy(cf)
+        );
     }
 
     #[test]
