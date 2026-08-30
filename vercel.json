@@ -1,5 +1,11 @@
 {
   "buildCommand": "HOME=/root rustup target add wasm32-unknown-unknown && HOME=/root cargo install --root /usr/local wasm-pack --locked && npm run build:wasm && npm run build",
   "outputDirectory": "dist",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }
