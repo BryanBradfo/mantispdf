@@ -40,9 +40,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "resources/*"
-    ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }

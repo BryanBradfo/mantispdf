@@ -52,6 +52,10 @@ pub struct LicenseStatus {
 }
 
 impl LicenseStatus {
+    // Unused since the extraction engine was removed: `recognize_math` was the
+    // only Pro-gated command. Kept because the frontend still surfaces the Pro
+    // badge, and any future paid feature gates on it.
+    #[allow(dead_code)]
     pub fn is_pro(&self) -> bool {
         self.tier == "pro"
     }

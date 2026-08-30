@@ -1,9 +1,17 @@
 # ADR 01 — Local Markdown/LaTeX Extraction Engine
 
-- **Status:** Accepted
+- **Status:** Superseded (2026-08-30) — engine removed, see note below
 - **Date:** 2026-06-16
 - **Deciders:** Bryan Chen (product), AI architecture review
 - **Context tags:** privacy-first, local-only, B2B, Tauri desktop, freemium web
+
+> **Superseded on 2026-08-30.** The extraction engine was removed from the
+> codebase. The web build never invoked it: the real pipeline ran only under
+> `isTauri()`, and the browser silently fell back to a hardcoded sample
+> document (`MOCK_MARKDOWN` in `src/components/landing/Workspace.tsx`), so every
+> uploaded PDF produced the same fake output. Rather than fix the fallback, the
+> decision was to drop the feature and return MantisPDF to a client-side PDF
+> toolkit. This ADR is kept for the reasoning, not as a description of the code.
 
 ## Context
 
