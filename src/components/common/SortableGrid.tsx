@@ -65,9 +65,11 @@ function usePrefersReducedMotion(): boolean {
   return reduced;
 }
 
-function SortableCell({ id, reduced, children }: { id: string; reduced: boolean; children: ReactNode }) {
+function SortableCell({ id, label, reduced, children }: { id: string; label: string; reduced: boolean; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
+    // The cell contains its own buttons, so it must not be role="button" (nested-interactive).
+    attributes: { role: "group" },
     // Animate every index change, so arrow-button moves and removals glide too.
     animateLayoutChanges: (args) => !reduced && !(args.wasDragging && args.index === args.newIndex),
     transition: reduced ? null : { duration: 200, easing: EASE },
@@ -82,6 +84,7 @@ function SortableCell({ id, reduced, children }: { id: string; reduced: boolean;
       style={style}
       {...attributes}
       {...listeners}
+      aria-label={label}
       className={`relative touch-manipulation rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 focus-visible:ring-offset-2 ${
         isDragging ? "cursor-grabbing" : "cursor-grab"
       }`}
@@ -155,7 +158,7 @@ export default function SortableGrid<T extends { id: string }>({
       <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
         <div className={className}>
           {items.map((item, index) => (
-            <SortableCell key={item.id} id={item.id} reduced={reduced}>
+            <SortableCell key={item.id} id={item.id} label={label(item)} reduced={reduced}>
               {renderItem(item, index)}
             </SortableCell>
           ))}

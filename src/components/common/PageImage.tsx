@@ -30,7 +30,11 @@ export default function PageImage({ source, page, width, alt, imgStyle, classNam
         />
       )}
       {thumb.status === "loading" && (
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
+        <div
+          role="status"
+          aria-label="Loading preview"
+          className="h-6 w-6 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent motion-reduce:animate-none"
+        />
       )}
       {thumb.status === "error" && (
         <svg viewBox="0 0 80 100" className="h-20 w-16 drop-shadow-sm" fill="none" role="img" aria-label="Preview unavailable">
