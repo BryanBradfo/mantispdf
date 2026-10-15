@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import { Document } from "../lib/pdf";
 import { PageSEO } from "../components/seo/PageSEO";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { useEditState } from "../hooks/useEditState";
@@ -12,15 +11,8 @@ import EditThumbnailGrid from "../components/edit/EditThumbnailGrid";
 export default function EditPdfPage() {
   const worker = usePdfWorker();
   const { state, dispatch } = useEditState();
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
-
-  useEffect(() => {
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [blobUrl]);
 
   const handleFile = useCallback(
     async (f: File) => {
@@ -29,31 +21,20 @@ export default function EditPdfPage() {
         dispatch({ type: "upload-error", message: err });
         return;
       }
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      if (!worker.ready) {
+        dispatch({ type: "upload-error", message: "Engine is still loading, please wait a moment." });
+        return;
+      }
       setEditError(null);
       try {
         const pdfBytes = await readFileAsUint8Array(f);
-        setBlobUrl(URL.createObjectURL(f));
-        // numPages will be set once react-pdf reports document load
-        dispatch({ type: "file-loaded", file: f, pdfBytes, numPages: 0 });
+        const numPages = await worker.countPages(pdfBytes);
+        dispatch({ type: "file-loaded", file: f, pdfBytes, numPages });
       } catch {
-        dispatch({ type: "upload-error", message: "Failed to read file." });
+        dispatch({ type: "upload-error", message: "Failed to read this PDF." });
       }
     },
-    [blobUrl, dispatch],
-  );
-
-  const handleDocumentLoad = useCallback(
-    ({ numPages }: { numPages: number }) => {
-      if (!state.file || !state.pdfBytes) return;
-      dispatch({
-        type: "file-loaded",
-        file: state.file,
-        pdfBytes: state.pdfBytes,
-        numPages,
-      });
-    },
-    [state.file, state.pdfBytes, dispatch],
+    [dispatch, worker],
   );
 
   const handleDownload = useCallback(async () => {
@@ -75,12 +56,10 @@ export default function EditPdfPage() {
   }, [state, worker]);
 
   const handleReset = useCallback(() => {
-    if (blobUrl) URL.revokeObjectURL(blobUrl);
-    setBlobUrl(null);
     setEditError(null);
     setDownloaded(false);
     dispatch({ type: "reset" });
-  }, [blobUrl, dispatch]);
+  }, [dispatch]);
 
   const deletedCount = state.deletedPages.size;
   const hasChanges =
@@ -96,7 +75,7 @@ export default function EditPdfPage() {
       />
       <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Edit Pages</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        Delete unwanted pages or reorder them with the arrow buttons. All processing happens in your browser.
+        Delete unwanted pages or drag them into a new order. All processing happens in your browser.
       </p>
 
       <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
@@ -143,19 +122,9 @@ export default function EditPdfPage() {
 
           <ErrorAlert error={editError} onDismiss={() => setEditError(null)} className="mt-4" />
 
-          {state.numPages === 0 ? (
-            <div className="mt-8 flex items-center justify-center py-12">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
-              <span className="ml-3 text-gray-500 dark:text-[#555]">Loading PDF…</span>
-              <Document file={blobUrl} onLoadSuccess={handleDocumentLoad} className="hidden">
-                {null}
-              </Document>
-            </div>
-          ) : (
-            <div className="mt-6">
-              <EditThumbnailGrid blobUrl={blobUrl!} state={state} dispatch={dispatch} />
-            </div>
-          )}
+          <div className="mt-6">
+            <EditThumbnailGrid pdfBytes={state.pdfBytes!} state={state} dispatch={dispatch} />
+          </div>
         </>
       )}
     </div>

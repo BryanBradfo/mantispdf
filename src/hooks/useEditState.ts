@@ -9,11 +9,12 @@ export type EditState = {
   uploadError: string | null;
 };
 
-type EditAction =
+export type EditAction =
   | { type: "file-loaded"; file: File; pdfBytes: Uint8Array; numPages: number }
   | { type: "upload-error"; message: string }
   | { type: "toggle-delete"; page: number }
   | { type: "move-page"; index: number; direction: "left" | "right" }
+  | { type: "reorder"; from: number; to: number }
   | { type: "reset" };
 
 const initialState: EditState = {
@@ -25,7 +26,7 @@ const initialState: EditState = {
   uploadError: null,
 };
 
-function editReducer(state: EditState, action: EditAction): EditState {
+export function editReducer(state: EditState, action: EditAction): EditState {
   switch (action.type) {
     case "file-loaded":
       return {
@@ -54,6 +55,15 @@ function editReducer(state: EditState, action: EditAction): EditState {
       const swapIdx = direction === "left" ? index - 1 : index + 1;
       if (swapIdx < 0 || swapIdx >= order.length) return state;
       [order[index], order[swapIdx]] = [order[swapIdx], order[index]];
+      return { ...state, pageOrder: order };
+    }
+    case "reorder": {
+      const { from, to } = action;
+      const n = state.pageOrder.length;
+      if (from < 0 || from >= n || to < 0 || to >= n || from === to) return state;
+      const order = [...state.pageOrder];
+      const [moved] = order.splice(from, 1);
+      order.splice(to, 0, moved);
       return { ...state, pageOrder: order };
     }
     case "reset":
