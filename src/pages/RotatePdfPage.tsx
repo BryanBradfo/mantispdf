@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
 import PageImage from "../components/common/PageImage";
@@ -24,6 +24,9 @@ export default function RotatePdfPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [rotateError, setRotateError] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  // Identifies the latest upload so a superseded countPages result is ignored.
+  const uploadToken = useRef(0);
 
   const handleFile = useCallback(
     async (f: File) => {
@@ -33,18 +36,31 @@ export default function RotatePdfPage() {
         return;
       }
       if (!worker.ready) {
-        setUploadError("Engine is still loading, please wait a moment.");
+        setUploadError(
+          worker.initError
+            ? "PDF engine failed to load. Please reload the page."
+            : "Engine is still loading, please wait a moment.",
+        );
         return;
       }
+      const token = ++uploadToken.current;
       setUploadError(null);
       setRotateError(null);
+      setLoading(true);
       try {
         const n = await worker.countPages(await readFileAsUint8Array(f));
-        setFile(f);
-        setNumPages(n);
-        setRotations(Array(n).fill(0));
+        if (token !== uploadToken.current) return;
+        if (n <= 0) {
+          setUploadError("Failed to read this PDF.");
+        } else {
+          setFile(f);
+          setNumPages(n);
+          setRotations(Array(n).fill(0));
+        }
       } catch {
-        setUploadError("Failed to read this PDF.");
+        if (token === uploadToken.current) setUploadError("Failed to read this PDF.");
+      } finally {
+        if (token === uploadToken.current) setLoading(false);
       }
     },
     [worker],
@@ -96,9 +112,16 @@ export default function RotatePdfPage() {
       <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       {!file ? (
-        <div className="mt-8">
-          <DropZone onFile={handleFile} error={uploadError} />
-        </div>
+        loading ? (
+          <div className="mt-8 flex items-center justify-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent motion-reduce:animate-none" />
+            <span className="ml-3 text-gray-500 dark:text-[#555]">Loading PDF…</span>
+          </div>
+        ) : (
+          <div className="mt-8">
+            <DropZone onFile={handleFile} error={uploadError} />
+          </div>
+        )
       ) : (
         <>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
@@ -155,55 +178,55 @@ export default function RotatePdfPage() {
 
           <ErrorAlert error={rotateError} onDismiss={() => setRotateError(null)} className="mt-4" />
 
-            <div className="mt-6">
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {Array.from({ length: numPages }, (_, i) => (
-                  <div key={i} className="flex flex-col items-center gap-2">
-                    <div className="relative w-full">
-                      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#222] dark:bg-[#141414]">
-                        <div className="relative aspect-[8.5/11] w-full overflow-hidden bg-gray-100 dark:bg-[#1a1a1a]">
-                          <div
-                            className="absolute inset-0 flex items-center justify-center"
-                            style={{
-                              transform: thumbnailTransform(rotations[i] ?? 0),
-                              transition: "transform 0.3s ease",
-                            }}
-                          >
-                            <PageImage source={file!} page={i + 1} width={160} alt={`Page ${i + 1}`} />
-                          </div>
-                        </div>
-                        <div className="border-t border-gray-100 px-2 py-1 text-center text-xs text-gray-500 dark:border-[#222] dark:text-[#555]">
-                          Page {i + 1}
+          <div className="mt-6">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {Array.from({ length: numPages }, (_, i) => (
+                <div key={i} className="flex flex-col items-center gap-2">
+                  <div className="relative w-full">
+                    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#222] dark:bg-[#141414]">
+                      <div className="relative aspect-[8.5/11] w-full overflow-hidden bg-gray-100 dark:bg-[#1a1a1a]">
+                        <div
+                          className="absolute inset-0 flex items-center justify-center"
+                          style={{
+                            transform: thumbnailTransform(rotations[i] ?? 0),
+                            transition: "transform 0.3s ease",
+                          }}
+                        >
+                          <PageImage source={file!} page={i + 1} width={160} alt={`Page ${i + 1}`} />
                         </div>
                       </div>
-                      {rotations[i] !== 0 && (
-                        <div className="absolute right-1.5 top-1.5 rounded bg-mantis-600 px-1.5 py-0.5 text-xs font-bold text-white">
-                          {rotations[i]}°
-                        </div>
-                      )}
+                      <div className="border-t border-gray-100 px-2 py-1 text-center text-xs text-gray-500 dark:border-[#222] dark:text-[#555]">
+                        Page {i + 1}
+                      </div>
                     </div>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => rotatePage(i, -90)}
-                        className="rounded border border-gray-200 px-2.5 py-1 text-sm hover:bg-gray-50 dark:border-[#333] dark:hover:bg-[#1a1a1a]"
-                        title="Rotate counter-clockwise"
-                        aria-label={`Rotate page ${i + 1} 90° counter-clockwise`}
-                      >
-                        ↺
-                      </button>
-                      <button
-                        onClick={() => rotatePage(i, 90)}
-                        className="rounded border border-gray-200 px-2.5 py-1 text-sm hover:bg-gray-50 dark:border-[#333] dark:hover:bg-[#1a1a1a]"
-                        title="Rotate clockwise"
-                        aria-label={`Rotate page ${i + 1} 90° clockwise`}
-                      >
-                        ↻
-                      </button>
-                    </div>
+                    {rotations[i] !== 0 && (
+                      <div className="absolute right-1.5 top-1.5 rounded bg-mantis-600 px-1.5 py-0.5 text-xs font-bold text-white">
+                        {rotations[i]}°
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => rotatePage(i, -90)}
+                      className="rounded border border-gray-200 px-2.5 py-1 text-sm hover:bg-gray-50 dark:border-[#333] dark:hover:bg-[#1a1a1a]"
+                      title="Rotate counter-clockwise"
+                      aria-label={`Rotate page ${i + 1} 90° counter-clockwise`}
+                    >
+                      ↺
+                    </button>
+                    <button
+                      onClick={() => rotatePage(i, 90)}
+                      className="rounded border border-gray-200 px-2.5 py-1 text-sm hover:bg-gray-50 dark:border-[#333] dark:hover:bg-[#1a1a1a]"
+                      title="Rotate clockwise"
+                      aria-label={`Rotate page ${i + 1} 90° clockwise`}
+                    >
+                      ↻
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
+          </div>
         </>
       )}
     </div>

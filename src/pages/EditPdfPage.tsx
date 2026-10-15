@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
 import { usePdfWorker } from "../hooks/usePdfWorker";
@@ -13,6 +13,9 @@ export default function EditPdfPage() {
   const { state, dispatch } = useEditState();
   const [editError, setEditError] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  // Identifies the latest upload so a superseded countPages result is ignored.
+  const uploadToken = useRef(0);
 
   const handleFile = useCallback(
     async (f: File) => {
@@ -22,16 +25,27 @@ export default function EditPdfPage() {
         return;
       }
       if (!worker.ready) {
-        dispatch({ type: "upload-error", message: "Engine is still loading, please wait a moment." });
+        dispatch({
+          type: "upload-error",
+          message: worker.initError
+            ? "PDF engine failed to load. Please reload the page."
+            : "Engine is still loading, please wait a moment.",
+        });
         return;
       }
+      const token = ++uploadToken.current;
       setEditError(null);
+      setLoading(true);
       try {
         const pdfBytes = await readFileAsUint8Array(f);
         const numPages = await worker.countPages(pdfBytes);
-        dispatch({ type: "file-loaded", file: f, pdfBytes, numPages });
+        if (token !== uploadToken.current) return;
+        if (numPages <= 0) dispatch({ type: "upload-error", message: "Failed to read this PDF." });
+        else dispatch({ type: "file-loaded", file: f, pdfBytes, numPages });
       } catch {
-        dispatch({ type: "upload-error", message: "Failed to read this PDF." });
+        if (token === uploadToken.current) dispatch({ type: "upload-error", message: "Failed to read this PDF." });
+      } finally {
+        if (token === uploadToken.current) setLoading(false);
       }
     },
     [dispatch, worker],
@@ -81,9 +95,16 @@ export default function EditPdfPage() {
       <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       {!state.file ? (
-        <div className="mt-8">
-          <DropZone onFile={handleFile} error={state.uploadError} />
-        </div>
+        loading ? (
+          <div className="mt-8 flex items-center justify-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent motion-reduce:animate-none" />
+            <span className="ml-3 text-gray-500 dark:text-[#555]">Loading PDF…</span>
+          </div>
+        ) : (
+          <div className="mt-8">
+            <DropZone onFile={handleFile} error={state.uploadError} />
+          </div>
+        )
       ) : (
         <>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">

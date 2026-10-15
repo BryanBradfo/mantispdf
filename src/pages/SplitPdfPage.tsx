@@ -43,9 +43,9 @@ export default function SplitPdfPage() {
     (async () => {
       try {
         const count = await countPages(await readFileAsUint8Array(file));
-        if (!cancelled && count > 0) {
-          dispatch({ type: "file-loaded", file, numPages: count });
-        }
+        if (cancelled) return;
+        if (count > 0) dispatch({ type: "file-loaded", file, numPages: count });
+        else dispatch({ type: "upload-error", error: "Failed to read this PDF." });
       } catch {
         if (!cancelled) dispatch({ type: "upload-error", error: "Failed to read this PDF." });
       }
