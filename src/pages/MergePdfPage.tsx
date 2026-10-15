@@ -90,7 +90,7 @@ export default function MergePdfPage() {
       />
       <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Merge PDF</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        Upload multiple PDFs, drag to reorder, then merge into a single document.
+        Upload multiple PDFs, grab a card to reorder, then merge into a single document.
       </p>
 
       <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
