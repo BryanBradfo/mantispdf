@@ -104,14 +104,19 @@ describe("ThumbnailStore", () => {
     expect(store.getThumb("a", 1, 100)?.status).toBe("ready");
   });
 
-  it("ref-counts multiple consumers", () => {
-    const { store, revoked, destroy, flushReleases } = setup();
+  it("ref-counts multiple consumers", async () => {
+    const { store, renders, destroy, revoked, flushReleases } = setup();
     store.register("a", bytes());
     store.register("a", bytes());
+    store.request("a", 1, 100);
+    await vi.waitFor(() => expect(renders).toHaveLength(1));
+    renders[0].d.resolve(new Blob(["x"]));
+    await vi.waitFor(() => expect(store.getThumb("a", 1, 100)).toEqual({ status: "ready", url: "blob:test/1" }));
     store.release("a");
     flushReleases();
-    expect(destroy).not.toHaveBeenCalled();
+    expect(store.getThumb("a", 1, 100)).toEqual({ status: "ready", url: "blob:test/1" });
     expect(revoked).toEqual([]);
+    expect(destroy).not.toHaveBeenCalled();
   });
 
   it("dispose during render: no state, no URL, doc destroyed", async () => {
