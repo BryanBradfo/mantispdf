@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
-import { Document, Thumbnail } from "../lib/pdf";
+import PageImage from "../components/common/PageImage";
 import { usePdfWorker } from "../hooks/usePdfWorker";
-import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
+import { validatePdfFile, downloadBlob, readFileAsUint8Array } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 
@@ -19,38 +19,36 @@ export default function RotatePdfPage() {
   const worker = usePdfWorker();
 
   const [file, setFile] = useState<File | null>(null);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [rotations, setRotations] = useState<number[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [rotateError, setRotateError] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
 
-  useEffect(() => {
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [blobUrl]);
-
-  const handleFile = useCallback((f: File) => {
-    const err = validatePdfFile(f);
-    if (err) {
-      setUploadError(err);
-      return;
-    }
-    if (blobUrl) URL.revokeObjectURL(blobUrl);
-    setUploadError(null);
-    setRotateError(null);
-    setFile(f);
-    setBlobUrl(URL.createObjectURL(f));
-    setNumPages(0);
-    setRotations([]);
-  }, [blobUrl]);
-
-  const handleDocumentLoad = useCallback(({ numPages: n }: { numPages: number }) => {
-    setNumPages(n);
-    setRotations(Array(n).fill(0));
-  }, []);
+  const handleFile = useCallback(
+    async (f: File) => {
+      const err = validatePdfFile(f);
+      if (err) {
+        setUploadError(err);
+        return;
+      }
+      if (!worker.ready) {
+        setUploadError("Engine is still loading, please wait a moment.");
+        return;
+      }
+      setUploadError(null);
+      setRotateError(null);
+      try {
+        const n = await worker.countPages(await readFileAsUint8Array(f));
+        setFile(f);
+        setNumPages(n);
+        setRotations(Array(n).fill(0));
+      } catch {
+        setUploadError("Failed to read this PDF.");
+      }
+    },
+    [worker],
+  );
 
   const rotatePage = useCallback((idx: number, delta: number) => {
     setRotations((r) => r.map((v, i) => (i === idx ? ((v + delta + 360) % 360) : v)));
@@ -75,13 +73,11 @@ export default function RotatePdfPage() {
 
   const handleReset = useCallback(() => {
     setFile(null);
-    if (blobUrl) URL.revokeObjectURL(blobUrl);
-    setBlobUrl(null);
     setNumPages(0);
     setRotations([]);
     setRotateError(null);
     setDownloaded(false);
-  }, [blobUrl]);
+  }, []);
 
   const allZero = rotations.every((v) => v === 0);
 
@@ -159,16 +155,7 @@ export default function RotatePdfPage() {
 
           <ErrorAlert error={rotateError} onDismiss={() => setRotateError(null)} className="mt-4" />
 
-          {numPages === 0 ? (
-            <div className="mt-8 flex items-center justify-center py-12">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
-              <span className="ml-3 text-gray-500 dark:text-[#555]">Loading PDF…</span>
-              <Document file={blobUrl} onLoadSuccess={handleDocumentLoad} className="hidden">
-                {null}
-              </Document>
-            </div>
-          ) : (
-            <Document file={blobUrl} loading={null} className="mt-6">
+            <div className="mt-6">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
                 {Array.from({ length: numPages }, (_, i) => (
                   <div key={i} className="flex flex-col items-center gap-2">
@@ -182,7 +169,7 @@ export default function RotatePdfPage() {
                               transition: "transform 0.3s ease",
                             }}
                           >
-                            <Thumbnail pageNumber={i + 1} width={160} />
+                            <PageImage source={file!} page={i + 1} width={160} alt={`Page ${i + 1}`} />
                           </div>
                         </div>
                         <div className="border-t border-gray-100 px-2 py-1 text-center text-xs text-gray-500 dark:border-[#222] dark:text-[#555]">
@@ -216,8 +203,7 @@ export default function RotatePdfPage() {
                   </div>
                 ))}
               </div>
-            </Document>
-          )}
+            </div>
         </>
       )}
     </div>

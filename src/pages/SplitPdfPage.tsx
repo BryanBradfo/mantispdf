@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageSEO } from "../components/seo/PageSEO";
 import { useSplitState } from "../hooks/useSplitState";
@@ -10,7 +10,6 @@ import ErrorAlert from "../components/common/ErrorAlert";
 import ThumbnailGrid from "../components/split/ThumbnailGrid";
 import SplitActions from "../components/split/SplitActions";
 import ProgressOverlay from "../components/common/ProgressOverlay";
-import { Document } from "../lib/pdf";
 
 export default function SplitPdfPage() {
   const [state, dispatch] = useSplitState();
@@ -18,19 +17,6 @@ export default function SplitPdfPage() {
   const [splitError, setSplitError] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
-
-  // Create a stable Blob URL for react-pdf directly from the File reference.
-  // This avoids loading the entire file into JS heap just for thumbnail rendering.
-  const pdfUrl = useMemo(() => {
-    if (!state.file) return null;
-    return URL.createObjectURL(state.file);
-  }, [state.file]);
-
-  useEffect(() => {
-    return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-    };
-  }, [pdfUrl]);
 
   const handleFile = useCallback(
     (file: File) => {
@@ -40,7 +26,7 @@ export default function SplitPdfPage() {
         return;
       }
       // Dispatch immediately with just the File reference.
-      // numPages is set later via react-pdf's onLoadSuccess.
+      // numPages is set later from the engine page count.
       dispatch({ type: "file-loaded", file, numPages: 0 });
     },
     [dispatch],
@@ -48,8 +34,7 @@ export default function SplitPdfPage() {
 
   // Source the page count from the WASM engine (lopdf) — the same library that
   // performs the split — so the page count the user sees and selects split points
-  // against always matches what the split actually produces. react-pdf's
-  // onLoadSuccess (below) is only a fallback if the engine count is unavailable.
+  // against always matches what the split actually produces.
   const { ready: engineReady, countPages } = worker;
   useEffect(() => {
     if (!state.file || !engineReady || state.numPages > 0) return;
@@ -62,23 +47,13 @@ export default function SplitPdfPage() {
           dispatch({ type: "file-loaded", file, numPages: count });
         }
       } catch {
-        // Leave numPages at 0 so react-pdf's onLoadSuccess can fill it in.
+        if (!cancelled) dispatch({ type: "upload-error", error: "Failed to read this PDF." });
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [state.file, engineReady, state.numPages, countPages, dispatch]);
-
-  const handleDocumentLoad = useCallback(
-    ({ numPages }: { numPages: number }) => {
-      // Fallback only: if the engine already set the count, don't override it.
-      if (state.file && state.numPages === 0) {
-        dispatch({ type: "file-loaded", file: state.file, numPages });
-      }
-    },
-    [dispatch, state.file, state.numPages],
-  );
 
   const handleSplit = useCallback(async () => {
     if (!state.file || state.splitPoints.size === 0) return;
@@ -149,24 +124,16 @@ export default function SplitPdfPage() {
           {state.numPages > 0 ? (
             <div className="mt-6">
               <ThumbnailGrid
-                pdfUrl={pdfUrl!}
+                source={state.file!}
                 numPages={state.numPages}
                 splitPoints={state.splitPoints}
                 onToggleSplit={handleToggleSplit}
               />
             </div>
           ) : (
-            // Hidden Document just to get numPages via onLoadSuccess
             <div className="mt-8 flex items-center justify-center py-12">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
               <span className="ml-3 text-gray-500 dark:text-[#555]">Loading PDF…</span>
-              <Document
-                file={pdfUrl}
-                onLoadSuccess={handleDocumentLoad}
-                className="hidden"
-              >
-                {null}
-              </Document>
             </div>
           )}
         </>

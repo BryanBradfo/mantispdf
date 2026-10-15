@@ -1,9 +1,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { Document } from "../../lib/pdf";
 import PageThumbnail from "./PageThumbnail";
 
 interface ThumbnailGridProps {
-  pdfUrl: string;
+  source: Blob;
   numPages: number;
   splitPoints: Set<number>;
   onToggleSplit: (page: number) => void;
@@ -83,7 +82,7 @@ function RowEndCut({
 }
 
 export default function ThumbnailGrid({
-  pdfUrl,
+  source,
   numPages,
   splitPoints,
   onToggleSplit,
@@ -128,14 +127,14 @@ export default function ThumbnailGrid({
   );
 
   return (
-    <Document file={pdfUrl} loading={null}>
+    <>
       <div ref={containerRef} className="flex flex-col gap-y-4">
         {rows.map(rowPages => (
           <div key={rowPages[0]} className="flex items-start">
             {rowPages.map(page => (
               <div key={page} className="flex items-start">
                 <div className="w-[280px]">
-                  <PageThumbnail pageNumber={page} />
+                  <PageThumbnail source={source} pageNumber={page} />
                 </div>
                 {page !== numPages && (
                   <VerticalDivider
@@ -155,6 +154,6 @@ export default function ThumbnailGrid({
           </div>
         ))}
       </div>
-    </Document>
+    </>
   );
 }
