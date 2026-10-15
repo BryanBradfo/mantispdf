@@ -66,8 +66,11 @@ test.describe("merge", () => {
   test("keyboard reorder: Space, ArrowRight, Space", async ({ page }) => {
     const cards = page.getByTestId("merge-card");
     await cards.nth(0).locator("xpath=../..").focus(); // SortableCell (focus + listeners) > slot div > card
+    const live = (text: string) => page.locator("[aria-live]").filter({ hasText: text });
     await page.keyboard.press("Space");
+    await expect(live("alpha.pdf is over position 1")).toHaveCount(1);
     await page.keyboard.press("ArrowRight");
+    await expect(live("is over position 2")).toHaveCount(1);
     await page.keyboard.press("Space");
     await expect.poll(async () => (await cardTexts(cards))[1]).toContain("alpha.pdf");
   });
