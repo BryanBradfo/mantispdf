@@ -69,7 +69,7 @@ function SortableCell({ id, reduced, children }: { id: string; reduced: boolean;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     // Animate every index change, so arrow-button moves and removals glide too.
-    animateLayoutChanges: () => !reduced,
+    animateLayoutChanges: (args) => !reduced && !(args.wasDragging && args.index === args.newIndex),
     transition: reduced ? null : { duration: 200, easing: EASE },
   });
   const style: CSSProperties = {
