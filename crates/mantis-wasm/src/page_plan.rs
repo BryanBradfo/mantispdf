@@ -117,6 +117,7 @@ pub fn apply_plan(sources: &[&[u8]], plan: &[PlanEntry]) -> Result<Vec<u8>, Stri
     // and catalog up front so dropped pages can never survive; dangling references
     // then read as null.
     let kept: HashSet<ObjectId> = kids_set;
+    cut_annotation_links(&mut out, &kept);
     for &leaf in leaves.iter().flatten() {
         if !kept.contains(&leaf) {
             out.objects.remove(&leaf);
@@ -167,6 +168,38 @@ fn add_rotation(doc: &mut Document, id: ObjectId, delta: i64) -> Result<(), Stri
         dict.set("Rotate", Object::Integer(next));
     }
     Ok(())
+}
+
+/// Cut annotation links that would drag dropped content along: a widget's /Parent
+/// (field tree, sibling fields' values and appearances) and a /IRT or /Popup that
+/// points at an annotation outside the kept pages.
+fn cut_annotation_links(doc: &mut Document, kept_pages: &HashSet<ObjectId>) {
+    let mut annots: Vec<ObjectId> = Vec::new();
+    for &page in kept_pages {
+        let list = match doc.get_dictionary(page).ok().and_then(|d| d.get(b"Annots").ok()).cloned() {
+            Some(Object::Array(a)) => a,
+            Some(Object::Reference(r)) => doc.get_object(r).and_then(|o| o.as_array()).cloned().unwrap_or_default(),
+            _ => continue,
+        };
+        annots.extend(list.iter().filter_map(|a| a.as_reference().ok()));
+    }
+    let kept_annots: HashSet<ObjectId> = annots.iter().copied().collect();
+    for id in annots {
+        let Ok(dict) = doc.get_object_mut(id).and_then(|o| o.as_dict_mut()) else { continue };
+        if dict.get(b"Subtype").ok().and_then(|s| s.as_name().ok()) == Some(b"Widget".as_slice()) {
+            dict.remove(b"Parent");
+        }
+        for key in [&b"IRT"[..], &b"Popup"[..]] {
+            let outside = match dict.get(key) {
+                Ok(Object::Reference(r)) => !kept_annots.contains(r),
+                Ok(_) => true,
+                Err(_) => false,
+            };
+            if outside {
+                dict.remove(key);
+            }
+        }
+    }
 }
 
 /// Give a cloned page its own copies of its annotations (annotation /P points at the page).
@@ -432,6 +465,75 @@ mod tests {
         let r: Vec<i64> = pages(&out).iter().map(|p| p.rotate).collect();
         assert!(r.iter().all(|v| [0, 90, 180, 270].contains(v)), "got {r:?}");
         assert_eq!(&r[..2], [90, 90]);
+    }
+
+    /// Page 1: a widget (field A) whose parent field also owns a widget on page 2 (field B,
+    /// with a value and appearance), plus a reply annotation pointing at a note on page 2.
+    fn form_and_reply_pdf() -> Vec<u8> {
+        let src = labeled_pdf(&["KEEPPAGE", "DROPPAGE"], 612, 792);
+        let mut doc = Document::load_mem(&src).unwrap();
+        let ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
+        let rect = || vec![Object::from(0), 0.into(), 10.into(), 10.into()];
+        let ap = |doc: &mut Document, text: &str| {
+            let s = doc.add_object(Stream::new(
+                dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => rect() },
+                text.as_bytes().to_vec(),
+            ));
+            dictionary! { "N" => s }
+        };
+        let form = doc.new_object_id();
+        let ap_a = ap(&mut doc, "(KEEPAP) Tj");
+        let widget_a = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx", "Rect" => rect(),
+            "Parent" => form, "AP" => ap_a,
+        });
+        let ap_b = ap(&mut doc, "(SECRETAP) Tj");
+        let widget_b = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx", "Rect" => rect(),
+            "Parent" => form, "V" => Object::string_literal("SECRETVALUE"), "AP" => ap_b,
+        });
+        doc.objects.insert(form, Object::Dictionary(dictionary! {
+            "FT" => "Tx", "T" => Object::string_literal("form"),
+            "Kids" => vec![Object::Reference(widget_a), Object::Reference(widget_b)],
+        }));
+        let note = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Text", "Rect" => rect(),
+            "Contents" => Object::string_literal("SECRETNOTE"),
+        });
+        let reply = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Text", "Rect" => rect(),
+            "IRT" => note, "Popup" => note, "Contents" => Object::string_literal("reply"),
+        });
+        let set_annots = |doc: &mut Document, page: ObjectId, a: Vec<ObjectId>| {
+            doc.get_object_mut(page).unwrap().as_dict_mut().unwrap()
+                .set("Annots", a.into_iter().map(Object::Reference).collect::<Vec<_>>());
+        };
+        set_annots(&mut doc, ids[0], vec![widget_a, reply]);
+        set_annots(&mut doc, ids[1], vec![widget_b, note]);
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        buf
+    }
+
+    #[test]
+    fn kept_annotations_do_not_leak_dropped_pages_via_form_tree_or_replies() {
+        let src = form_and_reply_pdf();
+        let out = apply_plan(&[&src], &[page(0, 1)]).unwrap();
+        for secret in ["SECRETVALUE", "SECRETAP", "SECRETNOTE", "DROPPAGE"] {
+            assert!(!contains(&out, secret), "{secret} must not survive");
+        }
+        let doc = Document::load_mem(&out).unwrap();
+        assert_eq!(doc.get_pages().len(), 1);
+        let pid = *doc.get_pages().values().next().unwrap();
+        let annots = doc.get_dictionary(pid).unwrap().get(b"Annots").unwrap().as_array().unwrap().clone();
+        let widget = annots
+            .iter()
+            .filter_map(|a| doc.get_dictionary(a.as_reference().ok()?).ok())
+            .find(|d| d.get(b"Subtype").ok().and_then(|s| s.as_name().ok()) == Some(b"Widget".as_slice()))
+            .expect("widget kept");
+        assert!(widget.get(b"AP").is_ok(), "widget keeps its own appearance");
+        assert!(widget.get(b"Parent").is_err(), "widget /Parent is cut");
+        assert!(contains(&out, "KEEPAP"));
     }
 
     #[test]
