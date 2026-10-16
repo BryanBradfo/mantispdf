@@ -37,7 +37,7 @@ export default function SelectPagesTool({ mode }: { mode: "remove" | "extract" }
   const copy = COPY[mode];
   const worker = usePdfWorker();
   const [state, dispatch] = usePagePlanner();
-  const { addFiles, loading } = usePlannerUpload(worker, dispatch);
+  const { addFiles, loading, cancel } = usePlannerUpload(worker, dispatch);
   const [perPage, setPerPage] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +121,10 @@ export default function SelectPagesTool({ mode }: { mode: "remove" | "extract" }
                 {busy ? "Processing…" : "Download"}
               </button>
               <button
-                onClick={() => dispatch({ type: "reset" })}
+                onClick={() => {
+                  cancel();
+                  dispatch({ type: "reset" });
+                }}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
               >
                 New file

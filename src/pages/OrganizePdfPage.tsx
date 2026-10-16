@@ -12,7 +12,7 @@ import { usePlannerUpload } from "./usePlannerUpload";
 export default function OrganizePdfPage() {
   const worker = usePdfWorker();
   const [state, dispatch] = usePagePlanner();
-  const { addFiles, loading } = usePlannerUpload(worker, dispatch);
+  const { addFiles, loading, cancel } = usePlannerUpload(worker, dispatch);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,7 +77,10 @@ export default function OrganizePdfPage() {
                 {busy ? "Processing…" : "Download PDF"}
               </button>
               <button
-                onClick={() => dispatch({ type: "reset" })}
+                onClick={() => {
+                  cancel();
+                  dispatch({ type: "reset" });
+                }}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
               >
                 Start over
