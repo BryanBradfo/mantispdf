@@ -5,8 +5,10 @@
   <url><loc>https://mantispdf.vercel.app/merge</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
   <url><loc>https://mantispdf.vercel.app/compress</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
   <url><loc>https://mantispdf.vercel.app/rotate</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/edit</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/organize</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/remove-pages</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/extract-pages</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
   <url><loc>https://mantispdf.vercel.app/watermark</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
   <url><loc>https://mantispdf.vercel.app/encrypt</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/pdf-to-images</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/pdf-to-image</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
 </urlset>

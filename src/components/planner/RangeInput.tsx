@@ -47,7 +47,7 @@ export default function RangeInput({ label, total, selectedPages, onPages }: Pro
         aria-describedby={`${id}-help`}
         className={`mt-1 w-full max-w-sm rounded-lg border px-3 py-1.5 text-sm dark:bg-[#141414] dark:text-[#e5e5e5] ${error ? "border-red-400" : "border-gray-300 dark:border-[#333]"}`}
       />
-      <p id={`${id}-help`} className={`mt-1 text-xs ${error ? "text-red-600 dark:text-red-400" : "text-gray-500 dark:text-[#555]"}`}>
+      <p id={`${id}-help`} role={error ? "alert" : undefined} className={`mt-1 text-xs ${error ? "text-red-600 dark:text-red-400" : "text-gray-500 dark:text-[#555]"}`}>
         {error ?? "Click pages or type ranges."}
       </p>
     </div>

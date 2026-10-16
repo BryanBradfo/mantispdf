@@ -92,7 +92,7 @@ export function usePdfWorker() {
         merging: false,
         compressing: false,
         rotating: false,
-              watermarking: false,
+        watermarking: false,
         encrypting: false,
         progress: 0,
         progressMessage: "",
