@@ -69,7 +69,9 @@ pub fn apply_plan(sources: &[&[u8]], plan: &[PlanEntry]) -> Result<Vec<u8>, Stri
                     leaf
                 } else {
                     let dict = out.get_dictionary(leaf).map_err(|e| e.to_string())?.clone();
-                    out.add_object(dict)
+                    let clone = out.add_object(dict);
+                    isolate_annotations(&mut out, clone);
+                    clone
                 };
                 slots.push(Some((id, rotate)));
             }
@@ -99,6 +101,7 @@ pub fn apply_plan(sources: &[&[u8]], plan: &[PlanEntry]) -> Result<Vec<u8>, Stri
             dict.set("Parent", Object::Reference(pages_id));
         }
     }
+    let kids_set: HashSet<ObjectId> = kids.iter().copied().collect();
     let count = kids.len() as i64;
     out.objects.insert(
         pages_id,
@@ -108,6 +111,34 @@ pub fn apply_plan(sources: &[&[u8]], plan: &[PlanEntry]) -> Result<Vec<u8>, Stri
             "Count" => count,
         }),
     );
+
+    // prune_objects keeps everything reachable, and a kept page can reach a dropped
+    // one (Link /Dest, /Parent chains). Delete every imported page, page-tree node
+    // and catalog up front so dropped pages can never survive; dangling references
+    // then read as null.
+    let kept: HashSet<ObjectId> = kids_set;
+    for &leaf in leaves.iter().flatten() {
+        if !kept.contains(&leaf) {
+            out.objects.remove(&leaf);
+        }
+    }
+    let stale: Vec<ObjectId> = out
+        .objects
+        .iter()
+        .filter(|(id, o)| {
+            **id != pages_id
+                && o.as_dict()
+                    .ok()
+                    .and_then(|d| d.get(b"Type").ok())
+                    .and_then(|t| t.as_name().ok())
+                    .is_some_and(|n| n == b"Pages" || n == b"Catalog")
+        })
+        .map(|(id, _)| *id)
+        .collect();
+    for id in stale {
+        out.objects.remove(&id);
+    }
+
     let catalog_id = out.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
     out.trailer.set("Root", catalog_id);
     out.prune_objects();
@@ -122,14 +153,44 @@ fn add_rotation(doc: &mut Document, id: ObjectId, delta: i64) -> Result<(), Stri
         .get_object_mut(id)
         .and_then(|o| o.as_dict_mut())
         .map_err(|e| format!("Cannot access page: {e}"))?;
-    let current = dict.get(b"Rotate").and_then(|o| o.as_i64()).unwrap_or(0);
-    let next = ((current + delta) % 360 + 360) % 360;
+    let current = match dict.get(b"Rotate") {
+        Ok(Object::Integer(i)) => i.rem_euclid(360) as f64,
+        Ok(Object::Real(f)) if f.is_finite() => (*f as f64).rem_euclid(360.0),
+        _ => 0.0,
+    };
+    // Snap to the nearest quarter turn, then add the delta without overflow.
+    let current = (current / 90.0).round() as i64 * 90;
+    let next = (current + delta.rem_euclid(360)).rem_euclid(360);
     if next == 0 {
         dict.remove(b"Rotate");
     } else {
         dict.set("Rotate", Object::Integer(next));
     }
     Ok(())
+}
+
+/// Give a cloned page its own copies of its annotations (annotation /P points at the page).
+fn isolate_annotations(doc: &mut Document, page: ObjectId) {
+    let annots = match doc.get_dictionary(page).ok().and_then(|d| d.get(b"Annots").ok()).cloned() {
+        Some(Object::Array(a)) => a,
+        Some(Object::Reference(r)) => match doc.get_object(r).and_then(|o| o.as_array()) {
+            Ok(a) => a.clone(),
+            Err(_) => return,
+        },
+        _ => return,
+    };
+    let copies: Vec<Object> = annots
+        .into_iter()
+        .map(|a| {
+            let Object::Reference(r) = a else { return a };
+            let Ok(mut dict) = doc.get_dictionary(r).cloned() else { return Object::Reference(r) };
+            dict.set("P", Object::Reference(page));
+            Object::Reference(doc.add_object(dict))
+        })
+        .collect();
+    if let Ok(d) = doc.get_object_mut(page).and_then(|o| o.as_dict_mut()) {
+        d.set("Annots", Object::Array(copies));
+    }
 }
 
 fn add_blank_page(doc: &mut Document, reference: Option<ObjectId>) -> ObjectId {
@@ -298,5 +359,96 @@ mod tests {
                 PlanEntry::Page { src: 1, page: 1, rotate: -90 },
             ]
         );
+    }
+
+    fn contains(hay: &[u8], needle: &str) -> bool {
+        hay.windows(needle.len()).any(|w| w == needle.as_bytes())
+    }
+
+    fn pages_node_count(bytes: &[u8]) -> usize {
+        let doc = Document::load_mem(bytes).unwrap();
+        doc.objects
+            .values()
+            .filter(|o| o.as_dict().ok().and_then(|d| d.get(b"Type").ok()).and_then(|t| t.as_name().ok()) == Some(b"Pages".as_slice()))
+            .count()
+    }
+
+    /// Source whose page 1 carries a Link annotation with /Dest pointing at page 2.
+    fn linked_pdf() -> Vec<u8> {
+        let src = labeled_pdf(&["KEEPPAGE", "SECRETPAGE"], 612, 792);
+        let mut doc = Document::load_mem(&src).unwrap();
+        let ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
+        let annot = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Link", "P" => ids[0],
+            "Rect" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+            "Dest" => vec![Object::Reference(ids[1]), Object::Name(b"Fit".to_vec())],
+        });
+        doc.get_object_mut(ids[0]).unwrap().as_dict_mut().unwrap().set("Annots", vec![Object::Reference(annot)]);
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        buf
+    }
+
+    #[test]
+    fn dropped_page_reachable_via_link_dest_is_removed() {
+        let src = linked_pdf();
+        let out = apply_plan(&[&src], &[page(0, 1), page(0, 1)]).unwrap();
+        assert!(!contains(&out, "SECRETPAGE"), "dropped page content must not survive");
+        assert_eq!(pages_node_count(&out), 1, "only the new /Pages node may remain");
+    }
+
+    #[test]
+    fn plain_drop_removes_page_content() {
+        let a = labeled_pdf(&["KEEPPAGE", "DROPTWO", "DROPTHREE"], 612, 792);
+        let out = apply_plan(&[&a], &[page(0, 1)]).unwrap();
+        assert!(contains(&out, "KEEPPAGE"));
+        assert!(!contains(&out, "DROPTWO") && !contains(&out, "DROPTHREE"));
+        assert_eq!(pages_node_count(&out), 1);
+    }
+
+    #[test]
+    fn unused_source_leaves_nothing_behind() {
+        let a = labeled_pdf(&["KEEPPAGE"], 612, 792);
+        let b = labeled_pdf(&["UNUSEDONE", "UNUSEDTWO"], 842, 595);
+        let out = apply_plan(&[&a, &b], &[page(0, 1)]).unwrap();
+        assert!(!contains(&out, "UNUSEDONE") && !contains(&out, "UNUSEDTWO"));
+        assert_eq!(pages_node_count(&out), 1);
+    }
+
+    #[test]
+    fn hostile_and_fractional_rotate_values_are_normalized() {
+        let a = labeled_pdf(&["A1", "A2", "A3"], 612, 792);
+        let mut doc = Document::load_mem(&a).unwrap();
+        let ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
+        let set = |doc: &mut Document, id: ObjectId, v: Object| {
+            doc.get_object_mut(id).unwrap().as_dict_mut().unwrap().set("Rotate", v);
+        };
+        set(&mut doc, ids[0], Object::Real(90.0));
+        set(&mut doc, ids[1], Object::Integer(100));
+        set(&mut doc, ids[2], Object::Integer(i64::MAX));
+        let mut src = Vec::new();
+        doc.save_to(&mut src).unwrap();
+        let out = apply_plan(&[&src], &[page(0, 1), page(0, 2), PlanEntry::Page { src: 0, page: 3, rotate: 90 }]).unwrap();
+        let r: Vec<i64> = pages(&out).iter().map(|p| p.rotate).collect();
+        assert!(r.iter().all(|v| [0, 90, 180, 270].contains(v)), "got {r:?}");
+        assert_eq!(&r[..2], [90, 90]);
+    }
+
+    #[test]
+    fn duplicate_gets_its_own_annotations() {
+        let src = linked_pdf();
+        let out = apply_plan(&[&src], &[page(0, 1), page(0, 1)]).unwrap();
+        let doc = Document::load_mem(&out).unwrap();
+        let ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
+        let mut annots = Vec::new();
+        for &pid in &ids {
+            let arr = doc.get_dictionary(pid).unwrap().get(b"Annots").unwrap().as_array().unwrap().clone();
+            assert_eq!(arr.len(), 1);
+            let aid = arr[0].as_reference().unwrap();
+            let p = doc.get_dictionary(aid).unwrap().get(b"P").unwrap().as_reference().unwrap();
+            assert_eq!(p, pid, "annotation /P must point at its own page");
+            annots.push(aid);
+        }
+        assert_ne!(annots[0], annots[1]);
     }
 }
