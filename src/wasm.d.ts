@@ -31,4 +31,5 @@ declare module "mantis-wasm" {
     user_password: string,
     owner_password: string,
   ): Uint8Array;
+  export function apply_page_plan(pdf_list: Uint8Array[], plan: Int32Array): Uint8Array;
 }

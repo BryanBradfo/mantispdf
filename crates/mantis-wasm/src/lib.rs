@@ -2,6 +2,7 @@ mod compress;
 mod edit;
 mod encrypt;
 mod merge;
+mod page_plan;
 mod pdf_util;
 mod rotate;
 mod split;
@@ -63,4 +64,12 @@ pub fn merge_pdfs(pdf_list: js_sys::Array) -> Result<Vec<u8>, JsValue> {
 
     let slices: Vec<&[u8]> = buffers.iter().map(|b| b.as_slice()).collect();
     merge::merge_documents(&slices).map_err(|e| JsValue::from_str(&e))
+}
+
+#[wasm_bindgen]
+pub fn apply_page_plan(pdf_list: js_sys::Array, plan: &[i32]) -> Result<Vec<u8>, JsValue> {
+    let buffers: Vec<Vec<u8>> = pdf_list.iter().map(|v| js_sys::Uint8Array::new(&v).to_vec()).collect();
+    let slices: Vec<&[u8]> = buffers.iter().map(|b| b.as_slice()).collect();
+    let entries = page_plan::decode_plan(plan).map_err(|e| JsValue::from_str(&e))?;
+    page_plan::apply_plan(&slices, &entries).map_err(|e| JsValue::from_str(&e))
 }
