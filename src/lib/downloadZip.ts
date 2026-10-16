@@ -79,7 +79,7 @@ export function buildZip(parts: { name: string; bytes: Uint8Array }[]): Promise<
   });
 }
 
-export async function downloadAsZip(parts: PdfPart[], baseName: string) {
+export async function downloadAsZip(parts: PdfPart[], baseName: string, suffix = "split") {
   // Single part: skip the zip entirely, download as plain PDF
   if (parts.length === 1) {
     triggerDownload(
@@ -92,7 +92,7 @@ export async function downloadAsZip(parts: PdfPart[], baseName: string) {
   const zipped = await buildZip(parts);
   triggerDownload(
     new Blob([zipped], { type: "application/zip" }),
-    `${baseName}_split.zip`,
+    `${baseName}_${suffix}.zip`,
   );
 }
 

@@ -30,10 +30,24 @@ const tools = [
     available: true,
   },
   {
-    title: "Edit PDF",
-    description: "Delete or reorder pages in your document.",
-    href: "/edit",
-    icon: "✏️",
+    title: "Organize PDF",
+    description: "Reorder, rotate, duplicate and delete pages, even across several PDFs.",
+    href: "/organize",
+    icon: "🗂️",
+    available: true,
+  },
+  {
+    title: "Remove Pages",
+    description: "Delete the pages you do not need.",
+    href: "/remove-pages",
+    icon: "🗑️",
+    available: true,
+  },
+  {
+    title: "Extract Pages",
+    description: "Pull pages into a new PDF, or one file per page.",
+    href: "/extract-pages",
+    icon: "📤",
     available: true,
   },
   {

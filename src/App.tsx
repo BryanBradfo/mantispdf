@@ -10,6 +10,9 @@ const SplitPdfPage = lazy(() => import("./pages/SplitPdfPage"));
 const MergePdfPage = lazy(() => import("./pages/MergePdfPage"));
 const CompressPdfPage = lazy(() => import("./pages/CompressPdfPage"));
 const RotatePdfPage = lazy(() => import("./pages/RotatePdfPage"));
+const OrganizePdfPage = lazy(() => import("./pages/OrganizePdfPage"));
+const RemovePagesPage = lazy(() => import("./pages/RemovePagesPage"));
+const ExtractPagesPage = lazy(() => import("./pages/ExtractPagesPage"));
 const PdfToImagePage = lazy(() => import("./pages/PdfToImagePage"));
 const WatermarkPdfPage = lazy(() => import("./pages/WatermarkPdfPage"));
 const EncryptPdfPage = lazy(() => import("./pages/EncryptPdfPage"));
@@ -55,6 +58,9 @@ export default function App() {
               <Route path="/compress" element={<CompressPdfPage />} />
               <Route path="/rotate" element={<RotatePdfPage />} />
               <Route path="/edit" element={<Navigate to="/organize" replace />} />
+              <Route path="/organize" element={<OrganizePdfPage />} />
+              <Route path="/remove-pages" element={<RemovePagesPage />} />
+              <Route path="/extract-pages" element={<ExtractPagesPage />} />
               <Route path="/pdf-to-image" element={<PdfToImagePage />} />
               <Route path="/watermark" element={<WatermarkPdfPage />} />
               <Route path="/encrypt" element={<EncryptPdfPage />} />
