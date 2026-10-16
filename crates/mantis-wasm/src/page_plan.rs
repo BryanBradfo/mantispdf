@@ -170,34 +170,61 @@ fn add_rotation(doc: &mut Document, id: ObjectId, delta: i64) -> Result<(), Stri
     Ok(())
 }
 
-/// Cut annotation links that would drag dropped content along: a widget's /Parent
-/// (field tree, sibling fields' values and appearances) and a /IRT or /Popup that
-/// points at an annotation outside the kept pages.
+/// Cut annotation links that would drag dropped content along: /Parent (a widget's
+/// field tree, with sibling fields' values and appearances), /IRT and /Popup are
+/// removed from every kept annotation unless they point at another kept annotation.
+/// Inline (direct dictionary) annotations are handled too.
 fn cut_annotation_links(doc: &mut Document, kept_pages: &HashSet<ObjectId>) {
-    let mut annots: Vec<ObjectId> = Vec::new();
+    // Where each kept page's /Annots array lives: inside the page, or its own object.
+    let mut arrays: Vec<(ObjectId, bool)> = Vec::new();
+    let mut kept_annots: HashSet<ObjectId> = HashSet::new();
     for &page in kept_pages {
-        let list = match doc.get_dictionary(page).ok().and_then(|d| d.get(b"Annots").ok()).cloned() {
-            Some(Object::Array(a)) => a,
-            Some(Object::Reference(r)) => doc.get_object(r).and_then(|o| o.as_array()).cloned().unwrap_or_default(),
+        let (holder, list) = match doc.get_dictionary(page).ok().and_then(|d| d.get(b"Annots").ok()).cloned() {
+            Some(Object::Array(a)) => ((page, true), a),
+            Some(Object::Reference(r)) => match doc.get_object(r).and_then(|o| o.as_array()) {
+                Ok(a) => ((r, false), a.clone()),
+                Err(_) => continue,
+            },
             _ => continue,
         };
-        annots.extend(list.iter().filter_map(|a| a.as_reference().ok()));
+        arrays.push(holder);
+        kept_annots.extend(list.iter().filter_map(|a| a.as_reference().ok()));
     }
-    let kept_annots: HashSet<ObjectId> = annots.iter().copied().collect();
-    for id in annots {
-        let Ok(dict) = doc.get_object_mut(id).and_then(|o| o.as_dict_mut()) else { continue };
-        if dict.get(b"Subtype").ok().and_then(|s| s.as_name().ok()) == Some(b"Widget".as_slice()) {
-            dict.remove(b"Parent");
-        }
-        for key in [&b"IRT"[..], &b"Popup"[..]] {
-            let outside = match dict.get(key) {
-                Ok(Object::Reference(r)) => !kept_annots.contains(r),
-                Ok(_) => true,
-                Err(_) => false,
-            };
-            if outside {
-                dict.remove(key);
+    for (holder, in_page) in arrays {
+        let Ok(obj) = doc.get_object_mut(holder) else { continue };
+        let list = if in_page {
+            obj.as_dict_mut().ok().and_then(|d| d.get_mut(b"Annots").ok()).and_then(|o| o.as_array_mut().ok())
+        } else {
+            obj.as_array_mut().ok()
+        };
+        let refs: Vec<ObjectId> = match list {
+            Some(list) => {
+                for entry in list.iter_mut() {
+                    if let Object::Dictionary(d) = entry {
+                        cut_links(d, &kept_annots);
+                    }
+                }
+                list.iter().filter_map(|a| a.as_reference().ok()).collect()
             }
+            None => continue,
+        };
+        for id in refs {
+            if let Ok(d) = doc.get_object_mut(id).and_then(|o| o.as_dict_mut()) {
+                cut_links(d, &kept_annots);
+            }
+        }
+    }
+}
+
+fn cut_links(dict: &mut lopdf::Dictionary, kept_annots: &HashSet<ObjectId>) {
+    for key in [&b"Parent"[..], &b"IRT"[..], &b"Popup"[..]] {
+        let outside = match dict.get(key) {
+            Ok(Object::Reference(r)) => !kept_annots.contains(r),
+            Ok(_) => true,
+            Err(_) => false,
+        };
+        if outside {
+            dict.remove(key);
         }
     }
 }
@@ -534,6 +561,55 @@ mod tests {
         assert!(widget.get(b"AP").is_ok(), "widget keeps its own appearance");
         assert!(widget.get(b"Parent").is_err(), "widget /Parent is cut");
         assert!(contains(&out, "KEEPAP"));
+    }
+
+    /// Two-page source; page 1's /Annots holds one INLINE widget whose /Parent field also
+    /// owns a SECRETVALUE widget on page 2. With `indirect_subtype`, /Subtype is a reference.
+    fn inline_widget_pdf(indirect_subtype: bool) -> Vec<u8> {
+        let src = labeled_pdf(&["KEEPPAGE", "DROPPAGE"], 612, 792);
+        let mut doc = Document::load_mem(&src).unwrap();
+        let ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
+        let rect = || vec![Object::from(0), 0.into(), 10.into(), 10.into()];
+        let form = doc.new_object_id();
+        let widget_b = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx", "Rect" => rect(),
+            "Parent" => form, "V" => Object::string_literal("SECRETVALUE"),
+        });
+        doc.objects.insert(form, Object::Dictionary(dictionary! {
+            "FT" => "Tx", "Kids" => vec![Object::Reference(widget_b)],
+        }));
+        let subtype: Object = if indirect_subtype {
+            Object::Reference(doc.add_object(Object::Name(b"Widget".to_vec())))
+        } else {
+            Object::Name(b"Widget".to_vec())
+        };
+        let inline = dictionary! {
+            "Type" => "Annot", "Subtype" => subtype, "FT" => "Tx", "Rect" => rect(), "Parent" => form,
+        };
+        let page1 = doc.get_object_mut(ids[0]).unwrap().as_dict_mut().unwrap();
+        if indirect_subtype {
+            // Same, but as a referenced annotation rather than an inline one.
+            let id = doc.add_object(inline);
+            doc.get_object_mut(ids[0]).unwrap().as_dict_mut().unwrap().set("Annots", vec![Object::Reference(id)]);
+        } else {
+            page1.set("Annots", vec![Object::Dictionary(inline)]);
+        }
+        doc.get_object_mut(ids[1]).unwrap().as_dict_mut().unwrap().set("Annots", vec![Object::Reference(widget_b)]);
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        buf
+    }
+
+    #[test]
+    fn inline_annotation_parent_link_is_cut() {
+        let out = apply_plan(&[&inline_widget_pdf(false)], &[page(0, 1)]).unwrap();
+        assert!(!contains(&out, "SECRETVALUE") && !contains(&out, "DROPPAGE"));
+    }
+
+    #[test]
+    fn indirect_subtype_annotation_parent_link_is_cut() {
+        let out = apply_plan(&[&inline_widget_pdf(true)], &[page(0, 1)]).unwrap();
+        assert!(!contains(&out, "SECRETVALUE") && !contains(&out, "DROPPAGE"));
     }
 
     #[test]
