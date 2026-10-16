@@ -103,11 +103,11 @@ test.describe("merge", () => {
   });
 });
 
-test("edit: drag page 1 after page 3, download keeps the new order", async ({ page }) => {
+test("organize: drag page 1 after page 3, download keeps the new order", async ({ page }) => {
   const bad = watchConsole(page);
-  await page.goto("/edit");
-  await upload(page, [fx("four-pages.pdf")], "edit-card", 4);
-  const cards = page.getByTestId("edit-card");
+  await page.goto("/organize");
+  await upload(page, [fx("four-pages.pdf")], "planner-card", 4);
+  const cards = page.getByTestId("planner-card");
   await waitForThumbs(page, 4);
   await dragByBody(page, cards.nth(0), cards.nth(2));
   await expect.poll(async () => (await cardTexts(cards)).map((t) => t.match(/Page (\d)/)?.[1]))
@@ -115,7 +115,7 @@ test("edit: drag page 1 after page 3, download keeps the new order", async ({ pa
 
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("button", { name: "Download Edited PDF" }).click(),
+    page.getByRole("button", { name: "Download PDF" }).click(),
   ]);
   const bytes = new Uint8Array(await readFile(await download.path()));
   const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
