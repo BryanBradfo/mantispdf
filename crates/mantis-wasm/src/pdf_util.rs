@@ -1,5 +1,5 @@
 use lopdf::{Document, Object, ObjectId};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 /// Resolve an inheritable page attribute (`/MediaBox`, `/Resources`, `/Rotate`,
 /// `/CropBox`) by walking the `/Parent` chain starting at `page_id`. Returns the
@@ -22,6 +22,73 @@ pub fn get_inherited_attr(doc: &Document, page_id: ObjectId, key: &[u8]) -> Opti
             Ok(parent) => current = parent,
             Err(_) => return None,
         }
+    }
+}
+
+/// Copy every object of `source` into `base` under fresh ids and return the
+/// imported page leaves in page order. Inherited `/MediaBox`, `/Resources`,
+/// `/CropBox` and `/Rotate` are materialized onto each leaf, so a leaf still
+/// renders correctly once it is reparented. `/Parent` is left as imported:
+/// callers wire the leaves into their own page tree.
+pub fn import_document(base: &mut Document, source: &Document) -> Vec<ObjectId> {
+    let mut id_map: BTreeMap<ObjectId, ObjectId> = BTreeMap::new();
+    for &old_id in source.objects.keys() {
+        let new_id = base.new_object_id();
+        id_map.insert(old_id, new_id);
+    }
+    for (&old_id, object) in &source.objects {
+        let mut new_obj = object.clone();
+        remap_references(&mut new_obj, &id_map);
+        base.objects.insert(id_map[&old_id], new_obj);
+    }
+
+    let inheritable: [&[u8]; 4] = [b"MediaBox", b"Resources", b"CropBox", b"Rotate"];
+    let source_leaves: Vec<ObjectId> = source.get_pages().into_values().collect();
+    for &src_leaf in &source_leaves {
+        let new_leaf = id_map[&src_leaf];
+        for key in inheritable {
+            let leaf_has = source
+                .get_dictionary(src_leaf)
+                .map(|d| d.get(key).is_ok())
+                .unwrap_or(false);
+            if leaf_has {
+                continue;
+            }
+            if let Some(mut value) = get_inherited_attr(source, src_leaf, key) {
+                remap_references(&mut value, &id_map);
+                if let Ok(dict) = base.get_object_mut(new_leaf).and_then(|o| o.as_dict_mut()) {
+                    dict.set(key.to_vec(), value);
+                }
+            }
+        }
+    }
+    source_leaves.iter().map(|id| id_map[id]).collect()
+}
+
+/// Recursively remap all `Object::Reference` values using `id_map`.
+pub fn remap_references(object: &mut Object, id_map: &BTreeMap<ObjectId, ObjectId>) {
+    match object {
+        Object::Reference(id) => {
+            if let Some(&new_id) = id_map.get(id) {
+                *id = new_id;
+            }
+        }
+        Object::Array(arr) => {
+            for item in arr.iter_mut() {
+                remap_references(item, id_map);
+            }
+        }
+        Object::Dictionary(dict) => {
+            for (_, val) in dict.iter_mut() {
+                remap_references(val, id_map);
+            }
+        }
+        Object::Stream(stream) => {
+            for (_, val) in stream.dict.iter_mut() {
+                remap_references(val, id_map);
+            }
+        }
+        _ => {}
     }
 }
 

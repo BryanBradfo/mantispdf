@@ -1,6 +1,5 @@
-use crate::pdf_util::get_inherited_attr;
+use crate::pdf_util::import_document;
 use lopdf::{Document, Object, ObjectId};
-use std::collections::BTreeMap;
 
 /// Merge multiple PDF documents into one.
 ///
@@ -58,113 +57,21 @@ fn append_document(
     source: &Document,
     base_pages_id: ObjectId,
 ) -> Result<(), String> {
-    // Build a mapping from source object IDs to new IDs in the base
-    let mut id_map: BTreeMap<ObjectId, ObjectId> = BTreeMap::new();
-    for &old_id in source.objects.keys() {
-        let new_id = base.new_object_id();
-        id_map.insert(old_id, new_id);
-    }
-
-    // Copy all objects from source into base with remapped IDs
-    for (&old_id, object) in &source.objects {
-        let new_id = id_map[&old_id];
-        let mut new_obj = object.clone();
-        remap_references(&mut new_obj, &id_map);
-        base.objects.insert(new_id, new_obj);
-    }
-
-    // Get source's page object IDs (sorted by page number) and remap them
-    let source_pages: Vec<ObjectId> = source
-        .get_pages()
-        .into_iter()
-        .collect::<BTreeMap<_, _>>()
-        .values()
-        .map(|&old_id| id_map[&old_id])
-        .collect();
-
-    // Update each copied page's Parent to point to base's Pages node
-    for &page_id in &source_pages {
+    let leaves = import_document(base, source);
+    for &page_id in &leaves {
         if let Ok(page_dict) = base.get_object_mut(page_id).and_then(|o| o.as_dict_mut()) {
             page_dict.set("Parent", Object::Reference(base_pages_id));
         }
     }
-
-    // Materialize inherited /MediaBox, /Resources, /CropBox, /Rotate onto each
-    // copied leaf. Source pages may inherit these from an intermediate /Pages
-    // node; once reparented under base's /Pages that ancestor is gone, so without
-    // this the pages render blank, mis-sized, or unrotated.
-    let inheritable: [&[u8]; 4] = [b"MediaBox", b"Resources", b"CropBox", b"Rotate"];
-    let source_leaf_ids: Vec<ObjectId> = source
-        .get_pages()
-        .into_iter()
-        .collect::<BTreeMap<_, _>>()
-        .into_values()
-        .collect();
-    for src_leaf in source_leaf_ids {
-        let new_leaf = id_map[&src_leaf];
-        for key in inheritable {
-            // Skip if the leaf already carries the attribute inline.
-            let leaf_has = source
-                .get_dictionary(src_leaf)
-                .map(|d| d.get(key).is_ok())
-                .unwrap_or(false);
-            if leaf_has {
-                continue;
-            }
-            // Resolve from the source (original id space), remap any references
-            // into base's id space, then set on the copied leaf.
-            if let Some(mut value) = get_inherited_attr(&source, src_leaf, key) {
-                remap_references(&mut value, &id_map);
-                if let Ok(dict) = base.get_object_mut(new_leaf).and_then(|o| o.as_dict_mut()) {
-                    dict.set(key.to_vec(), value);
-                }
-            }
-        }
-    }
-
-    // Append page references to the base Pages Kids array
-    let base_pages = base
+    let kids = base
         .get_object_mut(base_pages_id)
         .and_then(|o| o.as_dict_mut())
-        .map_err(|e| format!("Cannot access base Pages: {e}"))?;
-
-    let kids = base_pages
+        .map_err(|e| format!("Cannot access base Pages: {e}"))?
         .get_mut(b"Kids")
         .and_then(Object::as_array_mut)
         .map_err(|e| format!("Cannot access Kids array: {e}"))?;
-
-    for page_id in source_pages {
-        kids.push(Object::Reference(page_id));
-    }
-
+    kids.extend(leaves.into_iter().map(Object::Reference));
     Ok(())
-}
-
-/// Recursively remap all Object::Reference values using the ID map.
-fn remap_references(object: &mut Object, id_map: &BTreeMap<ObjectId, ObjectId>) {
-    match object {
-        Object::Reference(id) => {
-            if let Some(&new_id) = id_map.get(id) {
-                *id = new_id;
-            }
-        }
-        Object::Array(arr) => {
-            for item in arr.iter_mut() {
-                remap_references(item, id_map);
-            }
-        }
-        Object::Dictionary(dict) => {
-            for (_, val) in dict.iter_mut() {
-                remap_references(val, id_map);
-            }
-        }
-        Object::Stream(stream) => {
-            for (_, val) in stream.dict.iter_mut() {
-                remap_references(val, id_map);
-            }
-        }
-        _ => {}
-    }
 }
 
 #[cfg(test)]
