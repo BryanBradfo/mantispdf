@@ -69,6 +69,9 @@ test.describe("merge", () => {
     const live = (text: string) => page.locator("[aria-live]").filter({ hasText: text });
     await page.keyboard.press("Space");
     await expect(live("alpha.pdf is over position 1")).toHaveCount(1);
+    // KeyboardSensor attaches its keydown listener in a setTimeout(0) after activation;
+    // the announcement can land first. A later setTimeout(0) fires after it (FIFO).
+    await page.evaluate(() => new Promise((r) => setTimeout(r)));
     await page.keyboard.press("ArrowRight");
     await expect(live("is over position 2")).toHaveCount(1);
     await page.keyboard.press("Space");
