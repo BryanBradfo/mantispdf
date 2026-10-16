@@ -6,14 +6,7 @@ import { usePdfWorker } from "../hooks/usePdfWorker";
 import { validatePdfFile, downloadBlob, readFileAsUint8Array } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
-
-function thumbnailTransform(deg: number): string {
-  const norm = ((deg % 360) + 360) % 360;
-  // When rotated 90°/270° the page is landscape — scale down to fit the portrait container.
-  // Scale factor = short_side / long_side = 8.5 / 11 ≈ 0.773
-  const scale = norm === 90 || norm === 270 ? 8.5 / 11 : 1;
-  return `rotate(${norm}deg) scale(${scale})`;
-}
+import { thumbnailTransform } from "../lib/rotationTransform";
 
 export default function RotatePdfPage() {
   const worker = usePdfWorker();
