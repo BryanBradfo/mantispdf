@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 import { Analytics } from "@vercel/analytics/react";
 import TitleBar from "./components/desktop/TitleBar";
 import Header from "./components/layout/Header";
@@ -10,7 +10,6 @@ const SplitPdfPage = lazy(() => import("./pages/SplitPdfPage"));
 const MergePdfPage = lazy(() => import("./pages/MergePdfPage"));
 const CompressPdfPage = lazy(() => import("./pages/CompressPdfPage"));
 const RotatePdfPage = lazy(() => import("./pages/RotatePdfPage"));
-const EditPdfPage = lazy(() => import("./pages/EditPdfPage"));
 const PdfToImagePage = lazy(() => import("./pages/PdfToImagePage"));
 const WatermarkPdfPage = lazy(() => import("./pages/WatermarkPdfPage"));
 const EncryptPdfPage = lazy(() => import("./pages/EncryptPdfPage"));
@@ -55,7 +54,7 @@ export default function App() {
               <Route path="/merge" element={<MergePdfPage />} />
               <Route path="/compress" element={<CompressPdfPage />} />
               <Route path="/rotate" element={<RotatePdfPage />} />
-              <Route path="/edit" element={<EditPdfPage />} />
+              <Route path="/edit" element={<Navigate to="/organize" replace />} />
               <Route path="/pdf-to-image" element={<PdfToImagePage />} />
               <Route path="/watermark" element={<WatermarkPdfPage />} />
               <Route path="/encrypt" element={<EncryptPdfPage />} />

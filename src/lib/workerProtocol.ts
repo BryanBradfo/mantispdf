@@ -12,7 +12,7 @@ export type ToWorker =
   | { type: "count-pages"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "compress"; id: ReqId; pdfBytes: ArrayBuffer }
   | { type: "rotate"; id: ReqId; pdfBytes: ArrayBuffer; rotations: number[] }
-  | { type: "edit-pages"; id: ReqId; pdfBytes: Uint8Array; newOrder: number[] }
+  | { type: "page-plan"; id: ReqId; pdfBuffers: Uint8Array[]; plan: Int32Array }
   | {
       type: "watermark";
       id: ReqId;

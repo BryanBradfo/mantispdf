@@ -11,14 +11,13 @@ interface WorkerState {
   merging: boolean;
   compressing: boolean;
   rotating: boolean;
-  editing: boolean;
   watermarking: boolean;
   encrypting: boolean;
   progress: number;
   progressMessage: string;
 }
 
-type BusyFlag = "splitting" | "merging" | "compressing" | "rotating" | "editing" | "watermarking" | "encrypting";
+type BusyFlag = "splitting" | "merging" | "compressing" | "rotating" | "watermarking" | "encrypting";
 
 const initialState: WorkerState = {
   ready: false,
@@ -27,7 +26,6 @@ const initialState: WorkerState = {
   merging: false,
   compressing: false,
   rotating: false,
-  editing: false,
   watermarking: false,
   encrypting: false,
   progress: 0,
@@ -94,8 +92,7 @@ export function usePdfWorker() {
         merging: false,
         compressing: false,
         rotating: false,
-        editing: false,
-        watermarking: false,
+              watermarking: false,
         encrypting: false,
         progress: 0,
         progressMessage: "",
@@ -174,10 +171,9 @@ export function usePdfWorker() {
     [run],
   );
 
-  const editPages = useCallback(
-    (pdfBytes: Uint8Array, newOrder: number[]): Promise<ArrayBuffer> =>
-      // Not transferred: pdfBytes is held in React state and reused on re-download.
-      run("editing", (id) => ({ type: "edit-pages", id, pdfBytes, newOrder }), asBuffer),
+  const applyPagePlan = useCallback(
+    (pdfBuffers: Uint8Array[], plan: Int32Array): Promise<Uint8Array> =>
+      run(null, (id) => ({ type: "page-plan", id, pdfBuffers, plan }), asBytes),
     [run],
   );
 
@@ -217,7 +213,7 @@ export function usePdfWorker() {
   );
 
   return useMemo(
-    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages, watermarkPdf, encryptPdf }),
-    [state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, editPages, watermarkPdf, encryptPdf],
+    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, applyPagePlan, watermarkPdf, encryptPdf }),
+    [state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, applyPagePlan, watermarkPdf, encryptPdf],
   );
 }

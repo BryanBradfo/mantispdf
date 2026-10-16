@@ -1,6 +1,6 @@
 import type { ToWorker, FromWorker, ReqId, SuccessPayload } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, reorder_pages, add_watermark, encrypt_pdf } from "mantis-wasm";
+import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf } from "mantis-wasm";
 
 let ready = false;
 
@@ -96,9 +96,9 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         break;
       }
 
-      case "edit-pages": {
-        const result = reorder_pages(msg.pdfBytes, Uint32Array.from(msg.newOrder));
-        postSuccess(msg.id, { kind: "buffer", result: result.buffer }, [result.buffer as ArrayBuffer]);
+      case "page-plan": {
+        const result = apply_page_plan(msg.pdfBuffers, msg.plan);
+        postSuccess(msg.id, { kind: "merge", bytes: new Uint8Array(result) });
         break;
       }
 
