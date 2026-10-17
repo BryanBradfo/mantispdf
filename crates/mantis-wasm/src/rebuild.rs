@@ -527,6 +527,8 @@ fn is_blocked(obj: &Object) -> bool {
     let has_any = |keys: &[&[u8]]| keys.iter().any(|k| dict.has(k));
     name_of(dict, b"Type").is_some_and(|t| BLOCKED_TYPES.contains(&t))
         || dict.has(b"FT")
+        // A file specification (typed or not) carrying embedded files.
+        || dict.has(b"EF")
         || name_of(dict, b"Subtype").is_some_and(|s| ANNOT_SUBTYPES.contains(&s))
         || (has_any(&PAGE_MARKERS) && has_any(&PAGE_CONTEXT))
         || name_of(dict, b"S").is_some_and(|s| ACTION_TYPES.contains(&s))
@@ -776,8 +778,11 @@ impl<'s> SafeCopier<'s> {
             .and_then(|r| r.as_dict().ok());
 
         let mut dict = Dictionary::new();
+        let is_form = name_of(&stream.dict, b"Subtype") == Some(b"Form");
         for (key, value) in stream.dict.iter() {
-            if is_never_copied(&stream.dict, key, value) {
+            // A reference XObject's /Ref points at another PDF file, often
+            // embedded: never part of what the page shows.
+            if is_never_copied(&stream.dict, key, value) || (is_form && key == b"Ref") {
                 continue;
             }
             let copied = match own_resources {

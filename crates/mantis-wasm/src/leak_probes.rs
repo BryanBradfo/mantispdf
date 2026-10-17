@@ -504,3 +504,39 @@ fn annotation_arrays_and_border_styles_carry_no_references() {
     });
     assert_page_two_gone("annotation values", &src);
 }
+
+#[test]
+fn sanitize_drops_embedded_file_behind_reference_xobject() {
+    // A reference XObject (/Ref) points at an untyped file specification
+    // whose /EF holds an attachment.
+    let src = two_page_probe(|doc, _c2, _shared, _secret| {
+        let file = doc.add_object(
+            Stream::new(dictionary! {}, b"SECRET_EMB attachment".to_vec()).with_compression(false),
+        );
+        let form = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Form", "BBox" => rect(),
+                "Ref" => dictionary! {
+                    "F" => dictionary! { "F" => str_obj("x.pdf"), "EF" => dictionary! { "F" => file } },
+                    "Page" => 0,
+                },
+            },
+            b"".to_vec(),
+        ));
+        (
+            dictionary! { "XObject" => dictionary! { "Im_used" => form } },
+            None,
+        )
+    });
+    let (out, _) = crate::doc_tools::sanitize(&src, true).unwrap();
+    let bytes = {
+        let doc = Document::load_mem(&out).unwrap();
+        let mut chunks = vec![out.clone()];
+        for obj in doc.objects.values() {
+            collect_bytes(obj, &mut chunks);
+        }
+        chunks.concat()
+    };
+    assert!(!contains(&bytes, "SECRET_EMB"), "attachment kept");
+    assert!(!contains(&bytes, "/Ref"), "/Ref kept on the form");
+}
