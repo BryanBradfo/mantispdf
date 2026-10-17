@@ -392,3 +392,88 @@ fn sanitize_leaves_nothing_of_dropped_pages() {
     assert!(contains(&doc.get_page_content(page1).unwrap(), "KEEPME"));
     assert!(!doc.trailer.has(b"Info"));
 }
+
+// ---- final review probes ------------------------------------------------
+
+/// Two pages sharing one /Resources (`shared`): page 2 (dropped) draws
+/// `SECRET_IMG` from it. `kept` adds page 1's extra resources and /Annots;
+/// it receives (doc, page 2 content, shared resources, secret image).
+fn two_page_probe(
+    kept: impl FnOnce(&mut Document, ObjectId, ObjectId, ObjectId) -> (Dictionary, Option<Object>),
+) -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let [p1, p2] = [(); 2].map(|_| doc.new_object_id());
+    let secret = image(&mut doc, b"SECRET_IMG");
+    let used = image(&mut doc, b"USEDIMG");
+    let shared = doc.add_object(dictionary! {
+        "XObject" => dictionary! { "Im_used" => used, "Im_secret" => secret },
+    });
+    let c2 = doc.add_object(Stream::new(
+        dictionary! {},
+        b"/Im_secret Do (SECRET_P2TEXT) Tj".to_vec(),
+    ));
+    let (extra, annots) = kept(&mut doc, c2, shared, secret);
+    let mut res = dictionary! { "XObject" => dictionary! { "Im_used" => used } };
+    for (k, v) in extra.iter() {
+        res.set(k.clone(), v.clone());
+    }
+    let c1 = doc.add_object(Stream::new(
+        dictionary! {},
+        b"/Im_used Do BT /F3 12 Tf (a) Tj ET".to_vec(),
+    ));
+    let mut d1 = dictionary! {
+        "Type" => "Page", "Parent" => pages_id, "MediaBox" => rect(),
+        "Resources" => res, "Contents" => c1,
+    };
+    if let Some(a) = annots {
+        d1.set("Annots", a);
+    }
+    doc.objects.insert(p1, Object::Dictionary(d1));
+    doc.objects.insert(
+        p2,
+        Object::Dictionary(dictionary! {
+            "Type" => "Page", "Parent" => pages_id, "MediaBox" => rect(),
+            "Resources" => shared, "Contents" => c2,
+        }),
+    );
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => vec![Object::from(p1), p2.into()], "Count" => 2 }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    let mut buf = Vec::new();
+    doc.save_to(&mut buf).unwrap();
+    buf
+}
+
+/// Keep page 1 only; the secrets of page 2 must not appear.
+fn assert_page_two_gone(name: &str, src: &[u8]) {
+    let plan = [page_plan::PlanEntry::Page {
+        src: 0,
+        page: 1,
+        rotate: 0,
+    }];
+    let out = page_plan::apply_plan(&[src], &plan).unwrap();
+    let found = leaked(&out);
+    assert!(found.is_empty(), "{name} leaked: {found:?}");
+}
+
+#[test]
+fn type3_font_resources_are_trimmed() {
+    let src = two_page_probe(|doc, _c2, shared, _secret| {
+        let glyph = doc.add_object(Stream::new(dictionary! {}, b"0 0 d0 /Im_used Do".to_vec()));
+        let font = doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type3", "FontBBox" => rect(),
+            "FontMatrix" => vec![0.001.into(), 0.into(), 0.into(), 0.001.into(), 0.into(), 0.into()],
+            "CharProcs" => dictionary! { "a" => glyph },
+            "Encoding" => dictionary! { "Differences" => vec![97.into(), Object::Name(b"a".to_vec())] },
+            "FirstChar" => 97, "LastChar" => 97, "Widths" => vec![1000.into()],
+            "Resources" => shared,
+        });
+        (dictionary! { "Font" => dictionary! { "F3" => font } }, None)
+    });
+    assert!(leaked(&src).contains(&"SECRET_IMG"), "probe planted");
+    assert_page_two_gone("type3 resources", &src);
+}

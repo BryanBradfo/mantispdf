@@ -660,7 +660,10 @@ impl<'s> SafeCopier<'s> {
             let copied = if NAME_MAP_KEYS.contains(&key.as_slice()) {
                 self.copy_name_map(out, src, value)
             } else if key == b"Resources" {
-                self.copy_any_resources(out, src, value)
+                let used = (name_of(dict, b"Subtype") == Some(b"Type3"))
+                    .then(|| type3_usage(self.source(src), dict))
+                    .flatten();
+                self.copy_any_resources(out, src, value, used.as_ref())
             } else {
                 self.copy(out, src, value)
             };
@@ -710,12 +713,19 @@ impl<'s> SafeCopier<'s> {
 
     /// A `/Resources` value met outside a page or form: its category
     /// dictionaries are name-keyed, so it is copied with `copy_resources`
-    /// (all names kept) rather than as a structural dictionary.
-    fn copy_any_resources(&mut self, out: &mut Document, src: usize, value: &Object) -> Object {
+    /// (trimmed to `used`, or every name when None) rather than as a
+    /// structural dictionary.
+    fn copy_any_resources(
+        &mut self,
+        out: &mut Document,
+        src: usize,
+        value: &Object,
+        used: Option<&UsedNames>,
+    ) -> Object {
         let doc = self.source(src);
         match deref(doc, value) {
             Some(res @ Object::Dictionary(dict)) if !is_blocked(res) => {
-                Object::Dictionary(self.copy_resources(out, src, dict, None))
+                Object::Dictionary(self.copy_resources(out, src, dict, used))
             }
             _ => self.copy(out, src, value),
         }
@@ -800,6 +810,19 @@ impl<'s> SafeCopier<'s> {
         }
         copy
     }
+}
+
+/// Resource names drawn by all glyph procedures of Type3 font `font`, whose
+/// `/Resources` they share. None (keep every resource) when the font has no
+/// readable /CharProcs or one glyph cannot be scanned.
+fn type3_usage(doc: &Document, font: &Dictionary) -> Option<UsedNames> {
+    let procs = deref(doc, font.get(b"CharProcs").ok()?)?.as_dict().ok()?;
+    let mut used = UsedNames::default();
+    for (_, glyph) in procs.iter() {
+        let glyph = deref(doc, glyph)?.as_stream().ok()?;
+        used.merge(scan_content(&stream_content(glyph))?);
+    }
+    Some(used)
 }
 
 /// Add to `used`, transitively, the names drawn by streams that have no
