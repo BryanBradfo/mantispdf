@@ -247,9 +247,7 @@ fn rebuild_link(
     let border = annot
         .get(b"Border")
         .ok()
-        .and_then(|b| deref(doc, b))
-        .filter(|b| b.as_array().is_ok())
-        .map(|b| copier.copy(out, src, b))
+        .and_then(|b| clean_value(doc, b"Border", b))
         .unwrap_or_else(|| vec![0.into(), 0.into(), 0.into()].into());
     let mut link = dictionary! {
         "Type" => "Annot",
@@ -264,17 +262,13 @@ fn rebuild_link(
         let Some(value) = annot.get(key).ok().and_then(|v| deref(doc, v)) else {
             continue;
         };
-        let fits = match key {
-            b"C" | b"QuadPoints" => value.as_array().is_ok(),
-            b"H" => value.as_name().is_ok(),
-            b"BS" => value.as_dict().is_ok(),
-            _ => value.as_i64().is_ok(),
+        let kept = match key {
+            b"H" => value.as_name().is_ok().then(|| value.clone()),
+            b"F" => value.as_i64().is_ok().then(|| value.clone()),
+            _ => clean_value(doc, key, value),
         };
-        if fits {
-            link.set(
-                String::from_utf8_lossy(key).into_owned(),
-                copier.copy(out, src, value),
-            );
+        if let Some(kept) = kept {
+            link.set(String::from_utf8_lossy(key).into_owned(), kept);
         }
     }
 
@@ -319,9 +313,17 @@ fn rebuild_comment(
     // /Rect is required; without a usable one the comment has no place.
     parse_numbers::<4>(copier.source(src), annot.get(b"Rect").ok()?)?;
     let mut comment = dictionary! { "Type" => "Annot" };
+    let doc = copier.source(src);
     for key in COMMENT_KEYS {
         if let Ok(value) = annot.get(key) {
-            let copied = copier.copy(out, src, value);
+            let copied = if CHECKED_KEYS.contains(&key) {
+                match clean_value(doc, key, value) {
+                    Some(clean) => clean,
+                    None => continue,
+                }
+            } else {
+                copier.copy(out, src, value)
+            };
             if !matches!(copied, Object::Null) {
                 comment.set(key, copied);
             }
@@ -430,6 +432,81 @@ fn is_allowed_uri(bytes: &[u8]) -> bool {
     ALLOWED_SCHEMES
         .iter()
         .any(|allowed| scheme.eq_ignore_ascii_case(allowed))
+}
+
+/// Annotation keys whose values are rebuilt by `clean_value` instead of
+/// copied: geometry and colour arrays, and the border style dictionary.
+const CHECKED_KEYS: [&[u8]; 9] = [
+    b"C",
+    b"IC",
+    b"QuadPoints",
+    b"Border",
+    b"Vertices",
+    b"L",
+    b"InkList",
+    b"RD",
+    b"BS",
+];
+
+/// A fresh value for one of `CHECKED_KEYS`, made only of numbers and names,
+/// so nothing (no reference to a dropped page, no stray key) rides along.
+/// None when the value does not have the expected shape: the key is dropped.
+fn clean_value(doc: &Document, key: &[u8], value: &Object) -> Option<Object> {
+    let value = deref(doc, value)?;
+    match key {
+        b"Border" => {
+            let items = value.as_array().ok()?;
+            let mut border = numbers(doc, &Object::Array(items.get(..3)?.to_vec()))?;
+            match items.get(3..)? {
+                [] => {}
+                [dash] => border.push(numbers_array(doc, dash)?),
+                _ => return None,
+            }
+            Some(border.into())
+        }
+        b"InkList" => {
+            let paths = value.as_array().ok()?;
+            let paths: Option<Vec<Object>> = paths.iter().map(|p| numbers_array(doc, p)).collect();
+            Some(paths?.into())
+        }
+        b"BS" => {
+            let style = value.as_dict().ok()?;
+            let mut clean = Dictionary::new();
+            if let Some(w) = style.get(b"W").ok().and_then(|w| number(doc, w)) {
+                clean.set("W", w);
+            }
+            if let Ok(s) = style.get(b"S").and_then(Object::as_name) {
+                clean.set("S", Object::Name(s.to_vec()));
+            }
+            if let Some(d) = style.get(b"D").ok().and_then(|d| numbers_array(doc, d)) {
+                clean.set("D", d);
+            }
+            Some(clean.into())
+        }
+        _ => numbers_array(doc, value),
+    }
+}
+
+/// A direct number (Integer or Real) for `obj`, following references.
+fn number(doc: &Document, obj: &Object) -> Option<Object> {
+    match deref(doc, obj)? {
+        n @ (Object::Integer(_) | Object::Real(_)) => Some(n.clone()),
+        _ => None,
+    }
+}
+
+/// The elements of array `obj` as direct numbers; None if any is not one.
+fn numbers(doc: &Document, obj: &Object) -> Option<Vec<Object>> {
+    deref(doc, obj)?
+        .as_array()
+        .ok()?
+        .iter()
+        .map(|item| number(doc, item))
+        .collect()
+}
+
+fn numbers_array(doc: &Document, obj: &Object) -> Option<Object> {
+    numbers(doc, obj).map(Object::Array)
 }
 
 /// `N` numbers from an array (elements may be indirect).
@@ -1148,6 +1225,38 @@ mod tests {
         assert_eq!(annots.len(), 1);
         assert_link_style_kept(annots[0], &r.bytes);
         assert!(annots[0].get(b"Dest").is_ok());
+    }
+
+    #[test]
+    fn comment_arrays_validated_and_border_style_rebuilt() {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        let width = src.doc.add_object(Object::Integer(2));
+        src.annotate(
+            p1,
+            dictionary! {
+                "Subtype" => "Ink", "Rect" => rect(10, 10, 50, 50),
+                "InkList" => vec![vec![Object::from(1), 2.into(), width.into(), 4.into()].into()],
+                "Border" => vec![0.into(), 0.into(), 1.into(), vec![3.into(), 2.into()].into()],
+                "Vertices" => vec![1.into(), "NotANumber".into()],
+                "BS" => dictionary! { "W" => width, "S" => "D", "D" => vec![3.into()], "X" => "Extra" },
+            },
+        );
+        let r = rebuild_pages(src.finish(), &[1], &KEEP_ALL);
+        let annots = r.annots(0);
+        assert_eq!(annots.len(), 1);
+        let ink = annots[0];
+        let path = &ink.get(b"InkList").unwrap().as_array().unwrap()[0];
+        assert_eq!(
+            path.as_array().unwrap()[2].as_i64().unwrap(),
+            2,
+            "indirect number inlined"
+        );
+        assert_eq!(ink.get(b"Border").unwrap().as_array().unwrap().len(), 4);
+        assert!(ink.get(b"Vertices").is_err(), "non-number array dropped");
+        let bs = ink.get(b"BS").unwrap().as_dict().unwrap();
+        assert_eq!(keys(bs), ["D", "S", "W"]);
+        assert_eq!(bs.get(b"W").unwrap().as_i64().unwrap(), 2);
     }
 
     #[test]

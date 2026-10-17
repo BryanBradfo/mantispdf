@@ -477,3 +477,30 @@ fn type3_font_resources_are_trimmed() {
     assert!(leaked(&src).contains(&"SECRET_IMG"), "probe planted");
     assert_page_two_gone("type3 resources", &src);
 }
+
+#[test]
+fn annotation_arrays_and_border_styles_carry_no_references() {
+    // A link /BS with a stray key to page 2's content, and a comment whose
+    // /C, /InkList and /RD hide references among numbers.
+    let src = two_page_probe(|doc, c2, _shared, secret| {
+        let link = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Link", "Rect" => rect(),
+            "BS" => dictionary! { "W" => 1, "S" => "S", "Evil" => c2 },
+            "A" => dictionary! { "S" => "URI", "URI" => str_obj("https://x.test") },
+        });
+        let square = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Square", "Rect" => rect(),
+            "C" => vec![1.into(), secret.into(), 0.into()],
+            "RD" => vec![0.into(), 0.into(), 0.into(), c2.into()],
+        });
+        let ink = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Ink", "Rect" => rect(),
+            "InkList" => vec![vec![Object::from(1), 2.into(), secret.into(), 4.into()].into()],
+        });
+        (
+            dictionary! {},
+            Some(vec![link.into(), square.into(), ink.into()].into()),
+        )
+    });
+    assert_page_two_gone("annotation values", &src);
+}
