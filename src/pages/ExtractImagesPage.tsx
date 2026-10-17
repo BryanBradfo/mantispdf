@@ -25,7 +25,7 @@ function saveBlob(blob: Blob, filename: string) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function ImageCard({
@@ -43,11 +43,15 @@ function ImageCard({
   const [failed, setFailed] = useState(false);
   const ref = useRef<HTMLLabelElement>(null);
   const size = imageSize(img);
+  const imgRef = useRef(img);
+  imgRef.current = img;
+  const cardKey = imageKey(img);
 
   useEffect(() => {
     let cancelled = false;
     let jpegUrl: string | null = null;
     const load = () => {
+      const img = imgRef.current;
       if (img.kind === "jpeg") {
         jpegUrl = URL.createObjectURL(new Blob([img.bytes], { type: "image/jpeg" }));
         setUrl(jpegUrl);
@@ -76,7 +80,7 @@ function ImageCard({
       observer?.disconnect();
       if (jpegUrl) URL.revokeObjectURL(jpegUrl);
     };
-  }, [img, cache]);
+  }, [cardKey, cache]);
 
   return (
     <label
@@ -87,7 +91,7 @@ function ImageCard({
         {url ? (
           <img src={url} alt={imageFileName(img)} className="max-h-full max-w-full object-contain" />
         ) : (
-          <span className="text-gray-500 dark:text-[#777]">{failed ? "Preview unavailable" : "Loading…"}</span>
+          <span role="status" className="text-gray-500 dark:text-[#777]">{failed ? "Preview unavailable" : "Loading preview…"}</span>
         )}
       </div>
       <div className="flex items-center gap-2 p-2 text-gray-700 dark:text-[#aaa]">
@@ -106,17 +110,38 @@ export default function ExtractImagesPage() {
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker);
   const [result, setResult] = useState<ExtractResultSpec | null>(null);
   const [skipSmall, setSkipSmall] = useState(true);
+  const [images, setImages] = useState<ExtractedImage[]>([]);
+  const [cache, setCache] = useState<PngCache | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState<string | null>(null);
-  const cache = useMemo(() => new PngCache(2), [result]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cacheRef = useRef<PngCache | null>(null);
+  const generation = useRef(0);
 
-  useEffect(() => () => cache.dispose(), [cache]);
+  /** Drops the current cache and supersedes any download in flight. */
+  const discard = () => {
+    generation.current++;
+    cacheRef.current?.dispose();
+    cacheRef.current = null;
+    setCache(null);
+    setProgress(null);
+  };
 
-  const visible = useMemo(() => (result ? filterImages(result.images, skipSmall) : []), [result, skipSmall]);
+  // The cache only exists after an extraction, so StrictMode's mount/unmount/mount cannot leave a disposed one.
+  useEffect(
+    () => () => {
+      generation.current++;
+      cacheRef.current?.dispose();
+    },
+    [],
+  );
+
+  const visible = useMemo(() => filterImages(images, skipSmall), [images, skipSmall]);
   const chosen = visible.filter((i) => selected.has(imageKey(i)));
 
   const start = (f: File) => {
+    discard();
     setResult(null);
+    setImages([]);
     void pick(f);
   };
 
@@ -125,7 +150,17 @@ export default function ExtractImagesPage() {
     void run(
       () => worker.extractImages(input.bytes),
       (res) => {
+        discard();
+        const fresh = new PngCache({
+          onConverted: (key) =>
+            setImages((cur) =>
+              cur.map((i) => (i.kind === "rgba" && imageKey(i) === key ? { ...i, pixels: new Uint8Array(0) } : i)),
+            ),
+        });
+        cacheRef.current = fresh;
+        setCache(fresh);
         setResult(res);
+        setImages(res.images);
         setSelected(new Set(res.images.map(imageKey)));
       },
     );
@@ -139,33 +174,41 @@ export default function ExtractImagesPage() {
     });
 
   const download = async () => {
-    if (!input || chosen.length === 0 || progress) return;
+    const active = cacheRef.current;
+    if (!input || !active || chosen.length === 0 || progress) return;
+    const gen = generation.current;
+    const stale = () => gen !== generation.current || active.disposed;
     try {
       if (chosen.length === 1) {
         const img = chosen[0];
         const blob =
-          img.kind === "jpeg" ? new Blob([img.bytes], { type: "image/jpeg" }) : await cache.blob(img);
+          img.kind === "jpeg" ? new Blob([img.bytes], { type: "image/jpeg" }) : await active.blob(img);
+        if (stale()) return;
         saveBlob(blob, imageFileName(img));
         return;
       }
       const parts: { name: string; bytes: Uint8Array }[] = [];
       for (let i = 0; i < chosen.length; i++) {
+        if (stale()) return;
         setProgress(`Preparing ${i + 1} of ${chosen.length}…`);
         const img = chosen[i];
         const bytes =
-          img.kind === "jpeg" ? img.bytes : new Uint8Array(await (await cache.blob(img)).arrayBuffer());
+          img.kind === "jpeg" ? img.bytes : new Uint8Array(await (await active.blob(img)).arrayBuffer());
         parts.push({ name: imageFileName(img), bytes });
       }
+      if (stale()) return;
       await downloadAsZip(parts, baseName(input.file), "images");
     } catch (err) {
-      setError(errorMessage(err));
+      if (!stale()) setError(errorMessage(err));
     } finally {
-      setProgress(null);
+      if (!stale()) setProgress(null);
     }
   };
 
   const doReset = () => {
+    discard();
     setResult(null);
+    setImages([]);
     setSelected(new Set());
     reset();
   };
@@ -208,25 +251,34 @@ export default function ExtractImagesPage() {
               <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-700 dark:text-[#aaa]">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={skipSmall} onChange={(e) => setSkipSmall(e.target.checked)} />
-                  Skip images smaller than 32x32
+                  Skip images smaller than 32 px on both sides
                 </label>
-                <button
-                  type="button"
-                  className="underline"
-                  onClick={() => setSelected(new Set(result.images.map(imageKey)))}
-                >
-                  Select all
-                </button>
-                <button type="button" className="underline" onClick={() => setSelected(new Set())}>
-                  Select none
-                </button>
+                <div role="group" aria-label="Selection" className="flex gap-4">
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => setSelected((cur) => new Set([...cur, ...visible.map(imageKey)]))}
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => {
+                      const hide = new Set(visible.map(imageKey));
+                      setSelected((cur) => new Set([...cur].filter((k) => !hide.has(k))));
+                    }}
+                  >
+                    Select none
+                  </button>
+                </div>
               </div>
 
               {visible.length === 0 ? (
                 <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">No images to show in this PDF.</p>
               ) : (
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {visible.map((img) => (
+                  {cache && visible.map((img) => (
                     <ImageCard
                       key={imageKey(img)}
                       img={img}
@@ -253,7 +305,7 @@ export default function ExtractImagesPage() {
                 >
                   {progress ?? (chosen.length > 1 ? "Download ZIP" : "Download")}
                 </button>
-                <button type="button" onClick={doReset} className={secondaryButton}>
+                <button type="button" onClick={doReset} disabled={progress !== null} className={secondaryButton}>
                   Choose another file
                 </button>
               </div>

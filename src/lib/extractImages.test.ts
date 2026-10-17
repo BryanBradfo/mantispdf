@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ExtractedImage } from "./imageInput";
-import { filterImages, imageFileName, jpegSize, skippedSummary } from "./extractImages";
+import { PngCache, filterImages, imageFileName, jpegSize, reasonName, skippedSummary } from "./extractImages";
 
 const rgba = (page: number, index: number, w: number, h: number): ExtractedImage => ({
   page, index, kind: "rgba", width: w, height: h, pixels: new Uint8Array(w * h * 4),
@@ -33,6 +33,70 @@ describe("extract images helpers", () => {
     expect(skippedSummary([{ reason: "jpeg2000", count: 2 }, { reason: "corrupt", count: 1 }])).toBe(
       "3 images skipped: 2 JPEG 2000, 1 corrupt",
     );
-    expect(skippedSummary([{ reason: "inline", count: 1 }])).toBe("1 image skipped: 1 inline");
+    expect(skippedSummary([{ reason: "inline", count: 1 }])).toBe("1 image skipped: 1 inline (embedded in page content, not extractable)");
+  });
+});
+
+describe("reasonName", () => {
+  it("maps known engine reasons and passes unknown ones through", () => {
+    expect(reasonName("alpha dropped")).toBe("kept without transparency");
+    expect(reasonName("inline")).toBe("inline (embedded in page content, not extractable)");
+    expect(reasonName("mystery")).toBe("mystery");
+  });
+});
+
+type Rgba = Extract<ExtractedImage, { kind: "rgba" }>;
+const rg = (i: number) => rgba(1, i, 4, 4) as Rgba;
+
+function gatedConverter() {
+  let active = 0;
+  let peak = 0;
+  const gates: (() => void)[] = [];
+  const convert = vi.fn(() => {
+    active++;
+    peak = Math.max(peak, active);
+    return new Promise<Blob>((resolve) => {
+      gates.push(() => {
+        active--;
+        resolve(new Blob(["x"]));
+      });
+    });
+  });
+  return { convert, gates, peak: () => peak };
+}
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+describe("PngCache", () => {
+  it("runs at most 2 conversions at once and caches results", async () => {
+    const g = gatedConverter();
+    const converted: string[] = [];
+    const cache = new PngCache({ convert: g.convert, onConverted: (k) => converted.push(k) });
+    const ps = [1, 2, 3, 4].map((i) => cache.blob(rg(i)));
+    await tick();
+    expect(g.convert).toHaveBeenCalledTimes(2);
+    while (g.gates.length) {
+      g.gates.shift()?.();
+      await tick();
+    }
+    await Promise.all(ps);
+    expect(g.peak()).toBe(2);
+    expect(g.convert).toHaveBeenCalledTimes(4);
+    await cache.blob(rg(1));
+    expect(g.convert).toHaveBeenCalledTimes(4);
+    expect(converted).toHaveLength(4);
+  });
+
+  it("dispose rejects queued jobs and later requests", async () => {
+    const g = gatedConverter();
+    const cache = new PngCache({ convert: g.convert });
+    cache.blob(rg(1)).catch(() => undefined);
+    cache.blob(rg(2)).catch(() => undefined);
+    const queued = cache.blob(rg(3));
+    await tick();
+    cache.dispose();
+    await expect(queued).rejects.toThrow("Cancelled");
+    await expect(cache.blob(rg(4))).rejects.toThrow("Cancelled");
+    expect(g.convert).toHaveBeenCalledTimes(2);
+    expect(cache.disposed).toBe(true);
   });
 });

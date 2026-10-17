@@ -62,7 +62,8 @@ const REASON_NAMES: Record<string, string> = {
   corrupt: "corrupt",
   "too large": "too large",
   budget: "over the size budget",
-  inline: "inline",
+  "alpha dropped": "kept without transparency",
+  inline: "inline (embedded in page content, not extractable)",
 };
 
 export function reasonName(reason: string): string {
@@ -77,30 +78,54 @@ export function skippedSummary(skipped: { reason: string; count: number }[]): st
   return `${total} ${total === 1 ? "image" : "images"} skipped: ${parts.join(", ")}`;
 }
 
+type RgbaImage = Extract<ExtractedImage, { kind: "rgba" }>;
+
+export interface PngCacheOptions {
+  limit?: number;
+  convert?: (width: number, height: number, pixels: Uint8Array) => Promise<Blob>;
+  /** Called once an image's PNG blob exists, so callers can drop the pixel buffer. */
+  onConverted?: (key: string) => void;
+}
+
 /** Converts RGBA images to PNG blobs on demand, at most `limit` at a time, caching results. */
 export class PngCache {
   private blobs = new Map<string, Promise<Blob>>();
   private urls = new Map<string, string>();
-  private waiting: (() => void)[] = [];
+  private waiting: { start: () => void; cancel: () => void }[] = [];
   private active = 0;
-  private disposed = false;
+  private closed = false;
+  private limit: number;
+  private convert: NonNullable<PngCacheOptions["convert"]>;
+  private onConverted?: (key: string) => void;
 
-  constructor(private limit = 2) {}
+  constructor(opts: PngCacheOptions = {}) {
+    this.limit = opts.limit ?? 2;
+    this.convert = opts.convert ?? rgbaToPngBlob;
+    this.onConverted = opts.onConverted;
+  }
 
-  blob(img: Extract<ExtractedImage, { kind: "rgba" }>): Promise<Blob> {
+  get disposed(): boolean {
+    return this.closed;
+  }
+
+  blob(img: RgbaImage): Promise<Blob> {
+    if (this.closed) return Promise.reject(new Error("Cancelled"));
     const key = imageKey(img);
     let p = this.blobs.get(key);
     if (!p) {
-      p = this.schedule(() => rgbaToPngBlob(img.width, img.height, img.pixels));
+      p = this.schedule(() => this.convert(img.width, img.height, img.pixels)).then((b) => {
+        if (!this.closed) this.onConverted?.(key);
+        return b;
+      });
       this.blobs.set(key, p);
     }
     return p;
   }
 
-  async url(img: Extract<ExtractedImage, { kind: "rgba" }>): Promise<string | null> {
+  async url(img: RgbaImage): Promise<string | null> {
     const key = imageKey(img);
     const blob = await this.blob(img);
-    if (this.disposed) return null;
+    if (this.closed) return null;
     let url = this.urls.get(key);
     if (!url) {
       url = URL.createObjectURL(blob);
@@ -115,18 +140,24 @@ export class PngCache {
         this.active++;
         job().then(resolve, reject).finally(() => {
           this.active--;
-          this.waiting.shift()?.();
+          this.waiting.shift()?.start();
         });
       };
       if (this.active < this.limit) start();
-      else this.waiting.push(start);
+      else this.waiting.push({ start, cancel: () => reject(new Error("Cancelled")) });
     });
   }
 
+  /** Revokes URLs and rejects every queued conversion; later requests are rejected too. */
   dispose(): void {
-    this.disposed = true;
+    this.closed = true;
     for (const url of this.urls.values()) URL.revokeObjectURL(url);
     this.urls.clear();
+    const queued = this.waiting;
+    this.waiting = [];
+    for (const w of queued) w.cancel();
+    // Cancelled queue entries are expected to reject; mark them handled.
+    for (const p of this.blobs.values()) p.catch(() => undefined);
     this.blobs.clear();
   }
 }
