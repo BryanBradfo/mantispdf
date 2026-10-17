@@ -1,6 +1,7 @@
 //! Thin js_sys::Reflect layer: copies a JS `StampJobSpec` into the raw
 //! structs of `job`. All range checks happen in `job::validate_job`.
 
+use super::engine::{MAX_IMAGES, MAX_TEXTS};
 use super::job::{
     RawBates, RawImage, RawImageData, RawJob, RawPages, RawText, invalid,
 };
@@ -125,12 +126,20 @@ pub(crate) fn read_job(job: &JsValue) -> Result<RawJob, String> {
         return Err(invalid("pages"));
     };
 
+    // Counts are checked again in `validate_job`; checking them here keeps a
+    // huge array from being copied first.
     let texts = array(job, "texts", "job")?;
+    if texts.length() as usize > MAX_TEXTS {
+        return Err(invalid("texts"));
+    }
     let mut raw_texts = Vec::new();
     for i in 0..texts.length() {
         raw_texts.push(text(&texts.get(i), &format!("texts[{i}]"))?);
     }
     let images = array(job, "images", "job")?;
+    if images.length() as usize > MAX_IMAGES {
+        return Err(invalid("images"));
+    }
     let mut raw_images = Vec::new();
     for i in 0..images.length() {
         raw_images.push(image(&images.get(i), &format!("images[{i}]"))?);

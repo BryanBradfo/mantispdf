@@ -9,6 +9,17 @@ use crate::rebuild::{MAX_STREAM_DECODED, bounded_content, deref, unbalanced_save
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 use std::collections::{BTreeSet, HashMap};
 
+/// Bound on coordinates, margins and sizes: far beyond any page (PDF limit
+/// 14 400 pt).
+pub(crate) const MAX_COORD: f64 = 1e6;
+/// Characters in one text template.
+pub(crate) const MAX_TEMPLATE_CHARS: usize = 2000;
+/// Text and image stamps per job.
+pub(crate) const MAX_TEXTS: usize = 64;
+pub(crate) const MAX_IMAGES: usize = 16;
+/// RGBA pixels all images of one job may carry together.
+pub(crate) const MAX_TOTAL_PIXELS: u64 = 100_000_000;
+
 /// Pages to stamp with text; numbers are 1-based.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PageSelection {
@@ -297,6 +308,10 @@ pub fn visible_page_sizes(pdf: &[u8]) -> Result<Vec<f64>, String> {
 
 fn validate(job: &StampJob, total: u32) -> Result<(), String> {
     let finite = |v: &[f64]| v.iter().all(|x| x.is_finite());
+    let bounded = |v: &[f64]| v.iter().all(|x| x.is_finite() && x.abs() <= MAX_COORD);
+    if job.texts.len() > MAX_TEXTS || job.images.len() > MAX_IMAGES {
+        return Err("Too many stamps".into());
+    }
     if let PageSelection::List(list) = &job.pages
         && let Some(p) = list.iter().find(|&&p| p == 0 || p > total)
     {
@@ -306,7 +321,10 @@ fn validate(job: &StampJob, total: u32) -> Result<(), String> {
         if !(t.size.is_finite() && t.size > 0.0) {
             return Err("Font size must be a positive number".into());
         }
-        if !finite(&[t.opacity, t.margin_x, t.margin_y]) || !finite(&t.color) || !t.at.is_none_or(|a| finite(&a)) {
+        if !finite(&[t.opacity]) || !bounded(&[t.size, t.margin_x, t.margin_y]) || !finite(&t.color)
+            || !t.at.is_none_or(|a| bounded(&a))
+            || t.template.chars().count() > MAX_TEMPLATE_CHARS
+        {
             return Err("Invalid text stamp settings".into());
         }
         if let Some(p) = t.page_only
@@ -315,12 +333,23 @@ fn validate(job: &StampJob, total: u32) -> Result<(), String> {
             return Err(format!("Page {p} does not exist (the document has {total} pages)"));
         }
     }
+    let pixels: u64 = job
+        .images
+        .iter()
+        .map(|im| match &im.image {
+            ImageData::Rgba { width, height, .. } => u64::from(*width) * u64::from(*height),
+            ImageData::Jpeg(_) => 0,
+        })
+        .sum();
+    if pixels > MAX_TOTAL_PIXELS {
+        return Err("Images are too large".into());
+    }
     for im in &job.images {
         if im.page == 0 || im.page > total {
             return Err(format!("Page {} does not exist (the document has {total} pages)", im.page));
         }
         let [_, _, w, h] = im.rect;
-        if !finite(&im.rect) || !finite(&[im.opacity]) || w <= 0.0 || h <= 0.0 {
+        if !bounded(&im.rect) || !finite(&[im.opacity]) || w <= 0.0 || h <= 0.0 {
             return Err("Invalid image placement".into());
         }
     }
@@ -1094,6 +1123,33 @@ mod tests {
         assert_eq!(tj_strings(&doc, pages[0]), vec![b"07".to_vec()]);
         assert_eq!(tj_strings(&doc, pages[1]), vec![b"p2".to_vec()]);
         assert_eq!(tj_strings(&doc, pages[2]), vec![b"08".to_vec()]);
+    }
+
+    #[test]
+    fn engine_rejects_out_of_bounds_values() {
+        let pdf = simple_pdf(1);
+        let mut t = text("x", Anchor::Center);
+        t.margin_x = 2e6;
+        assert_eq!(apply_stamps(&pdf, &job(PageSelection::All, vec![t])).unwrap_err(), "Invalid text stamp settings");
+        let t = absolute("x", [0.0, -1e6 - 1.0], 1);
+        assert_eq!(apply_stamps(&pdf, &job(PageSelection::All, vec![t])).unwrap_err(), "Invalid text stamp settings");
+        let mut t = text("x", Anchor::Center);
+        t.template = "x".repeat(2001);
+        assert_eq!(apply_stamps(&pdf, &job(PageSelection::All, vec![t])).unwrap_err(), "Invalid text stamp settings");
+        let texts = (0..65).map(|_| text("x", Anchor::Center)).collect();
+        assert_eq!(apply_stamps(&pdf, &job(PageSelection::All, texts)).unwrap_err(), "Too many stamps");
+        let mut j = image_job(ImageData::Jpeg(tiny_jpeg()), 1);
+        j.images[0].rect = [0.0, 0.0, 2e6, 1.0];
+        assert_eq!(apply_stamps(&pdf, &j).unwrap_err(), "Invalid image placement");
+        let mut j = image_job(ImageData::Jpeg(tiny_jpeg()), 1);
+        j.images = vec![j.images[0].clone(); 17];
+        assert_eq!(apply_stamps(&pdf, &j).unwrap_err(), "Too many stamps");
+        // Declared dimensions are enough: the total is checked before any
+        // pixel is read.
+        let huge = ImageData::Rgba { width: 10_000, height: 5_001, pixels: vec![] };
+        let mut j = image_job(huge, 1);
+        j.images = vec![j.images[0].clone(); 2];
+        assert_eq!(apply_stamps(&pdf, &j).unwrap_err(), "Images are too large");
     }
 
     #[test]

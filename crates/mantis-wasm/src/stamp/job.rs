@@ -3,15 +3,14 @@
 //! lives in `validate_job` so it is unit-testable without a JS runtime.
 
 use super::engine::{
-    Anchor, Bates, ImageData, ImageStamp, PageSelection, StampJob, TextStamp,
+    Anchor, Bates, ImageData, ImageStamp, MAX_COORD, MAX_IMAGES, MAX_TEMPLATE_CHARS, MAX_TEXTS,
+    MAX_TOTAL_PIXELS, PageSelection, StampJob, TextStamp,
 };
 use super::fonts::StdFont;
 
 const MAX_PIXELS: u64 = 40_000_000;
 /// Largest integer a JS number holds exactly.
 const MAX_SAFE_INT: f64 = 9_007_199_254_740_991.0;
-/// Bound on absolute coordinates: far beyond any page (PDF limit 14 400 pt).
-const MAX_COORD: f64 = 1e6;
 
 pub(crate) enum RawPages {
     All,
@@ -72,8 +71,8 @@ fn int_in(v: f64, min: f64, max: f64, field: &str) -> Result<f64, String> {
     }
 }
 
-fn finite(v: f64, field: &str) -> Result<f64, String> {
-    if v.is_finite() { Ok(v) } else { Err(invalid(field)) }
+fn coord(v: f64, field: &str) -> Result<f64, String> {
+    if v.is_finite() && v.abs() <= MAX_COORD { Ok(v) } else { Err(invalid(field)) }
 }
 
 fn opacity(v: f64, field: &str) -> Result<f64, String> {
@@ -117,11 +116,21 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<StampJob, String> {
         }
     };
 
+    if raw.texts.len() > MAX_TEXTS {
+        return Err(invalid("texts"));
+    }
+    if raw.images.len() > MAX_IMAGES {
+        return Err(invalid("images"));
+    }
+
     let mut texts = Vec::with_capacity(raw.texts.len());
     for (i, t) in raw.texts.into_iter().enumerate() {
         let f = |name: &str| format!("texts[{i}].{name}");
         if !t.size.is_finite() || !(1.0..=500.0).contains(&t.size) {
             return Err(invalid(&f("size")));
+        }
+        if t.template.chars().count() > MAX_TEMPLATE_CHARS {
+            return Err(invalid(&f("template")));
         }
         let font = parse_font(&t.font).ok_or_else(|| invalid(&f("font")))?;
         let anchor = parse_anchor(&t.anchor).ok_or_else(|| invalid(&f("anchor")))?;
@@ -139,8 +148,8 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<StampJob, String> {
             color,
             opacity: opacity(t.opacity, &f("opacity"))?,
             anchor,
-            margin_x: finite(t.margin_x, &f("marginX"))?,
-            margin_y: finite(t.margin_y, &f("marginY"))?,
+            margin_x: coord(t.margin_x, &f("marginX"))?,
+            margin_y: coord(t.margin_y, &f("marginY"))?,
             at: match t.at {
                 None => None,
                 Some(a) if a.iter().all(|v| v.is_finite() && v.abs() <= MAX_COORD) => Some(a),
@@ -154,13 +163,15 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<StampJob, String> {
     }
 
     let mut images = Vec::with_capacity(raw.images.len());
+    let mut total_pixels: u64 = 0;
     for (i, im) in raw.images.into_iter().enumerate() {
         let f = |name: &str| format!("images[{i}].{name}");
         let image = match im.image {
             RawImageData::Rgba { width, height, pixels } => {
                 let w = int_in(width, 1.0, MAX_PIXELS as f64, &f("image.width"))? as u64;
                 let h = int_in(height, 1.0, MAX_PIXELS as f64, &f("image.height"))? as u64;
-                if w * h > MAX_PIXELS || pixels.len() as u64 != w * h * 4 {
+                total_pixels += w * h;
+                if w * h > MAX_PIXELS || total_pixels > MAX_TOTAL_PIXELS || pixels.len() as u64 != w * h * 4 {
                     return Err(invalid(&f("image.pixels")));
                 }
                 ImageData::Rgba { width: w as u32, height: h as u32, pixels }
@@ -173,7 +184,7 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<StampJob, String> {
             }
         };
         let [x, y, w, h] = im.rect;
-        if ![x, y, w, h].iter().all(|v| v.is_finite()) || w <= 0.0 || h <= 0.0 {
+        if ![x, y, w, h].iter().all(|v| v.is_finite() && v.abs() <= MAX_COORD) || w <= 0.0 || h <= 0.0 {
             return Err(invalid(&f("rect")));
         }
         images.push(ImageStamp {
@@ -348,6 +359,71 @@ mod tests {
             opacity: 1.0,
         });
         assert_eq!(err(j), "Invalid stamp settings: images[0].image.bytes");
+    }
+
+    #[test]
+    fn bounds_on_coordinates_and_margins() {
+        for (field, v) in [("marginX", 1e6 + 1.0), ("marginX", -2e6), ("marginY", 1e7)] {
+            let mut j = job();
+            if field == "marginX" { j.texts[0].margin_x = v } else { j.texts[0].margin_y = v }
+            assert_eq!(err(j), format!("Invalid stamp settings: texts[0].{field}"));
+        }
+        let mut j = job();
+        j.texts[0].margin_x = -1e6;
+        j.texts[0].margin_y = 1e6;
+        assert!(validate_job(j).is_ok());
+        for rect in [[1e6 + 1.0, 0.0, 1.0, 1.0], [0.0, -2e6, 1.0, 1.0], [0.0, 0.0, 2e6, 1.0], [0.0, 0.0, 1.0, 1e7]] {
+            let mut j = job();
+            let mut im = rgba(1.0, 1.0, 4);
+            im.rect = rect;
+            j.images.push(im);
+            assert_eq!(err(j), "Invalid stamp settings: images[0].rect");
+        }
+        let mut j = job();
+        let mut im = rgba(1.0, 1.0, 4);
+        im.rect = [-1e6, 1e6, 1e6, 1e6];
+        j.images.push(im);
+        assert!(validate_job(j).is_ok());
+    }
+
+    #[test]
+    fn bounds_on_template_and_counts() {
+        let mut j = job();
+        j.texts[0].template = "é".repeat(2000);
+        assert!(validate_job(j).is_ok());
+        let mut j = job();
+        j.texts[0].template = "x".repeat(2001);
+        assert_eq!(err(j), "Invalid stamp settings: texts[0].template");
+
+        let mut j = job();
+        j.texts = (0..64).map(|_| text()).collect();
+        assert!(validate_job(j).is_ok());
+        let mut j = job();
+        j.texts = (0..65).map(|_| text()).collect();
+        assert_eq!(err(j), "Invalid stamp settings: texts");
+
+        let mut j = job();
+        j.images = (0..16).map(|_| rgba(1.0, 1.0, 4)).collect();
+        assert!(validate_job(j).is_ok());
+        let mut j = job();
+        j.images = (0..17).map(|_| rgba(1.0, 1.0, 4)).collect();
+        assert_eq!(err(j), "Invalid stamp settings: images");
+    }
+
+    #[test]
+    fn bounds_on_total_pixels() {
+        // Images within the 40M per-image cap that exceed 100M together.
+        // (Zeroed buffers are lazily mapped, so this stays cheap.)
+        let big = || rgba(8000.0, 5000.0, 8000 * 5000 * 4);
+        let mut j = job();
+        j.images = vec![big(), big()];
+        assert!(validate_job(j).is_ok());
+        let mut j = job();
+        j.images = vec![big(), big(), rgba(5000.0, 4001.0, 5000 * 4001 * 4)];
+        assert_eq!(err(j), "Invalid stamp settings: images[2].image.pixels");
+        let mut j = job();
+        j.images = vec![big(), big(), rgba(5000.0, 4000.0, 5000 * 4000 * 4)];
+        assert!(validate_job(j).is_ok());
     }
 
     #[test]
