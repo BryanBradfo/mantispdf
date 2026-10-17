@@ -182,6 +182,7 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
     let mut image_ids: Vec<Option<ObjectId>> = vec![None; built.len()];
     let mut built: Vec<Option<BuiltImage>> = built.into_iter().map(Some).collect();
     let mut open_q: Option<ObjectId> = None;
+    let mut scanner = BalanceScanner::new();
 
     for plan in &plans {
         let page = doc
@@ -192,7 +193,7 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
         let mut gs_dict = owned_dict(&doc, resources.get(b"ExtGState").ok());
         let mut xobject_dict = owned_dict(&doc, resources.get(b"XObject").ok());
         let original = original_contents(&doc, page.get(b"Contents").ok());
-        let open = unbalanced_in(&doc, &original);
+        let open = scanner.unbalanced(&doc, &original);
 
         // Page-local names, made unique against what the page already has.
         let mut font_names: HashMap<&'static str, Vec<u8>> = HashMap::new();
@@ -462,23 +463,70 @@ fn original_contents(doc: &Document, contents: Option<&Object>) -> Vec<Object> {
     }
 }
 
-/// `q` the original content leaves open at its end. Undecodable or oversized
-/// content counts as balanced.
-fn unbalanced_in(doc: &Document, items: &[Object]) -> usize {
-    let mut content = Vec::new();
-    let mut charged = 0;
-    for item in items {
-        let Some(Object::Stream(stream)) = deref(doc, item) else {
-            continue;
-        };
-        let cap = MAX_STREAM_DECODED.saturating_sub(content.len());
-        match bounded_content(stream, cap, &mut charged) {
-            Some(bytes) => content.extend(bytes),
-            None => return 0,
-        }
-        content.push(b'\n');
+/// Decoded content bytes all balance scans of one job may produce together
+/// (same bound as a rebuild's content scans).
+const MAX_JOB_DECODED: usize = 512 << 20;
+
+/// Counts the `q` the original content of a page leaves open at its end.
+/// Results are memoized per list of content stream ids (pages sharing their
+/// content are decoded once) and all scans share one decode budget.
+struct BalanceScanner {
+    memo: HashMap<Vec<ObjectId>, usize>,
+    /// Decoded bytes still allowed for this job.
+    budget: usize,
+    /// Streams decoded so far (observed by tests).
+    decodes: usize,
+}
+
+impl BalanceScanner {
+    fn new() -> Self {
+        Self::with_budget(MAX_JOB_DECODED)
     }
-    unbalanced_saves(&content).unwrap_or(0)
+
+    fn with_budget(budget: usize) -> Self {
+        BalanceScanner { memo: HashMap::new(), budget, decodes: 0 }
+    }
+
+    /// Undecodable or oversized content, or content past the job's budget,
+    /// counts as balanced.
+    fn unbalanced(&mut self, doc: &Document, items: &[Object]) -> usize {
+        let key: Option<Vec<ObjectId>> = items.iter().map(|o| o.as_reference().ok()).collect();
+        if let Some(open) = key.as_ref().and_then(|k| self.memo.get(k)) {
+            return *open;
+        }
+        let open = self.scan(doc, items);
+        if let Some(k) = key {
+            self.memo.insert(k, open);
+        }
+        open
+    }
+
+    fn scan(&mut self, doc: &Document, items: &[Object]) -> usize {
+        let mut content = Vec::new();
+        let mut charged = 0;
+        let mut complete = true;
+        for item in items {
+            let Some(Object::Stream(stream)) = deref(doc, item) else {
+                continue;
+            };
+            let cap = MAX_STREAM_DECODED
+                .saturating_sub(content.len())
+                .min(self.budget.saturating_sub(charged));
+            self.decodes += 1;
+            match bounded_content(stream, cap, &mut charged) {
+                Some(bytes) => {
+                    content.extend(bytes);
+                    content.push(b'\n');
+                }
+                None => {
+                    complete = false;
+                    break;
+                }
+            }
+        }
+        self.budget = self.budget.saturating_sub(charged);
+        if complete { unbalanced_saves(&content).unwrap_or(0) } else { 0 }
+    }
 }
 
 /// Page-local name of the ExtGState for `opacity`, creating the document
@@ -1150,6 +1198,45 @@ mod tests {
         let mut j = image_job(huge, 1);
         j.images = vec![j.images[0].clone(); 2];
         assert_eq!(apply_stamps(&pdf, &j).unwrap_err(), "Images are too large");
+    }
+
+    /// `n` pages that all draw the one content stream `content`.
+    fn shared_content_doc(n: usize, content: &[u8]) -> (Document, ObjectId) {
+        let mut f = Fixture::new();
+        let c = f.doc.add_object(Stream::new(Dictionary::new(), content.to_vec()));
+        for _ in 0..n {
+            f.page(dictionary! { "Contents" => c }, "");
+        }
+        (load(&f.finish()), c)
+    }
+
+    #[test]
+    fn shared_content_stream_decoded_once() {
+        let (doc, _) = shared_content_doc(200, b"q 2 0 0 2 0 0 cm");
+        let mut scanner = BalanceScanner::new();
+        for page in page_ids(&doc) {
+            let items = original_contents(&doc, doc.get_dictionary(page).unwrap().get(b"Contents").ok());
+            assert_eq!(scanner.unbalanced(&doc, &items), 1);
+        }
+        assert_eq!(scanner.decodes, 1);
+    }
+
+    #[test]
+    fn decode_budget_is_shared_across_pages() {
+        let mut f = Fixture::new();
+        f.page(Dictionary::new(), &format!("q {}", " ".repeat(100)));
+        f.page(Dictionary::new(), &format!("q {}", " ".repeat(100)));
+        let doc = load(&f.finish());
+        let mut scanner = BalanceScanner::with_budget(150);
+        let open: Vec<usize> = page_ids(&doc)
+            .into_iter()
+            .map(|page| {
+                let items = original_contents(&doc, doc.get_dictionary(page).unwrap().get(b"Contents").ok());
+                scanner.unbalanced(&doc, &items)
+            })
+            .collect();
+        // The second page no longer fits the job's budget: treated as balanced.
+        assert_eq!(open, vec![1, 0]);
     }
 
     #[test]
