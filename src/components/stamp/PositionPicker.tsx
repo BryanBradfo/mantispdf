@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { gridStep } from "../../lib/gridNav";
 import { ANCHOR_LABELS } from "../../lib/stampBuilders";
 import type { Anchor } from "../../lib/stampJob";
 
@@ -43,11 +44,10 @@ export default function PositionPicker({ value, onChange, label = "Position", la
               tabIndex={checked ? 0 : -1}
               onClick={() => onChange(a)}
               onKeyDown={(e) => {
-                const i = anchors.indexOf(a);
-                const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
-                if (!step) return;
+                const j = gridStep(anchors.indexOf(a), e.key, 3, anchors.length);
+                if (j === null) return;
                 e.preventDefault();
-                const next = anchors[(i + step + anchors.length) % anchors.length];
+                const next = anchors[j];
                 onChange(next);
                 (e.currentTarget.parentElement?.querySelector(`[aria-label="${ANCHOR_LABELS[next]}"]`) as HTMLElement | null)?.focus();
               }}
