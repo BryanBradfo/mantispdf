@@ -111,7 +111,13 @@ fn jpeg_info(bytes: &[u8]) -> Result<JpegInfo, String> {
         let seg = bytes.get(i + 2..i + len).ok_or_else(bad)?;
         match marker {
             0xEE if seg.starts_with(b"Adobe") => adobe = true,
-            0xC0..=0xCF if !matches!(marker, 0xC4 | 0xC8 | 0xCC) => {
+            // Lossless, hierarchical and arithmetic-coded frames: viewers
+            // decode these unreliably.
+            0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF => {
+                return Err("Unsupported JPEG image".into());
+            }
+            // Baseline, extended sequential and progressive (Huffman).
+            0xC0..=0xC2 => {
                 if seg.len() < 6 {
                     return Err(bad());
                 }
@@ -154,18 +160,22 @@ mod tests {
 
     /// SOI, optional APP14 Adobe, SOF0 with `components`, then EOI.
     fn header(components: u8, adobe: bool) -> Vec<u8> {
+        header_with(0xC0, components, adobe)
+    }
+
+    fn header_with(sof_marker: u8, components: u8, adobe: bool) -> Vec<u8> {
         let mut v = vec![0xFF, 0xD8];
         if adobe {
             let body = b"Adobe\x00\x64\x00\x00\x00\x00\x00";
             v.extend_from_slice(&[0xFF, 0xEE, 0x00, (body.len() + 2) as u8]);
             v.extend_from_slice(body);
         }
-        let mut sof = vec![8, 0, 2, 0, 3, components];
+        let mut frame = vec![8, 0, 2, 0, 3, components];
         for c in 0..components {
-            sof.extend_from_slice(&[c + 1, 0x11, 0]);
+            frame.extend_from_slice(&[c + 1, 0x11, 0]);
         }
-        v.extend_from_slice(&[0xFF, 0xC0, 0x00, (sof.len() + 2) as u8]);
-        v.extend_from_slice(&sof);
+        v.extend_from_slice(&[0xFF, sof_marker, 0x00, (frame.len() + 2) as u8]);
+        v.extend_from_slice(&frame);
         v.extend_from_slice(&[0xFF, 0xD9]);
         v
     }
@@ -174,6 +184,21 @@ mod tests {
     fn sof_dimensions_and_components() {
         let info = jpeg_info(&header(3, false)).unwrap();
         assert_eq!(info, JpegInfo { width: 3, height: 2, components: 3, adobe: false });
+    }
+
+    #[test]
+    fn only_baseline_extended_and_progressive_frames() {
+        for sof in [0xC0, 0xC1, 0xC2] {
+            assert!(jpeg_info(&header_with(sof, 3, false)).is_ok(), "SOF {sof:#X}");
+        }
+        // Lossless, hierarchical and arithmetic-coded frames.
+        for sof in [0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF] {
+            assert_eq!(
+                jpeg_info(&header_with(sof, 3, false)).unwrap_err(),
+                "Unsupported JPEG image",
+                "SOF {sof:#X}"
+            );
+        }
     }
 
     #[test]
