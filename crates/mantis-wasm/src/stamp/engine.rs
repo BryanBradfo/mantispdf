@@ -117,6 +117,13 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
         PageSelection::All => (1..=total).collect(),
         PageSelection::List(list) => list.iter().copied().collect(),
     };
+    // {n} counts from the first selected page, keeping document distance;
+    // {total} is the number printed on the last selected page. An empty
+    // selection (absolute texts only) numbers the whole document.
+    let first = selected.first().copied().unwrap_or(1);
+    let last = selected.last().copied().unwrap_or(total);
+    let number_of = |page: u32| job.number_start.saturating_add(i64::from(page) - i64::from(first));
+    let last_number = number_of(last);
 
     // Plan every page first: any error (WinAnsi, overflow, bad image) is
     // returned before anything is written.
@@ -125,7 +132,7 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
     for &(number, page_id) in &pages {
         let vb = VisibleBox::of_page(&doc, page_id);
         let mut texts = Vec::new();
-        let n = i64::from(number).saturating_add(job.number_start).saturating_sub(1);
+        let n = number_of(number);
         let mut bates = None;
         if selected.contains(&number) && job.texts.iter().any(|t| t.page_only.is_none()) {
             if let Some(b) = &job.bates {
@@ -141,7 +148,7 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
             if !applies {
                 continue;
             }
-            let resolved = resolve_tokens(&t.template, n, total, bates.as_deref());
+            let resolved = resolve_tokens(&t.template, n, last_number, bates.as_deref());
             let bytes = encode_winansi(&normalize_whitespace(&resolved))?;
             if !bytes.is_empty() {
                 texts.push(place_text(t, bytes, vb.width(), vb.height()));
@@ -329,7 +336,7 @@ fn format_bates(b: &Bates, stamped_so_far: u64) -> Result<String, String> {
 
 /// Replace `{n}`, `{total}` and (when Bates is on) `{bates}` in one pass, so
 /// a substituted value is never scanned for tokens again.
-fn resolve_tokens(template: &str, n: i64, total: u32, bates: Option<&str>) -> String {
+fn resolve_tokens(template: &str, n: i64, total: i64, bates: Option<&str>) -> String {
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
     while let Some(i) = rest.find('{') {
@@ -702,14 +709,37 @@ mod tests {
         let out = apply_stamps(&simple_pdf(3), &j).unwrap();
         let doc = load(&out.bytes);
         let got: Vec<Vec<Vec<u8>>> = page_ids(&doc).into_iter().map(|p| tj_strings(&doc, p)).collect();
+        // {total} is the number printed on the last selected page.
         assert_eq!(
             got,
             vec![
-                vec![b"Page 5 of 3".to_vec()],
-                vec![b"Page 6 of 3".to_vec()],
-                vec![b"Page 7 of 3".to_vec()],
+                vec![b"Page 5 of 7".to_vec()],
+                vec![b"Page 6 of 7".to_vec()],
+                vec![b"Page 7 of 7".to_vec()],
             ]
         );
+    }
+
+    fn numbered(pdf: &[u8], pages: PageSelection, template: &str) -> Vec<Vec<Vec<u8>>> {
+        let out = apply_stamps(pdf, &job(pages, vec![text(template, Anchor::BottomCenter)])).unwrap();
+        let doc = load(&out.bytes);
+        page_ids(&doc).into_iter().map(|p| tj_strings(&doc, p)).collect()
+    }
+
+    #[test]
+    fn numbering_starts_at_first_selected_page() {
+        let pdf = simple_pdf(5);
+        let got = numbered(&pdf, PageSelection::List(vec![2, 3, 4, 5]), "{n}");
+        assert_eq!(got[1], vec![b"1".to_vec()]);
+        assert_eq!(got[4], vec![b"4".to_vec()]);
+        let got = numbered(&pdf, PageSelection::List(vec![2, 3, 4, 5]), "{n} of {total}");
+        assert_eq!(got[2], vec![b"2 of 4".to_vec()]);
+        let got = numbered(&pdf, PageSelection::All, "{n} of {total}");
+        assert_eq!(got[2], vec![b"3 of 5".to_vec()]);
+        // Gaps keep the document distance.
+        let got = numbered(&pdf, PageSelection::List(vec![2, 4]), "{n}");
+        assert_eq!(got[1], vec![b"1".to_vec()]);
+        assert_eq!(got[3], vec![b"3".to_vec()]);
     }
 
     #[test]
