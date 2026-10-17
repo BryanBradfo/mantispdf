@@ -1262,7 +1262,7 @@ pub struct RebuildReport {
 /// Page rotation after turning a page with `/Rotate` value `current` by a
 /// further `delta` degrees, in 0, 90, 180 or 270. Hostile values (fractional,
 /// off-grid, huge) snap to the nearest quarter turn without overflowing.
-fn add_rotation(current: Option<&Object>, delta: i64) -> i64 {
+pub(crate) fn add_rotation(current: Option<&Object>, delta: i64) -> i64 {
     let current = match current {
         Some(Object::Integer(i)) => i.rem_euclid(360) as f64,
         Some(Object::Real(f)) if f.is_finite() => f64::from(*f).rem_euclid(360.0),

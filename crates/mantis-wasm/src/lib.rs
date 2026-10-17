@@ -11,6 +11,7 @@ mod pdf_util;
 mod rebuild;
 mod rotate;
 mod split;
+mod stamp;
 mod watermark;
 
 pub use compress::compress_pdf;
