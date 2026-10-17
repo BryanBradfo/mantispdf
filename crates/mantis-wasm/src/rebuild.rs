@@ -586,6 +586,10 @@ pub struct SafeCopier<'s> {
     too_deep: u32,
     /// Per source: page id -> 1-based page number, built on the first warning.
     page_numbers: HashMap<usize, HashMap<ObjectId, u32>>,
+    /// `/Resources` objects being copied by `copy_any_resources`. They are
+    /// not memoized (each Type3 font trims them differently), so this set is
+    /// what stops a cycle back into one of them.
+    resources_in_progress: HashSet<(usize, ObjectId)>,
 }
 
 impl<'s> SafeCopier<'s> {
@@ -596,6 +600,7 @@ impl<'s> SafeCopier<'s> {
             depth: 0,
             too_deep: 0,
             page_numbers: HashMap::new(),
+            resources_in_progress: HashSet::new(),
         }
     }
 
@@ -723,12 +728,33 @@ impl<'s> SafeCopier<'s> {
         used: Option<&UsedNames>,
     ) -> Object {
         let doc = self.source(src);
-        match deref(doc, value) {
-            Some(res @ Object::Dictionary(dict)) if !is_blocked(res) => {
-                Object::Dictionary(self.copy_resources(out, src, dict, used))
-            }
-            _ => self.copy(out, src, value),
+        let Some(res @ Object::Dictionary(dict)) = deref(doc, value) else {
+            return self.copy(out, src, value);
+        };
+        if is_blocked(res) {
+            return Object::Null;
         }
+        // Not memoized, so cycles and depth are guarded here: a cycle back
+        // into a /Resources still being copied is cut, and every level
+        // (direct or referenced) counts toward MAX_REF_DEPTH.
+        let key = value.as_reference().ok().map(|id| (src, id));
+        if key.is_some_and(|k| self.resources_in_progress.contains(&k)) {
+            return Object::Null;
+        }
+        if self.depth >= MAX_REF_DEPTH {
+            self.too_deep += 1;
+            return Object::Null;
+        }
+        if let Some(k) = key {
+            self.resources_in_progress.insert(k);
+        }
+        self.depth += 1;
+        let copied = self.copy_resources(out, src, dict, used);
+        self.depth -= 1;
+        if let Some(k) = key {
+            self.resources_in_progress.remove(&k);
+        }
+        Object::Dictionary(copied)
     }
 
     fn copy_stream(
@@ -1887,6 +1913,45 @@ mod tests {
             .unwrap();
         let colorants = out_dict(&out, &cs[4]).get(b"Colorants").unwrap();
         assert!(out_dict(&out, colorants).has(b"A"), "colorant /A kept");
+    }
+
+    #[test]
+    fn cyclic_type3_resources_terminate() {
+        // /Resources -> /Font -> (direct) Type3 font -> /Resources (the same
+        // object): no memoized reference breaks this cycle by itself.
+        let mut src = Src::new();
+        let res_id = src.doc.new_object_id();
+        let glyph = src
+            .doc
+            .add_object(Stream::new(dictionary! {}, b"0 0 d0 /T3 1 Tf".to_vec()));
+        let font = dictionary! {
+            "Type" => "Font", "Subtype" => "Type3",
+            "FontBBox" => vec![0.into(), 0.into(), 1.into(), 1.into()],
+            "FontMatrix" => vec![1.into(), 0.into(), 0.into(), 1.into(), 0.into(), 0.into()],
+            "CharProcs" => dictionary! { "g" => glyph },
+            "Encoding" => dictionary! { "Differences" => vec![97.into(), Object::Name(b"g".to_vec())] },
+            "FirstChar" => 97, "LastChar" => 97, "Widths" => vec![1.into()],
+            "Resources" => res_id,
+        };
+        src.doc.objects.insert(
+            res_id,
+            Object::Dictionary(dictionary! { "Font" => dictionary! { "T3" => font } }),
+        );
+        let page = src.add_page(dictionary! {}, b"BT /T3 12 Tf (a) Tj ET");
+        src.doc
+            .get_dictionary_mut(page)
+            .unwrap()
+            .set("Resources", res_id);
+        let doc = src.finish();
+        let pages = [OutPage::Page {
+            src: 0,
+            page,
+            rotate: 0,
+        }];
+        let (mut out, _) = rebuild_document(&[doc], &pages, &PAGE_TOOLS).unwrap();
+        let mut bytes = Vec::new();
+        out.save_to(&mut bytes).unwrap();
+        assert!(Document::load_mem(&bytes).is_ok());
     }
 
     #[test]
