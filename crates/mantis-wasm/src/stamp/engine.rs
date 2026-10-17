@@ -109,6 +109,10 @@ struct PlacedText {
     x: f64,
     y: f64,
     bytes: Vec<u8>,
+    /// Selection texts (page numbers, headers, footers, Bates) are
+    /// pagination artifacts; a page-only text (a signature date) is a plain
+    /// artifact.
+    pagination: bool,
 }
 
 /// Everything one page receives, computed before the document is touched.
@@ -121,6 +125,12 @@ struct PagePlan {
     /// A selection (non page-only) text is drawn on this page.
     selection_stamped: bool,
 }
+
+/// Opens a pagination artifact (page numbers, headers, footers, Bates).
+const PAGINATION_ARTIFACT: &[u8] = b"/Artifact <</Type /Pagination>> BDC ";
+/// Opens a plain artifact (images, signature date line). `BMC`: a tag
+/// without a property list.
+const ARTIFACT: &[u8] = b"/Artifact BMC ";
 
 pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
     let mut doc = load_pdf(pdf)?;
@@ -243,6 +253,9 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
                 }
             };
             let [r, g, b] = t.color.map(fmt_num);
+            // Stamps are marked as artifacts so assistive technology and
+            // text extraction of tagged documents skip them.
+            ops.extend_from_slice(if t.pagination { PAGINATION_ARTIFACT } else { ARTIFACT });
             ops.extend_from_slice(
                 format!(
                     "q {matrix} cm /{} gs BT /{} {} Tf {r} {g} {b} rg {} {} Td (",
@@ -255,7 +268,7 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
                 .as_bytes(),
             );
             escape_literal(&t.bytes, &mut ops);
-            ops.extend_from_slice(b") Tj ET Q\n");
+            ops.extend_from_slice(b") Tj ET Q EMC\n");
         }
 
         for &i in &plan.images {
@@ -277,9 +290,10 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
             let name = free_name(&xobject_dict, "MStIm");
             xobject_dict.set(name.clone(), Object::Reference(id));
             let [x, y, w, h] = stamp.rect.map(fmt_num);
+            ops.extend_from_slice(ARTIFACT);
             ops.extend_from_slice(
                 format!(
-                    "q {matrix} cm /{} gs {w} 0 0 {h} {x} {y} cm /{} Do Q\n",
+                    "q {matrix} cm /{} gs {w} 0 0 {h} {x} {y} cm /{} Do Q EMC\n",
                     lossy(&gs),
                     lossy(&name),
                 )
@@ -447,6 +461,7 @@ fn place_text(t: &TextStamp, bytes: Vec<u8>, w: f64, h: f64) -> PlacedText {
         x,
         y,
         bytes,
+        pagination: t.page_only.is_none(),
     }
 }
 
@@ -1149,6 +1164,67 @@ mod tests {
         assert!(apply_stamps(&simple_pdf(2), &image_job(ImageData::Jpeg(tiny_jpeg()), 3)).is_err());
         let bad = ImageData::Rgba { width: 2, height: 2, pixels: vec![0; 3] };
         assert!(apply_stamps(&simple_pdf(2), &image_job(bad, 1)).is_err());
+    }
+
+    /// Marked-content tags of the stamp stream, each with the operators it
+    /// encloses: `(tag, property list, operators inside)`.
+    fn marked_items(doc: &Document, page: ObjectId) -> Vec<(String, Option<Dictionary>, Vec<String>)> {
+        let mut out = vec![];
+        let mut open: Option<(String, Option<Dictionary>, Vec<String>)> = None;
+        for op in tail_ops(doc, page) {
+            match op.operator.as_str() {
+                "BDC" | "BMC" => {
+                    assert!(open.is_none(), "nested marked content");
+                    let tag = String::from_utf8(op.operands[0].as_name().unwrap().to_vec()).unwrap();
+                    let props = op.operands.get(1).map(|p| p.as_dict().unwrap().clone());
+                    open = Some((tag, props, vec![]));
+                }
+                "EMC" => out.push(open.take().expect("EMC without BDC")),
+                other => {
+                    if let Some((_, _, ops)) = open.as_mut() {
+                        ops.push(other.to_string());
+                    } else {
+                        assert!(other == "Q", "stamp operator {other} outside marked content");
+                    }
+                }
+            }
+        }
+        assert!(open.is_none(), "unclosed marked content");
+        out
+    }
+
+    #[test]
+    fn stamps_are_marked_as_artifacts() {
+        let mut j = job(
+            PageSelection::All,
+            vec![text("{n}", Anchor::BottomRight), text("Head", Anchor::TopCenter), absolute("Signed", [10.0, 10.0], 1)],
+        );
+        j.images.push(ImageStamp {
+            image: ImageData::Rgba { width: 1, height: 1, pixels: vec![0, 0, 0, 255] },
+            page: 1,
+            rect: [10.0, 20.0, 30.0, 15.0],
+            opacity: 1.0,
+        });
+        let out = apply_stamps(&simple_pdf(1), &j).unwrap();
+        let doc = load(&out.bytes);
+        let items = marked_items(&doc, page_ids(&doc)[0]);
+        assert_eq!(items.len(), 4, "{items:?}");
+        let pagination = dictionary! { "Type" => "Pagination" };
+        for (tag, props, ops) in &items[..2] {
+            assert_eq!(tag, "Artifact");
+            assert_eq!(props.as_ref(), Some(&pagination));
+            assert!(ops.contains(&"Tj".to_string()) && ops.first().map(String::as_str) == Some("q"));
+            assert_eq!(ops.last().map(String::as_str), Some("Q"));
+        }
+        // The signature date line and the image are artifacts without a
+        // pagination subtype.
+        for (tag, props, ops) in &items[2..] {
+            assert_eq!(tag, "Artifact");
+            assert_eq!(props, &None);
+            assert_eq!((ops.first().map(String::as_str), ops.last().map(String::as_str)), (Some("q"), Some("Q")));
+        }
+        assert!(items[2].2.contains(&"Tj".to_string()));
+        assert!(items[3].2.contains(&"Do".to_string()));
     }
 
     fn absolute(template: &str, at: [f64; 2], page: u32) -> TextStamp {
