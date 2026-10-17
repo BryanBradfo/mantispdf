@@ -7,7 +7,7 @@
 //! field survives. Links and replies whose targets are not in the output are
 //! dropped once every page exists (`finish_links`).
 
-use crate::rebuild::{Policy, RebuildReport, SafeCopier, deref, name_of};
+use crate::rebuild::{Policy, RebuildReport, SafeCopier, deref, name_of, unbalanced_saves};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 use std::collections::HashMap;
 
@@ -57,8 +57,13 @@ const COMMENT_KEYS: [&[u8]; 23] = [
     b"LE",
 ];
 
-/// Annotation flag bit 2: the annotation is never shown nor printed.
-const HIDDEN_FLAG: i64 = 2;
+/// Annotation flags that keep a widget off the page: Hidden (bit 2) and
+/// NoView (bit 6).
+const INVISIBLE_FLAGS: i64 = 2 | 32;
+
+/// URI schemes a kept link may open. Anything else (javascript:, file:,
+/// data:, smb:, relative URIs) is dropped.
+const ALLOWED_SCHEMES: [&str; 3] = ["http", "https", "mailto"];
 
 /// Link targets to resolve once every page exists:
 /// (new annotation, new page holding it, source index, source target page).
@@ -146,7 +151,10 @@ pub fn rebuild_annotations(
                     report.comments_dropped += 1;
                     continue;
                 }
-                let id = rebuild_comment(out, copier, src, annot, new_page);
+                let Some(id) = rebuild_comment(out, copier, src, annot, new_page) else {
+                    report.comments_dropped += 1;
+                    continue;
+                };
                 report.comments_kept += 1;
                 new_annots.push(id.into());
                 if let Ok(old) = entry.as_reference() {
@@ -264,7 +272,7 @@ fn rebuild_link(
     if action_type == Some(b"URI") {
         let uri = action
             .and_then(|a| deref(doc, a.get(b"URI").ok()?))
-            .filter(|u| matches!(u, Object::String(..)))?;
+            .filter(|u| matches!(u, Object::String(bytes, _) if is_allowed_uri(bytes)))?;
         link.set("A", dictionary! { "S" => "URI", "URI" => uri.clone() });
         return Some(LinkKind::Uri(out.add_object(link)));
     }
@@ -292,7 +300,9 @@ fn rebuild_comment(
     src: usize,
     annot: &Dictionary,
     new_page: ObjectId,
-) -> ObjectId {
+) -> Option<ObjectId> {
+    // /Rect is required; without a usable one the comment has no place.
+    parse_numbers::<4>(copier.source(src), annot.get(b"Rect").ok()?)?;
     let mut comment = dictionary! { "Type" => "Annot" };
     for key in COMMENT_KEYS {
         if let Ok(value) = annot.get(key) {
@@ -303,7 +313,7 @@ fn rebuild_comment(
         }
     }
     comment.set("P", new_page);
-    out.add_object(comment)
+    Some(out.add_object(comment))
 }
 
 /// The copied normal appearance of a visible widget and the `cm` matrix that
@@ -321,7 +331,7 @@ fn flatten_widget(
         .and_then(|f| deref(doc, f))
         .and_then(|f| f.as_i64().ok())
         .unwrap_or(0);
-    if flags & HIDDEN_FLAG != 0 {
+    if flags & INVISIBLE_FLAGS != 0 {
         return None;
     }
     let normal = deref(doc, annot.get(b"AP").ok()?)?
@@ -379,6 +389,34 @@ fn flatten_widget(
     }
 }
 
+/// True when a URI string (PDF text: UTF-16BE with BOM, UTF-8 with BOM, or
+/// Latin-1) uses an allowed scheme. Whitespace and control characters are
+/// ignored while reading the scheme, as browsers do (`java\nscript:`).
+fn is_allowed_uri(bytes: &[u8]) -> bool {
+    let text: String = if let Some(utf16) = bytes.strip_prefix(&[0xFE, 0xFF]) {
+        let units = utf16
+            .chunks_exact(2)
+            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]));
+        char::decode_utf16(units)
+            .map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER))
+            .collect()
+    } else if let Some(utf8) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
+        String::from_utf8_lossy(utf8).into_owned()
+    } else {
+        bytes.iter().map(|&b| char::from(b)).collect()
+    };
+    let cleaned: String = text
+        .chars()
+        .filter(|c| !c.is_whitespace() && !c.is_control())
+        .collect();
+    let Some((scheme, _)) = cleaned.split_once(':') else {
+        return false;
+    };
+    ALLOWED_SCHEMES
+        .iter()
+        .any(|allowed| scheme.eq_ignore_ascii_case(allowed))
+}
+
 /// `N` numbers from an array (elements may be indirect).
 fn parse_numbers<const N: usize>(doc: &Document, obj: &Object) -> Option<[f64; N]> {
     let items = deref(doc, obj)?.as_array().ok()?;
@@ -425,10 +463,25 @@ fn append_flattened(
         _ => vec![],
     };
 
+    // `q` the original content leaves open would still be on the stack after
+    // the wrap's `Q`; close them too. Undecodable content: assume balanced.
+    let mut original = Vec::new();
+    for id in contents.iter().filter_map(|c| c.as_reference().ok()) {
+        if let Ok(stream) = out.get_object(id).and_then(Object::as_stream) {
+            original.extend(
+                stream
+                    .decompressed_content()
+                    .unwrap_or_else(|_| stream.content.clone()),
+            );
+            original.push(b'\n');
+        }
+    }
     let wrap = !contents.is_empty();
     let mut drawing = String::new();
     if wrap {
         drawing.push_str("Q\n");
+        let open = unbalanced_saves(&original).unwrap_or(0);
+        drawing.push_str(&"Q\n".repeat(open));
     }
     let mut n = 0usize;
     for (appearance, cm) in flattened {
@@ -512,6 +565,10 @@ mod tests {
         }
 
         fn add_page(&mut self, content: &[u8]) -> ObjectId {
+            self.add_page_with(dictionary! {}, content)
+        }
+
+        fn add_page_with(&mut self, resources: Dictionary, content: &[u8]) -> ObjectId {
             let content_id = self
                 .doc
                 .add_object(Stream::new(dictionary! {}, content.to_vec()));
@@ -519,7 +576,7 @@ mod tests {
                 "Type" => "Page",
                 "Parent" => self.pages_id,
                 "MediaBox" => rect(0, 0, 612, 792),
-                "Resources" => dictionary! {},
+                "Resources" => resources,
                 "Contents" => content_id,
             });
             self.kids.push(id);
@@ -581,6 +638,22 @@ mod tests {
                     .collect(),
                 _ => vec![],
             }
+        }
+
+        /// Decoded content streams of output page `i`, in order.
+        fn content_streams(&self, i: usize) -> Vec<Vec<u8>> {
+            let ids: Vec<ObjectId> = match self.page(i).get(b"Contents").unwrap() {
+                Object::Reference(id) => vec![*id],
+                Object::Array(items) => items.iter().map(|o| o.as_reference().unwrap()).collect(),
+                other => panic!("unexpected /Contents {other:?}"),
+            };
+            ids.into_iter()
+                .map(|id| {
+                    let s = self.out.get_object(id).unwrap().as_stream().unwrap();
+                    s.decompressed_content()
+                        .unwrap_or_else(|_| s.content.clone())
+                })
+                .collect()
         }
 
         /// Concatenated decoded content of output page `i`.
@@ -930,5 +1003,248 @@ mod tests {
         assert!(!contains(&r.bytes, b"SECRETFILE"));
         assert!(!contains(&r.bytes, b"FileAttachment"));
         assert_eq!(r.report.comments_dropped, 0);
+    }
+
+    // ---- fix round 1 ----------------------------------------------------
+
+    fn uri_link(src: &mut Src, page: ObjectId, uri: &[u8]) {
+        src.annotate(
+            page,
+            dictionary! {
+                "Subtype" => "Link", "Rect" => rect(10, 10, 50, 20),
+                "A" => dictionary! { "S" => "URI", "URI" => Object::String(uri.to_vec(), lopdf::StringFormat::Literal) },
+            },
+        );
+    }
+
+    #[test]
+    fn uri_link_schemes_filtered() {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        uri_link(&mut src, p1, b"javascript:alert('SECRET_JS')");
+        uri_link(&mut src, p1, b" \tjava\nscript:alert('SECRET_JS2')");
+        uri_link(&mut src, p1, b"file:///etc/SECRET_FILE");
+        uri_link(&mut src, p1, b"relative/SECRET_REL");
+        uri_link(&mut src, p1, b" HTTPS://x.test/ok");
+        uri_link(&mut src, p1, b"mailto:a@x.test");
+        // UTF-16BE with BOM: "http://u.test"
+        let mut utf16 = vec![0xFE, 0xFF];
+        utf16.extend("http://u.test".encode_utf16().flat_map(|u| u.to_be_bytes()));
+        uri_link(&mut src, p1, &utf16);
+        let r = rebuild_pages(src.finish(), &[1], &KEEP_ALL);
+        assert_eq!(r.annots(0).len(), 3);
+        assert_eq!(r.report.links_kept, 3);
+        assert_eq!(r.report.links_dropped, 4);
+        assert!(contains(&r.bytes, b"HTTPS://x.test/ok"));
+        for secret in [&b"SECRET_JS"[..], b"SECRET_FILE", b"SECRET_REL"] {
+            assert!(!contains(&r.bytes, secret));
+        }
+    }
+
+    #[test]
+    fn dashed_border_style_kept_on_comment() {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        src.annotate(
+            p1,
+            dictionary! {
+                "Subtype" => "Square", "Rect" => rect(10, 10, 50, 50),
+                "BS" => dictionary! { "W" => 1, "S" => "D", "D" => vec![3.into(), 2.into()] },
+            },
+        );
+        let r = rebuild_pages(src.finish(), &[1], &KEEP_ALL);
+        let annots = r.annots(0);
+        assert_eq!(annots.len(), 1);
+        let bs = annots[0].get(b"BS").expect("/BS kept").as_dict().unwrap();
+        assert_eq!(bs.get(b"S").unwrap().as_name().unwrap(), b"D");
+        assert_eq!(bs.get(b"D").unwrap().as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn unbalanced_original_content_is_closed_before_drawing() {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"q 2 0 0 2 0 0 cm (BODY) Tj");
+        let n = appearance(&mut src, b"(X) Tj", rect(0, 0, 100, 50), None);
+        src.annotate(
+            p1,
+            dictionary! { "Subtype" => "Widget", "Rect" => rect(200, 300, 300, 350),
+            "AP" => dictionary! { "N" => n } },
+        );
+        let r = rebuild_pages(src.finish(), &[1], &KEEP_ALL);
+        let streams = r.content_streams(0);
+        assert_eq!(streams.first().unwrap(), b"q\n");
+        assert_eq!(
+            String::from_utf8(streams.last().unwrap().clone()).unwrap(),
+            "Q\nQ\nq 1 0 0 1 200 300 cm /MantisFlat0 Do Q\n"
+        );
+    }
+
+    #[test]
+    fn noview_widget_skipped() {
+        let doc = page_with_widget(|src| {
+            let n = appearance(src, b"(SECRET_NOVIEW) Tj", rect(0, 0, 10, 10), None);
+            dictionary! {
+                "Subtype" => "Widget", "F" => 32, "Rect" => rect(0, 0, 10, 10),
+                "AP" => dictionary! { "N" => n },
+            }
+        });
+        let r = rebuild_pages(doc, &[1], &KEEP_ALL);
+        assert!(!contains(&r.content(0), b"MantisFlat"));
+        assert!(!contains(&r.bytes, b"SECRET_NOVIEW"));
+        assert_eq!(r.report.fields_flattened, 0);
+    }
+
+    #[test]
+    fn comment_without_valid_rect_dropped() {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        src.annotate(
+            p1,
+            dictionary! { "Subtype" => "Text", "Contents" => Object::string_literal("NORECT") },
+        );
+        src.annotate(
+            p1,
+            dictionary! { "Subtype" => "Text", "Rect" => vec![0.into(), 0.into(), 1.into()],
+            "Contents" => Object::string_literal("SHORTRECT") },
+        );
+        let r = rebuild_pages(src.finish(), &[1], &KEEP_ALL);
+        assert!(r.annots(0).is_empty());
+        assert_eq!(r.report.comments_dropped, 2);
+        assert_eq!(r.report.comments_kept, 0);
+        assert!(!contains(&r.bytes, b"NORECT"));
+        assert!(!contains(&r.bytes, b"SHORTRECT"));
+    }
+
+    #[test]
+    fn non_normalized_rect_is_normalized() {
+        let doc = page_with_widget(|src| {
+            let n = appearance(src, b"(X) Tj", rect(0, 0, 100, 50), None);
+            dictionary! { "Subtype" => "Widget", "Rect" => rect(300, 350, 200, 300),
+            "AP" => dictionary! { "N" => n } }
+        });
+        let r = rebuild_pages(doc, &[1], &KEEP_ALL);
+        let content = String::from_utf8(r.content(0)).unwrap();
+        assert!(
+            content.contains("q 1 0 0 1 200 300 cm /MantisFlat0 Do Q"),
+            "{content}"
+        );
+    }
+
+    #[test]
+    fn two_widgets_single_wrap() {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"(BODY) Tj");
+        for x in [0, 100] {
+            let n = appearance(&mut src, b"(X) Tj", rect(0, 0, 10, 10), None);
+            src.annotate(
+                p1,
+                dictionary! { "Subtype" => "Widget", "Rect" => rect(x, 0, x + 10, 10),
+                "AP" => dictionary! { "N" => n } },
+            );
+        }
+        let r = rebuild_pages(src.finish(), &[1], &KEEP_ALL);
+        let streams = r.content_streams(0);
+        assert_eq!(streams.len(), 3, "q wrapper, original, one drawing stream");
+        assert_eq!(streams.iter().filter(|s| s.as_slice() == b"q\n").count(), 1);
+        let drawing = String::from_utf8(streams[2].clone()).unwrap();
+        assert!(drawing.contains("/MantisFlat0 Do"));
+        assert!(drawing.contains("/MantisFlat1 Do"));
+        assert_eq!(
+            drawing.matches("Q\n").count(),
+            3,
+            "one wrap Q + one per drawing"
+        );
+        assert_eq!(r.report.fields_flattened, 2);
+    }
+
+    #[test]
+    fn existing_mantisflat_name_not_overwritten() {
+        let mut src = Src::new();
+        let img = src.doc.add_object(Stream::new(
+            dictionary! { "Type" => "XObject", "Subtype" => "Image", "Width" => 1, "Height" => 1,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8 },
+            b"ORIGINAL_IMAGE".to_vec(),
+        ));
+        let p1 = src.add_page_with(
+            dictionary! { "XObject" => dictionary! { "MantisFlat0" => img } },
+            b"/MantisFlat0 Do",
+        );
+        let n = appearance(&mut src, b"(WIDGET) Tj", rect(0, 0, 10, 10), None);
+        src.annotate(
+            p1,
+            dictionary! { "Subtype" => "Widget", "Rect" => rect(0, 0, 10, 10),
+            "AP" => dictionary! { "N" => n } },
+        );
+        let r = rebuild_pages(src.finish(), &[1], &KEEP_ALL);
+        assert!(contains(
+            &r.xobject(0, b"MantisFlat0").content,
+            b"ORIGINAL_IMAGE"
+        ));
+        assert!(contains(&r.xobject(0, b"MantisFlat1").content, b"WIDGET"));
+        assert!(contains(&r.content(0), b"/MantisFlat1 Do"));
+    }
+
+    /// Page 1: Highlight. Page 2: Text replying to it.
+    fn cross_page_reply() -> Document {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        let p2 = src.add_page(b"");
+        let highlight = src.annotate(
+            p1,
+            dictionary! { "Subtype" => "Highlight", "Rect" => rect(0, 0, 10, 10),
+            "Contents" => Object::string_literal("SECRET_PAGE1_NOTE") },
+        );
+        src.annotate(
+            p2,
+            dictionary! { "Subtype" => "Text", "Rect" => rect(0, 0, 10, 10), "IRT" => highlight },
+        );
+        src.finish()
+    }
+
+    #[test]
+    fn cross_page_reply_resolved() {
+        let r = rebuild_pages(cross_page_reply(), &[1, 2], &KEEP_ALL);
+        let highlight = r.page(0).get(b"Annots").unwrap().as_array().unwrap()[0]
+            .as_reference()
+            .unwrap();
+        let reply = r.annots(1)[0];
+        assert_eq!(
+            reply.get(b"IRT").unwrap().as_reference().unwrap(),
+            highlight
+        );
+    }
+
+    #[test]
+    fn reply_to_dropped_page_has_no_irt() {
+        let r = rebuild_pages(cross_page_reply(), &[2], &KEEP_ALL);
+        let annots = r.annots(0);
+        assert_eq!(annots.len(), 1);
+        assert!(!annots[0].has(b"IRT"));
+        assert!(!contains(&r.bytes, b"SECRET_PAGE1_NOTE"));
+    }
+
+    #[test]
+    fn inline_annotation_and_indirect_annots_array() {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        let p2 = src.add_page(b"");
+        let inline = dictionary! { "Subtype" => "Text", "Rect" => rect(0, 0, 10, 10),
+        "Contents" => Object::string_literal("INLINE_NOTE") };
+        src.doc
+            .get_dictionary_mut(p1)
+            .unwrap()
+            .set("Annots", vec![Object::Dictionary(inline)]);
+        let note = src.doc.add_object(
+            dictionary! { "Subtype" => "Text", "Rect" => rect(0, 0, 10, 10),
+            "Contents" => Object::string_literal("INDIRECT_NOTE") },
+        );
+        let array = src.doc.add_object(vec![Object::from(note)]);
+        src.doc.get_dictionary_mut(p2).unwrap().set("Annots", array);
+        let r = rebuild_pages(src.finish(), &[1, 2], &KEEP_ALL);
+        assert_eq!(r.annots(0).len(), 1);
+        assert_eq!(r.annots(1).len(), 1);
+        assert!(contains(&r.bytes, b"INLINE_NOTE"));
+        assert!(contains(&r.bytes, b"INDIRECT_NOTE"));
+        assert_eq!(r.report.comments_kept, 2);
     }
 }

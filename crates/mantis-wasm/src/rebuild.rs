@@ -143,6 +143,10 @@ const ACTION_PAYLOADS: [&[u8]; 14] = [
     b"TA",
 ];
 
+/// Border style names. A border-style dictionary (`<< /W 1 /S /D /D [3 2] >>`)
+/// has a Name `/S` and a `/D` payload key too, but it is not an action.
+const BORDER_STYLES: [&[u8]; 5] = [b"S", b"D", b"B", b"I", b"U"];
+
 /// ISO 32000 action types. A dictionary whose Name `/S` is one of these is an
 /// action even without any payload key. Content dictionaries use other `/S`
 /// names (`/Transparency` groups, `/Luminosity` and `/Alpha` soft masks).
@@ -246,6 +250,21 @@ pub fn scan_content(content: &[u8]) -> Option<UsedNames> {
         }
     }
     Some(used)
+}
+
+/// Number of `q` still open at the end of `content`. None when the content
+/// cannot be decoded completely.
+pub(crate) fn unbalanced_saves(content: &[u8]) -> Option<usize> {
+    let (rest, _) = split_inline_images(content)?;
+    let mut depth = 0usize;
+    for op in decode_complete(&rest)? {
+        match op.operator.as_str() {
+            "q" => depth += 1,
+            "Q" => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    Some(depth)
 }
 
 /// Operator appended after the real content to detect partial parses.
@@ -508,7 +527,10 @@ fn is_blocked(obj: &Object) -> bool {
         || name_of(dict, b"Subtype").is_some_and(|s| ANNOT_SUBTYPES.contains(&s))
         || (has_any(&PAGE_MARKERS) && has_any(&PAGE_CONTEXT))
         || name_of(dict, b"S").is_some_and(|s| ACTION_TYPES.contains(&s))
-        || (name_of(dict, b"S").is_some() && has_any(&ACTION_PAYLOADS))
+        || (name_of(dict, b"S").is_some_and(|s| !BORDER_STYLES.contains(&s))
+            && !dict.has(b"W")
+            && name_of(dict, b"Type") != Some(b"Border")
+            && has_any(&ACTION_PAYLOADS))
         || (matches!(obj, Object::Stream(_)) && is_embedded_file_like(dict))
 }
 
@@ -1381,6 +1403,27 @@ mod tests {
             "transparency group kept"
         );
         assert!(contains(&bytes, b"/Alpha"), "soft mask kept");
+    }
+
+    #[test]
+    fn border_style_dict_is_not_an_action() {
+        let dashed = Object::Dictionary(
+            dictionary! { "W" => 1, "S" => "D", "D" => vec![3.into(), 2.into()] },
+        );
+        assert!(!is_blocked(&dashed));
+        let typed = Object::Dictionary(
+            dictionary! { "Type" => "Border", "S" => "D", "D" => vec![3.into()] },
+        );
+        assert!(!is_blocked(&typed));
+        let js = Object::Dictionary(
+            dictionary! { "S" => "JavaScript", "JS" => Object::string_literal("x"), "W" => 1 },
+        );
+        assert!(is_blocked(&js));
+        let goto = Object::Dictionary(dictionary! { "S" => "Unknown", "D" => vec![Object::Null] });
+        assert!(
+            is_blocked(&goto),
+            "payload rule still applies to other /S names"
+        );
     }
 
     #[test]
