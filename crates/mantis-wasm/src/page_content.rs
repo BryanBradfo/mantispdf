@@ -100,3 +100,9 @@ impl BalanceScanner {
 pub(crate) fn plain_stream(content: Vec<u8>) -> Stream {
     Stream::new(Dictionary::new(), content).with_compression(false)
 }
+
+/// Content-stream number: rounded to 6 decimals, no exponent, no `-0`.
+pub(crate) fn fmt_num(v: f64) -> String {
+    let r = (v * 1e6).round() / 1e6;
+    if r == 0.0 { "0".into() } else { format!("{r}") }
+}

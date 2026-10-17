@@ -8,6 +8,7 @@
 //! dropped once every page exists (`finish_links`).
 
 use crate::rebuild::{Policy, RebuildReport, SafeCopier, deref, name_of, unbalanced_saves};
+use crate::page_content::fmt_num;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 use std::collections::{HashMap, HashSet};
 
@@ -652,12 +653,6 @@ fn parse_numbers<const N: usize>(doc: &Document, obj: &Object) -> Option<[f64; N
         *value = f64::from(deref(doc, item)?.as_float().ok()?);
     }
     values.iter().all(|v| v.is_finite()).then_some(values)
-}
-
-/// Content-stream number: rounded to 6 decimals, no exponent, no `-0`.
-fn fmt_num(v: f64) -> String {
-    let r = (v * 1e6).round() / 1e6;
-    if r == 0.0 { "0".into() } else { format!("{r}") }
 }
 
 /// Draw the flattened appearances on top of the page. The original content

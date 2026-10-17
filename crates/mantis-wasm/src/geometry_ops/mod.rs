@@ -7,6 +7,7 @@
 #![allow(dead_code)]
 
 pub(crate) mod crop;
+pub(crate) mod resize;
 
 use crate::stamp::engine::{MAX_COORD, PageSelection};
 use lopdf::{Document, Object, ObjectId};
