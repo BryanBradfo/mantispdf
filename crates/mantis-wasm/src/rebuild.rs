@@ -1232,8 +1232,40 @@ pub fn rebuild_document(
     Ok((out, report))
 }
 
-/// Nesting accepted in an optional-content `/Order` array.
+/// Nesting accepted in an optional-content `/Order` array, and entries read
+/// from one source's `/Order` in all.
 const MAX_ORDER_DEPTH: usize = 32;
+const MAX_ORDER_ITEMS: usize = 100_000;
+
+/// Guards of one `/Order` walk: array objects already walked and the
+/// entries left to read.
+struct OrderWalk {
+    seen: HashSet<ObjectId>,
+    budget: usize,
+}
+
+impl OrderWalk {
+    /// The array behind `obj`, following a chain of references. None when it
+    /// is not an array or any object on the chain was already walked; every
+    /// id on the chain is marked walked.
+    fn array<'a>(&mut self, doc: &'a Document, mut obj: &'a Object) -> Option<&'a [Object]> {
+        for _ in 0..32 {
+            match obj {
+                Object::Reference(id) => {
+                    if !self.seen.insert(*id) {
+                        return None;
+                    }
+                    // One link at a time: `get_object` would skip the
+                    // rest of a chain.
+                    obj = doc.objects.get(id)?;
+                }
+                Object::Array(items) => return Some(items),
+                _ => return None,
+            }
+        }
+        None
+    }
+}
 
 /// A minimal `/OCProperties` for the optional-content groups the copier
 /// actually copied, so layers hidden by default stay hidden: `/OCGs` lists
@@ -1243,6 +1275,7 @@ const MAX_ORDER_DEPTH: usize = 32;
 /// None when no group was copied.
 fn optional_content(copier: &SafeCopier, sources: &[Document]) -> Option<Dictionary> {
     let mut groups: Vec<Object> = Vec::new();
+    let mut in_groups: HashSet<ObjectId> = HashSet::new();
     let mut hidden: Vec<Object> = Vec::new();
     let mut order: Vec<Object> = Vec::new();
     for (src, doc) in sources.iter().enumerate() {
@@ -1266,17 +1299,21 @@ fn optional_content(copier: &SafeCopier, sources: &[Document]) -> Option<Diction
             .and_then(|d| deref(doc, d))
             .and_then(|d| d.as_dict().ok());
         let base_off = config.and_then(|d| name_of(d, b"BaseState")) == Some(b"OFF".as_slice());
-        let on = refs_in(config.and_then(|d| d.get(b"ON").ok()));
-        let off = refs_in(config.and_then(|d| d.get(b"OFF").ok()));
+        let on: HashSet<ObjectId> = refs_in(config.and_then(|d| d.get(b"ON").ok()))
+            .into_iter()
+            .collect();
+        let off: HashSet<ObjectId> = refs_in(config.and_then(|d| d.get(b"OFF").ok()))
+            .into_iter()
+            .collect();
         let listed = refs_in(props.get(b"OCGs").ok());
         for &id in &listed {
             let Some(&new_id) = copier.memo.get(&(src, id)) else {
                 continue;
             };
-            let new_ref = Object::Reference(new_id);
-            if groups.contains(&new_ref) {
+            if !in_groups.insert(new_id) {
                 continue;
             }
+            let new_ref = Object::Reference(new_id);
             let is_hidden = if base_off {
                 !on.contains(&id)
             } else {
@@ -1287,13 +1324,16 @@ fn optional_content(copier: &SafeCopier, sources: &[Document]) -> Option<Diction
             }
             groups.push(new_ref);
         }
-        let source_order = config.and_then(|d| d.get(b"Order").ok());
-        if let Some(Object::Array(items)) = source_order.and_then(|o| deref(doc, o)) {
-            let mut seen: HashSet<ObjectId> = source_order
-                .and_then(|o| o.as_reference().ok())
-                .into_iter()
-                .collect();
-            order.extend(filter_order(copier, doc, src, &listed, items, 0, &mut seen));
+        let mut walk = OrderWalk {
+            seen: HashSet::new(),
+            budget: MAX_ORDER_ITEMS,
+        };
+        if let Some(items) = config
+            .and_then(|d| d.get(b"Order").ok())
+            .and_then(|o| walk.array(doc, o))
+        {
+            let listed: HashSet<ObjectId> = listed.iter().copied().collect();
+            order.extend(filter_order(copier, doc, src, &listed, items, 0, &mut walk));
         }
     }
     if groups.is_empty() {
@@ -1309,32 +1349,34 @@ fn optional_content(copier: &SafeCopier, sources: &[Document]) -> Option<Diction
 /// `/Order` entries of source `src` that point at copied groups (of `listed`), mapped to
 /// their output ids. A nested array survives only with at least one group;
 /// a text label is kept only as the first element of such an array. An
-/// array object is walked once (`seen`): a second reference to it, including
-/// one from inside itself, is dropped.
+/// array object is walked once (see `OrderWalk`): a second reference to it,
+/// including one from inside itself, is dropped, as is everything past the
+/// entry budget.
 fn filter_order(
     copier: &SafeCopier,
     doc: &Document,
     src: usize,
-    listed: &[ObjectId],
+    listed: &HashSet<ObjectId>,
     items: &[Object],
     depth: usize,
-    seen: &mut HashSet<ObjectId>,
+    walk: &mut OrderWalk,
 ) -> Vec<Object> {
     if depth >= MAX_ORDER_DEPTH {
         return vec![];
     }
     let mut kept = Vec::new();
     for (i, item) in items.iter().enumerate() {
+        if walk.budget == 0 {
+            break;
+        }
+        walk.budget -= 1;
         match item {
             Object::Reference(id) => match copier.memo.get(&(src, *id)) {
                 Some(&new_id) if listed.contains(id) => kept.push(Object::Reference(new_id)),
                 Some(_) => {}
                 None => {
-                    if !seen.insert(*id) {
-                        continue;
-                    }
-                    if let Some(Object::Array(nested)) = deref(doc, item) {
-                        let inner = filter_order(copier, doc, src, listed, nested, depth + 1, seen);
+                    if let Some(nested) = walk.array(doc, item) {
+                        let inner = filter_order(copier, doc, src, listed, nested, depth + 1, walk);
                         if !inner.is_empty() {
                             kept.push(Object::Array(inner));
                         }
@@ -1342,7 +1384,7 @@ fn filter_order(
                 }
             },
             Object::Array(nested) => {
-                let inner = filter_order(copier, doc, src, listed, nested, depth + 1, seen);
+                let inner = filter_order(copier, doc, src, listed, nested, depth + 1, walk);
                 if !inner.is_empty() {
                     kept.push(Object::Array(inner));
                 }
@@ -2426,5 +2468,121 @@ mod tests {
                 .insert(order_id, vec![Object::from(level)].into());
         });
         assert!(!out_order(&out).is_empty());
+    }
+
+    #[test]
+    fn layer_order_cycle_through_reference_chain_is_dropped() {
+        // /Order -> A -> B -> [layer, A, B]: every id on the chain counts as
+        // walked, so neither back-reference adds a nested copy.
+        let out = rebuild_with_order(|doc, ocg, order_id| {
+            let array = doc.new_object_id();
+            doc.objects.insert(order_id, Object::Reference(array));
+            doc.objects.insert(
+                array,
+                vec![ocg.into(), order_id.into(), array.into()].into(),
+            );
+        });
+        let order = out_order(&out);
+        assert_eq!(order.len(), 1, "{order:?}");
+        assert!(order[0].as_reference().is_ok());
+    }
+
+    #[test]
+    fn layer_order_aliases_of_a_wide_array_are_walked_once() {
+        // 5000 distinct references, each an alias object of one array of
+        // 5000 entries: the array is walked once, not once per alias.
+        let out = rebuild_with_order(|doc, ocg, order_id| {
+            let mut wide = vec![Object::from(ocg)];
+            wide.extend((0..5000).map(|_| Object::Reference((999_999, 0))));
+            let wide = doc.add_object(wide);
+            let aliases: Vec<Object> = (0..5000)
+                .map(|_| doc.add_object(Object::Reference(wide)).into())
+                .collect();
+            doc.objects.insert(order_id, aliases.into());
+        });
+        assert_eq!(out_order(&out).len(), 1);
+    }
+
+    #[test]
+    fn long_layer_list_and_order_stay_linear() {
+        // 100000 /OCGs entries with the copied layer last, and an /Order
+        // naming it 100000 times.
+        let mut src = Src::new();
+        let ocg = src
+            .doc
+            .add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal("L") });
+        let page = src.add_page(
+            dictionary! { "Properties" => dictionary! { "oc1" => ocg } },
+            b"/OC /oc1 BDC 0 0 1 1 re f EMC",
+        );
+        let mut doc = src.finish();
+        let mut listed: Vec<Object> = (0..100_000)
+            .map(|i| Object::Reference((1_000_000 + i, 0)))
+            .collect();
+        listed.push(ocg.into());
+        let order: Vec<Object> = (0..100_000).map(|_| Object::from(ocg)).collect();
+        let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(catalog).unwrap().set(
+            "OCProperties",
+            dictionary! { "OCGs" => listed, "D" => dictionary! { "Order" => order } },
+        );
+        let pages = [OutPage::Page {
+            src: 0,
+            page,
+            rotate: 0,
+        }];
+        let start = std::time::Instant::now();
+        rebuild_document(&[doc], &pages, &PAGE_TOOLS).unwrap();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "took {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn many_layers_with_long_off_list_stay_linear() {
+        // 2000 layers drawn on the page, and an /OFF list of 200000 other
+        // entries before them.
+        let mut src = Src::new();
+        let mut props = Dictionary::new();
+        let mut content = Vec::new();
+        let ocgs: Vec<ObjectId> = (0..2000)
+            .map(|i| {
+                let id = src.doc.add_object(
+                    dictionary! { "Type" => "OCG", "Name" => Object::string_literal("L") },
+                );
+                props.set(format!("oc{i}"), id);
+                content.extend_from_slice(format!("/OC /oc{i} BDC EMC ").as_bytes());
+                id
+            })
+            .collect();
+        let page = src.add_page(dictionary! { "Properties" => props }, &content);
+        let mut doc = src.finish();
+        let mut off: Vec<Object> = (0..200_000)
+            .map(|i| Object::Reference((1_000_000 + i, 0)))
+            .collect();
+        off.extend(ocgs.iter().map(|&id| Object::from(id)));
+        let listed: Vec<Object> = ocgs.iter().map(|&id| Object::from(id)).collect();
+        let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(catalog).unwrap().set(
+            "OCProperties",
+            dictionary! { "OCGs" => listed, "D" => dictionary! { "OFF" => off } },
+        );
+        let pages = [OutPage::Page {
+            src: 0,
+            page,
+            rotate: 0,
+        }];
+        let start = std::time::Instant::now();
+        let (out, _) = rebuild_document(&[doc], &pages, &PAGE_TOOLS).unwrap();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "took {elapsed:?}"
+        );
+        let oc = out_dict(&out, out.catalog().unwrap().get(b"OCProperties").unwrap());
+        let d = out_dict(&out, oc.get(b"D").unwrap());
+        assert_eq!(d.get(b"OFF").unwrap().as_array().unwrap().len(), 2000);
     }
 }
