@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FromWorker, SuccessPayload, ToWorker } from "../lib/workerProtocol";
 import type { PdfPart } from "../types/pdf";
 import { readFileAsArrayBuffer } from "../lib/fileHelpers";
+import type { StampJobSpec } from "../lib/stampJob";
 import { PdfWorkerClient } from "../lib/workerClient";
 
 export interface SanitizeReport {
@@ -67,6 +68,11 @@ const asCount = (p: SuccessPayload): number => {
 const asBuffer = (p: SuccessPayload): ArrayBuffer => {
   if (p.kind !== "buffer") throw new Error("Unexpected worker payload");
   return p.result;
+};
+
+const asStamped = (p: SuccessPayload): { bytes: Uint8Array; stampedPages: number } => {
+  if (p.kind !== "stamped") throw new Error("Unexpected worker payload");
+  return { bytes: p.bytes, stampedPages: p.stampedPages };
 };
 
 const asSanitized = (p: SuccessPayload): { bytes: Uint8Array; report: SanitizeReport } => {
@@ -259,6 +265,12 @@ export function usePdfWorker() {
     [run],
   );
 
+  const stampPdf = useCallback(
+    (pdfBytes: Uint8Array, job: StampJobSpec): Promise<{ bytes: Uint8Array; stampedPages: number }> =>
+      run(null, (id) => ({ type: "stamp", id, pdfBytes, job }), asStamped),
+    [run],
+  );
+
   const removeMetadata = useCallback(
     (pdfBytes: Uint8Array): Promise<Uint8Array> =>
       run(null, (id) => ({ type: "remove-metadata", id, pdfBytes }), asBytes),
@@ -307,6 +319,7 @@ export function usePdfWorker() {
       watermarkPdf,
       encryptPdf,
       sanitizePdf,
+      stampPdf,
       removeMetadata,
       readMetadata,
       setMetadata,
@@ -323,6 +336,7 @@ export function usePdfWorker() {
       watermarkPdf,
       encryptPdf,
       sanitizePdf,
+      stampPdf,
       removeMetadata,
       readMetadata,
       setMetadata,

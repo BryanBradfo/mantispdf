@@ -115,6 +115,32 @@ pub fn sanitize_pdf(pdf_bytes: &[u8], keep_comments: bool) -> Result<SanitizeOut
     })
 }
 
+/// Result of `stamp_pdf`: the stamped bytes and how many pages got text.
+#[wasm_bindgen]
+pub struct StampOutput {
+    bytes: Vec<u8>,
+    stamped_pages: u32,
+}
+
+#[wasm_bindgen]
+impl StampOutput {
+    pub fn bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+
+    pub fn stamped_pages(&self) -> u32 {
+        self.stamped_pages
+    }
+}
+
+#[wasm_bindgen]
+pub fn stamp_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<StampOutput, JsValue> {
+    let raw = stamp::binding::read_job(&job).map_err(|e| JsValue::from_str(&e))?;
+    let job = stamp::job::validate_job(raw).map_err(|e| JsValue::from_str(&e))?;
+    let r = stamp::engine::apply_stamps(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))?;
+    Ok(StampOutput { bytes: r.bytes, stamped_pages: r.stamped_pages })
+}
+
 /// The wire form of a report; indexes are stable, new counters are appended.
 fn report_counts(r: &rebuild::RebuildReport) -> Vec<u32> {
     vec![

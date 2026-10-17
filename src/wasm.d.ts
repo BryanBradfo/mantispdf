@@ -39,6 +39,12 @@ declare module "mantis-wasm" {
     free(): void;
   }
   export function sanitize_pdf(pdf_bytes: Uint8Array, keep_comments: boolean): SanitizeOutput;
+  export class StampOutput {
+    bytes(): Uint8Array;
+    stamped_pages(): number;
+    free(): void;
+  }
+  export function stamp_pdf(pdf_bytes: Uint8Array, job: object): StampOutput;
   export function remove_metadata(pdf_bytes: Uint8Array): Uint8Array;
   /** [title, author, subject, keywords] */
   export function read_metadata(pdf_bytes: Uint8Array): string[];

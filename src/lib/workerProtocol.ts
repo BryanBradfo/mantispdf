@@ -1,4 +1,5 @@
 import type { PdfPart } from "../types/pdf";
+import type { StampJobSpec } from "./stampJob";
 
 /** Correlates a request with its response/progress/failure messages. */
 export type ReqId = number;
@@ -27,6 +28,7 @@ export type ToWorker =
     }
   | { type: "encrypt"; id: ReqId; pdfBytes: ArrayBuffer; userPassword: string; ownerPassword: string }
   | { type: "sanitize"; id: ReqId; pdfBytes: Uint8Array; keepComments: boolean }
+  | { type: "stamp"; id: ReqId; pdfBytes: Uint8Array; job: StampJobSpec }
   | { type: "remove-metadata"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "read-metadata"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "set-metadata"; id: ReqId; pdfBytes: Uint8Array; title: string; author: string; subject: string; keywords: string }
@@ -40,6 +42,7 @@ export type SuccessPayload =
   | { kind: "count"; count: number }
   | { kind: "buffer"; result: ArrayBuffer }
   | { kind: "sanitized"; bytes: Uint8Array; report: number[] }
+  | { kind: "stamped"; bytes: Uint8Array; stampedPages: number }
   | { kind: "metadata"; values: string[] };
 
 // Worker → Main messages. `init-done`/`init-error` are the one-time handshake;
