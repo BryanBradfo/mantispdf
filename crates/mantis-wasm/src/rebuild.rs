@@ -616,6 +616,15 @@ fn trim_of(used: Option<&UsedNames>) -> Trim {
 
 type TrimmedKey = (usize, ObjectId, Option<&'static [u8]>, Trim);
 
+/// The object a reference chain starting at `id` ends on (lopdf's
+/// `get_object` follows chains, so aliases of one object share its id here).
+fn terminal(doc: &Document, id: ObjectId) -> ObjectId {
+    doc.dereference(&Object::Reference(id))
+        .ok()
+        .and_then(|(last, _)| last)
+        .unwrap_or(id)
+}
+
 /// Which memo an object copied through `SafeCopier::copy_once` is kept in.
 enum MemoKey {
     Plain(usize, ObjectId),
@@ -673,6 +682,13 @@ impl<'s> SafeCopier<'s> {
         key: MemoKey,
         build: impl FnOnce(&mut Self, &mut Document) -> Object,
     ) -> Object {
+        // Memoize on the object a chain of aliases ends on.
+        let key = match key {
+            MemoKey::Plain(src, id) => MemoKey::Plain(src, terminal(self.source(src), id)),
+            MemoKey::Trimmed((src, id, role, trim)) => {
+                MemoKey::Trimmed((src, terminal(self.source(src), id), role, trim))
+            }
+        };
         let known = match &key {
             MemoKey::Plain(src, id) => self.memo.get(&(*src, *id)),
             MemoKey::Trimmed(key) => self.trimmed.get(key),
@@ -696,8 +712,16 @@ impl<'s> SafeCopier<'s> {
         Object::Reference(new_id)
     }
 
+    /// Output id of source object `id` (or of the object its alias chain
+    /// ends on), when it was copied.
+    pub(crate) fn copied(&self, src: usize, id: ObjectId) -> Option<ObjectId> {
+        self.memo
+            .get(&(src, terminal(self.source(src), id)))
+            .copied()
+    }
+
     fn copy_reference(&mut self, out: &mut Document, src: usize, id: ObjectId) -> Object {
-        if let Some(&new_id) = self.memo.get(&(src, id)) {
+        if let Some(new_id) = self.copied(src, id) {
             return Object::Reference(new_id);
         }
         let Ok(target) = self.source(src).get_object(id) else {
@@ -746,7 +770,7 @@ impl<'s> SafeCopier<'s> {
         match value {
             Object::Dictionary(map) if !is_blocked(value) => copy_entries(self, out, map),
             Object::Reference(id) => {
-                if let Some(&new_id) = self.memo.get(&(src, *id)) {
+                if let Some(new_id) = self.copied(src, *id) {
                     return Object::Reference(new_id);
                 }
                 let Ok(target @ Object::Dictionary(map)) = self.source(src).get_object(*id) else {
@@ -1308,7 +1332,7 @@ fn optional_content(copier: &SafeCopier, sources: &[Document]) -> Option<Diction
             .collect();
         let listed = refs_in(props.get(b"OCGs").ok());
         for &id in &listed {
-            let Some(&new_id) = copier.memo.get(&(src, id)) else {
+            let Some(new_id) = copier.copied(src, id) else {
                 continue;
             };
             if !in_groups.insert(new_id) {
@@ -1372,8 +1396,8 @@ fn filter_order(
         }
         walk.budget -= 1;
         match item {
-            Object::Reference(id) => match copier.memo.get(&(src, *id)) {
-                Some(&new_id) if listed.contains(id) => kept.push(Object::Reference(new_id)),
+            Object::Reference(id) => match copier.copied(src, *id) {
+                Some(new_id) if listed.contains(id) => kept.push(Object::Reference(new_id)),
                 Some(_) => {}
                 None => {
                     if let Some(nested) = walk.array(doc, item) {
@@ -2637,6 +2661,169 @@ mod tests {
         for map in [&b"Solidities"[..], b"DotGain"] {
             let map = out_dict(&out, hints.get(map).unwrap());
             assert!(map.has(b"A") && map.has(b"JS"), "{map:?}");
+        }
+    }
+
+    // ---- guard corpus ----------------------------------------------------
+
+    /// One page drawing one layer, as `(document, page, layer)`.
+    fn page_with_layer() -> (Document, ObjectId, ObjectId) {
+        let mut src = Src::new();
+        let ocg = src
+            .doc
+            .add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal("L") });
+        let page = src.add_page(
+            dictionary! { "Properties" => dictionary! { "oc1" => ocg } },
+            b"/OC /oc1 BDC 0 0 1 1 re f EMC",
+        );
+        (src.finish(), page, ocg)
+    }
+
+    /// Set `/OCProperties` with `/D /Order` = `order` on `doc`'s catalog.
+    fn set_layer_order(doc: &mut Document, ocg: ObjectId, order: Object) {
+        let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(catalog).unwrap().set(
+            "OCProperties",
+            dictionary! { "OCGs" => vec![Object::from(ocg)], "D" => dictionary! { "Order" => order } },
+        );
+    }
+
+    /// Hostile shapes for every graph the rebuild walks: DAGs that double at
+    /// each level, cycles, reference aliases and chains.
+    fn bomb_corpus() -> Vec<(&'static str, Document)> {
+        let mut corpus = vec![
+            ("resources diamond", resources_diamond(40)),
+            ("category diamond", category_diamond(40)),
+        ];
+
+        // A shared /Font category that loops back to itself through direct
+        // Type3 fonts and direct /Resources.
+        let mut src = Src::new();
+        let fonts = src.doc.new_object_id();
+        let t3 = || t3_using(dictionary! { "Font" => fonts }.into());
+        src.doc
+            .objects
+            .insert(fonts, dictionary! { "a" => t3(), "b" => t3() }.into());
+        src.add_page(dictionary! { "Font" => fonts }, b"BT /a 1 Tf ET");
+        corpus.push(("category cycle", src.finish()));
+
+        // 2000 alias objects of one array of 20000 numbers.
+        let mut src = Src::new();
+        let wide = src.doc.add_object(vec![Object::Integer(7); 20_000]);
+        let aliases: Vec<Object> = (0..2000)
+            .map(|_| src.doc.add_object(Object::Reference(wide)).into())
+            .collect();
+        page_with_evil_font(&mut src, aliases.into());
+        corpus.push(("alias fan-out", src.finish()));
+
+        // Each level an array of two aliases of the level below.
+        let mut src = Src::new();
+        let mut level = src.doc.add_object(vec![Object::Integer(1); 64]);
+        for _ in 0..40 {
+            let a = src.doc.add_object(Object::Reference(level));
+            let b = src.doc.add_object(Object::Reference(level));
+            level = src.doc.add_object(vec![Object::from(a), b.into()]);
+        }
+        page_with_evil_font(&mut src, level.into());
+        corpus.push(("alias diamond", src.finish()));
+
+        // A name map that contains itself.
+        let mut src = Src::new();
+        let procs = src.doc.new_object_id();
+        let glyph = src
+            .doc
+            .add_object(Stream::new(dictionary! {}, b"0 0 d0".to_vec()));
+        src.doc
+            .objects
+            .insert(procs, dictionary! { "g" => glyph, "h" => procs }.into());
+        let mut font = t3_using(dictionary! {}.into());
+        font.as_dict_mut().unwrap().set("CharProcs", procs);
+        src.add_page(
+            dictionary! { "Font" => dictionary! { "T" => font } },
+            b"BT /T 1 Tf ET",
+        );
+        corpus.push(("name map cycle", src.finish()));
+
+        // Layer /Order: a self-reference, a cycle through a chain, aliases
+        // of a wide array, and a doubling DAG.
+        let (mut doc, _, ocg) = page_with_layer();
+        let order = doc.new_object_id();
+        doc.objects
+            .insert(order, vec![ocg.into(), order.into(), order.into()].into());
+        set_layer_order(&mut doc, ocg, order.into());
+        corpus.push(("order self-reference", doc));
+
+        let (mut doc, _, ocg) = page_with_layer();
+        let (a, b) = (doc.new_object_id(), (doc.max_id + 2, 0));
+        doc.max_id += 1;
+        doc.objects.insert(a, Object::Reference(b));
+        doc.objects
+            .insert(b, vec![ocg.into(), a.into(), b.into()].into());
+        set_layer_order(&mut doc, ocg, a.into());
+        corpus.push(("order chain cycle", doc));
+
+        let (mut doc, _, ocg) = page_with_layer();
+        let mut wide = vec![Object::from(ocg)];
+        wide.extend((0..20_000).map(|_| Object::Reference((999_999, 0))));
+        let wide = doc.add_object(wide);
+        let aliases: Vec<Object> = (0..20_000)
+            .map(|_| doc.add_object(Object::Reference(wide)).into())
+            .collect();
+        set_layer_order(&mut doc, ocg, aliases.into());
+        corpus.push(("order alias fan-out", doc));
+
+        let (mut doc, _, ocg) = page_with_layer();
+        let mut level = doc.add_object(vec![Object::from(ocg)]);
+        for _ in 0..40 {
+            level = doc.add_object(vec![Object::from(level), level.into()]);
+        }
+        set_layer_order(&mut doc, ocg, level.into());
+        corpus.push(("order diamond", doc));
+
+        // A named link into a /Dests name tree whose root lists itself.
+        let (mut doc, page, _) = page_with_layer();
+        let link = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Link",
+            "Rect" => vec![0.into(), 0.into(), 1.into(), 1.into()],
+            "Dest" => Object::string_literal("x"),
+        });
+        doc.get_dictionary_mut(page)
+            .unwrap()
+            .set("Annots", vec![Object::from(link)]);
+        let root = doc.new_object_id();
+        doc.objects.insert(
+            root,
+            dictionary! { "Kids" => vec![Object::from(root); 1000], "Names" => vec![] }.into(),
+        );
+        let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(catalog)
+            .unwrap()
+            .set("Names", dictionary! { "Dests" => root });
+        corpus.push(("name tree cycle", doc));
+
+        corpus
+    }
+
+    #[test]
+    fn hostile_graphs_finish_fast_and_small() {
+        for (name, doc) in bomb_corpus() {
+            let page = doc.get_pages()[&1];
+            let pages = [OutPage::Page {
+                src: 0,
+                page,
+                rotate: 0,
+            }];
+            let start = std::time::Instant::now();
+            let (mut out, _) = rebuild_document(&[doc], &pages, &PAGE_TOOLS).unwrap();
+            let mut bytes = Vec::new();
+            out.save_to(&mut bytes).unwrap();
+            let elapsed = start.elapsed();
+            assert!(
+                elapsed < std::time::Duration::from_secs(1),
+                "{name}: took {elapsed:?}"
+            );
+            assert!(bytes.len() < 1 << 20, "{name}: {} B", bytes.len());
+            assert!(Document::load_mem(&bytes).is_ok(), "{name}: unreadable");
         }
     }
 }
