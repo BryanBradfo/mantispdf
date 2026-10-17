@@ -57,6 +57,30 @@ describe("readExifOrientation", () => {
     expect(readExifOrientation(huge)).toBe(1);
   });
 
+  it("finds Exif after an XMP APP1", () => {
+    const xmp = [0x68, 0x74, 0x74, 0x70, 0x3a, 0x2f, 0x2f, 0x6e, 0x73, 0x2e, 0x61, 0x64, 0x6f, 0x62, 0x65, 0x2e, 0x63];
+    const seg = [0xff, 0xe1, 0, xmp.length + 2, ...xmp];
+    const e = exifJpeg(false, 6);
+    expect(readExifOrientation(new Uint8Array([0xff, 0xd8, ...seg, ...e.slice(2)]))).toBe(6);
+  });
+
+  it("reads a LONG-typed tag", () => {
+    const b = exifJpeg(true, 6);
+    // type field of the entry: 2 (SOI) + 4 (marker, len) + 6 (Exif) + 8 (header) + 2 (count) + 2 (tag)
+    b[2 + 4 + 6 + 8 + 2 + 2] = 4;
+    expect(readExifOrientation(b)).toBe(6);
+  });
+
+  it("returns 1 for exact truncations", () => {
+    const b = exifJpeg(true, 6);
+    const ifdStart = 2 + 4 + 6 + 8;
+    expect(readExifOrientation(b.slice(0, ifdStart + 2))).toBe(1);
+    expect(readExifOrientation(b.slice(0, ifdStart + 2 + 11))).toBe(1);
+    const far = exifJpeg(true, 6);
+    far[2 + 4 + 6 + 4] = 200; // IFD offset past the segment end
+    expect(readExifOrientation(far)).toBe(1);
+  });
+
   it("works on a subarray view", () => {
     const e = exifJpeg(false, 3);
     const padded = new Uint8Array([9, 9, ...e]);
