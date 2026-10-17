@@ -57,6 +57,9 @@ const COMMENT_KEYS: [&[u8]; 23] = [
     b"LE",
 ];
 
+/// Visual keys a rebuilt link carries besides /Rect and /Border.
+const LINK_STYLE_KEYS: [&[u8]; 5] = [b"C", b"H", b"BS", b"QuadPoints", b"F"];
+
 /// Annotation flags that keep a widget off the page: Hidden (bit 2) and
 /// NoView (bit 6).
 const INVISIBLE_FLAGS: i64 = 2 | 32;
@@ -255,6 +258,25 @@ fn rebuild_link(
         "Border" => border,
         "P" => new_page,
     };
+    // Appearance keys, values only (never actions): colour, highlight mode,
+    // border style, quad points, flags.
+    for key in LINK_STYLE_KEYS {
+        let Some(value) = annot.get(key).ok().and_then(|v| deref(doc, v)) else {
+            continue;
+        };
+        let fits = match key {
+            b"C" | b"QuadPoints" => value.as_array().is_ok(),
+            b"H" => value.as_name().is_ok(),
+            b"BS" => value.as_dict().is_ok(),
+            _ => value.as_i64().is_ok(),
+        };
+        if fits {
+            link.set(
+                String::from_utf8_lossy(key).into_owned(),
+                copier.copy(out, src, value),
+            );
+        }
+    }
 
     let action = annot
         .get(b"A")
@@ -1051,6 +1073,81 @@ mod tests {
         let bs = annots[0].get(b"BS").expect("/BS kept").as_dict().unwrap();
         assert_eq!(bs.get(b"S").unwrap().as_name().unwrap(), b"D");
         assert_eq!(bs.get(b"D").unwrap().as_array().unwrap().len(), 2);
+    }
+
+    fn styled_link(extra: (&str, Object)) -> Dictionary {
+        let mut d = dictionary! {
+            "Type" => "Annot", "Subtype" => "Link", "Rect" => rect(10, 10, 50, 20),
+            "Border" => vec![0.into(), 0.into(), 1.into()],
+            "C" => vec![0.into(), 1.into(), 0.into()],
+            "H" => "O",
+            "BS" => dictionary! { "W" => 2, "S" => "D", "D" => vec![3.into(), 2.into()] },
+            "QuadPoints" => vec![10.into(), 20.into(), 50.into(), 20.into(),
+                                 10.into(), 10.into(), 50.into(), 10.into()],
+            "F" => 4,
+            "AA" => dictionary! { "E" => dictionary! { "S" => "JavaScript", "JS" => Object::string_literal("SECRET_AA") } },
+            "PA" => dictionary! { "S" => "JavaScript", "JS" => Object::string_literal("SECRET_PA") },
+            "StructParent" => 3,
+            "NM" => Object::string_literal("SECRET_NM"),
+        };
+        d.set(extra.0, extra.1);
+        d
+    }
+
+    fn assert_link_style_kept(link: &Dictionary, bytes: &[u8]) {
+        assert_eq!(link.get(b"Border").unwrap().as_array().unwrap().len(), 3);
+        assert_eq!(link.get(b"C").unwrap().as_array().unwrap().len(), 3);
+        assert_eq!(link.get(b"H").unwrap().as_name().unwrap(), b"O");
+        assert_eq!(link.get(b"F").unwrap().as_i64().unwrap(), 4);
+        assert_eq!(
+            link.get(b"QuadPoints").unwrap().as_array().unwrap().len(),
+            8
+        );
+        let bs = link.get(b"BS").unwrap().as_dict().unwrap();
+        assert_eq!(bs.get(b"S").unwrap().as_name().unwrap(), b"D");
+        assert_eq!(bs.get(b"D").unwrap().as_array().unwrap().len(), 2);
+        assert!(link.get(b"AA").is_err());
+        assert!(link.get(b"PA").is_err());
+        assert!(link.get(b"StructParent").is_err());
+        assert!(link.get(b"NM").is_err());
+        for secret in [&b"SECRET_AA"[..], b"SECRET_PA", b"SECRET_NM"] {
+            assert!(!contains(bytes, secret));
+        }
+    }
+
+    #[test]
+    fn uri_link_keeps_border_colour_and_style() {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        src.annotate(
+            p1,
+            styled_link((
+                "A",
+                dictionary! { "S" => "URI", "URI" => Object::string_literal("https://x.test") }
+                    .into(),
+            )),
+        );
+        let r = rebuild_pages(src.finish(), &[1], &KEEP_ALL);
+        let annots = r.annots(0);
+        assert_eq!(annots.len(), 1);
+        assert_link_style_kept(annots[0], &r.bytes);
+        assert!(annots[0].get(b"A").is_ok());
+    }
+
+    #[test]
+    fn internal_link_keeps_border_colour_and_style() {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        let p2 = src.add_page(b"");
+        src.annotate(
+            p1,
+            styled_link(("Dest", vec![p2.into(), "Fit".into()].into())),
+        );
+        let r = rebuild_pages(src.finish(), &[1, 2], &KEEP_ALL);
+        let annots = r.annots(0);
+        assert_eq!(annots.len(), 1);
+        assert_link_style_kept(annots[0], &r.bytes);
+        assert!(annots[0].get(b"Dest").is_ok());
     }
 
     #[test]
