@@ -1582,7 +1582,7 @@ impl OrderWalk {
 /// /ON and /OFF resolved), and `/D /Order` is the source order restricted to
 /// them. Everything else (/Configs, /AS, /Locked, /RBGroups) is left out.
 /// None when no group was copied.
-fn optional_content(copier: &SafeCopier, sources: &[Document]) -> Option<Dictionary> {
+pub(crate) fn optional_content(copier: &SafeCopier, sources: &[Document]) -> Option<Dictionary> {
     let mut groups: Vec<Object> = Vec::new();
     let mut in_groups: HashSet<ObjectId> = HashSet::new();
     let mut hidden: Vec<Object> = Vec::new();

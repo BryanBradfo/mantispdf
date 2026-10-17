@@ -1,7 +1,7 @@
 //! N-up: several source pages per output sheet. Each source page becomes a
 //! Form XObject showing its visible box upright; sheets draw the forms into
-//! a grid of cells. The output is a fresh document (catalog with /Pages
-//! only): resources are copied through the rebuild copier, trimmed to the
+//! a grid of cells. The output is a fresh document (catalog with /Pages,
+//! plus /OCProperties for the layers copied): resources are copied through the rebuild copier, trimmed to the
 //! names each page draws, so nothing a page does not show reaches it.
 //! Annotations are not carried.
 
@@ -11,7 +11,8 @@ use super::{invalid, invert, number, page_map};
 use crate::page_content::fmt_num;
 use crate::pdf_util::{get_inherited_attr, load_pdf, save_pdf};
 use crate::rebuild::{
-    Decoded, MAX_STREAM_DECODED, SafeCopier, deref, save_balance, scan_content, strict_content,
+    Decoded, MAX_STREAM_DECODED, SafeCopier, deref, optional_content, save_balance, scan_content,
+    strict_content,
 };
 use crate::stamp::geometry::VisibleBox;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
@@ -229,7 +230,12 @@ pub(crate) fn nup_with_budget(pdf: &[u8], job: &NupJob, budget: usize) -> Result
         pages_id,
         Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => sheets as i64 }),
     );
-    let catalog = out.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    let mut catalog = dictionary! { "Type" => "Catalog", "Pages" => pages_id };
+    // Layers hidden by default stay hidden (only the groups copied are listed).
+    if let Some(oc) = optional_content(&copier, &sources) {
+        catalog.set("OCProperties", oc);
+    }
+    let catalog = out.add_object(catalog);
     out.trailer.set("Root", catalog);
     let bytes = save_pdf(&mut out)?;
     Ok(NupResult { bytes, sheets, undecodable_pages: undecodable })
@@ -848,5 +854,62 @@ mod tests {
         let page = doc.get_dictionary(sheet_ids(&doc)[0]).unwrap();
         let xo = page.get(b"Resources").unwrap().as_dict().unwrap().get(b"XObject").unwrap().as_dict().unwrap();
         assert_eq!(xo.get(b"Pg1").unwrap(), xo.get(b"Pg2").unwrap());
+    }
+
+    /// A layer hidden by default stays hidden: the catalog keeps an
+    /// /OCProperties listing only the groups the sheets draw, with the hidden
+    /// one under /D /OFF. A group no page uses does not reach the output.
+    #[test]
+    fn hidden_optional_content_stays_hidden() {
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let ocg = |doc: &mut Document, name: &str| {
+            doc.add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal(name) })
+        };
+        let hidden = ocg(&mut doc, "Hidden");
+        let shown = ocg(&mut doc, "Shown");
+        let other = ocg(&mut doc, "SECRET_OTHERLAYER");
+        let content = b"/OC /oc1 BDC 0 0 10 10 re f EMC /OC /oc2 BDC 0 0 5 5 re f EMC".to_vec();
+        let c1 = doc.add_object(Stream::new(Dictionary::new(), content));
+        let p1 = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages_id, "Contents" => c1, "MediaBox" => nums(&LETTER),
+            "Resources" => dictionary! { "Properties" => dictionary! { "oc1" => hidden, "oc2" => shown, "oc3" => other } },
+        });
+        doc.objects.insert(pages_id, Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![p1.into()], "Count" => 1,
+        }));
+        let refs = |ids: &[ObjectId]| -> Object { ids.iter().map(|&id| Object::Reference(id)).collect::<Vec<_>>().into() };
+        let cat = doc.add_object(dictionary! {
+            "Type" => "Catalog", "Pages" => pages_id,
+            "OCProperties" => dictionary! {
+                "OCGs" => refs(&[hidden, shown, other]),
+                "D" => dictionary! { "OFF" => refs(&[hidden, other]), "Order" => refs(&[hidden, shown, other]) },
+            },
+        });
+        doc.trailer.set("Root", cat);
+        let mut pdf = Vec::new();
+        doc.save_to(&mut pdf).unwrap();
+
+        let (out, result) = run(&pdf, &job(2));
+        assert!(!contains(&result.bytes, b"SECRET_OTHERLAYER"), "unused layer leaked");
+        let props = form(&out, 0, "Pg1").dict.get(b"Resources").unwrap().as_dict().unwrap();
+        let props = props.get(b"Properties").unwrap().as_dict().unwrap();
+        let new_hidden = props.get(b"oc1").unwrap().as_reference().unwrap();
+        let new_shown = props.get(b"oc2").unwrap().as_reference().unwrap();
+        let oc = out
+            .catalog()
+            .unwrap()
+            .get(b"OCProperties")
+            .expect("/OCProperties dropped: the hidden layer would show");
+        let oc = match oc {
+            Object::Reference(id) => out.get_dictionary(*id).unwrap(),
+            other => other.as_dict().unwrap(),
+        };
+        let ids = |obj: &Object| -> Vec<ObjectId> {
+            obj.as_array().unwrap().iter().filter_map(|o| o.as_reference().ok()).collect()
+        };
+        assert_eq!(ids(oc.get(b"OCGs").unwrap()), vec![new_hidden, new_shown]);
+        let d = oc.get(b"D").unwrap().as_dict().unwrap();
+        assert_eq!(ids(d.get(b"OFF").unwrap()), vec![new_hidden]);
     }
 }
