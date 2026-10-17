@@ -259,16 +259,28 @@ pub fn scan_content(content: &[u8]) -> Option<UsedNames> {
 /// Number of `q` still open at the end of `content`. None when the content
 /// cannot be decoded completely.
 pub(crate) fn unbalanced_saves(content: &[u8]) -> Option<usize> {
+    save_balance(content).map(|(open, _)| open)
+}
+
+/// `(open, excess)`: the `q` still open at the end of `content` (a `Q`
+/// with nothing to restore counts as nothing), and the most `Q` it runs
+/// below its starting depth. None when it cannot be decoded completely.
+pub(crate) fn save_balance(content: &[u8]) -> Option<(usize, usize)> {
     let (rest, _) = split_inline_images(content)?;
-    let mut depth = 0usize;
+    let mut depth = 0i64;
+    let mut lowest = 0i64;
     for op in decode_complete(&rest)? {
         match op.operator.as_str() {
             "q" => depth += 1,
-            "Q" => depth = depth.saturating_sub(1),
+            "Q" => {
+                depth -= 1;
+                lowest = lowest.min(depth);
+            }
             _ => {}
         }
     }
-    Some(depth)
+    // A saturating counter ends at depth - lowest.
+    Some(((depth - lowest) as usize, (-lowest) as usize))
 }
 
 /// Operator appended after the real content to detect partial parses.

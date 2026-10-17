@@ -108,8 +108,14 @@ fn resize_page(
     let contents = if original.is_empty() {
         None
     } else {
-        let open = scanner.unbalanced(doc, &original);
-        let head = format!("q {} cm\n", c.map(fmt_num).join(" "));
+        // A stray `Q` in the original would pop the wrapper's `q` and drop
+        // `C cm`: as many extra `q` after it absorb them.
+        let (open, excess) = scanner.balance(doc, &original);
+        let mut head = format!("q {} cm\n", c.map(fmt_num).join(" "));
+        if excess > 0 {
+            head.push_str(&vec!["q"; excess].join(" "));
+            head.push('\n');
+        }
         let tail = format!("\nQ\n{}", "Q\n".repeat(open));
         let mut items = Vec::with_capacity(original.len() + 2);
         items.push(Object::Reference(doc.add_object(plain_stream(head.into_bytes()))));
@@ -118,8 +124,29 @@ fn resize_page(
         Some(items)
     };
 
+    // On a turned page, appearances turn with the content (see
+    // `turn_appearances`); the translation does not matter there.
+    let turn = (vb.rotate != 0).then(|| {
+        let [a, b, c, d, _, _] = invert(vb.matrix());
+        [a, b, c, d, 0.0, 0.0]
+    });
     let annots = annots.map(|items| {
-        items.into_iter().map(|item| transform_annotation(doc, id, item, c, users)).collect::<Vec<_>>()
+        // An annotation listed twice on the page is transformed once.
+        let mut seen: HashMap<ObjectId, Object> = HashMap::new();
+        items
+            .into_iter()
+            .map(|item| match item.as_reference() {
+                Ok(aid) => match seen.get(&aid) {
+                    Some(done) => done.clone(),
+                    None => {
+                        let done = transform_annotation(doc, id, item, c, turn, users);
+                        seen.insert(aid, done.clone());
+                        done
+                    }
+                },
+                Err(_) => transform_annotation(doc, id, item, c, turn, users),
+            })
+            .collect::<Vec<_>>()
     });
 
     let sheet = Object::Array(vec![0.into(), 0.into(), number(sw), number(sh)]);
@@ -173,6 +200,7 @@ fn transform_annotation(
     page: ObjectId,
     item: Object,
     c: [f64; 6],
+    turn: Option<[f64; 6]>,
     users: &HashMap<ObjectId, usize>,
 ) -> Object {
     match item {
@@ -180,6 +208,7 @@ fn transform_annotation(
             let Ok(dict) = doc.get_dictionary(aid) else { return item };
             let mut dict = dict.clone();
             transform_geometry(doc, &mut dict, c);
+            turn_appearances(doc, &mut dict, turn);
             if users.get(&aid).copied().unwrap_or(0) > 1 {
                 dict.set("P", Object::Reference(page));
                 Object::Reference(doc.add_object(dict))
@@ -190,10 +219,73 @@ fn transform_annotation(
         }
         Object::Dictionary(mut dict) => {
             transform_geometry(doc, &mut dict, c);
+            turn_appearances(doc, &mut dict, turn);
             Object::Dictionary(dict)
         }
         other => other,
     }
+}
+
+/// Annotation flag: keep the annotation upright when the page is rotated.
+const NO_ROTATE: i64 = 16;
+
+/// A viewer fits an appearance onto /Rect by scaling and translating its
+/// transformed /BBox only (ISO 32000 12.5.5), so on a page whose /Rotate was
+/// folded into the content the appearance itself must turn: each stream of
+/// /AP (N, R, D and their per-state entries) is replaced by an owned copy
+/// whose /Matrix is followed by `turn`. NoRotate annotations already stood
+/// upright on screen and are left alone.
+fn turn_appearances(doc: &mut Document, dict: &mut Dictionary, turn: Option<[f64; 6]>) {
+    let Some(turn) = turn else { return };
+    let flags = dict.get(b"F").ok().and_then(|f| deref(doc, f)).and_then(|f| f.as_i64().ok()).unwrap_or(0);
+    if flags & NO_ROTATE != 0 {
+        return;
+    }
+    let Some(Object::Dictionary(ap)) = dict.get(b"AP").ok().and_then(|a| deref(doc, a)).cloned() else {
+        return;
+    };
+    // One copy per original stream, reused across the entries of this /AP.
+    let mut copies: HashMap<ObjectId, ObjectId> = HashMap::new();
+    let mut owned = Dictionary::new();
+    for (key, value) in ap.iter() {
+        let turned = match deref(doc, value) {
+            Some(Object::Dictionary(states)) => {
+                let states = states.clone();
+                let mut out = Dictionary::new();
+                for (state, stream) in states.iter() {
+                    out.set(state.clone(), turned_stream(doc, stream, turn, &mut copies));
+                }
+                Object::Dictionary(out)
+            }
+            _ => turned_stream(doc, value, turn, &mut copies),
+        };
+        owned.set(key.clone(), turned);
+    }
+    dict.set("AP", owned);
+}
+
+/// A reference to an owned copy of appearance stream `obj` with `turn`
+/// appended to its /Matrix; anything else is returned unchanged.
+fn turned_stream(
+    doc: &mut Document,
+    obj: &Object,
+    turn: [f64; 6],
+    copies: &mut HashMap<ObjectId, ObjectId>,
+) -> Object {
+    let Ok(id) = obj.as_reference() else { return obj.clone() };
+    if let Some(copy) = copies.get(&id) {
+        return Object::Reference(*copy);
+    }
+    let Ok(Object::Stream(stream)) = doc.get_object(id) else { return obj.clone() };
+    let mut stream = stream.clone();
+    let current = numbers(doc, stream.dict.get(b"Matrix").ok())
+        .and_then(|v| <[f64; 6]>::try_from(v).ok())
+        .unwrap_or([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+    let m = concat(current, turn);
+    stream.dict.set("Matrix", Object::Array(m.map(number).to_vec()));
+    let copy = doc.add_object(stream);
+    copies.insert(id, copy);
+    Object::Reference(copy)
 }
 
 /// Maps /Rect (to the bounding box of its transformed corners), /QuadPoints,
@@ -559,5 +651,107 @@ mod tests {
         f.kids.push(id.into());
         let doc = resize(&f.finish(Dictionary::new()), &job(A4, ResizeMode::Fit));
         assert_eq!(streams(&doc, 0).len(), 3);
+    }
+
+    #[test]
+    fn stray_restore_in_the_original_keeps_the_wrap_transform() {
+        // "Q Q" pops two levels below its start: two extra `q` after `C cm`
+        // absorb them, and the tail closes the remaining levels plus the wrap.
+        let pdf = one_page(dictionary! { "MediaBox" => nums(&LETTER) }, "Q Q q");
+        let doc = resize(&pdf, &job(A4, ResizeMode::Fit));
+        let s = streams(&doc, 0);
+        assert_eq!(s[0], "q 0.972673 0 0 0.972673 0 35.766412 cm\nq q\n");
+        // Depth after the original: 2 extra q - 2 Q + 1 q = 1 open, then the wrap.
+        assert_eq!(s.last().unwrap().matches('Q').count(), 2);
+    }
+
+    #[test]
+    fn annotation_listed_twice_on_a_page_is_transformed_once() {
+        let mut f = Fixture::new();
+        let annot = f.doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Square", "Rect" => nums(&[100.0, 100.0, 200.0, 150.0]),
+        });
+        f.page(
+            dictionary! { "MediaBox" => nums(&LETTER), "Annots" => vec![annot.into(), annot.into()] },
+            HELLO,
+        );
+        let doc = resize(&f.finish(Dictionary::new()), &job([306.0, 396.0], ResizeMode::Fit));
+        assert_eq!(read_nums(doc.get_dictionary(annot).unwrap(), b"Rect"), [50.0, 50.0, 100.0, 75.0]);
+    }
+
+    /// Bounding box of `bbox` under `m`.
+    fn mapped_bbox(m: [f64; 6], b: [f64; 4]) -> [f64; 4] {
+        let pts = [apply(m, b[0], b[1]), apply(m, b[2], b[1]), apply(m, b[0], b[3]), apply(m, b[2], b[3])];
+        let xs = pts.map(|p| p.0);
+        let ys = pts.map(|p| p.1);
+        let lo = |v: [f64; 4]| v.into_iter().fold(f64::INFINITY, f64::min);
+        let hi = |v: [f64; 4]| v.into_iter().fold(f64::NEG_INFINITY, f64::max);
+        [lo(xs), lo(ys), hi(xs), hi(ys)]
+    }
+
+    fn appearance_matrix(doc: &Document, annot: &Dictionary) -> ([f64; 6], ObjectId) {
+        let ap = annot.get(b"AP").unwrap().as_dict().unwrap();
+        let id = ap.get(b"N").unwrap().as_reference().unwrap();
+        let stream = doc.get_object(id).unwrap().as_stream().unwrap();
+        let m = match stream.dict.get(b"Matrix") {
+            Ok(_) => {
+                let v = read_nums(&stream.dict, b"Matrix");
+                [v[0], v[1], v[2], v[3], v[4], v[5]]
+            }
+            Err(_) => [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        };
+        (m, id)
+    }
+
+    /// A rotated page with a 200 x 20 FreeText whose appearance stream is
+    /// also used by an annotation on an unselected second page.
+    fn rotated_free_text(flags: i64) -> (Vec<u8>, ObjectId, ObjectId) {
+        let mut f = Fixture::new();
+        let ap = f.doc.add_object(lopdf::Stream::new(
+            dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => nums(&[0.0, 0.0, 200.0, 20.0]) },
+            b"BT /F1 12 Tf 2 5 Td (Note) Tj ET".to_vec(),
+        ));
+        let annot = f.doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "FreeText", "F" => flags,
+            "Rect" => nums(&[100.0, 100.0, 300.0, 120.0]),
+            "AP" => dictionary! { "N" => ap, "D" => dictionary! { "On" => ap } },
+        });
+        let other = f.doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "FreeText",
+            "Rect" => nums(&[100.0, 100.0, 300.0, 120.0]), "AP" => dictionary! { "N" => ap },
+        });
+        f.page(dictionary! { "MediaBox" => nums(&LETTER), "Rotate" => 90, "Annots" => vec![annot.into()] }, HELLO);
+        f.page(dictionary! { "MediaBox" => nums(&LETTER), "Annots" => vec![other.into()] }, HELLO);
+        (f.finish(Dictionary::new()), annot, ap)
+    }
+
+    #[test]
+    fn rotated_appearance_is_turned_with_the_page() {
+        let (pdf, annot, ap) = rotated_free_text(4);
+        let j = ResizeJob { pages: PageSelection::List(vec![1]), ..job(A4, ResizeMode::Fit) };
+        let doc = resize(&pdf, &j);
+        let a = doc.get_dictionary(annot).unwrap();
+        let rect = read_nums(a, b"Rect");
+        let (m, id) = appearance_matrix(&doc, a);
+        assert_ne!(id, ap, "the appearance stream is an owned copy");
+        let b = mapped_bbox(m, [0.0, 0.0, 200.0, 20.0]);
+        let aspect = |r: &[f64]| (r[2] - r[0]) / (r[3] - r[1]);
+        assert!((aspect(&b) - aspect(&rect)).abs() < 1e-3, "{b:?} vs {rect:?}");
+        assert!(aspect(&rect) < 1.0, "the 200 x 20 note stands upright on the turned sheet");
+        // Per-state sub-dictionaries are handled too.
+        let d = a.get(b"AP").unwrap().as_dict().unwrap().get(b"D").unwrap().as_dict().unwrap();
+        assert_ne!(d.get(b"On").unwrap().as_reference().unwrap(), ap);
+        // The shared original stream is untouched.
+        let original = doc.get_object(ap).unwrap().as_stream().unwrap();
+        assert!(original.dict.get(b"Matrix").is_err());
+    }
+
+    #[test]
+    fn no_rotate_appearance_is_left_alone() {
+        let (pdf, annot, ap) = rotated_free_text(4 | 16);
+        let j = ResizeJob { pages: PageSelection::List(vec![1]), ..job(A4, ResizeMode::Fit) };
+        let doc = resize(&pdf, &j);
+        let (_, id) = appearance_matrix(&doc, doc.get_dictionary(annot).unwrap());
+        assert_eq!(id, ap);
     }
 }

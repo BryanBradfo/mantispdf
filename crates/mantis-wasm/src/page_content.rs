@@ -2,7 +2,7 @@
 //! objects other pages may share: owned dictionary copies, the content list
 //! as direct items, and the count of `q` the original content leaves open.
 
-use crate::rebuild::{MAX_STREAM_DECODED, bounded_content, deref, unbalanced_saves};
+use crate::rebuild::{MAX_STREAM_DECODED, bounded_content, deref, save_balance};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 use std::collections::HashMap;
 
@@ -38,7 +38,7 @@ const MAX_JOB_DECODED: usize = 512 << 20;
 /// Results are memoized per list of content stream ids (pages sharing their
 /// content are decoded once) and all scans share one decode budget.
 pub(crate) struct BalanceScanner {
-    memo: HashMap<Vec<ObjectId>, usize>,
+    memo: HashMap<Vec<ObjectId>, (usize, usize)>,
     /// Decoded bytes still allowed for this job.
     budget: usize,
     /// Streams decoded so far (observed by tests).
@@ -57,18 +57,24 @@ impl BalanceScanner {
     /// Undecodable or oversized content, or content past the job's budget,
     /// counts as balanced.
     pub(crate) fn unbalanced(&mut self, doc: &Document, items: &[Object]) -> usize {
-        let key: Option<Vec<ObjectId>> = items.iter().map(|o| o.as_reference().ok()).collect();
-        if let Some(open) = key.as_ref().and_then(|k| self.memo.get(k)) {
-            return *open;
-        }
-        let open = self.scan(doc, items);
-        if let Some(k) = key {
-            self.memo.insert(k, open);
-        }
-        open
+        self.balance(doc, items).0
     }
 
-    fn scan(&mut self, doc: &Document, items: &[Object]) -> usize {
+    /// `(open, excess)` as `rebuild::save_balance` counts them for the
+    /// concatenated content; `(0, 0)` when it cannot be scanned.
+    pub(crate) fn balance(&mut self, doc: &Document, items: &[Object]) -> (usize, usize) {
+        let key: Option<Vec<ObjectId>> = items.iter().map(|o| o.as_reference().ok()).collect();
+        if let Some(found) = key.as_ref().and_then(|k| self.memo.get(k)) {
+            return *found;
+        }
+        let found = self.scan(doc, items);
+        if let Some(k) = key {
+            self.memo.insert(k, found);
+        }
+        found
+    }
+
+    fn scan(&mut self, doc: &Document, items: &[Object]) -> (usize, usize) {
         let mut content = Vec::new();
         let mut charged = 0;
         let mut complete = true;
@@ -92,7 +98,7 @@ impl BalanceScanner {
             }
         }
         self.budget = self.budget.saturating_sub(charged);
-        if complete { unbalanced_saves(&content).unwrap_or(0) } else { 0 }
+        if complete { save_balance(&content).unwrap_or((0, 0)) } else { (0, 0) }
     }
 }
 
