@@ -102,8 +102,9 @@ impl SanitizeOutput {
     }
 
     /// [links_kept, links_dropped, comments_kept, comments_dropped, fields_flattened, warnings,
-    /// too_deep_pages]; `warnings` counts every page warning, `too_deep_pages`
-    /// those where deeply nested content was dropped.
+    /// too_deep_pages, images_cleaned]; `warnings` counts every page warning, `too_deep_pages`
+    /// those where deeply nested content was dropped, `images_cleaned` the
+    /// JPEG images whose metadata was removed.
     pub fn report(&self) -> Vec<u32> {
         self.report.clone()
     }
@@ -293,13 +294,14 @@ fn report_counts(r: &rebuild::RebuildReport) -> Vec<u32> {
         r.fields_flattened,
         r.warnings.len() as u32,
         r.too_deep_pages,
+        r.images_cleaned,
     ]
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn report_counts_keep_indexes_and_append_deep_pages() {
+    fn report_counts_keep_indexes_and_append_new_counters() {
         let r = crate::rebuild::RebuildReport {
             links_kept: 1,
             links_dropped: 2,
@@ -308,8 +310,9 @@ mod tests {
             fields_flattened: 5,
             warnings: vec!["a".into(), "b".into()],
             too_deep_pages: 1,
+            images_cleaned: 6,
         };
-        assert_eq!(super::report_counts(&r), [1, 2, 3, 4, 5, 2, 1]);
+        assert_eq!(super::report_counts(&r), [1, 2, 3, 4, 5, 2, 1, 6]);
     }
 }
 

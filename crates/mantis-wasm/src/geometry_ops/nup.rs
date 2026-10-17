@@ -170,7 +170,7 @@ pub(crate) fn nup_with_budget(pdf: &[u8], job: &NupJob, budget: usize) -> Result
     let mut out = Document::with_version(version);
     let sources = [doc];
     let doc = &sources[0];
-    let mut copier = SafeCopier::new(&sources);
+    let mut copier = SafeCopier::new(&sources, false);
     let mut budget = budget;
     let mut forms: HashMap<ObjectId, Option<(ObjectId, VisibleBox)>> = HashMap::new();
     let mut undecodable = Vec::new();

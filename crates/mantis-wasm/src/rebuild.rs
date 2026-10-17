@@ -19,6 +19,7 @@
 
 use crate::annotations::{PendingLinks, PendingReplies, finish_links, rebuild_annotations};
 use crate::pdf_util::get_inherited_attr;
+use crate::stamp::image::strip_jpeg_metadata;
 use lopdf::content::{Content, Operation};
 use lopdf::{Dictionary, Document, Object, ObjectId, dictionary};
 use std::collections::{HashMap, HashSet};
@@ -27,13 +28,17 @@ use std::collections::{HashMap, HashSet};
 pub struct Policy {
     pub keep_links: bool,
     pub keep_comments: bool,
+    /// Remove Exif, XMP, MPF and other metadata (and trailing data) from
+    /// images whose only filter is `/DCTDecode` (see `SafeCopier::copy_stream`).
+    pub strip_image_metadata: bool,
 }
 
 /// Organize/Remove/Extract/Split keep links and comments; only what belongs to
-/// dropped pages disappears.
+/// dropped pages disappears. Images are copied byte-exact.
 pub const PAGE_TOOLS: Policy = Policy {
     keep_links: true,
     keep_comments: true,
+    strip_image_metadata: false,
 };
 
 // Resource categories, used both as `/Resources` keys and as `UsedNames` keys.
@@ -825,6 +830,20 @@ fn has_own_content(dict: &Dictionary) -> bool {
         || dict.get(b"PatternType").and_then(Object::as_i64).ok() == Some(1)
 }
 
+/// An image XObject whose only filter is `/DCTDecode` (a name or a
+/// one-element array, both direct): its content is a plain JPEG file. DCT
+/// behind other filters, and an indirect `/Filter`, are left byte-exact.
+fn is_dct_only_image(dict: &Dictionary) -> bool {
+    if name_of(dict, b"Subtype") != Some(b"Image") {
+        return false;
+    }
+    match dict.get(b"Filter") {
+        Ok(Object::Name(n)) => n == b"DCTDecode",
+        Ok(Object::Array(a)) => matches!(a.as_slice(), [Object::Name(n)] if n == b"DCTDecode"),
+        _ => false,
+    }
+}
+
 /// Deep copier from source documents into one output document.
 pub struct SafeCopier<'s> {
     sources: &'s [Document],
@@ -848,6 +867,11 @@ pub struct SafeCopier<'s> {
     scans: HashMap<(usize, ObjectId), Option<UsedNames>>,
     /// Decoded bytes content scans may still produce in this rebuild.
     decode_budget: usize,
+    /// `Policy::strip_image_metadata`.
+    strip_image_metadata: bool,
+    /// DCT images whose metadata was removed. A shared image is copied, and
+    /// so stripped and counted, once (`memo`).
+    images_cleaned: u32,
 }
 
 /// The resource names a trimmed copy keeps, per category, in a canonical
@@ -887,8 +911,10 @@ enum MemoKey {
 }
 
 impl<'s> SafeCopier<'s> {
-    pub fn new(sources: &'s [Document]) -> Self {
+    pub fn new(sources: &'s [Document], strip_image_metadata: bool) -> Self {
         SafeCopier {
+            strip_image_metadata,
+            images_cleaned: 0,
             sources,
             memo: HashMap::new(),
             depth: 0,
@@ -1149,6 +1175,17 @@ impl<'s> SafeCopier<'s> {
         // Clone keeps the content bytes and filters untouched (byte-exact).
         let mut copy = stream.clone();
         copy.dict = dict;
+        if self.strip_image_metadata && is_dct_only_image(&stream.dict) {
+            let stripped = strip_jpeg_metadata(&stream.content);
+            // Whitespace or NUL padding after the end of the image carries
+            // nothing: such a stream stays byte-exact and is not counted.
+            let padding_only = stream.content.starts_with(&stripped)
+                && stream.content[stripped.len()..].iter().all(|&b| b == 0 || b.is_ascii_whitespace());
+            if !padding_only {
+                copy.set_content(stripped); // also rewrites /Length
+                self.images_cleaned += 1;
+            }
+        }
         copy
     }
 
@@ -1344,6 +1381,8 @@ pub struct RebuildReport {
     /// dropped (each also has a warning). The other warnings are pages that
     /// could not be analysed and kept all their resources.
     pub too_deep_pages: u32,
+    /// DCT (JPEG) images whose metadata `Policy::strip_image_metadata` removed.
+    pub images_cleaned: u32,
 }
 
 /// Page rotation after turning a page with `/Rotate` value `current` by a
@@ -1499,7 +1538,7 @@ pub fn rebuild_document(
         .max()
         .unwrap_or("1.7");
     let mut out = Document::with_version(version);
-    let mut copier = SafeCopier::new(sources);
+    let mut copier = SafeCopier::new(sources, policy.strip_image_metadata);
     let mut report = RebuildReport::default();
     let mut links = PendingLinks::default();
     let mut replies = PendingReplies::default();
@@ -1570,6 +1609,7 @@ pub fn rebuild_document(
     }
     let catalog = out.add_object(catalog);
     out.trailer.set("Root", catalog);
+    report.images_cleaned = copier.images_cleaned;
     // Safety net: objects created and then abandoned (dropped links) go too.
     out.prune_objects();
     Ok((out, report))
@@ -1888,7 +1928,7 @@ mod tests {
     fn rebuild(src: Document, numbers: &[u32]) -> (Vec<u8>, Document, RebuildReport) {
         let pages = src.get_pages();
         let sources = [src];
-        let mut copier = SafeCopier::new(&sources);
+        let mut copier = SafeCopier::new(&sources, false);
         let mut out = Document::with_version("1.7");
         let mut report = RebuildReport::default();
         let mut new_ids = vec![];
@@ -2070,7 +2110,7 @@ mod tests {
             .set_plain_content(b"BT /F1 12 Tf ET".to_vec());
 
         let sources = [src];
-        let mut copier = SafeCopier::new(&sources);
+        let mut copier = SafeCopier::new(&sources, false);
         let mut out = Document::with_version("1.7");
         let mut report = RebuildReport::default();
         let new_id = copy_page(&mut out, &mut copier, 0, page_id, 90, &mut report).unwrap();
@@ -3422,7 +3462,7 @@ mod tests {
         let doc = src.finish();
         let pages = doc.get_pages();
         let sources = [doc];
-        let mut copier = SafeCopier::new(&sources);
+        let mut copier = SafeCopier::new(&sources, false);
         copier.decode_budget = 1500;
         let mut out = Document::with_version("1.7");
         let mut report = RebuildReport::default();

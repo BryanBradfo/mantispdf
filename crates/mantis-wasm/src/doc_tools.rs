@@ -15,7 +15,8 @@ fn save(doc: &mut Document) -> Result<Vec<u8>, String> {
 
 /// Rebuild every page from the allowlist: no metadata, scripts, attachments,
 /// outlines or form data survive; links stay, comments by choice, form
-/// fields are flattened.
+/// fields are flattened. JPEG images lose their Exif/GPS, XMP, MPF and
+/// trailing data (`Policy::strip_image_metadata`).
 pub fn sanitize(bytes: &[u8], keep_comments: bool) -> Result<(Vec<u8>, RebuildReport), String> {
     let doc = load(bytes)?;
     let pages: Vec<OutPage> = doc
@@ -30,6 +31,7 @@ pub fn sanitize(bytes: &[u8], keep_comments: bool) -> Result<(Vec<u8>, RebuildRe
     let policy = Policy {
         keep_links: true,
         keep_comments,
+        strip_image_metadata: true,
     };
     let (mut out, report) = rebuild_document(std::slice::from_ref(&doc), &pages, &policy)?;
     Ok((save(&mut out)?, report))
@@ -349,6 +351,127 @@ mod tests {
         assert!(contains(&kept, "SECRETNOTE"));
         assert_eq!(report.comments_kept, 1);
         assert!(!contains(&kept, "SECRETJS"));
+    }
+
+    /// A JPEG carrying Exif GPS, an MPF index and a trailing secondary JPEG.
+    fn leaky_jpeg() -> Vec<u8> {
+        let seg = |m: u8, body: &[u8]| {
+            let mut v = vec![0xFF, m, 0, (body.len() + 2) as u8];
+            v.extend_from_slice(body);
+            v
+        };
+        let mut v = vec![0xFF, 0xD8];
+        v.extend(seg(0xE0, b"JFIF\0"));
+        v.extend(seg(0xE1, b"Exif\0\0SECRETGPS"));
+        v.extend(seg(0xE2, b"MPF\0SECRETMPF"));
+        v.extend(seg(0xC0, &[8, 0, 1, 0, 1, 1, 1, 0x11, 0]));
+        v.extend_from_slice(&[0xFF, 0xDA, 0, 4, 1, 0, 0x12, 0xFF, 0xD9]);
+        v.extend_from_slice(b"\xFF\xD8SECRETTRAILER\xFF\xD9");
+        v
+    }
+
+    fn image_stream(width: i64, filter: Object, content: Vec<u8>) -> Stream {
+        let dict = dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => width, "Height" => 1,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8, "Filter" => filter,
+        };
+        Stream::new(dict, content).with_compression(false)
+    }
+
+    /// Two pages drawing a shared DCT image (/Filter name), plus a 1-element
+    /// filter array, a DCT behind Flate and an indirect /Filter on page 1.
+    fn jpeg_images_pdf() -> Vec<u8> {
+        use std::io::Write;
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let jpeg = leaky_jpeg();
+        let shared = doc.add_object(image_stream(1, "DCTDecode".into(), jpeg.clone()));
+        let array = doc.add_object(image_stream(2, vec![Object::Name(b"DCTDecode".to_vec())].into(), jpeg.clone()));
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        z.write_all(&jpeg).unwrap();
+        let chained = doc.add_object(image_stream(
+            3,
+            vec![Object::Name(b"FlateDecode".to_vec()), Object::Name(b"DCTDecode".to_vec())].into(),
+            z.finish().unwrap(),
+        ));
+        let filter_ref = doc.add_object(Object::Name(b"DCTDecode".to_vec()));
+        let indirect = doc.add_object(image_stream(4, filter_ref.into(), jpeg.clone()));
+        let mut kids = vec![];
+        for names in [&["A", "B", "C", "D"][..], &["A"][..]] {
+            let mut xobjects = Dictionary::new();
+            let mut ops = String::new();
+            for n in names {
+                let id = match *n { "A" => shared, "B" => array, "C" => chained, _ => indirect };
+                xobjects.set(*n, id);
+                ops.push_str(&format!("q 10 0 0 10 0 0 cm /{n} Do Q "));
+            }
+            let contents = doc.add_object(Stream::new(dictionary! {}, ops.into_bytes()));
+            kids.push(Object::Reference(doc.add_object(dictionary! {
+                "Type" => "Page", "Parent" => pages_id, "MediaBox" => rect(),
+                "Resources" => dictionary! { "XObject" => xobjects }, "Contents" => contents,
+            })));
+        }
+        doc.objects.insert(pages_id, Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => 2 }));
+        let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", catalog);
+        crate::pdf_util::save_pdf(&mut doc).unwrap()
+    }
+
+    /// Raw content of every image XObject in `doc`, by /Width.
+    fn images_by_width(doc: &Document) -> std::collections::BTreeMap<i64, Vec<Vec<u8>>> {
+        let mut out = std::collections::BTreeMap::<i64, Vec<Vec<u8>>>::new();
+        for obj in doc.objects.values() {
+            if let Ok(s) = obj.as_stream() {
+                if s.dict.get(b"Subtype").and_then(Object::as_name).ok() == Some(b"Image") {
+                    let w = s.dict.get(b"Width").and_then(Object::as_i64).unwrap();
+                    out.entry(w).or_default().push(s.content.clone());
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn sanitize_strips_metadata_from_dct_only_images_once() {
+        let src = jpeg_images_pdf();
+        let (out, report) = sanitize(&src, false).unwrap();
+        assert_eq!(report.images_cleaned, 2, "the shared image counts once");
+        let doc = Document::load_mem(&out).unwrap();
+        let images = images_by_width(&doc);
+        assert_eq!(images[&1].len(), 1, "the shared image is copied once");
+        let clean = crate::stamp::image::strip_jpeg_metadata(&leaky_jpeg());
+        for w in [1, 2] {
+            let content = &images[&w][0];
+            assert_eq!(content, &clean);
+            for secret in ["SECRETGPS", "SECRETMPF", "SECRETTRAILER"] {
+                assert!(!contains(content, secret), "{secret} survived in image {w}");
+            }
+        }
+        let (src_doc, out_doc) = (Document::load_mem(&src).unwrap(), &doc);
+        let src_images = images_by_width(&src_doc);
+        // Behind another filter or an indirect /Filter: copied byte-exact.
+        assert_eq!(images_by_width(out_doc)[&3], src_images[&3]);
+        assert_eq!(images_by_width(out_doc)[&4], src_images[&4]);
+        // /Length follows the new content.
+        for obj in doc.objects.values() {
+            if let Ok(s) = obj.as_stream() {
+                if let Ok(len) = s.dict.get(b"Length").and_then(Object::as_i64) {
+                    assert_eq!(len as usize, s.content.len());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn page_tools_copy_jpeg_images_byte_exact() {
+        let src = Document::load_mem(&jpeg_images_pdf()).unwrap();
+        let pages: Vec<OutPage> =
+            src.get_pages().values().map(|&page| OutPage::Page { src: 0, page, rotate: 0 }).collect();
+        let (out, report) =
+            rebuild_document(std::slice::from_ref(&src), &pages, &crate::rebuild::PAGE_TOOLS).unwrap();
+        assert_eq!(report.images_cleaned, 0);
+        assert_eq!(images_by_width(&out), images_by_width(&src));
+        assert!(contains(&images_by_width(&out)[&1][0], "SECRETGPS"));
     }
 
     #[test]

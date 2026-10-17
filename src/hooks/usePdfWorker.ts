@@ -17,6 +17,8 @@ export interface SanitizeReport {
   warnings: number;
   /** Pages where deeply nested content could not be copied. */
   deepContentDropped: number;
+  /** JPEG images whose metadata (Exif/GPS, XMP, MPF, trailers) was removed. */
+  imagesCleaned: number;
 }
 
 export interface PdfMetadata {
@@ -102,10 +104,11 @@ const asSanitized = (p: SuccessPayload): { bytes: Uint8Array; report: SanitizeRe
     fieldsFlattened = 0,
     warnings = 0,
     deepContentDropped = 0,
+    imagesCleaned = 0,
   ] = p.report;
   return {
     bytes: p.bytes,
-    report: { linksKept, linksDropped, commentsKept, commentsDropped, fieldsFlattened, warnings, deepContentDropped },
+    report: { linksKept, linksDropped, commentsKept, commentsDropped, fieldsFlattened, warnings, deepContentDropped, imagesCleaned },
   };
 };
 const asMetadata = (p: SuccessPayload): PdfMetadata => {

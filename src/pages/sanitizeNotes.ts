@@ -13,3 +13,10 @@ export function sanitizeWarnings(report: SanitizeReport): string[] {
   }
   return notes;
 }
+
+/** "N images had their metadata removed" (Exif/GPS, XMP and the like in JPEG images), or null for none. */
+export function imagesCleanedNote(report: SanitizeReport): string | null {
+  const n = report.imagesCleaned;
+  if (n <= 0) return null;
+  return n === 1 ? "1 image had its metadata removed" : `${n} images had their metadata removed`;
+}

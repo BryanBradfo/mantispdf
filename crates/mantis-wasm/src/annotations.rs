@@ -750,10 +750,12 @@ mod tests {
     const KEEP_ALL: Policy = Policy {
         keep_links: true,
         keep_comments: true,
+        strip_image_metadata: false,
     };
     const NO_COMMENTS: Policy = Policy {
         keep_links: true,
         keep_comments: false,
+        strip_image_metadata: false,
     };
 
     fn contains(haystack: &[u8], needle: &[u8]) -> bool {
@@ -907,7 +909,7 @@ mod tests {
     fn rebuild_pages(src: Document, numbers: &[u32], policy: &Policy) -> Rebuilt {
         let source_pages = src.get_pages();
         let sources = [src];
-        let mut copier = SafeCopier::new(&sources);
+        let mut copier = SafeCopier::new(&sources, false);
         let mut out = Document::with_version("1.7");
         let mut report = RebuildReport::default();
         let mut links = PendingLinks::default();
