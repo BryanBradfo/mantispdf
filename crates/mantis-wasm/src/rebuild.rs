@@ -117,6 +117,11 @@ const NEVER_COPIED: [&[u8]; 10] = [
     b"StructParents",
 ];
 
+/// Keys whose dictionary value maps arbitrary names (glyph names, colorant
+/// names) to values. Its keys are data, not PDF structure, so `NEVER_COPIED`
+/// must not filter them: a glyph named /A or /P is still a glyph.
+const NAME_MAP_KEYS: [&[u8]; 2] = [b"CharProcs", b"Colorants"];
+
 /// `/Type` is optional almost everywhere, so structure is also recognized by
 /// shape. A page or page-tree node: one of these keys...
 const PAGE_MARKERS: [&[u8]; 3] = [b"Contents", b"Kids", b"Annots"];
@@ -649,11 +654,71 @@ impl<'s> SafeCopier<'s> {
     fn copy_dict(&mut self, out: &mut Document, src: usize, dict: &Dictionary) -> Dictionary {
         let mut copy = Dictionary::new();
         for (key, value) in dict.iter() {
-            if !is_never_copied(dict, key, value) {
-                copy.set(key.clone(), self.copy(out, src, value));
+            if is_never_copied(dict, key, value) {
+                continue;
             }
+            let copied = if NAME_MAP_KEYS.contains(&key.as_slice()) {
+                self.copy_name_map(out, src, value)
+            } else if key == b"Resources" {
+                self.copy_any_resources(out, src, value)
+            } else {
+                self.copy(out, src, value)
+            };
+            copy.set(key.clone(), copied);
         }
         copy
+    }
+
+    /// Copy a name-keyed map (see `NAME_MAP_KEYS`): every key is kept, every
+    /// value goes through the blocking rules. A reference to it is memoized
+    /// like any other object.
+    fn copy_name_map(&mut self, out: &mut Document, src: usize, value: &Object) -> Object {
+        let copy_entries = |this: &mut Self, out: &mut Document, map: &Dictionary| {
+            let mut copy = Dictionary::new();
+            for (name, entry) in map.iter() {
+                copy.set(name.clone(), this.copy(out, src, entry));
+            }
+            Object::Dictionary(copy)
+        };
+        match value {
+            Object::Dictionary(map) if !is_blocked(value) => copy_entries(self, out, map),
+            Object::Reference(id) => {
+                if let Some(&new_id) = self.memo.get(&(src, *id)) {
+                    return Object::Reference(new_id);
+                }
+                let Ok(target @ Object::Dictionary(map)) = self.source(src).get_object(*id) else {
+                    return self.copy(out, src, value);
+                };
+                if is_blocked(target) {
+                    return Object::Null;
+                }
+                if self.depth >= MAX_REF_DEPTH {
+                    self.too_deep += 1;
+                    return Object::Null;
+                }
+                let new_id = out.new_object_id();
+                self.memo.insert((src, *id), new_id);
+                self.depth += 1;
+                let copied = copy_entries(self, out, map);
+                self.depth -= 1;
+                out.objects.insert(new_id, copied);
+                Object::Reference(new_id)
+            }
+            _ => self.copy(out, src, value),
+        }
+    }
+
+    /// A `/Resources` value met outside a page or form: its category
+    /// dictionaries are name-keyed, so it is copied with `copy_resources`
+    /// (all names kept) rather than as a structural dictionary.
+    fn copy_any_resources(&mut self, out: &mut Document, src: usize, value: &Object) -> Object {
+        let doc = self.source(src);
+        match deref(doc, value) {
+            Some(res @ Object::Dictionary(dict)) if !is_blocked(res) => {
+                Object::Dictionary(self.copy_resources(out, src, dict, None))
+            }
+            _ => self.copy(out, src, value),
+        }
     }
 
     fn copy_stream(
@@ -1702,6 +1767,103 @@ mod tests {
             "{:?}",
             report.warnings
         );
+    }
+
+    // ---- final review fixes -------------------------------------------
+
+    /// Resolve a direct or indirect dictionary of the output.
+    fn out_dict<'a>(out: &'a Document, obj: &'a Object) -> &'a Dictionary {
+        deref(out, obj).unwrap().as_dict().unwrap()
+    }
+
+    #[test]
+    fn name_keyed_maps_keep_every_name() {
+        // Glyphs named /A and /P, a colorant named /A and an XObject named /A
+        // are names, not the structural /A (action) and /P (parent) keys.
+        let mut src = Src::new();
+        let glyph = |doc: &mut Document, body: &[u8]| {
+            doc.add_object(Stream::new(dictionary! {}, body.to_vec()))
+        };
+        let ga = glyph(&mut src.doc, b"0 0 d0 0 0 1 1 re f");
+        let gp = glyph(&mut src.doc, b"0 0 d0 0 0 1 1 re f");
+        let t3 = src.doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type3",
+            "FontBBox" => vec![0.into(), 0.into(), 1.into(), 1.into()],
+            "FontMatrix" => vec![1.into(), 0.into(), 0.into(), 1.into(), 0.into(), 0.into()],
+            "CharProcs" => dictionary! { "A" => ga, "P" => gp },
+            "Encoding" => dictionary! { "Differences" => vec![65.into(), Object::Name(b"A".to_vec()), Object::Name(b"P".to_vec())] },
+            "FirstChar" => 65, "LastChar" => 66, "Widths" => vec![1.into(), 1.into()],
+        });
+        let img = src.doc.add_object(image(b"GLYPHIMG_A"));
+        let gi = glyph(&mut src.doc, b"0 0 d0 /A Do");
+        let t3r = src.doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type3",
+            "FontBBox" => vec![0.into(), 0.into(), 1.into(), 1.into()],
+            "FontMatrix" => vec![1.into(), 0.into(), 0.into(), 1.into(), 0.into(), 0.into()],
+            "CharProcs" => dictionary! { "g" => gi },
+            "Encoding" => dictionary! { "Differences" => vec![97.into(), Object::Name(b"g".to_vec())] },
+            "FirstChar" => 97, "LastChar" => 97, "Widths" => vec![1.into()],
+            "Resources" => dictionary! { "XObject" => dictionary! { "A" => img } },
+        });
+        let tint = dictionary! {
+            "FunctionType" => 2, "Domain" => vec![0.into(), 1.into()],
+            "C0" => vec![0.into(), 0.into(), 0.into(), 0.into()],
+            "C1" => vec![1.into(), 0.into(), 0.into(), 0.into()], "N" => 1,
+        };
+        let separation: Object = vec![
+            Object::Name(b"Separation".to_vec()),
+            Object::Name(b"A".to_vec()),
+            Object::Name(b"DeviceCMYK".to_vec()),
+            tint.clone().into(),
+        ]
+        .into();
+        let device_n: Object = vec![
+            Object::Name(b"DeviceN".to_vec()),
+            vec![Object::Name(b"A".to_vec())].into(),
+            Object::Name(b"DeviceCMYK".to_vec()),
+            tint.into(),
+            dictionary! { "Colorants" => dictionary! { "A" => separation } }.into(),
+        ]
+        .into();
+        src.add_page(
+            dictionary! {
+                "Font" => dictionary! { "T3" => t3, "T3R" => t3r },
+                "ColorSpace" => dictionary! { "CSN" => device_n },
+            },
+            b"BT /T3 12 Tf (AB) Tj /T3R 12 Tf (a) Tj ET /CSN cs 1 scn",
+        );
+        let (bytes, out, _) = rebuild(src.finish(), &[1]);
+
+        let procs = out
+            .objects
+            .values()
+            .filter_map(|o| o.as_dict().ok())
+            .filter(|d| name_of(d, b"Subtype") == Some(b"Type3"))
+            .find(|d| !d.has(b"Resources"))
+            .expect("Type3 font copied")
+            .get(b"CharProcs")
+            .unwrap();
+        let procs = out_dict(&out, procs);
+        assert!(procs.has(b"A"), "glyph /A kept");
+        assert!(procs.has(b"P"), "glyph /P kept");
+
+        assert!(contains(&bytes, b"GLYPHIMG_A"), "Type3 resource /A kept");
+
+        let page = out
+            .objects
+            .values()
+            .filter_map(|o| o.as_dict().ok())
+            .find(|d| name_of(d, b"Type") == Some(b"Page"))
+            .unwrap();
+        let spaces = out_dict(&out, page.get(b"Resources").unwrap())
+            .get(b"ColorSpace")
+            .unwrap();
+        let cs = deref(&out, out_dict(&out, spaces).get(b"CSN").unwrap())
+            .unwrap()
+            .as_array()
+            .unwrap();
+        let colorants = out_dict(&out, &cs[4]).get(b"Colorants").unwrap();
+        assert!(out_dict(&out, colorants).has(b"A"), "colorant /A kept");
     }
 
     #[test]
