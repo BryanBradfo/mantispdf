@@ -386,10 +386,13 @@ impl TreeWalk {
         depth: usize,
         names: &mut HashMap<Vec<u8>, Option<ObjectId>>,
     ) {
-        if depth >= MAX_NAME_TREE_DEPTH || self.nodes == 0 {
+        if self.nodes == 0 {
             return;
         }
         self.nodes -= 1;
+        if depth >= MAX_NAME_TREE_DEPTH {
+            return;
+        }
         if let Ok(id) = node.as_reference()
             && !self.seen.insert(id)
         {
@@ -410,6 +413,9 @@ impl TreeWalk {
                     names.insert(name.clone(), named_value_target(doc, &pair[1]));
                 }
             }
+        }
+        if depth + 1 >= MAX_NAME_TREE_DEPTH {
+            return;
         }
         if let Some(Object::Array(kids)) = node.get(b"Kids").ok().and_then(|k| deref(doc, k)) {
             for kid in kids {
@@ -1144,9 +1150,10 @@ mod tests {
 
     #[test]
     fn name_tree_kids_are_charged_even_when_already_seen() {
-        // A root whose /Kids lists one small node 1000000 times, then a leaf
-        // holding the link's name: every kid examined costs budget, so the
-        // walk stops long before the leaf, and quickly.
+        // A root whose first kid leads down to a node at the depth limit
+        // with 1000000 kids, then lists one small node 1000000 times, then a
+        // leaf holding the link's name: every kid examined costs budget, so
+        // the walk stops long before the leaf, and quickly.
         let mut src = Src::new();
         let p1 = src.add_page(b"");
         let p2 = src.add_page(b"");
@@ -1162,7 +1169,14 @@ mod tests {
         let leaf = doc.add_object(dictionary! {
             "Names" => vec![Object::string_literal("late"), vec![p2.into(), "Fit".into()].into()],
         });
-        let mut kids = vec![Object::Reference(small); 1_000_000];
+        let mut deep = doc.add_object(dictionary! {
+            "Kids" => vec![Object::Reference(small); 1_000_000],
+        });
+        for _ in 0..MAX_NAME_TREE_DEPTH - 2 {
+            deep = doc.add_object(dictionary! { "Kids" => vec![Object::from(deep)] });
+        }
+        let mut kids = vec![Object::from(deep)];
+        kids.extend(vec![Object::Reference(small); 1_000_000]);
         kids.push(leaf.into());
         let root = doc.add_object(dictionary! { "Kids" => kids });
         let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
