@@ -6,7 +6,7 @@ pub use crate::stamp::engine::ImageData;
 use crate::geometry_ops::resize::{MAX_MARGIN, MAX_SHEET, MIN_SHEET};
 use crate::geometry_ops::{box_object, concat};
 use crate::page_content::{fmt_num, plain_stream};
-use crate::pdf_util::save_pdf;
+use crate::pdf_util::save_pdf_with_capacity;
 use crate::stamp::image::{BuiltImage, build_image};
 use lopdf::{Document, Object, Stream, dictionary};
 
@@ -38,9 +38,15 @@ pub struct InputImage {
 
 /// Most images in one job.
 pub(crate) const MAX_IMAGES: usize = 300;
-/// Most pixels in one RGBA image, and in all of a job's RGBA images.
+/// Most pixels in one image (an RGBA buffer or a JPEG frame).
 pub(crate) const MAX_IMAGE_PIXELS: u64 = 100_000_000;
-pub(crate) const MAX_TOTAL_PIXELS: u64 = 400_000_000;
+/// Most input bytes in one job: JPEG files plus RGBA buffers. wasm32 holds
+/// the inputs, the built image streams and the output at once, so the peak is
+/// about twice this (see the final fix report for the measurement).
+/// `src/lib/imagesToPdf.ts` mirrors MAX_IMAGES, MAX_IMAGE_PIXELS and this.
+pub(crate) const MAX_INPUT_BYTES: u64 = 512 * 1024 * 1024;
+/// Most pixels in all of a job's RGBA images: their bytes fit the input budget.
+pub(crate) const MAX_TOTAL_PIXELS: u64 = MAX_INPUT_BYTES / 4;
 /// Points per CSS pixel: an image's natural size assumes 96 dpi.
 const PT_PER_PX: f64 = 72.0 / 96.0;
 
@@ -134,15 +140,20 @@ fn pixel_size(stream: &Stream) -> Result<(f64, f64), String> {
 }
 
 /// One page per image, in order, in a fresh document (catalog with /Pages
-/// only).
-pub fn images_to_pdf(images: &[InputImage], layout: &Layout) -> Result<Vec<u8>, String> {
-    validate(images, layout)?;
+/// only). Takes the inputs by value and drops each one once its XObject is
+/// built, so the inputs and the built streams are never all alive at once.
+pub fn images_to_pdf(images: Vec<InputImage>, layout: &Layout) -> Result<Vec<u8>, String> {
+    validate(&images, layout)?;
     let mut doc = Document::with_version("1.7");
     let pages_id = doc.new_object_id();
     let mut kids = Vec::with_capacity(images.len());
+    // Stream bytes written to the output, to size its buffer up front.
+    let mut stream_bytes = 0usize;
     for image in images {
         let BuiltImage { image: mut stream, smask } = build_image(&image.data)?;
-        let (page, m) = place(pixel_size(&stream)?, image, layout);
+        let (page, m) = place(pixel_size(&stream)?, &image, layout);
+        drop(image);
+        stream_bytes += stream.content.len() + smask.as_ref().map_or(0, |s| s.content.len());
         if let Some(mask) = smask {
             let mask_id = doc.add_object(mask);
             stream.dict.set("SMask", mask_id);
@@ -166,7 +177,8 @@ pub fn images_to_pdf(images: &[InputImage], layout: &Layout) -> Result<Vec<u8>, 
     );
     let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
     doc.trailer.set("Root", catalog);
-    save_pdf(&mut doc)
+    // Object syntax, page dictionaries and the xref table: well under 1 KiB a page.
+    save_pdf_with_capacity(&mut doc, stream_bytes + 1024 * (count as usize + 4))
 }
 
 #[cfg(test)]
@@ -243,7 +255,7 @@ mod tests {
     }
 
     fn run(images: &[InputImage], layout: &Layout) -> Document {
-        let out = images_to_pdf(images, layout).unwrap();
+        let out = images_to_pdf(images.to_vec(), layout).unwrap();
         Document::load_mem(&out).unwrap()
     }
 
@@ -378,15 +390,15 @@ mod tests {
     #[test]
     fn too_many_images_rejected() {
         let images: Vec<_> = (0..301).map(|_| img(rgba(1, 1, 255), 0, false)).collect();
-        let err = images_to_pdf(&images, &layout(PageSize::FitImage, 0.0)).unwrap_err();
+        let err = images_to_pdf(images.clone(), &layout(PageSize::FitImage, 0.0)).unwrap_err();
         assert_eq!(err, "Invalid image settings: images");
-        assert!(images_to_pdf(&images[..300], &layout(PageSize::FitImage, 0.0)).is_ok());
+        assert!(images_to_pdf(images[..300].to_vec(), &layout(PageSize::FitImage, 0.0)).is_ok());
     }
 
     #[test]
     fn invalid_settings_rejected() {
         let one = [img(rgba(1, 1, 255), 0, false)];
-        let bad = |l: Layout, imgs: &[InputImage]| images_to_pdf(imgs, &l).unwrap_err();
+        let bad = |l: Layout, imgs: &[InputImage]| images_to_pdf(imgs.to_vec(), &l).unwrap_err();
         assert_eq!(bad(layout(PageSize::FitImage, 0.0), &[]), "Invalid image settings: images");
         assert_eq!(bad(layout(PageSize::FitImage, -1.0), &one), "Invalid image settings: margin");
         assert_eq!(bad(layout(PageSize::FitImage, 600.0), &one), "Invalid image settings: margin");
@@ -401,7 +413,7 @@ mod tests {
         );
         // Bad pixel data is the image builder's error.
         let short = ImageData::Rgba { width: 2, height: 2, pixels: vec![0; 3] };
-        assert!(images_to_pdf(&[img(short, 0, false)], &layout(PageSize::FitImage, 0.0)).is_err());
+        assert!(images_to_pdf(vec![img(short, 0, false)], &layout(PageSize::FitImage, 0.0)).is_err());
     }
 
     #[test]
@@ -409,13 +421,13 @@ mod tests {
         // Lengths are never checked: the budgets fail first.
         let huge = ImageData::Rgba { width: 20_000, height: 5_001, pixels: vec![] };
         assert_eq!(
-            images_to_pdf(&[img(huge, 0, false)], &layout(PageSize::FitImage, 0.0)).unwrap_err(),
+            images_to_pdf(vec![img(huge, 0, false)], &layout(PageSize::FitImage, 0.0)).unwrap_err(),
             "Invalid image settings: pixels"
         );
         let big = || img(ImageData::Rgba { width: 10_000, height: 10_000, pixels: vec![] }, 0, false);
         let five: Vec<_> = (0..5).map(|_| big()).collect();
         assert_eq!(
-            images_to_pdf(&five, &layout(PageSize::FitImage, 0.0)).unwrap_err(),
+            images_to_pdf(five, &layout(PageSize::FitImage, 0.0)).unwrap_err(),
             "Invalid image settings: pixels"
         );
     }

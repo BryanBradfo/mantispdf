@@ -263,8 +263,14 @@ fn renumber_references(object: &mut Object, map: &BTreeMap<ObjectId, ObjectId>) 
 /// Serialize a document: the one save path of every tool (see
 /// `prepare_for_save`).
 pub(crate) fn save_pdf(doc: &mut Document) -> Result<Vec<u8>, String> {
+    save_pdf_with_capacity(doc, 0)
+}
+
+/// `save_pdf` into a buffer reserved up front, so a large output is not grown
+/// (and copied) by doubling.
+pub(crate) fn save_pdf_with_capacity(doc: &mut Document, capacity: usize) -> Result<Vec<u8>, String> {
     prepare_for_save(doc);
-    let mut buf = Vec::new();
+    let mut buf = Vec::with_capacity(capacity);
     doc.save_to(&mut buf).map_err(|e| format!("Failed to save PDF: {e}"))?;
     Ok(buf)
 }

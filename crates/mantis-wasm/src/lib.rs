@@ -272,7 +272,7 @@ pub fn images_to_pdf(images: js_sys::Array, layout: JsValue) -> Result<Vec<u8>, 
     let run = || -> Result<Vec<u8>, String> {
         let layout = images::job::validate_layout(images::binding::read_layout(&layout)?)?;
         let list = images::job::validate_images(images::binding::read_images(&images)?)?;
-        images::to_pdf::images_to_pdf(&list, &layout)
+        images::to_pdf::images_to_pdf(list, &layout)
     };
     run().map_err(|e| JsValue::from_str(&e))
 }

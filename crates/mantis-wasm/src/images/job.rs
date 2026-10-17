@@ -3,11 +3,9 @@
 //! and type check lives here so it is unit-testable without a JS runtime.
 
 use super::to_pdf::{ImageData, InputImage, Layout, MAX_IMAGES, MAX_IMAGE_PIXELS, Orientation, PageSize};
+use super::to_pdf::MAX_INPUT_BYTES;
 use crate::geometry_ops::resize::{MAX_MARGIN, MAX_SHEET, MIN_SHEET};
 use crate::stamp::image::jpeg_info;
-
-/// Total encoded bytes (JPEG files plus RGBA buffers) one job may carry.
-pub(crate) const MAX_INPUT_BYTES: u64 = 1 << 30;
 
 pub(crate) fn invalid(field: &str) -> String {
     format!("Invalid image settings: {field}")
@@ -195,6 +193,13 @@ mod tests {
         assert_eq!(add_input_bytes(0, MAX_INPUT_BYTES).unwrap(), MAX_INPUT_BYTES);
         assert!(add_input_bytes(MAX_INPUT_BYTES, 1).is_err());
         assert!(add_input_bytes(u64::MAX, u64::MAX).is_err());
+    }
+
+    #[test]
+    fn input_budgets_fit_wasm32_and_match_the_js_mirror() {
+        // src/lib/imagesToPdf.ts mirrors these numbers (checked by its test).
+        assert_eq!(MAX_INPUT_BYTES, 512 * 1024 * 1024);
+        assert_eq!(super::super::to_pdf::MAX_TOTAL_PIXELS * 4, MAX_INPUT_BYTES);
     }
 
     #[test]

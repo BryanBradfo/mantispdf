@@ -120,6 +120,9 @@ export function orientationToTransform(o: Orientation): OrientationTransform {
 
 const MAX_DECODE_PIXELS = 100_000_000;
 
+/** A budget check refused the image: its message is meant for the user as is. */
+export class BudgetError extends Error {}
+
 type Canvas2d = {
   width: number;
   height: number;
@@ -180,13 +183,19 @@ async function loadImage(file: Blob): Promise<{ source: CanvasImageSource; width
  * EXIF transform for it. Our own EXIF parser is used only for JPEG passthrough
  * (original bytes embedded as-is), where the viewer needs the rotation.
  */
-export async function decodeToRgba(file: Blob): Promise<{ width: number; height: number; pixels: Uint8Array }> {
+export async function decodeToRgba(
+  file: Blob,
+  /** Called with the size before the pixels are allocated; a returned message aborts the decode. */
+  check?: (width: number, height: number) => string | null,
+): Promise<{ width: number; height: number; pixels: Uint8Array }> {
   const image = await loadImage(file);
   try {
     const { width, height } = image;
     if (width < 1 || height < 1 || width * height > MAX_DECODE_PIXELS) {
       throw new Error("Image is too large to decode (limit 100 megapixels)");
     }
+    const problem = check?.(width, height);
+    if (problem) throw new BudgetError(problem);
     const canvas = makeCanvas(width, height);
     canvas.ctx.drawImage(image.source, 0, 0);
     const data = canvas.ctx.getImageData(0, 0, width, height);

@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { pixelBudgetProblem, sniffImageType, composeTransform, imagesPdfName, imagesProblem, layoutSummary, turn } from "./imagesToPdf";
+import { MAX_IMAGES, MAX_IMAGE_PIXELS, MAX_INPUT_BYTES, inputBytesProblem, totalSizeProblem, pixelBudgetProblem, sniffImageType, composeTransform, imagesPdfName, imagesProblem, layoutSummary, turn } from "./imagesToPdf";
 
 describe("imagesToPdf helpers", () => {
   it("composes rotation with exif, keeping the flip", () => {
@@ -24,9 +26,30 @@ describe("imagesToPdf helpers", () => {
     expect(imagesPdfName(["a.png", "b.png"])).toBe("images.pdf");
   });
   it("checks pixel budgets", () => {
-    expect(pixelBudgetProblem("a.png", 10001, 10000, 0)).toMatch(/a\.png is too large/);
-    expect(pixelBudgetProblem("b.png", 1000, 1000, 399_500_000)).toMatch(/400 megapixel/);
-    expect(pixelBudgetProblem("c.png", 1000, 1000, 0)).toBeNull();
+    expect(pixelBudgetProblem("a.png", 10001, 10000)).toMatch(/a\.png is too large/);
+    expect(pixelBudgetProblem("c.png", 1000, 1000)).toBeNull();
+  });
+  it("mirrors the engine budgets in crates/mantis-wasm/src/images/to_pdf.rs", () => {
+    const rust = readFileSync(join(process.cwd(), "crates/mantis-wasm/src/images/to_pdf.rs"), "utf8");
+    const constant = (name: string) => {
+      const m = new RegExp(`const ${name}: \\w+ = ([^;]+);`).exec(rust);
+      if (!m) throw new Error(`${name} not found`);
+      // Plain products of integer literals, e.g. `512 * 1024 * 1024`.
+      return m[1].split("*").reduce((acc, part) => acc * Number(part.trim().replace(/_/g, "")), 1);
+    };
+    expect(MAX_INPUT_BYTES).toBe(constant("MAX_INPUT_BYTES"));
+    expect(MAX_IMAGE_PIXELS).toBe(constant("MAX_IMAGE_PIXELS"));
+    expect(MAX_IMAGES).toBe(constant("MAX_IMAGES"));
+    expect(MAX_INPUT_BYTES).toBe(512 * 1024 * 1024);
+  });
+  it("checks the input byte budget before and while reading", () => {
+    const mb = 1024 * 1024;
+    expect(totalSizeProblem([{ name: "a.jpg", size: 300 * mb }, { name: "b.jpg", size: 200 * mb }])).toBeNull();
+    expect(totalSizeProblem([{ name: "a.jpg", size: 300 * mb }, { name: "b.jpg", size: 213 * mb }])).toMatch(/b\.jpg/);
+    expect(totalSizeProblem([{ name: "a.jpg", size: 300 * mb }, { name: "b.jpg", size: 213 * mb }])).toMatch(/512 MB/);
+    expect(inputBytesProblem("c.png", 4 * 8000 * 8000, 300 * mb)).toMatch(/Adding c\.png .*512 MB/);
+    expect(inputBytesProblem("c.png", 100 * mb, 300 * mb)).toBeNull();
+    expect(inputBytesProblem("c.png", MAX_INPUT_BYTES, 0)).toBeNull();
   });
   it("sniffs image types", () => {
     expect(sniffImageType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe("image/jpeg");

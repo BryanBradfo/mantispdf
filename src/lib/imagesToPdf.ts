@@ -1,7 +1,19 @@
 import type { OrientationTransform } from "./imageInput";
 
+/**
+ * Engine budgets, mirroring crates/mantis-wasm/src/images/to_pdf.rs (a unit
+ * test reads the Rust source and keeps the two in step). Checked here before
+ * and while files are read, so a job the engine would refuse fails early with
+ * the file's name instead of after every image is decoded.
+ */
 export const MAX_IMAGES = 300;
+/** Most pixels in one image (a decoded image or a JPEG frame). */
+export const MAX_IMAGE_PIXELS = 100_000_000;
+/** Most input bytes in one job: JPEG files plus 4 bytes per decoded pixel. */
+export const MAX_INPUT_BYTES = 512 * 1024 * 1024;
 export const MAX_MARGIN_MM = 200;
+
+const MIB = 1024 * 1024;
 
 export type Quarter = 0 | 90 | 180 | 270;
 
@@ -36,14 +48,28 @@ export function imagesPdfName(names: string[]): string {
   return `${base || "images"}.pdf`;
 }
 
-export const MAX_IMAGE_PIXELS = 100_000_000;
-export const MAX_TOTAL_PIXELS = 400_000_000;
+/** Error text if one image has more pixels than the per-image limit, else null. */
+export function pixelBudgetProblem(name: string, width: number, height: number): string | null {
+  if (width * height > MAX_IMAGE_PIXELS) {
+    return `${name} is too large (${width} x ${height}); the limit is ${MAX_IMAGE_PIXELS / 1_000_000} megapixels per image.`;
+  }
+  return null;
+}
 
-/** Error text if adding an image of this size breaks the pixel limits, else null. */
-export function pixelBudgetProblem(name: string, width: number, height: number, usedSoFar: number): string | null {
-  const px = width * height;
-  if (px > MAX_IMAGE_PIXELS) return `${name} is too large (${width} x ${height}); the limit is 100 megapixels per image.`;
-  if (usedSoFar + px > MAX_TOTAL_PIXELS) return `Adding ${name} exceeds the 400 megapixel total limit. Remove some images or use fewer large ones.`;
+/** Error text if `bytes` more input (file bytes for a JPEG, 4 per pixel otherwise) breaks the job budget, else null. */
+export function inputBytesProblem(name: string, bytes: number, usedSoFar: number): string | null {
+  if (usedSoFar + bytes <= MAX_INPUT_BYTES) return null;
+  return `Adding ${name} brings the images to ${Math.ceil((usedSoFar + bytes) / MIB)} MB; the limit is ${MAX_INPUT_BYTES / MIB} MB per PDF (images other than JPEG count at 4 bytes per pixel). Remove some images or make several PDFs.`;
+}
+
+/** Checked before any file is read: the files alone must fit the input budget. */
+export function totalSizeProblem(files: { name: string; size: number }[]): string | null {
+  let used = 0;
+  for (const f of files) {
+    const problem = inputBytesProblem(f.name, f.size, used);
+    if (problem) return problem;
+    used += f.size;
+  }
   return null;
 }
 

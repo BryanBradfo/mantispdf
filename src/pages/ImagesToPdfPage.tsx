@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob, errorMessage } from "../lib/fileHelpers";
 import {
+  BudgetError,
   decodeToRgba,
   isJpeg,
   orientationToTransform,
@@ -15,9 +16,11 @@ import {
   composeTransform,
   imagesPdfName,
   imagesProblem,
+  inputBytesProblem,
   layoutSummary,
   pixelBudgetProblem,
   sniffImageType,
+  totalSizeProblem,
   turn,
   type Quarter,
 } from "../lib/imagesToPdf";
@@ -214,28 +217,39 @@ export default function ImagesToPdfPage() {
     setBusy(true);
     const gen = ++genRef.current;
     try {
+      // The files alone must fit the engine's input budget: checked before any is read.
+      const sizeProblem = totalSizeProblem(items.map((it) => ({ name: it.file.name, size: it.file.size })));
+      if (sizeProblem) throw new Error(sizeProblem);
       const specs: ImageInputSpec[] = [];
-      let usedPixels = 0;
+      // Bytes handed to the engine so far: JPEG files plus 4 per decoded pixel.
+      let usedBytes = 0;
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
+        const name = it.file.name;
         setPrep({ progress: (i / items.length) * 0.8, message: `Reading image ${i + 1} of ${items.length}…` });
-        const bytes = new Uint8Array(await it.file.arrayBuffer());
-        const jpeg = isJpeg(bytes);
-        const exif = jpeg ? orientationToTransform(readExifOrientation(bytes)) : { rotate: 0 as const, flipX: false };
-        const t = composeTransform(exif, it.rotate);
+        const jpeg = isJpeg(new Uint8Array(await it.file.slice(0, 3).arrayBuffer()));
         if (jpeg) {
+          const tooMuch = inputBytesProblem(name, it.file.size, usedBytes);
+          if (tooMuch) throw new Error(tooMuch);
+          const bytes = new Uint8Array(await it.file.arrayBuffer());
+          const t = composeTransform(orientationToTransform(readExifOrientation(bytes)), it.rotate);
+          usedBytes += bytes.length;
           specs.push({ kind: "jpeg", bytes, rotate: t.rotate, flipX: t.flipX });
         } else {
           let decoded: Awaited<ReturnType<typeof decodeToRgba>>;
           try {
-            decoded = await decodeToRgba(it.file);
+            // Refused before the pixel buffer is allocated.
+            decoded = await decodeToRgba(
+              it.file,
+              (w, h) => pixelBudgetProblem(name, w, h) ?? inputBytesProblem(name, w * h * 4, usedBytes),
+            );
           } catch (err) {
-            throw new Error(`Could not read ${it.file.name}: ${errorMessage(err)}`);
+            if (err instanceof BudgetError) throw err;
+            throw new Error(`Could not read ${name}: ${errorMessage(err)}`);
           }
           const { width, height, pixels } = decoded;
-          const tooBig = pixelBudgetProblem(it.file.name, width, height, usedPixels);
-          if (tooBig) throw new Error(tooBig);
-          usedPixels += width * height;
+          const t = composeTransform({ rotate: 0, flipX: false }, it.rotate);
+          usedBytes += pixels.length;
           specs.push({ kind: "rgba", width, height, pixels, rotate: t.rotate, flipX: t.flipX });
         }
         if (gen !== genRef.current) return;
