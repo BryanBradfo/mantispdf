@@ -24,6 +24,9 @@ const PageNumbersPage = lazy(() => import("./pages/PageNumbersPage"));
 const HeaderFooterPage = lazy(() => import("./pages/HeaderFooterPage"));
 const BatesPage = lazy(() => import("./pages/BatesPage"));
 const SignPdfPage = lazy(() => import("./pages/SignPdfPage"));
+const CropPdfPage = lazy(() => import("./pages/CropPdfPage"));
+const ResizePdfPage = lazy(() => import("./pages/ResizePdfPage"));
+const NupPdfPage = lazy(() => import("./pages/NupPdfPage"));
 
 function PageSpinner() {
   return (
@@ -80,6 +83,9 @@ export default function App() {
               <Route path="/header-footer" element={<HeaderFooterPage />} />
               <Route path="/bates" element={<BatesPage />} />
               <Route path="/sign" element={<SignPdfPage />} />
+              <Route path="/crop" element={<CropPdfPage />} />
+              <Route path="/resize" element={<ResizePdfPage />} />
+              <Route path="/n-up" element={<NupPdfPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>

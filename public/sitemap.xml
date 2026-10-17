@@ -19,4 +19,7 @@
   <url><loc>https://mantispdf.vercel.app/header-footer</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
   <url><loc>https://mantispdf.vercel.app/bates</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
   <url><loc>https://mantispdf.vercel.app/sign</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/crop</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/resize</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/n-up</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
 </urlset>

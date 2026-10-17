@@ -127,6 +127,27 @@ const tools = [
     icon: "🖋️",
     available: true,
   },
+  {
+    title: "Crop PDF",
+    description: "Trim page margins by hand or detect them automatically.",
+    href: "/crop",
+    icon: "📐",
+    available: true,
+  },
+  {
+    title: "Resize Pages",
+    description: "Change the page size to A4, Letter or a custom size.",
+    href: "/resize",
+    icon: "📏",
+    available: true,
+  },
+  {
+    title: "N-up Pages",
+    description: "Put 2, 4, 6, 8, 9 or 16 pages on each sheet.",
+    href: "/n-up",
+    icon: "🔳",
+    available: true,
+  },
 ];
 
 export default function ToolGrid() {
