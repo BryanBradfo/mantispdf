@@ -76,11 +76,12 @@ fn widen_box(edges: &mut [Object]) {
 const ROUNDED_DIGITS: usize = 8;
 
 /// Page box edge `v` moved one f32 step outward (`up` for a max edge, down
-/// for a min edge) when it was rounded on parse. lopdf stores reals as f32,
-/// so `764.15094` can come back a hair inside the page and renderers then
-/// snap the last pixel row or column differently. Values with fewer digits
-/// (`595.32`) were exact enough and are left alone: moving them changes
-/// rendering for the worse.
+/// for a min edge) when it was rounded on parse AND the rounding went
+/// inward. lopdf stores reals as f32, so `764.15094` comes back as
+/// 764.15093994..., a hair inside the page, and renderers then snap the last
+/// pixel row or column differently. Values with fewer digits (`595.32`) were
+/// exact enough, and values rounded outward (`841.92004` as a max edge) are
+/// already safe: moving either changes rendering for the worse.
 fn widen_box_edge(v: f32, up: bool) -> f32 {
     if !v.is_finite() {
         return v;
@@ -94,7 +95,15 @@ fn widen_box_edge(v: f32, up: bool) -> f32 {
     if digits < ROUNDED_DIGITS {
         return v;
     }
-    if up { v.next_up() } else { v.next_down() }
+    let Ok(written) = text.parse::<f64>() else {
+        return v;
+    };
+    let exact = f64::from(v);
+    match up {
+        true if exact < written => v.next_up(),
+        false if exact > written => v.next_down(),
+        _ => v,
+    }
 }
 
 /// `load_pdf` with the 1-based document number in its errors (merge, plan).
@@ -365,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn long_box_edges_move_one_f32_step_outward() {
+    fn long_box_edges_rounded_inward_move_one_f32_step_outward() {
         let up = widen_box_edge(764.15094, true);
         assert!(up > 764.15094_f32, "max edge pushed up");
         assert_eq!(up, f32::from_bits(764.15094_f32.to_bits() + 1));
@@ -377,6 +386,11 @@ mod tests {
             "short value unchanged"
         );
         assert_eq!(widen_box_edge(0.0, false), 0.0);
+        // 841.92004 parses to 841.9200439...: already outside its text as a
+        // max edge, so pushing it further only moves the page (found on a
+        // real file whose pages all shifted by a pixel).
+        assert_eq!(widen_box_edge(841.92004, true), 841.92004);
+        assert!(widen_box_edge(841.92004, false) < 841.92004_f32);
     }
 
     #[test]
