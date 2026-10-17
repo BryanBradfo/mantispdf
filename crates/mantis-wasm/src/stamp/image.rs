@@ -138,12 +138,15 @@ pub(crate) fn jpeg_info(bytes: &[u8]) -> Result<JpegInfo, String> {
     }
 }
 
-/// Copy of a JPEG without its metadata segments: APP1 (Exif, XMP), APP13
-/// (Photoshop/IPTC) and COM. Viewers disagree on whether an Exif orientation
-/// inside a PDF image applies, and GPS or camera data should not leak into the
-/// PDF. APP0, APP2 (ICC), APP14 (Adobe), the tables, the frame header and the
-/// entropy-coded data are kept byte for byte. A walk that goes wrong keeps the
-/// rest of the input untouched.
+/// Copy of a JPEG without its metadata: APP1 (Exif, XMP), APP13
+/// (Photoshop/IPTC), COM, APP2 "MPF" (multi-picture index), APP12 "Ducky"
+/// and APP0 "JFXX" (thumbnail), plus anything after the end-of-image marker
+/// (MPF secondary JPEGs with their own Exif/GPS, motion-photo MP4 and SEFT
+/// trailers). Viewers disagree on whether an Exif orientation inside a PDF
+/// image applies, and GPS or camera data should not leak into the PDF.
+/// APP0 JFIF, APP2 (ICC), APP14 (Adobe), the tables, the frame header and the
+/// entropy-coded data of every scan are kept byte for byte. A walk that goes
+/// wrong keeps the rest of the input untouched.
 pub(crate) fn strip_jpeg_metadata(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
     out.extend_from_slice(&bytes[..2.min(bytes.len())]);
@@ -159,22 +162,50 @@ pub(crate) fn strip_jpeg_metadata(bytes: &[u8]) -> Vec<u8> {
             i += 1;
             continue;
         }
+        if marker == 0xD9 {
+            // End of image: whatever follows is not part of this picture.
+            out.extend_from_slice(&[0xFF, 0xD9]);
+            return out;
+        }
         if marker == 0x01 || (0xD0..=0xD8).contains(&marker) {
             out.extend_from_slice(&bytes[i..i + 2]);
             i += 2;
             continue;
         }
-        if marker == 0xD9 || marker == 0xDA || i + 3 >= bytes.len() {
-            break; // end, first scan, or truncated: keep the rest as is
+        if i + 3 >= bytes.len() {
+            break; // truncated: keep the rest as is
         }
         let len = usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
         if len < 2 || i + 2 + len > bytes.len() {
             break;
         }
-        if !matches!(marker, 0xE1 | 0xED | 0xFE) {
+        let body = &bytes[i + 4..i + 2 + len];
+        let metadata = match marker {
+            0xE1 | 0xED | 0xFE => true,
+            0xE0 => body.starts_with(b"JFXX"),
+            0xE2 => body.starts_with(b"MPF\0"),
+            0xEC => body.starts_with(b"Ducky"),
+            _ => false,
+        };
+        if !metadata {
             out.extend_from_slice(&bytes[i..i + 2 + len]);
         }
         i += 2 + len;
+        if marker == 0xDA {
+            // Entropy-coded data runs to the next marker; inside it 0xFF is
+            // only followed by a stuffed 0x00 or a restart marker D0..D7.
+            let start = i;
+            while i + 1 < bytes.len() {
+                if bytes[i] == 0xFF && bytes[i + 1] != 0x00 && !(0xD0..=0xD7).contains(&bytes[i + 1]) {
+                    break;
+                }
+                i += 1;
+            }
+            if i + 1 >= bytes.len() {
+                i = bytes.len(); // no marker after the scan: keep its data
+            }
+            out.extend_from_slice(&bytes[start..i]);
+        }
     }
     out.extend_from_slice(&bytes[i.min(bytes.len())..]);
     out
@@ -288,6 +319,82 @@ mod tests {
         assert_eq!(strip_jpeg_metadata(&expected), expected);
         let built = build_jpeg(&input).unwrap();
         assert_eq!(built.image.content, expected);
+    }
+
+    fn seg(m: u8, body: &[u8]) -> Vec<u8> {
+        let mut v = vec![0xFF, m, 0, (body.len() + 2) as u8];
+        v.extend_from_slice(body);
+        v
+    }
+
+    fn has(hay: &[u8], needle: &[u8]) -> bool {
+        hay.windows(needle.len()).any(|w| w == needle)
+    }
+
+    /// A clean JPEG: SOI, JFIF, SOF0, a scan whose entropy data holds a
+    /// stuffed FF 00 and a restart marker, then EOI.
+    fn clean_jpeg() -> Vec<u8> {
+        let mut v = vec![0xFF, 0xD8];
+        v.extend(seg(0xE0, b"JFIF\0"));
+        v.extend(seg(0xC0, &[8, 0, 2, 0, 3, 1, 1, 0x11, 0]));
+        v.extend_from_slice(&[0xFF, 0xDA, 0, 4, 0xAA, 0xBB, 0x12, 0xFF, 0x00, 0xE1, 0xFF, 0xD3, 0x34, 0xFF, 0xD9]);
+        v
+    }
+
+    #[test]
+    fn drops_everything_after_the_end_of_image() {
+        let clean = clean_jpeg();
+        // A motion-photo MP4 trailer, a Samsung SEFT trailer and an MPF
+        // secondary JPEG with its own Exif/GPS.
+        let mut second = vec![0xFF, 0xD8];
+        second.extend(seg(0xE1, b"Exif\0\0GPS-secret"));
+        second.extend_from_slice(&[0xFF, 0xD9]);
+        for trailer in [&b"\0\0\0\x18ftypmp42MOTION"[..], b"SEFHsecretSEFT", &second] {
+            let mut input = clean.clone();
+            input.extend_from_slice(trailer);
+            assert_eq!(strip_jpeg_metadata(&input), clean);
+        }
+    }
+
+    #[test]
+    fn drops_mpf_ducky_and_jfxx_segments() {
+        let mut input = vec![0xFF, 0xD8];
+        input.extend(seg(0xE0, b"JFIF\0"));
+        input.extend(seg(0xE0, b"JFXX\0\x10thumb"));
+        input.extend(seg(0xE2, b"MPF\0II*\0offsets"));
+        input.extend(seg(0xE2, b"ICC_PROFILE\0icc"));
+        input.extend(seg(0xEC, b"Ducky\0quality"));
+        input.extend(seg(0xC0, &[8, 0, 2, 0, 3, 1, 1, 0x11, 0]));
+        input.extend_from_slice(&[0xFF, 0xDA, 0, 4, 0x55, 0xFF, 0xD9]);
+        let out = strip_jpeg_metadata(&input);
+        assert!(!has(&out, b"JFXX") && !has(&out, b"MPF\0") && !has(&out, b"Ducky"));
+        assert!(has(&out, b"JFIF") && has(&out, b"ICC_PROFILE"));
+        assert!(out.ends_with(&[0xFF, 0xDA, 0, 4, 0x55, 0xFF, 0xD9]));
+    }
+
+    #[test]
+    fn progressive_scans_are_all_kept_and_metadata_between_them_dropped() {
+        let mut input = vec![0xFF, 0xD8];
+        input.extend(seg(0xC2, &[8, 0, 2, 0, 3, 1, 1, 0x11, 0]));
+        input.extend_from_slice(&[0xFF, 0xDA, 0, 4, 0x01, 0xFF, 0x00, 0x02]);
+        input.extend(seg(0xC4, b"huffman"));
+        input.extend(seg(0xFE, b"comment"));
+        input.extend_from_slice(&[0xFF, 0xFF, 0xDA, 0, 4, 0x03, 0xFF, 0xD0, 0x04, 0xFF, 0xD9]);
+        input.extend_from_slice(b"trailer");
+        let out = strip_jpeg_metadata(&input);
+        let mut expected = vec![0xFF, 0xD8];
+        expected.extend(seg(0xC2, &[8, 0, 2, 0, 3, 1, 1, 0x11, 0]));
+        expected.extend_from_slice(&[0xFF, 0xDA, 0, 4, 0x01, 0xFF, 0x00, 0x02]);
+        expected.extend(seg(0xC4, b"huffman"));
+        expected.extend_from_slice(&[0xFF, 0xFF, 0xDA, 0, 4, 0x03, 0xFF, 0xD0, 0x04, 0xFF, 0xD9]);
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn a_jpeg_without_end_of_image_keeps_its_data() {
+        let mut input = clean_jpeg();
+        input.truncate(input.len() - 2);
+        assert_eq!(strip_jpeg_metadata(&input), input);
     }
 
     #[test]
