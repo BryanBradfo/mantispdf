@@ -116,6 +116,8 @@ struct PagePlan {
     texts: Vec<PlacedText>,
     /// Indices into `StampJob::images`.
     images: Vec<usize>,
+    /// A selection (non page-only) text is drawn on this page.
+    selection_stamped: bool,
 }
 
 pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
@@ -137,24 +139,27 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
     let last_number = number_of(last);
 
     // Plan every page first: any error (WinAnsi, overflow, bad image) is
-    // returned before anything is written.
-    let mut plans = Vec::new();
+    // returned before anything is written. A page object listed more than
+    // once in the tree gets one plan: the selection texts of its first
+    // selected occurrence plus the explicit items aimed at any occurrence.
+    let mut plans: Vec<PagePlan> = Vec::new();
+    let mut plan_of: HashMap<ObjectId, usize> = HashMap::new();
     let mut stamped_so_far: u64 = 0;
     for &(number, page_id) in &pages {
         let vb = VisibleBox::of_page(&doc, page_id);
         let mut texts = Vec::new();
         let n = number_of(number);
-        let mut bates = None;
-        if selected.contains(&number) && job.texts.iter().any(|t| t.page_only.is_none()) {
-            if let Some(b) = &job.bates {
-                bates = Some(format_bates(b, stamped_so_far)?);
-            }
-            stamped_so_far += 1;
-        }
+        let selection_done = plan_of.get(&page_id).is_some_and(|&i| plans[i].selection_stamped);
+        let in_selection = selected.contains(&number) && !selection_done;
+        let bates = match (&job.bates, in_selection) {
+            (Some(b), true) => Some(format_bates(b, stamped_so_far)?),
+            _ => None,
+        };
+        let mut selection_stamped = false;
         for t in &job.texts {
             let applies = match t.page_only {
                 Some(p) => p == number,
-                None => selected.contains(&number),
+                None => in_selection,
             };
             if !applies {
                 continue;
@@ -162,13 +167,30 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
             let resolved = resolve_tokens(&t.template, n, last_number, bates.as_deref());
             let bytes = encode_winansi(&normalize_whitespace(&resolved))?;
             if !bytes.is_empty() {
+                selection_stamped |= t.page_only.is_none();
                 texts.push(place_text(t, bytes, vb.width(), vb.height()));
             }
         }
+        // The Bates counter advances only for pages that get a selection text.
+        if selection_stamped {
+            stamped_so_far += 1;
+        }
         let images: Vec<usize> =
             (0..job.images.len()).filter(|&i| job.images[i].page == number).collect();
-        if !texts.is_empty() || !images.is_empty() {
-            plans.push(PagePlan { page_id, matrix: vb.matrix(), texts, images });
+        if texts.is_empty() && images.is_empty() {
+            continue;
+        }
+        match plan_of.get(&page_id) {
+            Some(&i) => {
+                let plan = &mut plans[i];
+                plan.texts.extend(texts);
+                plan.images.extend(images);
+                plan.selection_stamped |= selection_stamped;
+            }
+            None => {
+                plan_of.insert(page_id, plans.len());
+                plans.push(PagePlan { page_id, matrix: vb.matrix(), texts, images, selection_stamped });
+            }
         }
     }
     let built: Vec<BuiltImage> =
@@ -1237,6 +1259,47 @@ mod tests {
             .collect();
         // The second page no longer fits the job's budget: treated as balanced.
         assert_eq!(open, vec![1, 0]);
+    }
+
+    /// Kids [A, B, A, C]: page A is listed twice.
+    fn duplicated_kid_pdf() -> Vec<u8> {
+        let mut f = Fixture::new();
+        let a = f.page(Dictionary::new(), HELLO);
+        f.page(Dictionary::new(), HELLO);
+        f.kids.push(a.into());
+        f.page(Dictionary::new(), HELLO);
+        f.finish()
+    }
+
+    #[test]
+    fn page_listed_twice_is_stamped_once() {
+        let mut j = job(PageSelection::All, vec![text("{bates}", Anchor::BottomRight)]);
+        j.bates = Some(Bates { prefix: "B".into(), suffix: String::new(), start: 1, digits: 3 });
+        let out = apply_stamps(&duplicated_kid_pdf(), &j).unwrap();
+        assert_eq!(out.stamped_pages, 3);
+        let doc = load(&out.bytes);
+        let pages = page_ids(&doc);
+        assert_eq!(pages.len(), 4);
+        assert_eq!(pages[0], pages[2]);
+        // One stamp on A; the counter skips the repeat, so C is B003.
+        assert_eq!(tj_strings(&doc, pages[0]), vec![b"B001".to_vec()]);
+        assert_eq!(tj_strings(&doc, pages[1]), vec![b"B002".to_vec()]);
+        assert_eq!(tj_strings(&doc, pages[3]), vec![b"B003".to_vec()]);
+        let s = streams(&doc, pages[0]);
+        assert_eq!(s.len(), 3, "A wrapped once: q, original, stamp");
+    }
+
+    #[test]
+    fn repeat_occurrence_still_gets_its_own_explicit_items() {
+        // Selection stamps A at its first occurrence; an absolute text aimed
+        // at the repeat (page 3) still lands on A, in the same tail stream.
+        let j = job(PageSelection::List(vec![1]), vec![text("sel", Anchor::BottomRight), absolute("abs", [5.0, 5.0], 3)]);
+        let out = apply_stamps(&duplicated_kid_pdf(), &j).unwrap();
+        assert_eq!(out.stamped_pages, 1);
+        let doc = load(&out.bytes);
+        let a = page_ids(&doc)[0];
+        assert_eq!(tj_strings(&doc, a), vec![b"sel".to_vec(), b"abs".to_vec()]);
+        assert_eq!(streams(&doc, a).len(), 3);
     }
 
     #[test]
