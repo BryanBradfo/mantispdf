@@ -99,6 +99,34 @@ const tools = [
     icon: "🔓",
     available: true,
   },
+  {
+    title: "Page Numbers",
+    description: "Number the pages in any corner, with your own format and font.",
+    href: "/page-numbers",
+    icon: "🔢",
+    available: true,
+  },
+  {
+    title: "Header & Footer",
+    description: "Add text, dates and file names at the top and bottom of every page.",
+    href: "/header-footer",
+    icon: "📑",
+    available: true,
+  },
+  {
+    title: "Bates Numbering",
+    description: "Stamp a running identifier on every page, continuing across files.",
+    href: "/bates",
+    icon: "⚖️",
+    available: true,
+  },
+  {
+    title: "Sign PDF",
+    description: "Draw, type or upload your signature and place it on any page.",
+    href: "/sign",
+    icon: "✍️",
+    available: true,
+  },
 ];
 
 export default function ToolGrid() {

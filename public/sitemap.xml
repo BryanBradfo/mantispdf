@@ -15,4 +15,8 @@
   <url><loc>https://mantispdf.vercel.app/remove-metadata</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
   <url><loc>https://mantispdf.vercel.app/edit-metadata</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
   <url><loc>https://mantispdf.vercel.app/unlock</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/page-numbers</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/header-footer</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/bates</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/sign</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
 </urlset>

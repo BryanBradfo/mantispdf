@@ -20,6 +20,10 @@ const SanitizePdfPage = lazy(() => import("./pages/SanitizePdfPage"));
 const RemoveMetadataPage = lazy(() => import("./pages/RemoveMetadataPage"));
 const EditMetadataPage = lazy(() => import("./pages/EditMetadataPage"));
 const UnlockPdfPage = lazy(() => import("./pages/UnlockPdfPage"));
+const PageNumbersPage = lazy(() => import("./pages/PageNumbersPage"));
+const HeaderFooterPage = lazy(() => import("./pages/HeaderFooterPage"));
+const BatesPage = lazy(() => import("./pages/BatesPage"));
+const SignPdfPage = lazy(() => import("./pages/SignPdfPage"));
 
 function PageSpinner() {
   return (
@@ -72,6 +76,10 @@ export default function App() {
               <Route path="/remove-metadata" element={<RemoveMetadataPage />} />
               <Route path="/edit-metadata" element={<EditMetadataPage />} />
               <Route path="/unlock" element={<UnlockPdfPage />} />
+              <Route path="/page-numbers" element={<PageNumbersPage />} />
+              <Route path="/header-footer" element={<HeaderFooterPage />} />
+              <Route path="/bates" element={<BatesPage />} />
+              <Route path="/sign" element={<SignPdfPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
