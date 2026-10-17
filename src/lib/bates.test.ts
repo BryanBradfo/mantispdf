@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { batesRanges, describeBatesRange, formatBates } from "./bates";
+import { createBatesTokens, batesRanges, describeBatesRange, formatBates } from "./bates";
 
 describe("bates", () => {
   it("formats with padding", () => {
@@ -22,5 +22,17 @@ describe("bates", () => {
   it("returns null with no pages", () => {
     expect(describeBatesRange(batesRanges([], 1, 6, "", ""))).toBeNull();
     expect(describeBatesRange(batesRanges([0], 1, 6, "", ""))).toBeNull();
+  });
+
+  it("keeps a running job current when files are added, until invalidateAll", () => {
+    const t = createBatesTokens();
+    const run = t.run.begin();
+    const up = t.upload.begin();
+    expect(run()).toBe(true);
+    t.upload.begin();
+    expect(up()).toBe(false);
+    expect(run()).toBe(true);
+    t.invalidateAll();
+    expect(run()).toBe(false);
   });
 });

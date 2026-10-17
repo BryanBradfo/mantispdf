@@ -4,8 +4,7 @@ import type { MergeFile } from "../hooks/useMergeState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob, readFileAsUint8Array, validatePdfFile } from "../lib/fileHelpers";
 import { downloadAsZip } from "../lib/downloadZip";
-import { batesRanges, describeBatesRange } from "../lib/bates";
-import { createLatest } from "../lib/latest";
+import { MAX_BATES, batesRanges, createBatesTokens, describeBatesRange } from "../lib/bates";
 import {
   ANCHOR_LABELS,
   DEFAULT_MARGIN,
@@ -29,7 +28,8 @@ const baseOf = (f: File) => f.name.replace(/\.pdf$/i, "");
 export default function BatesPage() {
   const worker = usePdfWorker();
   const [state, dispatch] = useMergeState();
-  const latest = useMemo(createLatest, []);
+  const tokens = useMemo(createBatesTokens, []);
+  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,24 +49,30 @@ export default function BatesPage() {
     async (picked: File[]) => {
       if (worker.initError) return dispatch({ type: "upload-error", error: "PDF engine failed to load. Please reload the page." });
       if (!worker.ready) return dispatch({ type: "upload-error", error: "Engine is still loading, please wait a moment." });
-      const current = latest.begin();
-      const added: MergeFile[] = [];
-      for (const file of picked) {
-        const invalid = validatePdfFile(file);
-        if (invalid) return dispatch({ type: "upload-error", error: `${file.name}: ${invalid}` });
-        try {
-          const bytes = await readFileAsUint8Array(file);
-          const numPages = await worker.countPages(bytes);
-          if (!current()) return;
-          added.push({ id: String(++nextId), file, bytes, numPages });
-        } catch (err) {
-          if (current()) dispatch({ type: "upload-error", error: `${file.name}: ${err instanceof Error ? err.message : String(err)}` });
-          return;
+      if (busy) return;
+      const current = tokens.upload.begin();
+      setAdding(true);
+      try {
+        const added: MergeFile[] = [];
+        for (const file of picked) {
+          const invalid = validatePdfFile(file);
+          if (invalid) return dispatch({ type: "upload-error", error: `${file.name}: ${invalid}` });
+          try {
+            const bytes = await readFileAsUint8Array(file);
+            const numPages = await worker.countPages(bytes);
+            if (!current()) return;
+            added.push({ id: String(++nextId), file, bytes, numPages });
+          } catch (err) {
+            if (current()) dispatch({ type: "upload-error", error: `${file.name}: ${err instanceof Error ? err.message : String(err)}` });
+            return;
+          }
         }
+        dispatch({ type: "files-added", files: added });
+      } finally {
+        if (current()) setAdding(false);
       }
-      dispatch({ type: "files-added", files: added });
     },
-    [dispatch, worker, latest],
+    [dispatch, worker, tokens, busy],
   );
 
   const ranges = useMemo(
@@ -78,6 +84,7 @@ export default function BatesPage() {
   const problem =
     files.length === 0 ? "Add at least one PDF."
     : !Number.isInteger(start) || start < 0 ? "Start number must be a whole number, 0 or more."
+    : start + files.reduce((n, f) => n + f.numPages, 0) > MAX_BATES ? "Start number plus total pages is too large."
     : !Number.isInteger(digits) || digits < 1 || digits > 12 ? "Digits must be between 1 and 12."
     : !(style.size >= 6 && style.size <= 72) ? "Size must be between 6 and 72 pt."
     : !(margin >= 0 && margin <= 300) ? "Margin must be between 0 and 300 pt."
@@ -85,8 +92,8 @@ export default function BatesPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (busy || problem) return;
-    const current = latest.begin();
+    if (busy || adding || problem) return;
+    const current = tokens.run.begin();
     const list = filesRef.current;
     setBusy(true);
     setError(null);
@@ -125,7 +132,8 @@ export default function BatesPage() {
   };
 
   const clear = () => {
-    latest.invalidate();
+    tokens.invalidateAll();
+    setAdding(false);
     dispatch({ type: "reset" });
     setBusy(false);
     setError(null);
@@ -144,7 +152,7 @@ export default function BatesPage() {
     >
       <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
-      <div className="mt-8">
+      <div className={`mt-8 ${busy ? "pointer-events-none opacity-50" : ""}`} inert={busy}>
         <DropZone multiple onFiles={(f) => void handleFiles(f)} error={state.uploadError} />
       </div>
 
@@ -210,7 +218,7 @@ export default function BatesPage() {
           <ErrorAlert error={problem} className="mt-4" />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
-            <button type="submit" disabled={busy || problem !== null} className={`flex-1 ${primaryButton}`}>
+            <button type="submit" disabled={busy || adding || problem !== null} className={`flex-1 ${primaryButton}`}>
               {busy ? "Numbering…" : files.length > 1 ? "Add Bates numbers and download ZIP" : "Add Bates numbers and download"}
             </button>
             <button type="button" onClick={clear} className={secondaryButton}>Start over</button>

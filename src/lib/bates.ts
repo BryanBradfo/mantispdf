@@ -1,3 +1,5 @@
+import { createLatest } from "./latest";
+
 /** Same format as the Rust engine: prefix + zero-padded counter + suffix. */
 export function formatBates(prefix: string, suffix: string, digits: number, value: number): string {
   return `${prefix}${String(value).padStart(digits, "0")}${suffix}`;
@@ -34,4 +36,21 @@ export function describeBatesRange(ranges: readonly BatesRange[]): string | null
   const first = used[0].first;
   const last = used[used.length - 1].last;
   return first === last ? first : `${first} to ${last}`;
+}
+
+/** Largest value a Bates counter may reach. */
+export const MAX_BATES = 2 ** 32;
+
+/** Independent supersede tokens so adding files never cancels a running job (and vice versa). */
+export function createBatesTokens() {
+  const upload = createLatest();
+  const run = createLatest();
+  return {
+    upload,
+    run,
+    invalidateAll(): void {
+      upload.invalidate();
+      run.invalidate();
+    },
+  };
 }
