@@ -14,16 +14,16 @@
 //!   structures; any such edge becomes `null`.
 //! - `copy_page` builds a fresh page dictionary from an allowlist of keys.
 //!
-//! Annotations (Task 2) and document assembly (Task 3) build on these pieces.
+//! `rebuild_document` assembles a fresh document from these pieces and the
+//! annotation rebuild in `annotations.rs`.
 
+use crate::annotations::{PendingLinks, PendingReplies, finish_links, rebuild_annotations};
 use crate::pdf_util::get_inherited_attr;
 use lopdf::content::{Content, Operation};
-use lopdf::{Dictionary, Document, Object, ObjectId};
+use lopdf::{Dictionary, Document, Object, ObjectId, dictionary};
 use std::collections::{HashMap, HashSet};
 
 /// Which annotation kinds survive a rebuild.
-// Consumed by Task 2 (annotation rebuild) and Task 3 (tool entry points).
-#[allow(dead_code)]
 pub struct Policy {
     pub keep_links: bool,
     pub keep_comments: bool,
@@ -31,8 +31,6 @@ pub struct Policy {
 
 /// Organize/Remove/Extract/Split keep links and comments; only what belongs to
 /// dropped pages disappears.
-// Consumed by Task 3 (page tools rebuilt on the engine).
-#[allow(dead_code)]
 pub const PAGE_TOOLS: Policy = Policy {
     keep_links: true,
     keep_comments: true,
@@ -586,8 +584,6 @@ pub struct SafeCopier<'s> {
 }
 
 impl<'s> SafeCopier<'s> {
-    // Consumed by Task 3 (tool entry points create one copier per output).
-    #[allow(dead_code)]
     pub fn new(sources: &'s [Document]) -> Self {
         SafeCopier {
             sources,
@@ -830,25 +826,30 @@ fn inheriting_streams<'a>(
 /// Counters and messages for the "what was removed" summary.
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct RebuildReport {
-    // Annotation counters are filled by Task 2 and read by Task 3.
-    #[allow(dead_code)]
     pub links_kept: u32,
-    #[allow(dead_code)]
     pub links_dropped: u32,
-    #[allow(dead_code)]
     pub comments_kept: u32,
-    #[allow(dead_code)]
     pub comments_dropped: u32,
-    #[allow(dead_code)]
     pub fields_flattened: u32,
     pub warnings: Vec<String>,
+}
+
+/// Page rotation after turning a page with `/Rotate` value `current` by a
+/// further `delta` degrees, in 0, 90, 180 or 270. Hostile values (fractional,
+/// off-grid, huge) snap to the nearest quarter turn without overflowing.
+fn add_rotation(current: Option<&Object>, delta: i64) -> i64 {
+    let current = match current {
+        Some(Object::Integer(i)) => i.rem_euclid(360) as f64,
+        Some(Object::Real(f)) if f.is_finite() => f64::from(*f).rem_euclid(360.0),
+        _ => 0.0,
+    };
+    let current = (current / 90.0).round() as i64 * 90;
+    (current + delta.rem_euclid(360)).rem_euclid(360)
 }
 
 /// Copy page `page_id` of source `src` into `out` WITHOUT annotations (Task 2
 /// adds them). Returns the new page id. Rotation is the inherited /Rotate plus
 /// `rotate_delta`, normalized. The page has no /Parent: assembly sets it.
-// Consumed by Task 2 (annotations) and Task 3 (page tools, split, sanitize).
-#[allow(dead_code)]
 pub fn copy_page(
     out: &mut Document,
     copier: &mut SafeCopier,
@@ -872,10 +873,8 @@ pub fn copy_page(
     if let Some(crop_box) = get_inherited_attr(doc, page_id, b"CropBox") {
         page.set("CropBox", copier.copy(out, src, &crop_box));
     }
-    let rotate = get_inherited_attr(doc, page_id, b"Rotate")
-        .and_then(|r| deref(doc, &r).and_then(|r| r.as_i64().ok()))
-        .unwrap_or(0);
-    let rotate = (rotate + rotate_delta).rem_euclid(360);
+    let current = get_inherited_attr(doc, page_id, b"Rotate");
+    let rotate = add_rotation(current.as_ref().and_then(|r| deref(doc, r)), rotate_delta);
     if rotate != 0 {
         page.set("Rotate", rotate);
     }
@@ -940,6 +939,136 @@ pub fn copy_page(
     }
 
     Ok(out.add_object(page))
+}
+
+/// One page of a rebuilt document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutPage {
+    /// Page object `page` of source `src`, turned a further `rotate` degrees.
+    Page {
+        src: usize,
+        page: ObjectId,
+        rotate: i64,
+    },
+    /// An empty page with the MediaBox and /Rotate of the nearest real output
+    /// page (previous first), US Letter when there is none.
+    Blank,
+}
+
+const LETTER: [i64; 4] = [0, 0, 612, 792];
+
+/// Build a fresh document (catalog with /Type /Pages only, no Info) from
+/// `pages`. Nothing from `sources` reaches the output except what each kept
+/// page displays and the annotations `policy` keeps; a source page that
+/// appears more than once gets independent copies, and links resolve to its
+/// FIRST copy.
+pub fn rebuild_document(
+    sources: &[Document],
+    pages: &[OutPage],
+    policy: &Policy,
+) -> Result<(Document, RebuildReport), String> {
+    let version = sources
+        .iter()
+        .map(|d| d.version.as_str())
+        .chain(["1.7"])
+        .max()
+        .unwrap_or("1.7");
+    let mut out = Document::with_version(version);
+    let mut copier = SafeCopier::new(sources);
+    let mut report = RebuildReport::default();
+    let mut links = PendingLinks::default();
+    let mut replies = PendingReplies::default();
+    let mut annot_map = HashMap::new();
+    let mut page_map: HashMap<(usize, ObjectId), ObjectId> = HashMap::new();
+
+    let mut slots: Vec<Option<ObjectId>> = Vec::with_capacity(pages.len());
+    for entry in pages {
+        let OutPage::Page { src, page, rotate } = *entry else {
+            slots.push(None);
+            continue;
+        };
+        if src >= sources.len() {
+            return Err(format!(
+                "Page refers to document {} but only {} were given",
+                src + 1,
+                sources.len()
+            ));
+        }
+        let new_page = copy_page(&mut out, &mut copier, src, page, rotate, &mut report)?;
+        rebuild_annotations(
+            &mut out,
+            &mut copier,
+            src,
+            page,
+            new_page,
+            policy,
+            &mut report,
+            &mut links,
+            &mut replies,
+            &mut annot_map,
+        )?;
+        page_map.entry((src, page)).or_insert(new_page);
+        slots.push(Some(new_page));
+    }
+    finish_links(&mut out, &page_map, &annot_map, links, replies, &mut report);
+
+    let mut kids: Vec<ObjectId> = Vec::with_capacity(slots.len());
+    for (i, slot) in slots.iter().enumerate() {
+        match slot {
+            Some(id) => kids.push(*id),
+            None => {
+                let reference = slots[..i]
+                    .iter()
+                    .rev()
+                    .chain(&slots[i + 1..])
+                    .find_map(|k| *k);
+                kids.push(add_blank_page(&mut out, reference));
+            }
+        }
+    }
+
+    let pages_id = out.new_object_id();
+    for &id in &kids {
+        if let Ok(dict) = out.get_dictionary_mut(id) {
+            dict.set("Parent", pages_id);
+        }
+    }
+    let count = kids.len() as i64;
+    let kids: Vec<Object> = kids.into_iter().map(Object::Reference).collect();
+    out.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => count }),
+    );
+    let catalog = out.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    out.trailer.set("Root", catalog);
+    // Safety net: objects created and then abandoned (dropped links) go too.
+    out.prune_objects();
+    Ok((out, report))
+}
+
+/// Empty page sized and turned like output page `reference`.
+fn add_blank_page(out: &mut Document, reference: Option<ObjectId>) -> ObjectId {
+    let (media, rotate) = reference
+        .and_then(|id| out.get_dictionary(id).ok())
+        .map(|d| {
+            (
+                d.get(b"MediaBox").ok().cloned(),
+                d.get(b"Rotate").ok().cloned(),
+            )
+        })
+        .unwrap_or((None, None));
+    let media = media.unwrap_or_else(|| Object::Array(LETTER.iter().map(|&v| v.into()).collect()));
+    let contents = out.add_object(lopdf::Stream::new(Dictionary::new(), Vec::new()));
+    let mut page = dictionary! {
+        "Type" => "Page",
+        "MediaBox" => media,
+        "Resources" => Dictionary::new(),
+        "Contents" => contents,
+    };
+    if let Some(rotate) = rotate {
+        page.set("Rotate", rotate);
+    }
+    out.add_object(page)
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+use crate::rebuild::{OutPage, PAGE_TOOLS, rebuild_document};
 use lopdf::Document;
 
 pub fn page_count(pdf_bytes: &[u8]) -> Result<u32, String> {
@@ -7,40 +8,27 @@ pub fn page_count(pdf_bytes: &[u8]) -> Result<u32, String> {
 
 pub fn extract_page_range(pdf_bytes: &[u8], start: u32, end: u32) -> Result<Vec<u8>, String> {
     let doc = Document::load_mem(pdf_bytes).map_err(|e| format!("Failed to parse PDF: {e}"))?;
-
     let total = doc.get_pages().len() as u32;
-    if start < 1 || end < start || end > total {
-        return Err(format!(
-            "Invalid range {start}–{end} for a {total}-page document"
-        ));
-    }
-
-    let pages_to_keep: Vec<u32> = (start..=end).collect();
-    let pages_to_delete: Vec<u32> = (1..=total).filter(|p| !pages_to_keep.contains(p)).collect();
-
-    let mut doc = doc;
-    doc.delete_pages(&pages_to_delete);
-    // delete_pages updates /Kids+/Count but leaves the dropped pages' content,
-    // fonts, and images as orphans. Prune them so the extracted file shrinks.
-    doc.prune_objects();
-
-    let mut buf = Vec::new();
-    doc.save_to(&mut buf)
-        .map_err(|e| format!("Failed to save PDF: {e}"))?;
-    Ok(buf)
+    extract_range_from_doc(&doc, total, start, end)
 }
 
+/// Pages `start..=end` of an already parsed document (parse once, extract many
+/// ranges). Pages are rebuilt from an allowlist, so nothing of the other
+/// pages reaches the output.
 pub fn extract_range_from_doc(doc: &Document, total_pages: u32, start: u32, end: u32) -> Result<Vec<u8>, String> {
     if start < 1 || end < start || end > total_pages {
         return Err(format!("Invalid range {start}–{end} for a {total_pages}-page document"));
     }
-    let pages_to_delete: Vec<u32> = (1..=total_pages).filter(|p| *p < start || *p > end).collect();
-    let mut part = doc.clone();
-    part.delete_pages(&pages_to_delete);
-    // Prune orphaned objects from the dropped pages so each extracted range is
-    // lean (this is also the real speed win for the parse-once optimization:
-    // far less to serialize and transfer than the full cloned document).
-    part.prune_objects();
+    let leaves = doc.get_pages();
+    let pages: Vec<OutPage> = (start..=end)
+        .map(|n| {
+            let page = *leaves
+                .get(&n)
+                .ok_or_else(|| format!("Invalid range {start}–{end} for a {total_pages}-page document"))?;
+            Ok(OutPage::Page { src: 0, page, rotate: 0 })
+        })
+        .collect::<Result<_, String>>()?;
+    let (mut part, _report) = rebuild_document(std::slice::from_ref(doc), &pages, &PAGE_TOOLS)?;
     let mut buf = Vec::new();
     part.save_to(&mut buf).map_err(|e| format!("Failed to save PDF: {e}"))?;
     Ok(buf)

@@ -2,6 +2,8 @@ mod annotations;
 mod compress;
 mod edit;
 mod encrypt;
+#[cfg(test)]
+mod leak_probes;
 mod merge;
 mod page_plan;
 mod pdf_util;

@@ -67,8 +67,6 @@ const ALLOWED_SCHEMES: [&str; 3] = ["http", "https", "mailto"];
 
 /// Link targets to resolve once every page exists:
 /// (new annotation, new page holding it, source index, source target page).
-// Consumed by Task 3 (assembly calls rebuild_annotations then finish_links).
-#[allow(dead_code)]
 #[derive(Default, Debug)]
 pub struct PendingLinks {
     pub items: Vec<(ObjectId, ObjectId, usize, ObjectId)>,
@@ -76,8 +74,6 @@ pub struct PendingLinks {
 
 /// `/IRT` targets not on the same page:
 /// (new reply annotation, source index, source target annotation).
-// Consumed by Task 3 (assembly calls rebuild_annotations then finish_links).
-#[allow(dead_code)]
 #[derive(Default, Debug)]
 pub struct PendingReplies {
     pub items: Vec<(ObjectId, usize, ObjectId)>,
@@ -86,8 +82,7 @@ pub struct PendingReplies {
 /// Rebuild the annotations of source page `src_page` onto output page
 /// `new_page`: sets /Annots on the new page and appends flattened widget
 /// drawing to its content and resources.
-// Consumed by Task 3 (page tools, split, sanitize).
-#[allow(dead_code, clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub fn rebuild_annotations(
     out: &mut Document,
     copier: &mut SafeCopier,
@@ -190,8 +185,6 @@ pub fn rebuild_annotations(
 
 /// Resolve pending links and replies given (src, src_page) -> first new page
 /// id. Links to pages that are not in the output are removed.
-// Consumed by Task 3 (assembly, after every page is rebuilt).
-#[allow(dead_code)]
 pub fn finish_links(
     out: &mut Document,
     page_map: &HashMap<(usize, ObjectId), ObjectId>,

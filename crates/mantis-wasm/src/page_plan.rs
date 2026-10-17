@@ -1,6 +1,5 @@
-use crate::pdf_util::import_document;
-use lopdf::{dictionary, Document, Object, ObjectId, Stream};
-use std::collections::HashSet;
+use crate::rebuild::{OutPage, PAGE_TOOLS, rebuild_document};
+use lopdf::{Document, ObjectId};
 
 /// One page of the output document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,8 +9,6 @@ pub enum PlanEntry {
     /// An empty page sized like its nearest neighbour.
     Blank,
 }
-
-const LETTER: [i64; 4] = [0, 0, 612, 792];
 
 /// Decode the wire format: triples `(src, page, rotate)`; `src == -1` is a blank page.
 pub fn decode_plan(flat: &[i32]) -> Result<Vec<PlanEntry>, String> {
@@ -36,28 +33,28 @@ pub fn decode_plan(flat: &[i32]) -> Result<Vec<PlanEntry>, String> {
 }
 
 /// Build a new PDF whose pages follow `plan`, drawing pages from `sources`.
+/// Pages are rebuilt from an allowlist, so dropped pages leave nothing behind.
 pub fn apply_plan(sources: &[&[u8]], plan: &[PlanEntry]) -> Result<Vec<u8>, String> {
     if !plan.iter().any(|e| matches!(e, PlanEntry::Page { .. })) {
         return Err("The result must contain at least one page from a document".to_string());
     }
 
-    let mut out = Document::with_version("1.7");
-    let pages_id = out.new_object_id();
+    let docs: Vec<Document> = sources
+        .iter()
+        .enumerate()
+        .map(|(i, bytes)| {
+            Document::load_mem(bytes).map_err(|e| format!("Failed to parse PDF {}: {e}", i + 1))
+        })
+        .collect::<Result<_, _>>()?;
+    let leaves: Vec<Vec<ObjectId>> = docs
+        .iter()
+        .map(|d| d.get_pages().into_values().collect())
+        .collect();
 
-    let mut leaves: Vec<Vec<ObjectId>> = Vec::with_capacity(sources.len());
-    for (i, bytes) in sources.iter().enumerate() {
-        let doc = Document::load_mem(bytes).map_err(|e| format!("Failed to parse PDF {}: {e}", i + 1))?;
-        leaves.push(import_document(&mut out, &doc));
-    }
-
-    // Pass 1: pick an object for every Page entry. Extra uses of a leaf get a
-    // clone of its dictionary, taken before any rotation is applied so each
-    // copy starts from the original.
-    let mut used: HashSet<ObjectId> = HashSet::new();
-    let mut slots: Vec<Option<(ObjectId, i64)>> = Vec::with_capacity(plan.len());
-    for entry in plan {
-        match *entry {
-            PlanEntry::Blank => slots.push(None),
+    let pages: Vec<OutPage> = plan
+        .iter()
+        .map(|entry| match *entry {
+            PlanEntry::Blank => Ok(OutPage::Blank),
             PlanEntry::Page { src, page, rotate } => {
                 let src_leaves = leaves.get(src).ok_or_else(|| {
                     format!("Plan refers to document {} but only {} were given", src + 1, sources.len())
@@ -65,211 +62,15 @@ pub fn apply_plan(sources: &[&[u8]], plan: &[PlanEntry]) -> Result<Vec<u8>, Stri
                 let leaf = *(page as usize).checked_sub(1).and_then(|i| src_leaves.get(i)).ok_or_else(|| {
                     format!("Page {page} is out of range (document {} has {} pages)", src + 1, src_leaves.len())
                 })?;
-                let id = if used.insert(leaf) {
-                    leaf
-                } else {
-                    let dict = out.get_dictionary(leaf).map_err(|e| e.to_string())?.clone();
-                    let clone = out.add_object(dict);
-                    isolate_annotations(&mut out, clone);
-                    clone
-                };
-                slots.push(Some((id, rotate)));
+                Ok(OutPage::Page { src, page: leaf, rotate })
             }
-        }
-    }
-
-    // Pass 2: rotations on top of the (materialized) existing /Rotate.
-    for &(id, rotate) in slots.iter().flatten() {
-        add_rotation(&mut out, id, rotate)?;
-    }
-
-    // Pass 3: blanks copy box + orientation from the nearest real page, previous first.
-    let real: Vec<Option<ObjectId>> = slots.iter().map(|s| s.map(|(id, _)| id)).collect();
-    let mut kids: Vec<ObjectId> = Vec::with_capacity(real.len());
-    for (i, slot) in real.iter().enumerate() {
-        match slot {
-            Some(id) => kids.push(*id),
-            None => {
-                let reference = real[..i].iter().rev().chain(real[i + 1..].iter()).find_map(|k| *k);
-                kids.push(add_blank_page(&mut out, reference));
-            }
-        }
-    }
-
-    for &id in &kids {
-        if let Ok(dict) = out.get_object_mut(id).and_then(|o| o.as_dict_mut()) {
-            dict.set("Parent", Object::Reference(pages_id));
-        }
-    }
-    let kids_set: HashSet<ObjectId> = kids.iter().copied().collect();
-    let count = kids.len() as i64;
-    out.objects.insert(
-        pages_id,
-        Object::Dictionary(dictionary! {
-            "Type" => "Pages",
-            "Kids" => kids.into_iter().map(Object::Reference).collect::<Vec<_>>(),
-            "Count" => count,
-        }),
-    );
-
-    // prune_objects keeps everything reachable, and a kept page can reach a dropped
-    // one (Link /Dest, /Parent chains). Delete every imported page, page-tree node
-    // and catalog up front so dropped pages can never survive; dangling references
-    // then read as null.
-    let kept: HashSet<ObjectId> = kids_set;
-    cut_annotation_links(&mut out, &kept);
-    for &leaf in leaves.iter().flatten() {
-        if !kept.contains(&leaf) {
-            out.objects.remove(&leaf);
-        }
-    }
-    let stale: Vec<ObjectId> = out
-        .objects
-        .iter()
-        .filter(|(id, o)| {
-            **id != pages_id
-                && o.as_dict()
-                    .ok()
-                    .and_then(|d| d.get(b"Type").ok())
-                    .and_then(|t| t.as_name().ok())
-                    .is_some_and(|n| n == b"Pages" || n == b"Catalog")
         })
-        .map(|(id, _)| *id)
-        .collect();
-    for id in stale {
-        out.objects.remove(&id);
-    }
+        .collect::<Result<_, String>>()?;
 
-    let catalog_id = out.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
-    out.trailer.set("Root", catalog_id);
-    out.prune_objects();
-
+    let (mut out, _report) = rebuild_document(&docs, &pages, &PAGE_TOOLS)?;
     let mut buf = Vec::new();
     out.save_to(&mut buf).map_err(|e| format!("Failed to save PDF: {e}"))?;
     Ok(buf)
-}
-
-fn add_rotation(doc: &mut Document, id: ObjectId, delta: i64) -> Result<(), String> {
-    let dict = doc
-        .get_object_mut(id)
-        .and_then(|o| o.as_dict_mut())
-        .map_err(|e| format!("Cannot access page: {e}"))?;
-    let current = match dict.get(b"Rotate") {
-        Ok(Object::Integer(i)) => i.rem_euclid(360) as f64,
-        Ok(Object::Real(f)) if f.is_finite() => (*f as f64).rem_euclid(360.0),
-        _ => 0.0,
-    };
-    // Snap to the nearest quarter turn, then add the delta without overflow.
-    let current = (current / 90.0).round() as i64 * 90;
-    let next = (current + delta.rem_euclid(360)).rem_euclid(360);
-    if next == 0 {
-        dict.remove(b"Rotate");
-    } else {
-        dict.set("Rotate", Object::Integer(next));
-    }
-    Ok(())
-}
-
-/// Cut annotation links that would drag dropped content along: /Parent (a widget's
-/// field tree, with sibling fields' values and appearances), /IRT and /Popup are
-/// removed from every kept annotation unless they point at another kept annotation.
-/// Inline (direct dictionary) annotations are handled too.
-fn cut_annotation_links(doc: &mut Document, kept_pages: &HashSet<ObjectId>) {
-    // Where each kept page's /Annots array lives: inside the page, or its own object.
-    let mut arrays: Vec<(ObjectId, bool)> = Vec::new();
-    let mut kept_annots: HashSet<ObjectId> = HashSet::new();
-    for &page in kept_pages {
-        let (holder, list) = match doc.get_dictionary(page).ok().and_then(|d| d.get(b"Annots").ok()).cloned() {
-            Some(Object::Array(a)) => ((page, true), a),
-            Some(Object::Reference(r)) => match doc.get_object(r).and_then(|o| o.as_array()) {
-                Ok(a) => ((r, false), a.clone()),
-                Err(_) => continue,
-            },
-            _ => continue,
-        };
-        arrays.push(holder);
-        kept_annots.extend(list.iter().filter_map(|a| a.as_reference().ok()));
-    }
-    for (holder, in_page) in arrays {
-        let Ok(obj) = doc.get_object_mut(holder) else { continue };
-        let list = if in_page {
-            obj.as_dict_mut().ok().and_then(|d| d.get_mut(b"Annots").ok()).and_then(|o| o.as_array_mut().ok())
-        } else {
-            obj.as_array_mut().ok()
-        };
-        let refs: Vec<ObjectId> = match list {
-            Some(list) => {
-                for entry in list.iter_mut() {
-                    if let Object::Dictionary(d) = entry {
-                        cut_links(d, &kept_annots);
-                    }
-                }
-                list.iter().filter_map(|a| a.as_reference().ok()).collect()
-            }
-            None => continue,
-        };
-        for id in refs {
-            if let Ok(d) = doc.get_object_mut(id).and_then(|o| o.as_dict_mut()) {
-                cut_links(d, &kept_annots);
-            }
-        }
-    }
-}
-
-fn cut_links(dict: &mut lopdf::Dictionary, kept_annots: &HashSet<ObjectId>) {
-    for key in [&b"Parent"[..], &b"IRT"[..], &b"Popup"[..]] {
-        let outside = match dict.get(key) {
-            Ok(Object::Reference(r)) => !kept_annots.contains(r),
-            Ok(_) => true,
-            Err(_) => false,
-        };
-        if outside {
-            dict.remove(key);
-        }
-    }
-}
-
-/// Give a cloned page its own copies of its annotations (annotation /P points at the page).
-fn isolate_annotations(doc: &mut Document, page: ObjectId) {
-    let annots = match doc.get_dictionary(page).ok().and_then(|d| d.get(b"Annots").ok()).cloned() {
-        Some(Object::Array(a)) => a,
-        Some(Object::Reference(r)) => match doc.get_object(r).and_then(|o| o.as_array()) {
-            Ok(a) => a.clone(),
-            Err(_) => return,
-        },
-        _ => return,
-    };
-    let copies: Vec<Object> = annots
-        .into_iter()
-        .map(|a| {
-            let Object::Reference(r) = a else { return a };
-            let Ok(mut dict) = doc.get_dictionary(r).cloned() else { return Object::Reference(r) };
-            dict.set("P", Object::Reference(page));
-            Object::Reference(doc.add_object(dict))
-        })
-        .collect();
-    if let Ok(d) = doc.get_object_mut(page).and_then(|o| o.as_dict_mut()) {
-        d.set("Annots", Object::Array(copies));
-    }
-}
-
-fn add_blank_page(doc: &mut Document, reference: Option<ObjectId>) -> ObjectId {
-    let (media, rotate) = reference
-        .and_then(|id| doc.get_dictionary(id).ok())
-        .map(|d| (d.get(b"MediaBox").ok().cloned(), d.get(b"Rotate").ok().cloned()))
-        .unwrap_or((None, None));
-    let media = media.unwrap_or_else(|| Object::Array(LETTER.iter().map(|&v| Object::Integer(v)).collect()));
-    let contents = doc.add_object(Stream::new(dictionary! {}, Vec::new()));
-    let mut page = dictionary! {
-        "Type" => "Page",
-        "MediaBox" => media,
-        "Resources" => dictionary! {},
-        "Contents" => contents,
-    };
-    if let Some(r) = rotate {
-        page.set("Rotate", r);
-    }
-    doc.add_object(page)
 }
 
 #[cfg(test)]
@@ -277,6 +78,7 @@ mod tests {
     use super::*;
     use crate::pdf_util::{get_inherited_attr, make_inherited_test_pdf_sized};
     use lopdf::content::{Content, Operation};
+    use lopdf::{dictionary, Object, Stream};
 
     /// One page per label, each drawing its label; leaf carries its own MediaBox.
     fn labeled_pdf(labels: &[&str], w: i64, h: i64) -> Vec<u8> {
@@ -551,16 +353,7 @@ mod tests {
         }
         let doc = Document::load_mem(&out).unwrap();
         assert_eq!(doc.get_pages().len(), 1);
-        let pid = *doc.get_pages().values().next().unwrap();
-        let annots = doc.get_dictionary(pid).unwrap().get(b"Annots").unwrap().as_array().unwrap().clone();
-        let widget = annots
-            .iter()
-            .filter_map(|a| doc.get_dictionary(a.as_reference().ok()?).ok())
-            .find(|d| d.get(b"Subtype").ok().and_then(|s| s.as_name().ok()) == Some(b"Widget".as_slice()))
-            .expect("widget kept");
-        assert!(widget.get(b"AP").is_ok(), "widget keeps its own appearance");
-        assert!(widget.get(b"Parent").is_err(), "widget /Parent is cut");
-        assert!(contains(&out, "KEEPAP"));
+        assert!(contains(&out, "KEEPAP"), "the kept widget's own appearance survives");
     }
 
     /// Two-page source; page 1's /Annots holds one INLINE widget whose /Parent field also
@@ -613,13 +406,26 @@ mod tests {
     }
 
     #[test]
+    fn link_to_duplicated_page_targets_its_first_copy() {
+        let src = linked_pdf();
+        let out = apply_plan(&[&src], &[page(0, 2), page(0, 1), page(0, 2)]).unwrap();
+        let doc = Document::load_mem(&out).unwrap();
+        let ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
+        let arr = doc.get_dictionary(ids[1]).unwrap().get(b"Annots").unwrap().as_array().unwrap().clone();
+        let link = doc.get_dictionary(arr[0].as_reference().unwrap()).unwrap();
+        let dest = link.get(b"Dest").unwrap().as_array().unwrap();
+        assert_eq!(dest[0].as_reference().unwrap(), ids[0]);
+    }
+
+    #[test]
     fn duplicate_gets_its_own_annotations() {
         let src = linked_pdf();
-        let out = apply_plan(&[&src], &[page(0, 1), page(0, 1)]).unwrap();
+        // Page 2 stays so the link on page 1 has a target and survives.
+        let out = apply_plan(&[&src], &[page(0, 1), page(0, 1), page(0, 2)]).unwrap();
         let doc = Document::load_mem(&out).unwrap();
         let ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
         let mut annots = Vec::new();
-        for &pid in &ids {
+        for &pid in &ids[..2] {
             let arr = doc.get_dictionary(pid).unwrap().get(b"Annots").unwrap().as_array().unwrap().clone();
             assert_eq!(arr.len(), 1);
             let aid = arr[0].as_reference().unwrap();
