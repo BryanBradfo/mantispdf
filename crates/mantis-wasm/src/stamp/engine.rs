@@ -335,26 +335,30 @@ fn format_bates(b: &Bates, stamped_so_far: u64) -> Result<String, String> {
 }
 
 /// Replace `{n}`, `{total}` and (when Bates is on) `{bates}` in one pass, so
-/// a substituted value is never scanned for tokens again.
+/// a substituted value is never scanned for tokens again. `{{` and `}}` are
+/// literal braces (callers escape user values that way); any other brace,
+/// including an unknown token, is kept as is.
 fn resolve_tokens(template: &str, n: i64, total: i64, bates: Option<&str>) -> String {
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
-    while let Some(i) = rest.find('{') {
+    while let Some(i) = rest.find(['{', '}']) {
         out.push_str(&rest[..i]);
         rest = &rest[i..];
-        if let Some(r) = rest.strip_prefix("{n}") {
-            out.push_str(&n.to_string());
-            rest = r;
-        } else if let Some(r) = rest.strip_prefix("{total}") {
-            out.push_str(&total.to_string());
-            rest = r;
-        } else if let (Some(b), Some(r)) = (bates, rest.strip_prefix("{bates}")) {
-            out.push_str(b);
-            rest = r;
+        let (text, len) = if rest.starts_with("{{") {
+            ("{".to_string(), 2)
+        } else if rest.starts_with("}}") {
+            ("}".to_string(), 2)
+        } else if rest.starts_with("{n}") {
+            (n.to_string(), 3)
+        } else if rest.starts_with("{total}") {
+            (total.to_string(), 7)
+        } else if let (Some(b), true) = (bates, rest.starts_with("{bates}")) {
+            (b.to_string(), 7)
         } else {
-            out.push('{');
-            rest = &rest[1..];
-        }
+            (rest[..1].to_string(), 1)
+        };
+        out.push_str(&text);
+        rest = &rest[len..];
     }
     out.push_str(rest);
     out
@@ -724,6 +728,14 @@ mod tests {
         let out = apply_stamps(pdf, &job(pages, vec![text(template, Anchor::BottomCenter)])).unwrap();
         let doc = load(&out.bytes);
         page_ids(&doc).into_iter().map(|p| tj_strings(&doc, p)).collect()
+    }
+
+    #[test]
+    fn doubled_braces_are_literal() {
+        assert_eq!(resolve_tokens("{{n}} {n} }} {x} {{", 3, 9, None), "{n} 3 } {x} {");
+        assert_eq!(resolve_tokens("{{{n}}}", 3, 9, None), "{3}");
+        assert_eq!(resolve_tokens("a}b{", 3, 9, None), "a}b{");
+        assert_eq!(resolve_tokens("{{bates}}", 3, 9, Some("B1")), "{bates}");
     }
 
     #[test]
