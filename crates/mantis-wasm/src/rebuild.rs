@@ -648,16 +648,22 @@ fn predictor_row(params: Option<&Dictionary>) -> Option<usize> {
 
 /// FlateDecode or LZWDecode as lopdf does it (partial output on a corrupt
 /// stream, then the PNG predictor), stopping at `cap` bytes.
-fn inflate_step(filter: &[u8], input: &[u8], params: Option<&Dictionary>, cap: usize) -> Step {
+/// `corrupt` is set when the decoder fails before producing any byte.
+fn inflate_step(
+    filter: &[u8],
+    input: &[u8],
+    params: Option<&Dictionary>,
+    cap: usize,
+    corrupt: &mut bool,
+) -> Step {
     let mut sink = Capped {
         buf: Vec::new(),
         cap,
         over: false,
     };
-    if filter == b"FlateDecode" {
-        if !input.is_empty() {
-            let _ = std::io::copy(&mut flate2::read::ZlibDecoder::new(input), &mut sink);
-        }
+    let failed = if filter == b"FlateDecode" {
+        !input.is_empty()
+            && std::io::copy(&mut flate2::read::ZlibDecoder::new(input), &mut sink).is_err()
     } else {
         use weezl::{BitOrder, decode::Decoder};
         let early_change = params
@@ -669,11 +675,12 @@ fn inflate_step(filter: &[u8], input: &[u8], params: Option<&Dictionary>, cap: u
         } else {
             Decoder::new(BitOrder::Msb, 8)
         };
-        let _ = decoder.into_stream(&mut sink).decode_all(input);
-    }
+        decoder.into_stream(&mut sink).decode_all(input).status.is_err()
+    };
     if sink.over {
         return Step::TooLarge;
     }
+    *corrupt = failed && sink.buf.is_empty();
     match predictor_row(params) {
         None => Step::Done(sink.buf),
         // The predictor never grows the data, but allocates two rows first.
@@ -703,18 +710,50 @@ fn ascii85_step(input: &[u8], cap: usize) -> Step {
     lopdf_step(b"ASCII85Decode", input, None)
 }
 
+/// Outcome of `strict_content`.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Decoded {
+    Content(Vec<u8>),
+    /// More than the cap.
+    TooLarge,
+    /// A filter that cannot be undone, or a decoder failing before it
+    /// produced anything (an empty but valid stream is `Content`).
+    Failed,
+}
+
 /// Content of a stream after its filters as lopdf decodes it, or the raw
 /// bytes when lopdf cannot undo them (the scan then most likely fails and
 /// keeps all resources). None when that takes more than `cap` bytes: each
 /// step is bounded before it allocates. `charged` grows by the bytes decoded.
 pub(crate) fn bounded_content(stream: &lopdf::Stream, cap: usize, charged: &mut usize) -> Option<Vec<u8>> {
-    let raw = |charged: &mut usize| {
+    match decode_filters(stream, cap, charged, false) {
+        Decoded::Content(out) => Some(out),
+        Decoded::TooLarge => None,
+        Decoded::Failed => {
+            let len = stream.content.len();
+            *charged += len.min(cap);
+            (len <= cap).then(|| stream.content.clone())
+        }
+    }
+}
+
+/// Like `bounded_content`, but undecodable content is `Failed` instead of
+/// coming back raw (for callers that draw the content, not scan it).
+pub(crate) fn strict_content(stream: &lopdf::Stream, cap: usize, charged: &mut usize) -> Decoded {
+    decode_filters(stream, cap, charged, true)
+}
+
+/// The filter pipeline of `bounded_content` and `strict_content`. A stream
+/// without /Filter is its own content; `strict` turns a decoder failure
+/// that produced nothing into `Failed`.
+fn decode_filters(stream: &lopdf::Stream, cap: usize, charged: &mut usize, strict: bool) -> Decoded {
+    if stream.dict.get(b"Filter").is_err() {
         let len = stream.content.len();
         *charged += len.min(cap);
-        (len <= cap).then(|| stream.content.clone())
-    };
+        return if len <= cap { Decoded::Content(stream.content.clone()) } else { Decoded::TooLarge };
+    }
     let Ok(filters) = stream.filters() else {
-        return raw(charged);
+        return Decoded::Failed;
     };
     let params = stream
         .dict
@@ -723,24 +762,26 @@ pub(crate) fn bounded_content(stream: &lopdf::Stream, cap: usize, charged: &mut 
         .ok();
     let mut data = std::borrow::Cow::Borrowed(stream.content.as_slice());
     for filter in filters {
+        let mut corrupt = false;
         let step = match filter {
-            b"FlateDecode" | b"LZWDecode" => inflate_step(filter, &data, params, cap),
+            b"FlateDecode" | b"LZWDecode" => inflate_step(filter, &data, params, cap, &mut corrupt),
             b"ASCII85Decode" => ascii85_step(&data, cap),
             _ => Step::Failed,
         };
         match step {
+            Step::Done(_) if strict && corrupt => return Decoded::Failed,
             Step::Done(out) => {
                 *charged += out.len();
                 data = std::borrow::Cow::Owned(out);
             }
             Step::TooLarge => {
                 *charged += cap;
-                return None;
+                return Decoded::TooLarge;
             }
-            Step::Failed => return raw(charged),
+            Step::Failed => return Decoded::Failed,
         }
     }
-    Some(data.into_owned())
+    Decoded::Content(data.into_owned())
 }
 
 /// Streams that carry their own content and `/Resources`: Form XObjects and

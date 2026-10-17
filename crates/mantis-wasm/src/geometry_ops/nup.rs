@@ -11,7 +11,7 @@ use super::{invalid, invert, number, page_map};
 use crate::page_content::fmt_num;
 use crate::pdf_util::{get_inherited_attr, load_pdf, save_pdf};
 use crate::rebuild::{
-    MAX_STREAM_DECODED, SafeCopier, bounded_content, deref, scan_content, unbalanced_saves,
+    Decoded, MAX_STREAM_DECODED, SafeCopier, deref, save_balance, scan_content, strict_content,
 };
 use crate::stamp::geometry::VisibleBox;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
@@ -63,9 +63,6 @@ pub(crate) const PER_SHEET: [u8; 6] = [2, 4, 6, 8, 9, 16];
 
 /// Decoded content bytes all pages of one job may produce together.
 const MAX_JOB_DECODED: usize = 512 << 20;
-
-/// Filters `bounded_content` actually undoes (others come back raw).
-const DECODED_FILTERS: [&[u8]; 3] = [b"FlateDecode", b"LZWDecode", b"ASCII85Decode"];
 
 /// (columns, rows) for `per_sheet` (one of `PER_SHEET`) on a portrait or
 /// landscape sheet.
@@ -152,11 +149,6 @@ fn validate(job: &NupJob) -> Result<(), String> {
 
 pub(crate) fn nup_with_budget(pdf: &[u8], job: &NupJob, budget: usize) -> Result<NupResult, String> {
     validate(job)?;
-    if let Sheet::Size(size) = job.sheet
-        && !size.iter().all(|v| v.is_finite() && (MIN_SHEET..=MAX_SHEET).contains(v))
-    {
-        return Err(invalid("sheet"));
-    }
     let doc = load_pdf(pdf)?;
     let pages: Vec<ObjectId> = page_map(&doc).into_values().collect();
     if pages.is_empty() {
@@ -189,10 +181,6 @@ pub(crate) fn nup_with_budget(pdf: &[u8], job: &NupJob, budget: usize) -> Result
         for (i, &page) in chunk.iter().enumerate() {
             let number = (sheet_index * job.per_sheet as usize + i + 1) as u32;
             let [x, y, w, h] = cell_rects[i];
-            if job.border {
-                let rect = [x, y, w, h].map(fmt_num).join(" ");
-                content.extend(format!("q 0.5 w 0.6 G {rect} re S Q\n").into_bytes());
-            }
             let form = match forms.get(&page) {
                 Some(known) => *known,
                 None => {
@@ -205,6 +193,10 @@ pub(crate) fn nup_with_budget(pdf: &[u8], job: &NupJob, budget: usize) -> Result
                 undecodable.push(number);
                 continue;
             };
+            if job.border {
+                let rect = [x, y, w, h].map(fmt_num).join(" ");
+                content.extend(format!("q 0.5 w 0.6 G {rect} re S Q\n").into_bytes());
+            }
             let (vw, vh) = (vb.width(), vb.height());
             let s = (w / vw).min(h / vh);
             let (dx, dy) = (x + (w - s * vw) / 2.0, y + (h - s * vh) / 2.0);
@@ -243,7 +235,9 @@ pub(crate) fn nup_with_budget(pdf: &[u8], job: &NupJob, budget: usize) -> Result
     Ok(NupResult { bytes, sheets, undecodable_pages: undecodable })
 }
 
-/// Page `page` as a Form XObject in `out`: its decoded content, closed `q`s,
+/// Page `page` as a Form XObject in `out`: its decoded content balanced
+/// (a `q` before it for each stray `Q`, which would otherwise pop the state
+/// `Do` saved and draw outside the cell; a `Q` after it for each open `q`),
 /// resources trimmed to what that content draws, `/Matrix` taking user
 /// space to the upright visible box at the origin. None when the content
 /// cannot be decoded within the limits.
@@ -254,8 +248,10 @@ fn page_form(
     page: ObjectId,
     budget: &mut usize,
 ) -> Option<(ObjectId, VisibleBox)> {
-    let mut content = decode_page(doc, page, budget)?;
-    let open = unbalanced_saves(&content).unwrap_or(0);
+    let decoded = decode_page(doc, page, budget)?;
+    let (open, excess) = save_balance(&decoded).unwrap_or((0, 0));
+    let mut content = "q ".repeat(excess).into_bytes();
+    content.extend(decoded);
     content.extend("Q\n".repeat(open).into_bytes());
 
     let vb = VisibleBox::of_page(doc, page);
@@ -279,29 +275,21 @@ fn page_form(
     Some((out.add_object(stream), vb))
 }
 
-/// The page's content streams decoded and joined with newlines. None when a
-/// stream exceeds `MAX_STREAM_DECODED` or what is left of `budget`, uses a
-/// filter that cannot be undone, or yields nothing from compressed bytes.
+/// The page's content streams decoded and joined with newlines (so an
+/// operator split across streams stays valid). None when a stream exceeds
+/// `MAX_STREAM_DECODED` or what is left of `budget`, or cannot be decoded.
 fn decode_page(doc: &Document, page: ObjectId, budget: &mut usize) -> Option<Vec<u8>> {
     let mut joined = Vec::new();
     for id in doc.get_page_contents(page) {
         let Ok(stream) = doc.get_object(id).and_then(Object::as_stream) else {
             continue;
         };
-        let filters = match stream.dict.get(b"Filter") {
-            Err(_) => vec![],
-            Ok(_) => stream.filters().ok()?,
-        };
-        if !filters.iter().all(|f| DECODED_FILTERS.contains(f)) {
-            return None;
-        }
         let mut charged = 0;
-        let decoded = bounded_content(stream, MAX_STREAM_DECODED.min(*budget), &mut charged);
+        let decoded = strict_content(stream, MAX_STREAM_DECODED.min(*budget), &mut charged);
         *budget = budget.saturating_sub(charged);
-        let decoded = decoded?;
-        if !filters.is_empty() && !stream.content.is_empty() && decoded.is_empty() {
+        let Decoded::Content(decoded) = decoded else {
             return None;
-        }
+        };
         joined.extend(decoded);
         joined.push(b'\n');
     }
@@ -740,6 +728,94 @@ mod tests {
         let big_q = ops.iter().filter(|o| o.operator == "Q").count();
         assert_eq!((q, big_q), (2, 2));
         assert_eq!(form(&doc, 0, "Pg1").dict.get(b"Filter").unwrap().as_name().unwrap(), b"FlateDecode");
+    }
+
+    /// Depth of `q` nesting after each operation; never below zero when
+    /// the content is balanced from its start.
+    fn depths(content: &[u8]) -> Vec<i64> {
+        let mut depth = 0;
+        Content::decode(content)
+            .unwrap()
+            .operations
+            .iter()
+            .map(|o| {
+                match o.operator.as_str() {
+                    "q" => depth += 1,
+                    "Q" => depth -= 1,
+                    _ => {}
+                }
+                depth
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stray_q_cannot_escape_the_form() {
+        let mut f = Fixture::new();
+        f.page(dictionary! { "MediaBox" => nums(&LETTER) }, "Q Q 0 0 m q 1 0 0 1 5 5 cm");
+        let pdf = f.finish(Dictionary::new());
+        let (doc, _) = run(&pdf, &job(4));
+        let content = form(&doc, 0, "Pg1").decompressed_content().unwrap();
+        let d = depths(&content);
+        assert!(d.iter().all(|&x| x >= 0), "{d:?} in {:?}", String::from_utf8_lossy(&content));
+        assert_eq!(*d.last().unwrap(), 0);
+    }
+
+    fn zlib(data: &[u8]) -> Vec<u8> {
+        let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        e.write_all(data).unwrap();
+        e.finish().unwrap()
+    }
+
+    #[test]
+    fn empty_compressed_content_is_a_blank_cell() {
+        let mut f = Fixture::new();
+        let empty = f.doc.add_object(Stream::new(dictionary! { "Filter" => "FlateDecode" }, zlib(b"")));
+        f.page(dictionary! { "MediaBox" => nums(&LETTER), "Contents" => empty }, "");
+        f.page(dictionary! { "MediaBox" => nums(&LETTER) }, "0 0 m");
+        let pdf = f.finish(Dictionary::new());
+        let (doc, result) = run(&pdf, &job(4));
+        assert!(result.undecodable_pages.is_empty());
+        let names: Vec<String> = placements(&doc, 0).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(names, ["Pg1", "Pg2"]);
+    }
+
+    #[test]
+    fn operators_split_across_content_streams_stay_valid() {
+        let mut f = Fixture::new();
+        let a = f.doc.add_object(Stream::new(Dictionary::new(), b"0 0 m".to_vec()));
+        let b = f.doc.add_object(Stream::new(dictionary! { "Filter" => "FlateDecode" }, zlib(b"100 100 l S")));
+        f.page(dictionary! { "MediaBox" => nums(&LETTER), "Contents" => vec![a.into(), b.into()] }, "");
+        let pdf = f.finish(Dictionary::new());
+        let (doc, result) = run(&pdf, &job(4));
+        assert!(result.undecodable_pages.is_empty());
+        let content = form(&doc, 0, "Pg1").decompressed_content().unwrap();
+        let ops: Vec<(String, Vec<f64>)> = Content::decode(&content)
+            .unwrap()
+            .operations
+            .into_iter()
+            .map(|o| (o.operator, floats(&o.operands)))
+            .collect();
+        assert_eq!(
+            ops,
+            [("m".to_string(), vec![0.0, 0.0]), ("l".to_string(), vec![100.0, 100.0]), ("S".to_string(), vec![])]
+        );
+    }
+
+    #[test]
+    fn undecodable_cell_has_no_border() {
+        let mut f = Fixture::new();
+        let bogus = f.doc.add_object(Stream::new(dictionary! { "Filter" => "FlateDecode" }, b"not zlib".to_vec()));
+        f.page(dictionary! { "MediaBox" => nums(&LETTER), "Contents" => bogus }, "");
+        f.page(dictionary! { "MediaBox" => nums(&LETTER) }, "0 0 m");
+        let pdf = f.finish(Dictionary::new());
+        let (doc, result) = run(&pdf, &NupJob { border: true, ..job(4) });
+        assert_eq!(result.undecodable_pages, vec![1]);
+        let rects: Vec<Vec<f64>> =
+            sheet_ops(&doc, 0).into_iter().filter(|(o, _)| o == "re").map(|(_, a)| floats(&a)).collect();
+        let cell = cells(4, (A4[0], A4[1]), Order::Rows, 0.0, 0.0);
+        assert_eq!(rects.len(), 1);
+        assert!(close_all(&rects[0], &cell[1]));
     }
 
     /// lopdf's extract_text does not follow `Do`, so each form is checked
