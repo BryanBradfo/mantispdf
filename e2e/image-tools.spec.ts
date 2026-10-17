@@ -119,15 +119,6 @@ async function openRenderer(page: Page) {
   await page.route("**/__pdfjs/pdf.mjs", async (route) =>
     route.fulfill({ contentType: "text/javascript", body: await readFile(PDFJS) }),
   );
-  // The browser's ImageDecoder applies a JPEG's EXIF orientation on top of the PDF's own transform;
-  // Acrobat, poppler and friends ignore EXIF inside PDFs. Hide ImageDecoder so pdf.js uses its
-  // plain JS JPEG decoder and the pixels mean what the PDF says.
-  await page.route("**/pdf.worker.min.mjs", async (route) =>
-    route.fulfill({
-      contentType: "text/javascript",
-      body: "globalThis.ImageDecoder = undefined;\n" + (await readFile(PDFJS.replace("pdf.mjs", "pdf.worker.min.mjs"), "utf8")),
-    }),
-  );
   await page.goto("/robots.txt"); // any document in the origin can import() the stub
 }
 

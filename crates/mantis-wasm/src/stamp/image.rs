@@ -138,6 +138,48 @@ pub(crate) fn jpeg_info(bytes: &[u8]) -> Result<JpegInfo, String> {
     }
 }
 
+/// Copy of a JPEG without its metadata segments: APP1 (Exif, XMP), APP13
+/// (Photoshop/IPTC) and COM. Viewers disagree on whether an Exif orientation
+/// inside a PDF image applies, and GPS or camera data should not leak into the
+/// PDF. APP0, APP2 (ICC), APP14 (Adobe), the tables, the frame header and the
+/// entropy-coded data are kept byte for byte. A walk that goes wrong keeps the
+/// rest of the input untouched.
+pub(crate) fn strip_jpeg_metadata(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    out.extend_from_slice(&bytes[..2.min(bytes.len())]);
+    let mut i = 2;
+    while i + 1 < bytes.len() {
+        if bytes[i] != 0xFF {
+            break;
+        }
+        let marker = bytes[i + 1];
+        if marker == 0xFF {
+            // Fill byte before a marker.
+            out.push(0xFF);
+            i += 1;
+            continue;
+        }
+        if marker == 0x01 || (0xD0..=0xD8).contains(&marker) {
+            out.extend_from_slice(&bytes[i..i + 2]);
+            i += 2;
+            continue;
+        }
+        if marker == 0xD9 || marker == 0xDA || i + 3 >= bytes.len() {
+            break; // end, first scan, or truncated: keep the rest as is
+        }
+        let len = usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+        if len < 2 || i + 2 + len > bytes.len() {
+            break;
+        }
+        if !matches!(marker, 0xE1 | 0xED | 0xFE) {
+            out.extend_from_slice(&bytes[i..i + 2 + len]);
+        }
+        i += 2 + len;
+    }
+    out.extend_from_slice(&bytes[i.min(bytes.len())..]);
+    out
+}
+
 fn build_jpeg(bytes: &[u8]) -> Result<BuiltImage, String> {
     let info = jpeg_info(bytes)?;
     let color_space = match info.components {
@@ -145,7 +187,7 @@ fn build_jpeg(bytes: &[u8]) -> Result<BuiltImage, String> {
         3 => "DeviceRGB",
         _ => "DeviceCMYK",
     };
-    let mut image = image_stream(info.width, info.height, color_space, "DCTDecode", bytes.to_vec());
+    let mut image = image_stream(info.width, info.height, color_space, "DCTDecode", strip_jpeg_metadata(bytes));
     // Adobe (Photoshop) CMYK JPEGs store inverted samples, flagged by APP14.
     if info.components == 4 && info.adobe {
         let decode: Vec<Object> = [1, 0, 1, 0, 1, 0, 1, 0].into_iter().map(Object::Integer).collect();
@@ -208,6 +250,44 @@ mod tests {
         assert_eq!(built.image.dict.get(b"Decode").unwrap().as_array().unwrap().len(), 8);
         let plain = build_jpeg(&header(4, false)).unwrap();
         assert!(!plain.image.dict.has(b"Decode"));
+    }
+
+    #[test]
+    fn strips_exif_xmp_iptc_and_comments_but_keeps_the_rest() {
+        let seg = |m: u8, body: &[u8]| {
+            let mut v = vec![0xFF, m, 0, (body.len() + 2) as u8];
+            v.extend_from_slice(body);
+            v
+        };
+        let scan = [0xFF, 0xDA, 0, 4, 0xAA, 0xBB, 0x12, 0xFF, 0x00, 0xE1, 0xFF, 0xD9];
+        let mut input = vec![0xFF, 0xD8];
+        input.extend(seg(0xE0, b"JFIF\0"));
+        input.extend(seg(0xE1, b"Exif\0\0orientation-6"));
+        input.extend(seg(0xE1, b"http://ns.adobe.com/xap/1.0/\0xmp"));
+        input.extend(seg(0xE2, b"ICC_PROFILE\0icc"));
+        input.extend(seg(0xED, b"Photoshop 3.0"));
+        input.extend(seg(0xFE, b"comment"));
+        input.extend(seg(0xEE, b"Adobe\0\x64\0\0\0\0\0"));
+        input.extend(seg(0xC0, &[8, 0, 2, 0, 3, 1, 1, 0x11, 0]));
+        input.extend_from_slice(&scan);
+        let out = strip_jpeg_metadata(&input);
+        let has = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
+        assert!(!has(&out, b"Exif") && !has(&out, b"xmp") && !has(&out, b"Photoshop") && !has(&out, b"comment"));
+        for kept in [&b"JFIF"[..], b"ICC_PROFILE", b"Adobe"] {
+            assert!(has(&out, kept));
+        }
+        assert!(out.ends_with(&scan), "scan data must be byte-identical");
+        let mut expected = vec![0xFF, 0xD8];
+        expected.extend(seg(0xE0, b"JFIF\0"));
+        expected.extend(seg(0xE2, b"ICC_PROFILE\0icc"));
+        expected.extend(seg(0xEE, b"Adobe\0\x64\0\0\0\0\0"));
+        expected.extend(seg(0xC0, &[8, 0, 2, 0, 3, 1, 1, 0x11, 0]));
+        expected.extend_from_slice(&scan);
+        assert_eq!(out, expected);
+        // Already clean input is returned unchanged.
+        assert_eq!(strip_jpeg_metadata(&expected), expected);
+        let built = build_jpeg(&input).unwrap();
+        assert_eq!(built.image.content, expected);
     }
 
     #[test]
