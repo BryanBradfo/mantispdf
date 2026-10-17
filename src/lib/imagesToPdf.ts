@@ -35,3 +35,29 @@ export function imagesPdfName(names: string[]): string {
   const base = names[0].replace(/\.[^./\\]+$/, "");
   return `${base || "images"}.pdf`;
 }
+
+export const MAX_IMAGE_PIXELS = 100_000_000;
+export const MAX_TOTAL_PIXELS = 400_000_000;
+
+/** Error text if adding an image of this size breaks the pixel limits, else null. */
+export function pixelBudgetProblem(name: string, width: number, height: number, usedSoFar: number): string | null {
+  const px = width * height;
+  if (px > MAX_IMAGE_PIXELS) return `${name} is too large (${width} x ${height}); the limit is 100 megapixels per image.`;
+  if (usedSoFar + px > MAX_TOTAL_PIXELS) return `Adding ${name} exceeds the 400 megapixel total limit. Remove some images or use fewer large ones.`;
+  return null;
+}
+
+const MAGIC: [string, number[]][] = [
+  ["image/jpeg", [0xff, 0xd8, 0xff]],
+  ["image/png", [0x89, 0x50, 0x4e, 0x47]],
+  ["image/gif", [0x47, 0x49, 0x46, 0x38]],
+  ["image/bmp", [0x42, 0x4d]],
+];
+
+/** Sniffs an image type from leading bytes (for files with an empty MIME type); null if unknown. */
+export function sniffImageType(head: Uint8Array): string | null {
+  for (const [type, sig] of MAGIC) if (sig.every((b, i) => head[i] === b)) return type;
+  const ascii = (a: number, n: number) => String.fromCharCode(...head.slice(a, a + n));
+  if (ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") return "image/webp";
+  return null;
+}

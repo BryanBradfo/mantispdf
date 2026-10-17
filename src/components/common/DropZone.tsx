@@ -5,9 +5,14 @@ interface DropZoneProps {
   onFiles?: (files: File[]) => void;
   multiple?: boolean;
   error: string | null;
+  /** File input accept filter; defaults to PDFs. */
+  accept?: string;
+  /** Prompt noun (default "PDF") and hint line (default "PDF files"). */
+  noun?: string;
+  hint?: string;
 }
 
-export default function DropZone({ onFile, onFiles, multiple, error }: DropZoneProps) {
+export default function DropZone({ onFile, onFiles, multiple, error, accept = ".pdf,application/pdf", noun = "PDF", hint = "PDF files" }: DropZoneProps) {
   const [dragging, setDragging] = useState(false);
 
   const handleDrop = useCallback(
@@ -69,12 +74,12 @@ export default function DropZone({ onFile, onFiles, multiple, error }: DropZoneP
           />
         </svg>
         <p className="text-lg font-medium text-gray-700 dark:text-[#aaa]">
-          Drop your PDF{multiple ? "s" : ""} here or <span className="text-mantis-600 underline">browse</span>
+          Drop your {noun}{multiple ? "s" : ""} here or <span className="text-mantis-600 underline">browse</span>
         </p>
-        <p className="mt-1 text-sm text-gray-500 dark:text-[#555]">PDF files</p>
+        <p className="mt-1 text-sm text-gray-500 dark:text-[#555]">{hint}</p>
         <input
           type="file"
-          accept=".pdf,application/pdf"
+          accept={accept}
           multiple={multiple}
           onChange={handleChange}
           className="hidden"

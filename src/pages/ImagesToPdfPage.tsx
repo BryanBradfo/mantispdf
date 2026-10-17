@@ -16,6 +16,8 @@ import {
   imagesPdfName,
   imagesProblem,
   layoutSummary,
+  pixelBudgetProblem,
+  sniffImageType,
   turn,
   type Quarter,
 } from "../lib/imagesToPdf";
@@ -61,6 +63,7 @@ const ImageCard = memo(function ImageCard({
   onRotate,
   onMove,
   onRemove,
+  locked,
 }: {
   item: ImageItem;
   index: number;
@@ -68,6 +71,7 @@ const ImageCard = memo(function ImageCard({
   onRotate: (id: string, dir: -1 | 1) => void;
   onMove: (from: number, to: number) => void;
   onRemove: (id: string) => void;
+  locked: boolean;
 }) {
   const url = useObjectUrl(item.file);
   return (
@@ -88,6 +92,7 @@ const ImageCard = memo(function ImageCard({
         <button
           data-no-dnd
           type="button"
+          disabled={locked}
           onClick={() => onRemove(item.id)}
           className="absolute top-2 right-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-gray-400 shadow-sm hover:bg-red-50 hover:text-red-500 dark:bg-[#1a1a1a]/80 dark:text-[#666] dark:hover:text-red-400"
           title="Remove image"
@@ -102,16 +107,16 @@ const ImageCard = memo(function ImageCard({
         </p>
       </div>
       <div className="flex border-t border-gray-100 dark:border-[#222]">
-        <button data-no-dnd type="button" className={iconBtn} onClick={() => onMove(index, index - 1)} disabled={index === 0} aria-label={`Move ${item.file.name} earlier`} title="Move earlier">
+        <button data-no-dnd type="button" className={iconBtn} onClick={() => onMove(index, index - 1)} disabled={locked || index === 0} aria-label={`Move ${item.file.name} earlier`} title="Move earlier">
           ←
         </button>
-        <button data-no-dnd type="button" className={iconBtn} onClick={() => onRotate(item.id, -1)} aria-label={`Rotate ${item.file.name} left`} title="Rotate left">
+        <button data-no-dnd type="button" className={iconBtn} disabled={locked} onClick={() => onRotate(item.id, -1)} aria-label={`Rotate ${item.file.name} left`} title="Rotate left">
           ↺
         </button>
-        <button data-no-dnd type="button" className={iconBtn} onClick={() => onRotate(item.id, 1)} aria-label={`Rotate ${item.file.name} right`} title="Rotate right">
+        <button data-no-dnd type="button" className={iconBtn} disabled={locked} onClick={() => onRotate(item.id, 1)} aria-label={`Rotate ${item.file.name} right`} title="Rotate right">
           ↻
         </button>
-        <button data-no-dnd type="button" className={iconBtn} onClick={() => onMove(index, index + 1)} disabled={index === total - 1} aria-label={`Move ${item.file.name} later`} title="Move later">
+        <button data-no-dnd type="button" className={iconBtn} onClick={() => onMove(index, index + 1)} disabled={locked || index === total - 1} aria-label={`Move ${item.file.name} later`} title="Move later">
           →
         </button>
       </div>
@@ -124,25 +129,28 @@ export default function ImagesToPdfPage() {
   const [items, setItems] = useState<ImageItem[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [paper, setPaper] = useState<PaperChoice>("A4");
+  const [paper, setPaper] = useState<Exclude<PaperChoice, "same">>("A4");
   const [fit, setFit] = useState(false);
   const [customMm, setCustomMm] = useState<[number, number]>([210, 297]);
   const [orientation, setOrientation] = useState<Orientation>("auto");
   const [marginMm, setMarginMm] = useState(10);
   const [busy, setBusy] = useState(false);
   const [prep, setPrep] = useState<{ progress: number; message: string }>({ progress: 0, message: "" });
-  const countRef = useRef(0);
-  countRef.current = items.length;
+  const genRef = useRef(0);
 
   const queue = useMemo(
     () =>
-      createUploadQueue<{ added: ImageItem[]; skipped: number; over: boolean }>({
-        onResult: ({ added, skipped, over }) => {
-          setItems((prev) => [...prev, ...added]);
-          const notes: string[] = [];
-          if (skipped > 0) notes.push(`${skipped} file${skipped === 1 ? " is" : "s are"} not an image and ${skipped === 1 ? "was" : "were"} skipped.`);
-          if (over) notes.push(`Only the first ${MAX_IMAGES} images were kept.`);
-          setUploadError(notes.length > 0 ? notes.join(" ") : null);
+      createUploadQueue<{ images: ImageItem[]; skipped: number }>({
+        onResult: ({ images, skipped }) => {
+          const skippedNote =
+            skipped > 0 ? `${skipped} file${skipped === 1 ? " is" : "s are"} not an image and ${skipped === 1 ? "was" : "were"} skipped.` : "";
+          // The room is computed from the latest list; the note is derived from the same pure result.
+          setItems((prev) => {
+            const room = Math.max(0, MAX_IMAGES - prev.length);
+            const over = images.length > room ? `Only the first ${MAX_IMAGES} images were kept.` : "";
+            setUploadError([skippedNote, over].filter(Boolean).join(" ") || null);
+            return [...prev, ...images.slice(0, room)];
+          });
         },
         onError: (err) => setUploadError(errorMessage(err)),
         onPending: () => undefined,
@@ -154,15 +162,17 @@ export default function ImagesToPdfPage() {
   const handleFiles = useCallback(
     (files: File[]) => {
       queue.enqueue(async () => {
-        const images = files.filter((f) => f.type.startsWith("image/"));
-        const room = Math.max(0, MAX_IMAGES - countRef.current);
-        const kept = images.slice(0, room);
-        countRef.current += kept.length;
-        return {
-          added: kept.map((file) => ({ id: String(++nextId), file, rotate: 0 as Quarter })),
-          skipped: files.length - images.length,
-          over: images.length > room,
-        };
+        const images: ImageItem[] = [];
+        let skipped = 0;
+        for (const file of files) {
+          let ok = file.type.startsWith("image/");
+          if (!ok && file.type === "") {
+            ok = sniffImageType(new Uint8Array(await file.slice(0, 12).arrayBuffer())) !== null;
+          }
+          if (ok) images.push({ id: String(++nextId), file, rotate: 0 as Quarter });
+          else skipped++;
+        }
+        return { images, skipped };
       });
     },
     [queue],
@@ -184,45 +194,61 @@ export default function ImagesToPdfPage() {
   const onRemove = useCallback((id: string) => setItems((prev) => prev.filter((it) => it.id !== id)), []);
 
   const clear = () => {
+    if (busy) return;
+    genRef.current++;
     queue.cancel();
     setItems([]);
     setError(null);
     setUploadError(null);
   };
 
-  const pagePt = fit ? "fit" : paperToPt(paper === "same" ? "A4" : paper, customMm);
+  const pagePt = fit ? "fit" : paperToPt(paper, customMm);
   const problem = imagesProblem(items.length, marginMm) ?? (pagePt === null ? "Enter a custom size between 13 and 5080 mm." : null);
   const paperLabel = fit ? "fit to image" : paper === CUSTOM_PAPER ? mmSizeLabel(customMm) : paper;
-  const summary = layoutSummary(items.length, paperLabel, orientation, marginMm);
+  const summary = layoutSummary(items.length, paperLabel, fit ? "auto" : orientation, marginMm);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy || problem || pagePt === null || items.length === 0) return;
     setError(null);
     setBusy(true);
+    const gen = ++genRef.current;
     try {
       const specs: ImageInputSpec[] = [];
+      let usedPixels = 0;
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
         setPrep({ progress: (i / items.length) * 0.8, message: `Reading image ${i + 1} of ${items.length}…` });
         const bytes = new Uint8Array(await it.file.arrayBuffer());
-        const exif = isJpeg(bytes) ? orientationToTransform(readExifOrientation(bytes)) : { rotate: 0 as const, flipX: false };
+        const jpeg = isJpeg(bytes);
+        const exif = jpeg ? orientationToTransform(readExifOrientation(bytes)) : { rotate: 0 as const, flipX: false };
         const t = composeTransform(exif, it.rotate);
-        if (isJpeg(bytes)) {
+        if (jpeg) {
           specs.push({ kind: "jpeg", bytes, rotate: t.rotate, flipX: t.flipX });
         } else {
-          const { width, height, pixels } = await decodeToRgba(it.file);
+          let decoded: Awaited<ReturnType<typeof decodeToRgba>>;
+          try {
+            decoded = await decodeToRgba(it.file);
+          } catch (err) {
+            throw new Error(`Could not read ${it.file.name}: ${errorMessage(err)}`);
+          }
+          const { width, height, pixels } = decoded;
+          const tooBig = pixelBudgetProblem(it.file.name, width, height, usedPixels);
+          if (tooBig) throw new Error(tooBig);
+          usedPixels += width * height;
           specs.push({ kind: "rgba", width, height, pixels, rotate: t.rotate, flipX: t.flipX });
         }
+        if (gen !== genRef.current) return;
       }
       setPrep({ progress: 0.9, message: "Building PDF…" });
-      const layout: ImageLayoutSpec = { page: pagePt, orientation, margin: mmToPt(marginMm) };
+      const layout: ImageLayoutSpec = { page: pagePt, orientation: fit ? "auto" : orientation, margin: mmToPt(marginMm) };
       const out = await worker.imagesToPdf(specs, layout);
+      if (gen !== genRef.current) return;
       downloadBlob(out, imagesPdfName(items.map((it) => it.file.name)));
     } catch (err) {
-      setError(errorMessage(err));
+      if (gen === genRef.current) setError(errorMessage(err));
     } finally {
-      setBusy(false);
+      if (gen === genRef.current) setBusy(false);
     }
   };
 
@@ -237,7 +263,7 @@ export default function ImagesToPdfPage() {
       <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       <div className="mt-8">
-        <DropZone multiple onFiles={handleFiles} error={uploadError} />
+        <DropZone multiple onFiles={handleFiles} error={uploadError} accept="image/*" noun="image" hint="JPG, PNG, WebP, GIF, BMP" />
       </div>
 
       {items.length > 0 && (
@@ -248,17 +274,17 @@ export default function ImagesToPdfPage() {
           <div className="mt-4">
             <SortableGrid
               items={items}
-              onReorder={onMove}
+              onReorder={(f, t) => { if (!busy) onMove(f, t); }}
               label={(it) => it.file.name}
               className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3"
               renderItem={(it, index) => (
-                <ImageCard item={it} index={index} total={items.length} onRotate={onRotate} onMove={onMove} onRemove={onRemove} />
+                <ImageCard item={it} index={index} total={items.length} onRotate={onRotate} onMove={onMove} onRemove={onRemove} locked={busy} />
               )}
             />
           </div>
 
           <div className="mt-6 space-y-4">
-            <PaperSizeFields paper={paper} onPaper={setPaper} customMm={customMm} onCustomMm={setCustomMm} fit={fit} onFit={setFit} />
+            <PaperSizeFields paper={paper} onPaper={(p) => { if (p !== "same") setPaper(p); }} customMm={customMm} onCustomMm={setCustomMm} fit={fit} onFit={setFit} />
             {!fit && (
               <label className="block text-sm text-gray-700 dark:text-[#aaa]">
                 Orientation
@@ -283,7 +309,7 @@ export default function ImagesToPdfPage() {
             <button type="submit" disabled={busy || problem !== null || !worker.ready} className={`flex-1 ${primaryButton}`}>
               {busy ? "Building…" : "Create PDF"}
             </button>
-            <button type="button" onClick={clear} className={secondaryButton}>Clear all</button>
+            <button type="button" disabled={busy} onClick={clear} className={secondaryButton}>Clear all</button>
           </div>
         </form>
       )}

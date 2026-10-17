@@ -308,7 +308,14 @@ export function usePdfWorker() {
 
   const imagesToPdf = useCallback(
     (images: ImageInputSpec[], layout: ImageLayoutSpec): Promise<Uint8Array> =>
-      run(null, (id) => ({ type: "images-to-pdf", id, images, layout }), asBytes),
+      run(null, (id) => ({ type: "images-to-pdf", id, images, layout }), asBytes, {
+        // Hand the buffers over instead of cloning them: callers build them per job.
+        transfer: [
+          ...new Set(
+            images.map((im) => (im.kind === "jpeg" ? im.bytes.buffer : im.pixels.buffer)).filter((b): b is ArrayBuffer => b instanceof ArrayBuffer),
+          ),
+        ],
+      }),
     [run],
   );
 
