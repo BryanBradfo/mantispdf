@@ -148,6 +148,20 @@ const tools = [
     icon: "🔳",
     available: true,
   },
+  {
+    title: "Images to PDF",
+    description: "Turn JPG, PNG or WebP images into a PDF, one per page.",
+    href: "/images-to-pdf",
+    icon: "📷",
+    available: true,
+  },
+  {
+    title: "Extract Images",
+    description: "Save the images embedded in a PDF as JPEG or PNG files.",
+    href: "/extract-images",
+    icon: "🧲",
+    available: true,
+  },
 ];
 
 export default function ToolGrid() {

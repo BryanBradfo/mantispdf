@@ -27,6 +27,8 @@ const SignPdfPage = lazy(() => import("./pages/SignPdfPage"));
 const CropPdfPage = lazy(() => import("./pages/CropPdfPage"));
 const ResizePdfPage = lazy(() => import("./pages/ResizePdfPage"));
 const NupPdfPage = lazy(() => import("./pages/NupPdfPage"));
+const ImagesToPdfPage = lazy(() => import("./pages/ImagesToPdfPage"));
+const ExtractImagesPage = lazy(() => import("./pages/ExtractImagesPage"));
 
 function PageSpinner() {
   return (
@@ -86,6 +88,9 @@ export default function App() {
               <Route path="/crop" element={<CropPdfPage />} />
               <Route path="/resize" element={<ResizePdfPage />} />
               <Route path="/n-up" element={<NupPdfPage />} />
+              <Route path="/images-to-pdf" element={<ImagesToPdfPage />} />
+              <Route path="/jpg-to-pdf" element={<Navigate to="/images-to-pdf" replace />} />
+              <Route path="/extract-images" element={<ExtractImagesPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
