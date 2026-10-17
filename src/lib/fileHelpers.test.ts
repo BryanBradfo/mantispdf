@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validatePdfFile, readFileAsArrayBuffer, readFileAsUint8Array } from "./fileHelpers";
+import { errorMessage, validatePdfFile, readFileAsArrayBuffer, readFileAsUint8Array } from "./fileHelpers";
 
 describe("validatePdfFile", () => {
   it("accepts a PDF file", () => {
@@ -40,5 +40,15 @@ describe("readFileAsArrayBuffer / readFileAsUint8Array", () => {
     } finally {
       FileReader.prototype.readAsArrayBuffer = originalReadAsArrayBuffer;
     }
+  });
+});
+
+describe("errorMessage", () => {
+  it("uses an Error's message without the 'Error: ' prefix", () => {
+    expect(errorMessage(new Error("Page 9 does not exist"))).toBe("Page 9 does not exist");
+  });
+  it("stringifies anything else", () => {
+    expect(errorMessage("boom")).toBe("boom");
+    expect(errorMessage(42)).toBe("42");
   });
 });

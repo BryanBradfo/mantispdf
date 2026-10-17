@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { readFileAsUint8Array, validatePdfFile } from "../lib/fileHelpers";
+import { errorMessage, readFileAsUint8Array, validatePdfFile } from "../lib/fileHelpers";
 import { createLatest } from "../lib/latest";
 
 interface EngineState { ready: boolean; initError: string | null }
@@ -42,7 +42,7 @@ export function usePdfInput<T = undefined>(worker: EngineState, prepare?: (bytes
         setError(null);
         setInput({ file, bytes, data });
       } catch (err) {
-        if (current()) setError(err instanceof Error ? err.message : String(err));
+        if (current()) setError(errorMessage(err));
       }
     },
     [worker.ready, worker.initError, prepare, latest],
@@ -67,7 +67,7 @@ export function usePdfInput<T = undefined>(worker: EngineState, prepare?: (bytes
         const result = await work();
         if (current()) done(result);
       } catch (err) {
-        if (current()) setError(String(err));
+        if (current()) setError(errorMessage(err));
       } finally {
         if (current()) setBusy(false);
       }

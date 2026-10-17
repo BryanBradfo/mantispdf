@@ -48,3 +48,8 @@ export function downloadBlob(bytes: Uint8Array, fileName: string) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+/** User-facing text for a caught value: an Error's message (no "Error: " prefix), else its string form. */
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
