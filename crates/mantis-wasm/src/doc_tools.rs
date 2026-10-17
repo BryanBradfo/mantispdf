@@ -6,11 +6,7 @@ use lopdf::{Dictionary, Document, Object, ObjectId};
 /// Parse a PDF, refusing one that still needs a user password: lopdf then
 /// returns Ok with an empty page tree and /Encrypt left in the trailer.
 pub(crate) fn load(bytes: &[u8]) -> Result<Document, String> {
-    let doc = Document::load_mem(bytes).map_err(|e| format!("Failed to parse PDF: {e}"))?;
-    if doc.is_encrypted() {
-        return Err("This PDF is password-protected. Unlock it first.".to_string());
-    }
-    Ok(doc)
+    crate::pdf_util::load_pdf(bytes)
 }
 
 fn save(doc: &mut Document) -> Result<Vec<u8>, String> {

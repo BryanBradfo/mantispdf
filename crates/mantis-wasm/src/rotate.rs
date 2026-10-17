@@ -1,4 +1,4 @@
-use lopdf::{Document, Object};
+use lopdf::Object;
 use wasm_bindgen::prelude::*;
 
 /// Rotate PDF pages. `rotations` is a 0-indexed array of clockwise degrees
@@ -8,9 +8,8 @@ pub fn rotate_pdf(pdf_bytes: &[u8], rotations: &[i32]) -> Result<Vec<u8>, JsValu
     rotate_pdf_impl(pdf_bytes, rotations).map_err(|e| JsValue::from_str(&e))
 }
 
-fn rotate_pdf_impl(pdf_bytes: &[u8], rotations: &[i32]) -> Result<Vec<u8>, String> {
-    let mut doc = Document::load_mem(pdf_bytes)
-        .map_err(|e| e.to_string())?;
+pub(crate) fn rotate_pdf_impl(pdf_bytes: &[u8], rotations: &[i32]) -> Result<Vec<u8>, String> {
+    let mut doc = crate::pdf_util::load_pdf(pdf_bytes)?;
 
     // get_pages() → BTreeMap<u32 (1-based page num), ObjectId>
     let pages: std::collections::BTreeMap<u32, lopdf::ObjectId> = doc.get_pages();
@@ -39,7 +38,7 @@ fn rotate_pdf_impl(pdf_bytes: &[u8], rotations: &[i32]) -> Result<Vec<u8>, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lopdf::{dictionary, content::Content, Object, Stream};
+    use lopdf::{dictionary, content::Content, Document, Object, Stream};
 
     fn make_test_pdf(n: u32) -> Vec<u8> {
         let mut doc = Document::with_version("1.5");

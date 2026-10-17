@@ -15,14 +15,13 @@ pub fn merge_documents(pdfs: &[&[u8]]) -> Result<Vec<u8>, String> {
     }
 
     let mut base =
-        Document::load_mem(pdfs[0]).map_err(|e| format!("Failed to parse PDF 1: {e}"))?;
+        crate::pdf_util::load_pdf_n(pdfs[0], 1)?;
 
     // Find the base document's Pages object ID
     let base_pages_id = find_pages_id(&base)?;
 
     for (i, pdf_bytes) in pdfs.iter().enumerate().skip(1) {
-        let source = Document::load_mem(pdf_bytes)
-            .map_err(|e| format!("Failed to parse PDF {}: {e}", i + 1))?;
+        let source = crate::pdf_util::load_pdf_n(pdf_bytes, i + 1)?;
 
         append_document(&mut base, &source, base_pages_id)
             .map_err(|e| format!("Failed to merge PDF {}: {e}", i + 1))?;

@@ -24,8 +24,7 @@ pub(crate) fn encrypt_pdf_impl(
     user_password: &str,
     owner_password: &str,
 ) -> Result<Vec<u8>, String> {
-    let mut doc = Document::load_mem(pdf_bytes)
-        .map_err(|e| e.to_string())?;
+    let mut doc = crate::pdf_util::load_pdf(pdf_bytes)?;
 
     // AES-256 (PDF 2.0 security handler V5/R6) instead of the legacy, broken
     // RC4. Generate a random 32-byte file encryption key.

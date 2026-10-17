@@ -1,6 +1,25 @@
 use lopdf::{Document, Object, ObjectId};
 use std::collections::{BTreeMap, HashSet};
 
+/// Parse untrusted PDF bytes, refusing one that still needs a user password:
+/// lopdf then returns Ok with an empty page tree and /Encrypt left in the
+/// trailer. Owner-only encrypted files (empty user password) load fine.
+pub(crate) fn load_pdf(bytes: &[u8]) -> Result<Document, String> {
+    let doc = Document::load_mem(bytes).map_err(|e| format!("Failed to parse PDF: {e}"))?;
+    if doc.is_encrypted() {
+        return Err("This PDF is password-protected. Unlock it first.".to_string());
+    }
+    Ok(doc)
+}
+
+/// `load_pdf` with the 1-based document number in its errors (merge, plan).
+pub(crate) fn load_pdf_n(bytes: &[u8], n: usize) -> Result<Document, String> {
+    load_pdf(bytes).map_err(|e| match e.strip_prefix("Failed to parse PDF: ") {
+        Some(rest) => format!("Failed to parse PDF {n}: {rest}"),
+        None => format!("PDF {n} is password-protected. Unlock it first."),
+    })
+}
+
 /// Resolve an inheritable page attribute (`/MediaBox`, `/Resources`, `/Rotate`,
 /// `/CropBox`) by walking the `/Parent` chain starting at `page_id`. Returns the
 /// first value found (the leaf's own value if present, else an ancestor's),
@@ -182,5 +201,81 @@ mod tests {
         let doc = Document::load_mem(&pdf).unwrap();
         let first_page = *doc.get_pages().get(&1).unwrap();
         assert!(get_inherited_attr(&doc, first_page, b"CropBox").is_none());
+    }
+
+    #[test]
+    fn every_tool_refuses_user_password_pdf_but_accepts_owner_only() {
+        use crate::{compress, edit, encrypt, merge, page_plan, rotate, split, watermark, WasmPdf};
+        let plain = make_inherited_test_pdf(2);
+        let locked = encrypt::encrypt_pdf_impl(&plain, "u", "o").unwrap();
+        let owner_only = encrypt::encrypt_pdf_impl(&plain, "", "o").unwrap();
+        let plan = |_: ()| {
+            vec![page_plan::PlanEntry::Page {
+                src: 0,
+                page: 1,
+                rotate: 0,
+            }]
+        };
+
+        type Op = Box<dyn Fn(&[u8]) -> Result<(), String>>;
+        let ops: Vec<(&str, Op)> = vec![
+            ("page_count", Box::new(|b| split::page_count(b).map(|_| ()))),
+            (
+                "extract_page_range",
+                Box::new(|b| split::extract_page_range(b, 1, 1).map(|_| ())),
+            ),
+            (
+                "apply_plan",
+                Box::new(move |b| page_plan::apply_plan(&[b], &plan(())).map(|_| ())),
+            ),
+            (
+                "merge_first",
+                Box::new(|b| merge::merge_documents(&[b, b]).map(|_| ())),
+            ),
+            (
+                "compress",
+                Box::new(|b| compress::compress_pdf_impl(b, 50).map(|_| ())),
+            ),
+            (
+                "rotate",
+                Box::new(|b| rotate::rotate_pdf_impl(b, &[90, 0]).map(|_| ())),
+            ),
+            (
+                "watermark",
+                Box::new(|b| {
+                    watermark::add_watermark_impl(b, "X", 24, 0.5, 45, 0.5, 0.5, 0.5).map(|_| ())
+                }),
+            ),
+            (
+                "reorder",
+                Box::new(|b| edit::reorder_inner(b, &[1, 2]).map(|_| ())),
+            ),
+            (
+                "encrypt",
+                Box::new(|b| encrypt::encrypt_pdf_impl(b, "a", "b").map(|_| ())),
+            ),
+            (
+                "WasmPdf::new",
+                Box::new(|b| WasmPdf::from_bytes(b).map(|_| ())),
+            ),
+        ];
+        for (name, op) in &ops {
+            let err = op(&locked).expect_err(name);
+            assert!(err.contains("password-protected"), "{name}: {err}");
+            op(&owner_only).unwrap_or_else(|e| panic!("{name} owner-only: {e}"));
+        }
+        // merge: second document locked keeps its number
+        let err = merge::merge_documents(&[&plain, &locked]).unwrap_err();
+        assert_eq!(err, "PDF 2 is password-protected. Unlock it first.");
+        let err = page_plan::apply_plan(
+            &[&plain, &locked],
+            &[page_plan::PlanEntry::Page {
+                src: 0,
+                page: 1,
+                rotate: 0,
+            }],
+        )
+        .unwrap_err();
+        assert_eq!(err, "PDF 2 is password-protected. Unlock it first.");
     }
 }

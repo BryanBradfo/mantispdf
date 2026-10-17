@@ -10,13 +10,12 @@ pub fn reorder_pages(pdf_bytes: &[u8], new_order: &[u32]) -> Result<Vec<u8>, JsV
     reorder_inner(pdf_bytes, new_order).map_err(|e| JsValue::from_str(&e))
 }
 
-fn reorder_inner(pdf_bytes: &[u8], new_order: &[u32]) -> Result<Vec<u8>, String> {
+pub(crate) fn reorder_inner(pdf_bytes: &[u8], new_order: &[u32]) -> Result<Vec<u8>, String> {
     if new_order.is_empty() {
         return Err("Cannot create a PDF with zero pages".to_string());
     }
 
-    let mut doc = Document::load_mem(pdf_bytes)
-        .map_err(|e| format!("Failed to parse PDF: {e}"))?;
+    let mut doc = crate::pdf_util::load_pdf(pdf_bytes)?;
 
     let pages_map: std::collections::BTreeMap<u32, ObjectId> = doc.get_pages();
     let total = pages_map.len() as u32;

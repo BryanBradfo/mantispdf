@@ -37,14 +37,19 @@ pub struct WasmPdf {
     total_pages: u32,
 }
 
+impl WasmPdf {
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<WasmPdf, String> {
+        let doc = pdf_util::load_pdf(bytes)?;
+        let total_pages = doc.get_pages().len() as u32;
+        Ok(WasmPdf { doc, total_pages })
+    }
+}
+
 #[wasm_bindgen]
 impl WasmPdf {
     #[wasm_bindgen(constructor)]
     pub fn new(bytes: &[u8]) -> Result<WasmPdf, JsValue> {
-        let doc = Document::load_mem(bytes)
-            .map_err(|e| JsValue::from_str(&format!("Failed to parse PDF: {e}")))?;
-        let total_pages = doc.get_pages().len() as u32;
-        Ok(WasmPdf { doc, total_pages })
+        WasmPdf::from_bytes(bytes).map_err(|e| JsValue::from_str(&e))
     }
 
     pub fn page_count(&self) -> u32 {

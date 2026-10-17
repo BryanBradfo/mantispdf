@@ -43,7 +43,7 @@ pub fn apply_plan(sources: &[&[u8]], plan: &[PlanEntry]) -> Result<Vec<u8>, Stri
         .iter()
         .enumerate()
         .map(|(i, bytes)| {
-            Document::load_mem(bytes).map_err(|e| format!("Failed to parse PDF {}: {e}", i + 1))
+            crate::pdf_util::load_pdf_n(bytes, i + 1)
         })
         .collect::<Result<_, _>>()?;
     let leaves: Vec<Vec<ObjectId>> = docs

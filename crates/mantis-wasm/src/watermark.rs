@@ -19,7 +19,7 @@ pub fn add_watermark(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn add_watermark_impl(
+pub(crate) fn add_watermark_impl(
     pdf_bytes: &[u8],
     text: &str,
     font_size: u32,
@@ -29,7 +29,7 @@ fn add_watermark_impl(
     g: f32,
     b: f32,
 ) -> Result<Vec<u8>, String> {
-    let mut doc = Document::load_mem(pdf_bytes).map_err(|e| e.to_string())?;
+    let mut doc = crate::pdf_util::load_pdf(pdf_bytes)?;
 
     let page_ids: Vec<ObjectId> = doc.get_pages().values().copied().collect();
 

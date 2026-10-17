@@ -224,8 +224,11 @@ fn strip_metadata(doc: &mut Document) {
 
 #[wasm_bindgen]
 pub fn compress_pdf(pdf_bytes: &[u8], quality: u8) -> Result<Vec<u8>, JsValue> {
-    let mut doc = Document::load_mem(pdf_bytes)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    compress_pdf_impl(pdf_bytes, quality).map_err(|e| JsValue::from_str(&e))
+}
+
+pub(crate) fn compress_pdf_impl(pdf_bytes: &[u8], quality: u8) -> Result<Vec<u8>, String> {
+    let mut doc = crate::pdf_util::load_pdf(pdf_bytes)?;
 
     strip_metadata(&mut doc);
 
@@ -248,8 +251,7 @@ pub fn compress_pdf(pdf_bytes: &[u8], quality: u8) -> Result<Vec<u8>, JsValue> {
     doc.compress();
 
     let mut buf = Vec::new();
-    doc.save_to(&mut buf)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    doc.save_to(&mut buf).map_err(|e| e.to_string())?;
     Ok(buf)
 }
 

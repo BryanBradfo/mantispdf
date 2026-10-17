@@ -7,7 +7,7 @@ pub fn page_count(pdf_bytes: &[u8]) -> Result<u32, String> {
 }
 
 pub fn extract_page_range(pdf_bytes: &[u8], start: u32, end: u32) -> Result<Vec<u8>, String> {
-    let doc = Document::load_mem(pdf_bytes).map_err(|e| format!("Failed to parse PDF: {e}"))?;
+    let doc = crate::pdf_util::load_pdf(pdf_bytes)?;
     let total = doc.get_pages().len() as u32;
     extract_range_from_doc(&doc, total, start, end)
 }
