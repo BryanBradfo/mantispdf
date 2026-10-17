@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExtractedImage } from "./imageInput";
-import { PngCache, filterImages, imageFileName, jpegSize, reasonName, skippedSummary } from "./extractImages";
+import { PngCache, filterImages, imageFileName, jpegSize, keptWithoutAlphaSummary, reasonName, skippedSummary } from "./extractImages";
 
 const rgba = (page: number, index: number, w: number, h: number): ExtractedImage => ({
   page, index, kind: "rgba", width: w, height: h, pixels: new Uint8Array(w * h * 4),
@@ -34,6 +34,18 @@ describe("extract images helpers", () => {
       "3 images skipped: 2 JPEG 2000, 1 corrupt",
     );
     expect(skippedSummary([{ reason: "inline", count: 1 }])).toBe("1 image skipped: 1 inline (embedded in page content, not extractable)");
+  });
+
+  it("reports images kept without transparency on their own, outside the skipped total", () => {
+    const skipped = [
+      { reason: "alpha dropped", count: 2 },
+      { reason: "corrupt", count: 1 },
+    ];
+    expect(skippedSummary(skipped)).toBe("1 image skipped: 1 corrupt");
+    expect(keptWithoutAlphaSummary(skipped)).toBe("2 images kept without transparency");
+    expect(skippedSummary([{ reason: "alpha dropped", count: 1 }])).toBe("");
+    expect(keptWithoutAlphaSummary([{ reason: "alpha dropped", count: 1 }])).toBe("1 image kept without transparency");
+    expect(keptWithoutAlphaSummary([{ reason: "corrupt", count: 3 }])).toBe("");
   });
 });
 

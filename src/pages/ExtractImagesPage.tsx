@@ -8,6 +8,7 @@ import {
   imageFileName,
   imageKey,
   imageSize,
+  keptWithoutAlphaSummary,
   skippedSummary,
 } from "../lib/extractImages";
 import type { ExtractResultSpec, ExtractedImage } from "../lib/imageInput";
@@ -108,7 +109,10 @@ function ImageCard({
 export default function ExtractImagesPage() {
   const worker = usePdfWorker();
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker);
-  const [result, setResult] = useState<ExtractResultSpec | null>(null);
+  // Only the skip report is kept from the worker result: holding the whole result would keep every
+  // RGBA buffer alive after `images` drops each one once its PNG exists.
+  const [skipped, setSkipped] = useState<ExtractResultSpec["skipped"] | null>(null);
+  const extracted = skipped !== null;
   const [skipSmall, setSkipSmall] = useState(true);
   const [images, setImages] = useState<ExtractedImage[]>([]);
   const [cache, setCache] = useState<PngCache | null>(null);
@@ -140,7 +144,7 @@ export default function ExtractImagesPage() {
 
   const start = (f: File) => {
     discard();
-    setResult(null);
+    setSkipped(null);
     setImages([]);
     void pick(f);
   };
@@ -159,7 +163,7 @@ export default function ExtractImagesPage() {
         });
         cacheRef.current = fresh;
         setCache(fresh);
-        setResult(res);
+        setSkipped(res.skipped);
         setImages(res.images);
         setSelected(new Set(res.images.map(imageKey)));
       },
@@ -207,13 +211,14 @@ export default function ExtractImagesPage() {
 
   const doReset = () => {
     discard();
-    setResult(null);
+    setSkipped(null);
     setImages([]);
     setSelected(new Set());
     reset();
   };
 
-  const skippedText = result ? skippedSummary(result.skipped) : "";
+  const skippedText = skipped ? skippedSummary(skipped) : "";
+  const keptText = skipped ? keptWithoutAlphaSummary(skipped) : "";
 
   return (
     <ToolShell
@@ -235,7 +240,7 @@ export default function ExtractImagesPage() {
         <div className={panelClass}>
           <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
 
-          {!result && (
+          {!extracted && (
             <div className="mt-4 flex gap-3">
               <button type="button" onClick={extract} disabled={busy} className={`flex-1 ${primaryButton}`}>
                 {busy ? "Extracting…" : "Extract images"}
@@ -246,7 +251,7 @@ export default function ExtractImagesPage() {
             </div>
           )}
 
-          {result && (
+          {extracted && (
             <>
               <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-700 dark:text-[#aaa]">
                 <label className="flex items-center gap-2">
@@ -290,7 +295,8 @@ export default function ExtractImagesPage() {
                 </div>
               )}
 
-              {skippedText && <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">{skippedText}</p>}
+              {keptText && <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">{keptText}</p>}
+              {skippedText && <p className={`${keptText ? "mt-1" : "mt-4"} text-sm text-gray-600 dark:text-[#888]`}>{skippedText}</p>}
               <LiveSummary
                 text={`${chosen.length} of ${visible.length} selected`}
                 className="mt-2 text-sm text-gray-600 dark:text-[#888]"
@@ -312,7 +318,7 @@ export default function ExtractImagesPage() {
             </>
           )}
 
-          {!result && <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />}
+          {!extracted && <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />}
         </div>
       )}
     </ToolShell>

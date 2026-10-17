@@ -70,12 +70,23 @@ export function reasonName(reason: string): string {
   return REASON_NAMES[reason] ?? reason;
 }
 
+/** The engine lists these with the skipped reasons, but the images themselves were extracted (opaque). */
+const ALPHA_DROPPED = "alpha dropped";
+
 /** "3 images skipped: 2 JPEG 2000, 1 corrupt", or "" when nothing was skipped. */
 export function skippedSummary(skipped: { reason: string; count: number }[]): string {
-  const total = skipped.reduce((n, s) => n + s.count, 0);
+  const real = skipped.filter((s) => s.count > 0 && s.reason !== ALPHA_DROPPED);
+  const total = real.reduce((n, s) => n + s.count, 0);
   if (total === 0) return "";
-  const parts = skipped.filter((s) => s.count > 0).map((s) => `${s.count} ${reasonName(s.reason)}`);
+  const parts = real.map((s) => `${s.count} ${reasonName(s.reason)}`);
   return `${total} ${total === 1 ? "image" : "images"} skipped: ${parts.join(", ")}`;
+}
+
+/** "2 images kept without transparency", or "" when every mask was usable. */
+export function keptWithoutAlphaSummary(skipped: { reason: string; count: number }[]): string {
+  const n = skipped.filter((s) => s.reason === ALPHA_DROPPED).reduce((sum, s) => sum + s.count, 0);
+  if (n === 0) return "";
+  return `${n} ${n === 1 ? "image" : "images"} ${reasonName(ALPHA_DROPPED)}`;
 }
 
 type RgbaImage = Extract<ExtractedImage, { kind: "rgba" }>;
