@@ -230,8 +230,8 @@ enum LinkKind {
     Internal(ObjectId),
 }
 
-/// New link annotation for a URI action or an explicit page destination;
-/// None for anything else (named destinations, other actions).
+/// New link annotation for a URI action or a page destination (explicit, or
+/// named and resolved through the source catalog); None for anything else.
 fn rebuild_link(
     out: &mut Document,
     copier: &mut SafeCopier,
@@ -291,15 +291,79 @@ fn rebuild_link(
         Err(_) if action_type == Some(b"GoTo") => action?.get(b"D").ok()?,
         Err(_) => return None,
     };
-    let target = deref(doc, dest)?
-        .as_array()
-        .ok()?
-        .first()?
-        .as_reference()
-        .ok()?;
+    let target = explicit_dest(doc, dest)?.first()?.as_reference().ok()?;
     let id = out.add_object(link);
     links.items.push((id, new_page, src, target));
     Some(LinkKind::Internal(id))
+}
+
+/// Nesting accepted in a name tree, and nodes visited per lookup.
+const MAX_NAME_TREE_DEPTH: usize = 32;
+const MAX_NAME_TREE_NODES: usize = 10_000;
+
+/// The explicit destination array (`[page /XYZ ...]`) behind a link's
+/// destination: the array itself, or a named destination (a name or a
+/// string) looked up in the source catalog's /Dests dictionary or /Names
+/// /Dests name tree, whose value is an array or a dictionary with /D.
+fn explicit_dest<'a>(doc: &'a Document, dest: &'a Object) -> Option<&'a Vec<Object>> {
+    let named = match deref(doc, dest)? {
+        Object::Array(items) => return Some(items),
+        Object::Name(name) => name,
+        Object::String(name, _) => name,
+        _ => return None,
+    };
+    let catalog = doc.catalog().ok()?;
+    let in_dests = || {
+        deref(doc, catalog.get(b"Dests").ok()?)?
+            .as_dict()
+            .ok()?
+            .get(named)
+            .ok()
+    };
+    let in_tree = || {
+        let names = deref(doc, catalog.get(b"Names").ok()?)?.as_dict().ok()?;
+        let root = deref(doc, names.get(b"Dests").ok()?)?;
+        let mut budget = MAX_NAME_TREE_NODES;
+        name_tree_lookup(doc, root, named, 0, &mut budget)
+    };
+    let value = match deref(doc, dest)? {
+        Object::Name(_) => in_dests().or_else(in_tree),
+        _ => in_tree().or_else(in_dests),
+    }?;
+    match deref(doc, value)? {
+        Object::Array(items) => Some(items),
+        Object::Dictionary(d) => deref(doc, d.get(b"D").ok()?)?.as_array().ok(),
+        _ => None,
+    }
+}
+
+/// Value for string key `key` in the name tree rooted at `node`.
+fn name_tree_lookup<'a>(
+    doc: &'a Document,
+    node: &'a Object,
+    key: &[u8],
+    depth: usize,
+    budget: &mut usize,
+) -> Option<&'a Object> {
+    if depth >= MAX_NAME_TREE_DEPTH || *budget == 0 {
+        return None;
+    }
+    *budget -= 1;
+    let node = deref(doc, node)?.as_dict().ok()?;
+    if let Some(Object::Array(pairs)) = node.get(b"Names").ok().and_then(|n| deref(doc, n)) {
+        for pair in pairs.chunks_exact(2) {
+            if let Some(Object::String(name, _)) = deref(doc, &pair[0])
+                && name.as_slice() == key
+            {
+                return Some(&pair[1]);
+            }
+        }
+    }
+    let Some(Object::Array(kids)) = node.get(b"Kids").ok().and_then(|k| deref(doc, k)) else {
+        return None;
+    };
+    kids.iter()
+        .find_map(|kid| name_tree_lookup(doc, kid, key, depth + 1, budget))
 }
 
 /// New comment annotation from the allowlisted keys, values copied safely.
@@ -908,6 +972,63 @@ mod tests {
         assert_eq!(r.report.links_kept, 0);
         assert!(!contains(&r.bytes, b"SECRET_PAGE2"));
         assert!(!contains(&r.bytes, b"/Link"), "dropped link object removed");
+    }
+
+    /// Page 1 links to page 2 through named destinations: a GoTo action with
+    /// a string (hyperref, resolved in the /Names /Dests tree) and a /Dest
+    /// name (resolved in the catalog /Dests dictionary).
+    fn two_pages_with_named_links() -> Document {
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        let p2 = src.add_page(b"(SECRET_PAGE2) Tj");
+        src.annotate(
+            p1,
+            dictionary! {
+                "Subtype" => "Link", "Rect" => rect(10, 10, 50, 20),
+                "A" => dictionary! { "S" => "GoTo", "D" => Object::string_literal("cite.x") },
+            },
+        );
+        src.annotate(
+            p1,
+            dictionary! {
+                "Subtype" => "Link", "Rect" => rect(10, 30, 50, 40),
+                "Dest" => "chapter",
+            },
+        );
+        let mut doc = src.finish();
+        let leaf = doc.add_object(dictionary! {
+            "Limits" => vec![Object::string_literal("a"), Object::string_literal("z")],
+            "Names" => vec![
+                Object::string_literal("cite.w"), vec![p1.into(), "Fit".into()].into(),
+                Object::string_literal("cite.x"),
+                vec![p2.into(), "XYZ".into(), 0.into(), 792.into(), Object::Null].into(),
+            ],
+        });
+        let root = doc.add_object(dictionary! { "Kids" => vec![Object::from(leaf)] });
+        let chapter = doc.add_object(dictionary! { "D" => vec![p2.into(), "Fit".into()] });
+        let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        let catalog = doc.get_dictionary_mut(catalog).unwrap();
+        catalog.set("Names", dictionary! { "Dests" => root });
+        catalog.set("Dests", dictionary! { "chapter" => chapter });
+        doc
+    }
+
+    #[test]
+    fn named_destinations_resolved_and_remapped() {
+        let r = rebuild_pages(two_pages_with_named_links(), &[1, 2], &KEEP_ALL);
+        let annots = r.annots(0);
+        assert_eq!(annots.len(), 2);
+        for link in annots {
+            let dest = link.get(b"Dest").unwrap().as_array().unwrap();
+            assert_eq!(dest[0].as_reference().unwrap(), r.pages[1]);
+            assert!(link.get(b"A").is_err());
+        }
+        assert_eq!(r.report.links_kept, 2);
+
+        let r = rebuild_pages(two_pages_with_named_links(), &[1], &KEEP_ALL);
+        assert!(r.annots(0).is_empty());
+        assert_eq!(r.report.links_dropped, 2);
+        assert!(!contains(&r.bytes, b"SECRET_PAGE2"));
     }
 
     #[test]
