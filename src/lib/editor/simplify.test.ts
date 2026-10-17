@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Point } from "./model";
+import { distanceToSegment } from "./geometry";
 import { rdp, simplifyStroke } from "./simplify";
 
 describe("rdp", () => {
@@ -25,6 +26,20 @@ describe("rdp", () => {
     expect(out[out.length - 1]).toEqual(pts[4999]);
     // Only window ends survive (5 windows of 1024).
     expect(out.length).toBeLessThanOrEqual(7);
+  });
+
+  it("keeps corners next to window boundaries and stays within the tolerance", () => {
+    // Windows are 1024 points sharing ends: 0..1023, 1023..2046, ...
+    const spikes = new Set([1022, 1023, 1024, 2045, 2046, 2047]);
+    const pts: Point[] = Array.from({ length: 3000 }, (_, i) => [i, spikes.has(i) ? 5 : 0] as Point);
+    const out = simplifyStroke(pts);
+    for (const i of spikes) expect(out).toContainEqual([i, 5]);
+    // Every input point is within 0.5 pt of the simplified polyline.
+    for (const p of pts) {
+      let best = Infinity;
+      for (let k = 1; k < out.length; k++) best = Math.min(best, distanceToSegment(p, out[k - 1], out[k]));
+      expect(best).toBeLessThanOrEqual(0.5);
+    }
   });
 
   it("handles short and closed strokes", () => {

@@ -146,9 +146,14 @@ export interface EditorState {
 
 export const HISTORY_LIMIT = 100;
 
-/** Engine limits (mirrors the Rust validation). */
+/**
+ * Engine limits: mirror `crates/mantis-wasm/src/edit_ops/mod.rs` (MAX_ITEMS, MAX_FREEHAND_POINTS,
+ * MAX_TEXT_CHARS, MAX_STROKE_WIDTH, MIN/MAX_FONT_SIZE, MIN/MAX_LINE_HEIGHT) and `stamp::engine`
+ * MAX_COORD. `strokePoints` is the editor's own per-stroke cap (spec), not an engine check.
+ */
 export const LIMITS = {
   items: 2000,
+  /** All freehand strokes of one job together. */
   freehandPoints: 20000,
   strokePoints: 5000,
   textChars: 5000,
@@ -157,6 +162,8 @@ export const LIMITS = {
   maxWidth: 100,
   minFontSize: 4,
   maxFontSize: 400,
+  minLineHeight: 0.5,
+  maxLineHeight: 5,
 } as const;
 
 export const NO_PAINT: Paint = { kind: "none" };

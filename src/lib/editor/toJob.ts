@@ -10,8 +10,8 @@ import {
   orientationToTransform,
   readExifOrientation,
 } from "../imageInput";
-import type { Align, Item, Paint, Point, Rect, Rgb, Rotation, StdFont } from "./model";
-import { simplifyStroke } from "./simplify";
+import { LIMITS, type Align, type Item, type Paint, type Point, type Rect, type Rgb, type Rotation, type StdFont } from "./model";
+import { SIMPLIFY_TOLERANCE, simplifyStroke } from "./simplify";
 
 export type EditImageData =
   | { kind: "jpeg"; bytes: Uint8Array }
@@ -94,6 +94,7 @@ export async function buildEditJob(items: readonly Item[], reader: ImageReader =
   // The same picked file placed several times is read once and shares its buffer.
   const cache = new Map<Blob, Promise<ReadImage>>();
   const out: EditItemSpec[] = [];
+  const raw = new Map<EditItemSpec, Point[]>();
   for (const item of items) {
     switch (item.kind) {
       case "text":
@@ -104,9 +105,12 @@ export async function buildEditJob(items: readonly Item[], reader: ImageReader =
       case "ellipse":
         out.push(withoutId(item));
         break;
-      case "freehand":
-        out.push({ ...withoutId(item), points: simplifyStroke(item.points) });
+      case "freehand": {
+        const spec: EditItemSpec = { ...withoutId(item), points: simplifyStroke(item.points) };
+        raw.set(spec, item.points);
+        out.push(spec);
         break;
+      }
       case "image": {
         let read = cache.get(item.image.blob);
         if (!read) {
@@ -126,7 +130,30 @@ export async function buildEditJob(items: readonly Item[], reader: ImageReader =
       }
     }
   }
-  return { items: out };
+  return { items: fitFreehandBudget(out, raw) };
+}
+
+/**
+ * Keep the job's freehand points within the engine budget (`LIMITS.freehandPoints` for all
+ * strokes together): while over it, every stroke is simplified again from its original points
+ * at 1, 2, 4 ... pt. Two points per stroke fit for any job within the item limit; past a
+ * tolerance larger than any page (every stroke is then 2 points) it stops and the engine reports
+ * the limit.
+ */
+function fitFreehandBudget(items: EditItemSpec[], raw: Map<EditItemSpec, Point[]>): EditItemSpec[] {
+  const originals = items.map((it) => raw.get(it) ?? null);
+  const total = (list: EditItemSpec[]) => list.reduce((n, it) => n + (it.kind === "freehand" ? it.points.length : 0), 0);
+  let out = items;
+  let tol = SIMPLIFY_TOLERANCE;
+  while (total(out) > LIMITS.freehandPoints && tol < 2 * LIMITS.coord) {
+    tol *= 2;
+    const t = tol;
+    out = out.map((it, i) => {
+      const pts = originals[i];
+      return it.kind === "freehand" && pts ? { ...it, points: simplifyStroke(pts, t) } : it;
+    });
+  }
+  return out;
 }
 
 type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;

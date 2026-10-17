@@ -75,14 +75,19 @@ function changedPage(a: readonly Item[], b: readonly Item[]): number | null {
 
 /**
  * Swap to `items` from history: the editor follows the change to its page so an undo is never
- * invisible, and a selection whose item no longer exists is cleared.
+ * invisible, an item that comes back is selected, and a selection whose item no longer exists
+ * is cleared.
  */
 function restore(state: EditorState, items: Item[], past: Item[][], future: Item[][]): EditorState {
   const page = changedPage(state.items, items) ?? state.page;
-  const selectedId =
+  // An item brought back (undo of a delete, redo of an add) is selected so it can be acted on.
+  const current = new Set(state.items.map((it) => it.id));
+  const restored = items.find((it) => !current.has(it.id) && it.page === page);
+  const kept =
     page === state.page && state.selectedId !== null && items.some((it) => it.id === state.selectedId)
       ? state.selectedId
       : null;
+  const selectedId = restored ? restored.id : kept;
   return { ...state, items, past, future, page, selectedId, gestureBase: null };
 }
 

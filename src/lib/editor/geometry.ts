@@ -140,18 +140,18 @@ export function resizeRect(rect: Rect, handle: BoxHandle, point: Point, keepAspe
   if (horizontal && vertical) {
     const scale = Math.max(nw / w, nh / h);
     nw = Math.max(MIN_SIZE, w * scale);
-    nh = nw / aspect;
+    nh = Math.max(MIN_SIZE, nw / aspect);
     // The corner opposite the handle stays put.
     const nx = movesW ? right - nw : left;
     const ny = movesS ? top - nh : bottom;
     return [nx, ny, nw, nh];
   }
   if (horizontal) {
-    nh = nw / aspect;
+    nh = Math.max(MIN_SIZE, nw / aspect);
     const cy = y + h / 2;
     return [left, cy - nh / 2, nw, nh];
   }
-  nw = nh * aspect;
+  nw = Math.max(MIN_SIZE, nh * aspect);
   const cx = x + w / 2;
   return [cx - nw / 2, bottom, nw, nh];
 }
@@ -207,15 +207,23 @@ export function distanceToSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
 }
 
+function inEllipse(p: Point, cx: number, cy: number, rx: number, ry: number): boolean {
+  if (rx <= 0 || ry <= 0) return false;
+  const nx = (p[0] - cx) / rx;
+  const ny = (p[1] - cy) / ry;
+  return nx * nx + ny * ny <= 1;
+}
+
 function inRect(p: Point, rect: Rect, slop: number): boolean {
   const [x, y, w, h] = rect;
   return p[0] >= x - slop && p[0] <= x + w + slop && p[1] >= y - slop && p[1] <= y + h + slop;
 }
 
 /**
- * Whether visible point `p` hits the item: boxes by their area (an outline-only rectangle too, so
- * it stays easy to grab), ellipses by the ellipse (grown by half the stroke), lines and strokes
- * within max(`slop`, width) of the path.
+ * Whether visible point `p` hits the item: filled rectangles and ellipses by their area (grown by
+ * half the stroke); outline-only ones within max(`slop`, width / 2) of the outline, so an empty
+ * frame never swallows clicks on what it surrounds; lines and strokes within max(`slop`, width)
+ * of the path; other boxes (text, image, highlight, whiteout) by their area.
  */
 export function hitTest(item: Item, p: Point, slop = HIT_SLOP): boolean {
   switch (item.kind) {
@@ -232,17 +240,27 @@ export function hitTest(item: Item, p: Point, slop = HIT_SLOP): boolean {
     }
     case "ellipse": {
       const [x, y, w, h] = item.rect;
-      const grow = item.stroke.kind === "none" ? 0 : item.width / 2;
-      const rx = w / 2 + grow;
-      const ry = h / 2 + grow;
-      if (rx <= 0 || ry <= 0) return false;
-      const nx = (p[0] - (x + w / 2)) / rx;
-      const ny = (p[1] - (y + h / 2)) / ry;
-      return nx * nx + ny * ny <= 1;
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      if (item.fill.kind !== "none") {
+        const grow = item.stroke.kind === "none" ? 0 : item.width / 2;
+        return inEllipse(p, cx, cy, w / 2 + grow, h / 2 + grow);
+      }
+      // Outline only: a ring around the curve, so what is inside stays clickable.
+      const band = Math.max(slop, item.width / 2);
+      if (!inEllipse(p, cx, cy, w / 2 + band, h / 2 + band)) return false;
+      const ix = w / 2 - band;
+      const iy = h / 2 - band;
+      return ix <= 0 || iy <= 0 || !inEllipse(p, cx, cy, ix, iy);
     }
     case "rect": {
-      const grow = item.stroke.kind === "none" ? 0 : item.width / 2;
-      return inRect(p, item.rect, grow);
+      if (item.fill.kind !== "none") return inRect(p, item.rect, item.stroke.kind === "none" ? 0 : item.width / 2);
+      // Outline only: a band around the frame, so what is inside stays clickable.
+      const band = Math.max(slop, item.width / 2);
+      if (!inRect(p, item.rect, band)) return false;
+      const [x, y, w, h] = item.rect;
+      if (w <= 2 * band || h <= 2 * band) return true;
+      return !inRect(p, [x + band, y + band, w - 2 * band, h - 2 * band], 0);
     }
     default:
       return inRect(p, item.rect, 0);

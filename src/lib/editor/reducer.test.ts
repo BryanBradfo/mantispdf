@@ -235,6 +235,18 @@ describe("editorReducer", () => {
     expect(s.past).toHaveLength(1);
   });
 
+  it("undoing a delete selects the restored item", () => {
+    let s = run([{ type: "add", item: rect() }, { type: "add", item: line() }, { type: "delete", id: "item-1" }]);
+    expect(s.selectedId).toBe("item-2");
+    s = editorReducer(s, { type: "undo" });
+    expect(s.items.map((it) => it.id)).toEqual(["item-1", "item-2"]);
+    expect(s.selectedId).toBe("item-1");
+    // On another page: the editor goes there and selects it too.
+    s = run([{ type: "add", item: rect(1) }, { type: "delete" }, { type: "setPage", page: 4 }, { type: "undo" }]);
+    expect(s.page).toBe(1);
+    expect(s.selectedId).toBe("item-1");
+  });
+
   it("undo clears a selection whose item is gone", () => {
     const s = run([{ type: "add", item: rect() }, { type: "undo" }]);
     expect(s.selectedId).toBeNull();

@@ -103,6 +103,21 @@ describe("resize", () => {
     expect(resizeRect([0, 0, 100, 50], "e", [200, 0], true)).toEqual([0, -25, 200, 100]);
   });
 
+  it("never derives a side under the minimum size with keepAspect", () => {
+    // Wide box squeezed from the east: width 1, height would be 0.01.
+    const [, , w, h] = resizeRect([0, 0, 100, 1], "e", [-50, 0], true);
+    expect(w).toBe(1);
+    expect(h).toBe(1);
+    // Tall box squeezed from the north: width would be 0.01.
+    const r = resizeRect([0, 0, 1, 100], "n", [0, -50], true);
+    expect(r[2]).toBe(1);
+    expect(r[3]).toBe(1);
+    // Corner too.
+    const c = resizeRect([0, 0, 100, 1], "se", [-50, 50], true);
+    expect(c[2]).toBeGreaterThanOrEqual(1);
+    expect(c[3]).toBeGreaterThanOrEqual(1);
+  });
+
   it("moves a line endpoint, and keeps the direction with keepAspect", () => {
     const moved = resizeItem(line, "to", [50, 50], false);
     expect(moved.to).toEqual([50, 50]);
@@ -119,16 +134,59 @@ describe("resize", () => {
 });
 
 describe("hit testing", () => {
-  it("hits a rectangle inside or on its stroke", () => {
-    expect(hitTest(box, [200, 150])).toBe(true);
-    expect(hitTest(box, [300.9, 150])).toBe(true);
-    expect(hitTest(box, [302, 150])).toBe(false);
+  it("hits a filled rectangle anywhere inside or on its stroke", () => {
+    const filled: RectItem = { ...box, fill: { kind: "rgb", color: [1, 0, 0] } };
+    expect(hitTest(filled, [200, 150])).toBe(true);
+    expect(hitTest(filled, [300.9, 150])).toBe(true);
+    expect(hitTest(filled, [302, 150])).toBe(false);
   });
 
-  it("hits an ellipse inside the curve only", () => {
-    expect(hitTest(ellipse, [200, 150])).toBe(true);
-    expect(hitTest(ellipse, [105, 105])).toBe(false);
+  it("hits an outline-only rectangle near its frame only", () => {
+    expect(hitTest(box, [200, 150])).toBe(false);
+    expect(hitTest(box, [300, 150])).toBe(true);
+    expect(hitTest(box, [303.9, 150])).toBe(true);
+    expect(hitTest(box, [296.1, 150])).toBe(true);
+    expect(hitTest(box, [295.9, 150])).toBe(false);
+    expect(hitTest(box, [304.1, 150])).toBe(false);
+    // A thick stroke widens the band to half its width.
+    expect(hitTest({ ...box, width: 20 }, [291, 150])).toBe(true);
+    // Too small for a hole: the whole area hits.
+    expect(hitTest({ ...box, rect: [0, 0, 6, 6] }, [3, 3])).toBe(true);
+  });
+
+  it("hits a filled ellipse inside the curve only", () => {
+    const filled: EllipseItem = { ...ellipse, fill: { kind: "rgb", color: [1, 0, 0] } };
+    expect(hitTest(filled, [200, 150])).toBe(true);
+    expect(hitTest(filled, [105, 105])).toBe(false);
+    expect(hitTest(filled, [299, 150])).toBe(true);
+  });
+
+  it("hits an outline-only ellipse on a ring around the curve", () => {
+    expect(hitTest(ellipse, [200, 150])).toBe(false);
     expect(hitTest(ellipse, [299, 150])).toBe(true);
+    expect(hitTest(ellipse, [303, 150])).toBe(true);
+    expect(hitTest(ellipse, [200, 202])).toBe(true);
+    expect(hitTest(ellipse, [200, 190])).toBe(false);
+    expect(hitTest(ellipse, [105, 105])).toBe(false);
+  });
+
+  it("a click inside an empty frame selects the item beneath it", () => {
+    const text: Item = {
+      id: "t",
+      kind: "text",
+      page: 1,
+      rect: [150, 120, 100, 50],
+      text: "x",
+      font: "Helvetica",
+      size: 12,
+      color: [0, 0, 0],
+      opacity: 1,
+      align: "left",
+      lineHeight: 1.2,
+    };
+    expect(hitTestItems([text, box], 1, [200, 150])?.id).toBe("t");
+    expect(hitTestItems([text, ellipse], 1, [200, 150])?.id).toBe("t");
+    expect(hitTestItems([text, box], 1, [100, 150])?.id).toBe("r");
   });
 
   it("hits a line within max(4, width)", () => {
@@ -149,10 +207,11 @@ describe("hit testing", () => {
   });
 
   it("returns the topmost item of the page", () => {
-    const top: Item = { ...box, id: "top" };
-    const other: Item = { ...box, id: "other", page: 2 };
-    expect(hitTestItems([box, top, other], 1, [200, 150])?.id).toBe("top");
-    expect(hitTestItems([box, top, other], 2, [200, 150])?.id).toBe("other");
+    const filled: RectItem = { ...box, fill: { kind: "rgb", color: [1, 0, 0] } };
+    const top: Item = { ...filled, id: "top" };
+    const other: Item = { ...filled, id: "other", page: 2 };
+    expect(hitTestItems([filled, top, other], 1, [200, 150])?.id).toBe("top");
+    expect(hitTestItems([filled, top, other], 2, [200, 150])?.id).toBe("other");
     expect(hitTestItems([box], 1, [0, 0])).toBeNull();
   });
 });

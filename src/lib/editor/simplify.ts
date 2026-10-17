@@ -39,26 +39,24 @@ export function rdp(points: readonly Point[], tolerance: number): Point[] {
 
 /**
  * Simplify a stroke at `tolerance`, then keep doubling the tolerance until it has at most `cap`
- * points (the engine's per-stroke limit). Points closer than `tolerance` to the previous kept
- * point are dropped first (cheap, and dense coalesced pointer input shrinks a lot); the last point
- * is always kept.
+ * points (the engine's per-stroke limit). Consecutive duplicate points are dropped first. At the
+ * requested tolerance every input point stays within `tolerance` of the result (RDP guarantee,
+ * per window; window ends are kept, so windows never add deviation). A tap (all points equal)
+ * keeps two points so it still draws a dot.
  */
 export function simplifyStroke(
   points: readonly Point[],
   tolerance = SIMPLIFY_TOLERANCE,
   cap: number = LIMITS.strokePoints,
 ): Point[] {
-  if (points.length <= 2) return points.slice();
-  const near: Point[] = [points[0]];
-  for (let i = 1; i < points.length - 1; i++) {
-    const last = near[near.length - 1];
-    if (Math.hypot(points[i][0] - last[0], points[i][1] - last[1]) > tolerance) near.push(points[i]);
+  const deduped: Point[] = [];
+  for (const p of points) {
+    const last = deduped[deduped.length - 1];
+    if (!last || last[0] !== p[0] || last[1] !== p[1]) deduped.push(p);
   }
-  const end = points[points.length - 1];
-  const last = near[near.length - 1];
-  if (near.length === 1 || last[0] !== end[0] || last[1] !== end[1]) near.push(end);
+  if (deduped.length === 1 && points.length > 1) return [deduped[0], deduped[0]];
   let tol = tolerance;
-  let out = rdpChunked(near, tol);
+  let out = rdpChunked(deduped, tol);
   while (out.length > Math.max(2, cap)) {
     tol = tol > 0 ? tol * 2 : SIMPLIFY_TOLERANCE;
     // Re-simplifying the previous result is cheaper and only drops more points.
