@@ -1,4 +1,11 @@
-"""Generate e2e/fixtures/rotated.pdf: 4 pages with /Rotate 0/90/180/270 and text R0..R270."""
+"""Generate e2e/fixtures/rotated.pdf: 4 pages with /Rotate 0/90/180/270 and text R0..R270.
+
+Usage (needs pypdf; the output path is resolved from this file, so any working directory works):
+
+    python3 scripts/make-rotated-fixture.py
+"""
+from pathlib import Path
+
 from pypdf import PdfWriter
 from pypdf.generic import NameObject, DictionaryObject, DecodedStreamObject, ArrayObject, NumberObject
 
@@ -17,4 +24,6 @@ for rot in (0, 90, 180, 270):
         NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})
     })
     page[NameObject("/Rotate")] = NumberObject(rot)
-w.write("e2e/fixtures/rotated.pdf")
+OUT = Path(__file__).resolve().parent.parent / "e2e" / "fixtures" / "rotated.pdf"
+w.write(str(OUT))
+print(f"wrote {OUT}")
