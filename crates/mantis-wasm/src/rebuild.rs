@@ -1287,11 +1287,13 @@ fn optional_content(copier: &SafeCopier, sources: &[Document]) -> Option<Diction
             }
             groups.push(new_ref);
         }
-        if let Some(Object::Array(items)) = config
-            .and_then(|d| d.get(b"Order").ok())
-            .and_then(|o| deref(doc, o))
-        {
-            order.extend(filter_order(copier, doc, src, &listed, items, 0));
+        let source_order = config.and_then(|d| d.get(b"Order").ok());
+        if let Some(Object::Array(items)) = source_order.and_then(|o| deref(doc, o)) {
+            let mut seen: HashSet<ObjectId> = source_order
+                .and_then(|o| o.as_reference().ok())
+                .into_iter()
+                .collect();
+            order.extend(filter_order(copier, doc, src, &listed, items, 0, &mut seen));
         }
     }
     if groups.is_empty() {
@@ -1306,7 +1308,9 @@ fn optional_content(copier: &SafeCopier, sources: &[Document]) -> Option<Diction
 
 /// `/Order` entries of source `src` that point at copied groups (of `listed`), mapped to
 /// their output ids. A nested array survives only with at least one group;
-/// a text label is kept only as the first element of such an array.
+/// a text label is kept only as the first element of such an array. An
+/// array object is walked once (`seen`): a second reference to it, including
+/// one from inside itself, is dropped.
 fn filter_order(
     copier: &SafeCopier,
     doc: &Document,
@@ -1314,6 +1318,7 @@ fn filter_order(
     listed: &[ObjectId],
     items: &[Object],
     depth: usize,
+    seen: &mut HashSet<ObjectId>,
 ) -> Vec<Object> {
     if depth >= MAX_ORDER_DEPTH {
         return vec![];
@@ -1325,8 +1330,11 @@ fn filter_order(
                 Some(&new_id) if listed.contains(id) => kept.push(Object::Reference(new_id)),
                 Some(_) => {}
                 None => {
+                    if !seen.insert(*id) {
+                        continue;
+                    }
                     if let Some(Object::Array(nested)) = deref(doc, item) {
-                        let inner = filter_order(copier, doc, src, listed, nested, depth + 1);
+                        let inner = filter_order(copier, doc, src, listed, nested, depth + 1, seen);
                         if !inner.is_empty() {
                             kept.push(Object::Array(inner));
                         }
@@ -1334,7 +1342,7 @@ fn filter_order(
                 }
             },
             Object::Array(nested) => {
-                let inner = filter_order(copier, doc, src, listed, nested, depth + 1);
+                let inner = filter_order(copier, doc, src, listed, nested, depth + 1, seen);
                 if !inner.is_empty() {
                     kept.push(Object::Array(inner));
                 }
@@ -2342,5 +2350,81 @@ mod tests {
     #[test]
     fn shared_resource_categories_are_copied_once() {
         assert_linear(category_diamond);
+    }
+
+    /// One page showing one layer, whose source `/D /Order` is the array
+    /// object that `order` builds (given the layer and the array's own id).
+    fn rebuild_with_order(order: impl FnOnce(&mut Document, ObjectId, ObjectId)) -> Document {
+        let mut src = Src::new();
+        let ocg = src
+            .doc
+            .add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal("L") });
+        let page = src.add_page(
+            dictionary! { "Properties" => dictionary! { "oc1" => ocg } },
+            b"/OC /oc1 BDC 0 0 1 1 re f EMC",
+        );
+        let mut doc = src.finish();
+        let order_id = doc.new_object_id();
+        order(&mut doc, ocg, order_id);
+        let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(catalog).unwrap().set(
+            "OCProperties",
+            dictionary! {
+                "OCGs" => vec![Object::from(ocg)],
+                "D" => dictionary! { "Order" => order_id },
+            },
+        );
+        let pages = [OutPage::Page {
+            src: 0,
+            page,
+            rotate: 0,
+        }];
+        let start = std::time::Instant::now();
+        let (mut out, _) = rebuild_document(&[doc], &pages, &PAGE_TOOLS).unwrap();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "took {elapsed:?}"
+        );
+        let mut bytes = Vec::new();
+        out.save_to(&mut bytes).unwrap();
+        Document::load_mem(&bytes).unwrap()
+    }
+
+    /// The `/D /Order` of the output's `/OCProperties`.
+    fn out_order(out: &Document) -> Vec<Object> {
+        let oc = out_dict(out, out.catalog().unwrap().get(b"OCProperties").unwrap());
+        let d = out_dict(out, oc.get(b"D").unwrap());
+        deref(out, d.get(b"Order").unwrap())
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .clone()
+    }
+
+    #[test]
+    fn self_referencing_layer_order_terminates() {
+        let out = rebuild_with_order(|doc, ocg, order_id| {
+            let me = Object::Reference(order_id);
+            let nested: Object = vec![me.clone(), me.clone()].into();
+            doc.objects
+                .insert(order_id, vec![ocg.into(), me.clone(), me, nested].into());
+        });
+        let order = out_order(&out);
+        assert_eq!(order.len(), 1, "{order:?}");
+        assert!(order[0].as_reference().is_ok());
+    }
+
+    #[test]
+    fn shared_layer_order_arrays_are_walked_once() {
+        let out = rebuild_with_order(|doc, ocg, order_id| {
+            let mut level = doc.add_object(vec![Object::from(ocg)]);
+            for _ in 0..25 {
+                level = doc.add_object(vec![Object::from(level), level.into()]);
+            }
+            doc.objects
+                .insert(order_id, vec![Object::from(level)].into());
+        });
+        assert!(!out_order(&out).is_empty());
     }
 }
