@@ -45,6 +45,16 @@ declare module "mantis-wasm" {
     free(): void;
   }
   export function stamp_pdf(pdf_bytes: Uint8Array, job: object): StampOutput;
+  export function crop_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
+  export function resize_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
+  export class NupOutput {
+    bytes(): Uint8Array;
+    sheets(): number;
+    /** Source pages (1-based) whose content could not be decoded. */
+    undecodable(): Uint32Array;
+    free(): void;
+  }
+  export function nup_pdf(pdf_bytes: Uint8Array, job: object): NupOutput;
   /** Visible [w, h] of every page in points, flattened: [w1, h1, w2, h2, ...]. */
   export function visible_page_sizes(pdf_bytes: Uint8Array): Float64Array;
   export function remove_metadata(pdf_bytes: Uint8Array): Uint8Array;

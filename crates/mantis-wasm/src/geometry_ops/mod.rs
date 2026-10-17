@@ -2,11 +2,9 @@
 //! size, content re-fitted). Both edit only the selected leaf pages and never
 //! a page-tree node or an object another page shares.
 
-// The WASM bindings that call these entry points come with the geometry job
-// parser; until then the module is reachable from its tests only.
-#![allow(dead_code)]
-
+pub(crate) mod binding;
 pub(crate) mod crop;
+pub(crate) mod job;
 pub(crate) mod nup;
 pub(crate) mod resize;
 

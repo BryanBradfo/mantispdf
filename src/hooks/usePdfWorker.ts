@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FromWorker, SuccessPayload, ToWorker } from "../lib/workerProtocol";
 import type { PdfPart } from "../types/pdf";
 import { readFileAsArrayBuffer } from "../lib/fileHelpers";
+import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob";
 import type { StampJobSpec } from "../lib/stampJob";
 import { PdfWorkerClient } from "../lib/workerClient";
 
@@ -68,6 +69,11 @@ const asCount = (p: SuccessPayload): number => {
 const asBuffer = (p: SuccessPayload): ArrayBuffer => {
   if (p.kind !== "buffer") throw new Error("Unexpected worker payload");
   return p.result;
+};
+
+const asNup = (p: SuccessPayload): { bytes: Uint8Array; sheets: number; undecodable: number[] } => {
+  if (p.kind !== "nup") throw new Error("Unexpected worker payload");
+  return { bytes: p.bytes, sheets: p.sheets, undecodable: p.undecodable };
 };
 
 const asStamped = (p: SuccessPayload): { bytes: Uint8Array; stampedPages: number } => {
@@ -276,6 +282,24 @@ export function usePdfWorker() {
     [run],
   );
 
+  const cropPdf = useCallback(
+    (pdfBytes: Uint8Array, job: CropJobSpec): Promise<Uint8Array> =>
+      run(null, (id) => ({ type: "crop", id, pdfBytes, job }), asBytes),
+    [run],
+  );
+
+  const resizePdf = useCallback(
+    (pdfBytes: Uint8Array, job: ResizeJobSpec): Promise<Uint8Array> =>
+      run(null, (id) => ({ type: "resize", id, pdfBytes, job }), asBytes),
+    [run],
+  );
+
+  const nupPdf = useCallback(
+    (pdfBytes: Uint8Array, job: NupJobSpec): Promise<{ bytes: Uint8Array; sheets: number; undecodable: number[] }> =>
+      run(null, (id) => ({ type: "nup", id, pdfBytes, job }), asNup),
+    [run],
+  );
+
   const removeMetadata = useCallback(
     (pdfBytes: Uint8Array): Promise<Uint8Array> =>
       run(null, (id) => ({ type: "remove-metadata", id, pdfBytes }), asBytes),
@@ -332,6 +356,9 @@ export function usePdfWorker() {
       encryptPdf,
       sanitizePdf,
       stampPdf,
+      cropPdf,
+      resizePdf,
+      nupPdf,
       pageSizes,
       removeMetadata,
       readMetadata,
@@ -350,6 +377,9 @@ export function usePdfWorker() {
       encryptPdf,
       sanitizePdf,
       stampPdf,
+      cropPdf,
+      resizePdf,
+      nupPdf,
       pageSizes,
       removeMetadata,
       readMetadata,

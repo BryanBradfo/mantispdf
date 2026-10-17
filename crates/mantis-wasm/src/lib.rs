@@ -144,6 +144,52 @@ pub fn stamp_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<StampOutput, JsValue>
     Ok(StampOutput { bytes: r.bytes, stamped_pages: r.stamped_pages })
 }
 
+#[wasm_bindgen]
+pub fn crop_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<Vec<u8>, JsValue> {
+    let raw = geometry_ops::binding::read_crop(&job).map_err(|e| JsValue::from_str(&e))?;
+    let job = geometry_ops::job::validate_crop(raw).map_err(|e| JsValue::from_str(&e))?;
+    geometry_ops::crop::crop_pages(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))
+}
+
+#[wasm_bindgen]
+pub fn resize_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<Vec<u8>, JsValue> {
+    let raw = geometry_ops::binding::read_resize(&job).map_err(|e| JsValue::from_str(&e))?;
+    let job = geometry_ops::job::validate_resize(raw).map_err(|e| JsValue::from_str(&e))?;
+    geometry_ops::resize::resize_pages(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Result of `nup_pdf`: the sheets, how many there are, and the source pages
+/// (1-based) whose content could not be decoded (their cells are empty).
+#[wasm_bindgen]
+pub struct NupOutput {
+    bytes: Vec<u8>,
+    sheets: u32,
+    undecodable: Vec<u32>,
+}
+
+#[wasm_bindgen]
+impl NupOutput {
+    pub fn bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+
+    pub fn sheets(&self) -> u32 {
+        self.sheets
+    }
+
+    pub fn undecodable(&self) -> Vec<u32> {
+        self.undecodable.clone()
+    }
+}
+
+#[wasm_bindgen]
+pub fn nup_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<NupOutput, JsValue> {
+    let raw = geometry_ops::binding::read_nup(&job).map_err(|e| JsValue::from_str(&e))?;
+    let job = geometry_ops::job::validate_nup(raw).map_err(|e| JsValue::from_str(&e))?;
+    let r = geometry_ops::nup::nup(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))?;
+    Ok(NupOutput { bytes: r.bytes, sheets: r.sheets, undecodable: r.undecodable_pages })
+}
+
 /// Visible `[w, h]` of every page, flattened: `[w1, h1, w2, h2, ...]`.
 #[wasm_bindgen]
 pub fn visible_page_sizes(pdf_bytes: &[u8]) -> Result<Vec<f64>, JsValue> {

@@ -1,7 +1,7 @@
 import { toWasmJob } from "../lib/stampJob";
 import type { ToWorker, FromWorker, ReqId, SuccessPayload } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf } from "mantis-wasm";
+import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, crop_pdf, resize_pdf, nup_pdf, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf } from "mantis-wasm";
 
 let ready = false;
 
@@ -140,6 +140,32 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
           out.free();
         }
         postSuccess(msg.id, { kind: "stamped", bytes, stampedPages });
+        break;
+      }
+
+      case "crop": {
+        postSuccess(msg.id, { kind: "merge", bytes: crop_pdf(msg.pdfBytes, msg.job) });
+        break;
+      }
+
+      case "resize": {
+        postSuccess(msg.id, { kind: "merge", bytes: resize_pdf(msg.pdfBytes, msg.job) });
+        break;
+      }
+
+      case "nup": {
+        const out = nup_pdf(msg.pdfBytes, msg.job);
+        let bytes: Uint8Array;
+        let sheets: number;
+        let undecodable: number[];
+        try {
+          bytes = out.bytes();
+          sheets = out.sheets();
+          undecodable = Array.from(out.undecodable());
+        } finally {
+          out.free();
+        }
+        postSuccess(msg.id, { kind: "nup", bytes, sheets, undecodable });
         break;
       }
 

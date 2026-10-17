@@ -1,4 +1,5 @@
 import type { PdfPart } from "../types/pdf";
+import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "./geometryJob";
 import type { StampJobSpec } from "./stampJob";
 
 /** Correlates a request with its response/progress/failure messages. */
@@ -29,6 +30,9 @@ export type ToWorker =
   | { type: "encrypt"; id: ReqId; pdfBytes: ArrayBuffer; userPassword: string; ownerPassword: string }
   | { type: "sanitize"; id: ReqId; pdfBytes: Uint8Array; keepComments: boolean }
   | { type: "stamp"; id: ReqId; pdfBytes: Uint8Array; job: StampJobSpec }
+  | { type: "crop"; id: ReqId; pdfBytes: Uint8Array; job: CropJobSpec }
+  | { type: "resize"; id: ReqId; pdfBytes: Uint8Array; job: ResizeJobSpec }
+  | { type: "nup"; id: ReqId; pdfBytes: Uint8Array; job: NupJobSpec }
   | { type: "page-sizes"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "remove-metadata"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "read-metadata"; id: ReqId; pdfBytes: Uint8Array }
@@ -44,6 +48,7 @@ export type SuccessPayload =
   | { kind: "buffer"; result: ArrayBuffer }
   | { kind: "sanitized"; bytes: Uint8Array; report: number[] }
   | { kind: "stamped"; bytes: Uint8Array; stampedPages: number }
+  | { kind: "nup"; bytes: Uint8Array; sheets: number; undecodable: number[] }
   | { kind: "sizes"; sizes: [number, number][] }
   | { kind: "metadata"; values: string[] };
 
