@@ -588,10 +588,37 @@ pub struct SafeCopier<'s> {
     too_deep: u32,
     /// Per source: page id -> 1-based page number, built on the first warning.
     page_numbers: HashMap<usize, HashMap<ObjectId, u32>>,
-    /// `/Resources` objects being copied by `copy_any_resources`. They are
-    /// not memoized (each Type3 font trims them differently), so this set is
-    /// what stops a cycle back into one of them.
-    resources_in_progress: HashSet<(usize, ObjectId)>,
+    /// Like `memo`, for objects copied trimmed to a set of resource names:
+    /// one output object per source object, role (a `/Resources`, None, or
+    /// the category dictionary it is used as) and trimming.
+    trimmed: HashMap<TrimmedKey, ObjectId>,
+}
+
+/// The resource names a trimmed copy keeps, per category, in a canonical
+/// order (None: every name).
+type Trim = Option<Vec<(&'static [u8], Vec<Vec<u8>>)>>;
+
+fn trim_of(used: Option<&UsedNames>) -> Trim {
+    let used = used?;
+    let mut trim: Vec<_> = used
+        .by_category
+        .iter()
+        .map(|(&category, names)| {
+            let mut names: Vec<Vec<u8>> = names.iter().cloned().collect();
+            names.sort();
+            (category, names)
+        })
+        .collect();
+    trim.sort();
+    Some(trim)
+}
+
+type TrimmedKey = (usize, ObjectId, Option<&'static [u8]>, Trim);
+
+/// Which memo an object copied through `SafeCopier::copy_once` is kept in.
+enum MemoKey {
+    Plain(usize, ObjectId),
+    Trimmed(TrimmedKey),
 }
 
 impl<'s> SafeCopier<'s> {
@@ -602,7 +629,7 @@ impl<'s> SafeCopier<'s> {
             depth: 0,
             too_deep: 0,
             page_numbers: HashMap::new(),
-            resources_in_progress: HashSet::new(),
+            trimmed: HashMap::new(),
         }
     }
 
@@ -635,6 +662,39 @@ impl<'s> SafeCopier<'s> {
         }
     }
 
+    /// The guard on every edge that follows a reference: a source object is
+    /// copied once per `key` (later edges, and cycles back into it, get the
+    /// output id registered before recursing), and at most `MAX_REF_DEPTH`
+    /// references deep. `build` makes the copied value.
+    fn copy_once(
+        &mut self,
+        out: &mut Document,
+        key: MemoKey,
+        build: impl FnOnce(&mut Self, &mut Document) -> Object,
+    ) -> Object {
+        let known = match &key {
+            MemoKey::Plain(src, id) => self.memo.get(&(*src, *id)),
+            MemoKey::Trimmed(key) => self.trimmed.get(key),
+        };
+        if let Some(&new_id) = known {
+            return Object::Reference(new_id);
+        }
+        if self.depth >= MAX_REF_DEPTH {
+            self.too_deep += 1;
+            return Object::Null;
+        }
+        let new_id = out.new_object_id();
+        match key {
+            MemoKey::Plain(src, id) => self.memo.insert((src, id), new_id),
+            MemoKey::Trimmed(key) => self.trimmed.insert(key, new_id),
+        };
+        self.depth += 1;
+        let value = build(self, out);
+        self.depth -= 1;
+        out.objects.insert(new_id, value);
+        Object::Reference(new_id)
+    }
+
     fn copy_reference(&mut self, out: &mut Document, src: usize, id: ObjectId) -> Object {
         if let Some(&new_id) = self.memo.get(&(src, id)) {
             return Object::Reference(new_id);
@@ -645,17 +705,9 @@ impl<'s> SafeCopier<'s> {
         if is_blocked(target) {
             return Object::Null;
         }
-        if self.depth >= MAX_REF_DEPTH {
-            self.too_deep += 1;
-            return Object::Null;
-        }
-        let new_id = out.new_object_id();
-        self.memo.insert((src, id), new_id);
-        self.depth += 1;
-        let value = self.copy(out, src, target);
-        self.depth -= 1;
-        out.objects.insert(new_id, value);
-        Object::Reference(new_id)
+        self.copy_once(out, MemoKey::Plain(src, id), |this, out| {
+            this.copy(out, src, target)
+        })
     }
 
     fn copy_dict(&mut self, out: &mut Document, src: usize, dict: &Dictionary) -> Dictionary {
@@ -702,17 +754,9 @@ impl<'s> SafeCopier<'s> {
                 if is_blocked(target) {
                     return Object::Null;
                 }
-                if self.depth >= MAX_REF_DEPTH {
-                    self.too_deep += 1;
-                    return Object::Null;
-                }
-                let new_id = out.new_object_id();
-                self.memo.insert((src, *id), new_id);
-                self.depth += 1;
-                let copied = copy_entries(self, out, map);
-                self.depth -= 1;
-                out.objects.insert(new_id, copied);
-                Object::Reference(new_id)
+                self.copy_once(out, MemoKey::Plain(src, *id), |this, out| {
+                    copy_entries(this, out, map)
+                })
             }
             _ => self.copy(out, src, value),
         }
@@ -721,7 +765,7 @@ impl<'s> SafeCopier<'s> {
     /// A `/Resources` value met outside a page or form: its category
     /// dictionaries are name-keyed, so it is copied with `copy_resources`
     /// (trimmed to `used`, or every name when None) rather than as a
-    /// structural dictionary.
+    /// structural dictionary. A referenced one is copied once per trimming.
     fn copy_any_resources(
         &mut self,
         out: &mut Document,
@@ -736,26 +780,19 @@ impl<'s> SafeCopier<'s> {
         if is_blocked(res) {
             return Object::Null;
         }
-        // Not memoized, so cycles and depth are guarded here: a cycle back
-        // into a /Resources still being copied is cut, and every level
-        // (direct or referenced) counts toward MAX_REF_DEPTH.
-        let key = value.as_reference().ok().map(|id| (src, id));
-        if key.is_some_and(|k| self.resources_in_progress.contains(&k)) {
-            return Object::Null;
+        if let Ok(id) = value.as_reference() {
+            let key = MemoKey::Trimmed((src, id, None, trim_of(used)));
+            return self.copy_once(out, key, |this, out| {
+                Object::Dictionary(this.copy_resources(out, src, dict, used))
+            });
         }
         if self.depth >= MAX_REF_DEPTH {
             self.too_deep += 1;
             return Object::Null;
         }
-        if let Some(k) = key {
-            self.resources_in_progress.insert(k);
-        }
         self.depth += 1;
         let copied = self.copy_resources(out, src, dict, used);
         self.depth -= 1;
-        if let Some(k) = key {
-            self.resources_in_progress.remove(&k);
-        }
         Object::Dictionary(copied)
     }
 
@@ -818,23 +855,43 @@ impl<'s> SafeCopier<'s> {
 
         let mut copy = Dictionary::new();
         for category in CATEGORIES {
-            let Some(entries) = res
-                .get(category)
-                .ok()
-                .and_then(|o| deref(doc, o))
-                .and_then(|o| o.as_dict().ok())
-            else {
+            let Some(value) = res.get(category).ok() else {
                 continue;
             };
-            let mut kept = Dictionary::new();
-            for (name, value) in entries.iter() {
-                if used.is_none_or(|u| u.contains(category, name)) {
-                    kept.set(name.clone(), self.copy(out, src, value));
+            let Some(entries) = deref(doc, value).and_then(|o| o.as_dict().ok()) else {
+                continue;
+            };
+            let keep = |name: &[u8]| used.is_none_or(|u| u.contains(category, name));
+            if !entries.iter().any(|(name, _)| keep(name)) {
+                continue;
+            }
+            let copy_kept = |this: &mut Self, out: &mut Document| {
+                let mut kept = Dictionary::new();
+                for (name, value) in entries.iter() {
+                    if keep(name) {
+                        kept.set(name.clone(), this.copy(out, src, value));
+                    }
                 }
-            }
-            if !kept.is_empty() {
-                copy.set(category, kept);
-            }
+                Object::Dictionary(kept)
+            };
+            // A shared category dictionary is copied once per trimming.
+            let kept = match value.as_reference() {
+                Ok(id) => {
+                    let trim = used.map(|u| {
+                        let mut names: Vec<Vec<u8>> = entries
+                            .iter()
+                            .filter(|(name, _)| u.contains(category, name))
+                            .map(|(name, _)| name.clone())
+                            .collect();
+                        names.sort();
+                        vec![(category, names)]
+                    });
+                    let key = MemoKey::Trimmed((src, id, Some(category), trim));
+                    self.copy_once(out, key, copy_kept)
+                }
+                Err(_) => copy_kept(self, out),
+            };
+            copy.set(category, kept);
         }
         if let Ok(proc_set) = res.get(b"ProcSet") {
             copy.set("ProcSet", self.copy(out, src, proc_set));
@@ -2209,5 +2266,81 @@ mod tests {
         let (bytes, _, _) = rebuild(src.finish(), &[1]);
         assert!(contains(&bytes, b"SECRET_PARENTIMG"));
         assert!(!contains(&bytes, b"SECRET_UNUSEDIMG"));
+    }
+
+    // ---- residual findings: amplification guards ------------------------
+
+    /// Type3 font without /CharProcs (so every resource is kept) drawing
+    /// from `resources`.
+    fn t3_using(resources: Object) -> Object {
+        dictionary! {
+            "Type" => "Font", "Subtype" => "Type3",
+            "FontBBox" => vec![0.into(), 0.into(), 1.into(), 1.into()],
+            "FontMatrix" => vec![1.into(), 0.into(), 0.into(), 1.into(), 0.into(), 0.into()],
+            "Resources" => resources,
+        }
+        .into()
+    }
+
+    /// Output size and time of copying page 1 of `doc`.
+    fn measure(doc: Document) -> (usize, std::time::Duration) {
+        let start = std::time::Instant::now();
+        let (bytes, _, _) = rebuild(doc, &[1]);
+        (bytes.len(), start.elapsed())
+    }
+
+    /// k levels of `/Resources` objects, each drawing twice (through two
+    /// direct Type3 fonts) from the level below: 2^k paths to the bottom.
+    fn resources_diamond(k: usize) -> Document {
+        let mut src = Src::new();
+        let mut res = src.doc.add_object(dictionary! {});
+        for _ in 0..k {
+            res = src.doc.add_object(dictionary! {
+                "Font" => dictionary! { "a" => t3_using(res.into()), "b" => t3_using(res.into()) },
+            });
+        }
+        src.add_page(
+            dictionary! { "Font" => dictionary! { "T" => t3_using(res.into()) } },
+            b"BT /T 1 Tf ET",
+        );
+        src.finish()
+    }
+
+    /// Same shape through shared `/Font` category dictionaries, with direct
+    /// `/Resources` in between.
+    fn category_diamond(k: usize) -> Document {
+        let mut src = Src::new();
+        let mut fonts = src.doc.add_object(dictionary! {});
+        for _ in 0..k {
+            let res = || t3_using(dictionary! { "Font" => fonts }.into());
+            fonts = src
+                .doc
+                .add_object(dictionary! { "a" => res(), "b" => res() });
+        }
+        src.add_page(dictionary! { "Font" => fonts }, b"BT /a 1 Tf ET");
+        src.finish()
+    }
+
+    fn assert_linear(build: fn(usize) -> Document) {
+        let (small, _) = measure(build(12));
+        let (large, elapsed) = measure(build(24));
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "k=24 took {elapsed:?}"
+        );
+        assert!(
+            large < 3 * small,
+            "output {small} B at k=12, {large} B at k=24"
+        );
+    }
+
+    #[test]
+    fn shared_type3_resources_are_copied_once() {
+        assert_linear(resources_diamond);
+    }
+
+    #[test]
+    fn shared_resource_categories_are_copied_once() {
+        assert_linear(category_diamond);
     }
 }
