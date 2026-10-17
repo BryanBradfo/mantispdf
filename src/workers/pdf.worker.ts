@@ -1,6 +1,6 @@
 import type { ToWorker, FromWorker, ReqId, SuccessPayload } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf } from "mantis-wasm";
+import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, remove_metadata, read_metadata, set_metadata, unlock_pdf } from "mantis-wasm";
 
 let ready = false;
 
@@ -111,6 +111,36 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       case "encrypt": {
         const result = encrypt_pdf(new Uint8Array(msg.pdfBytes), msg.userPassword, msg.ownerPassword);
         postSuccess(msg.id, { kind: "buffer", result: result.buffer }, [result.buffer as ArrayBuffer]);
+        break;
+      }
+
+      case "sanitize": {
+        const out = sanitize_pdf(msg.pdfBytes, msg.keepComments);
+        const bytes = out.bytes();
+        const report = Array.from(out.report());
+        out.free();
+        postSuccess(msg.id, { kind: "sanitized", bytes, report });
+        break;
+      }
+
+      case "remove-metadata": {
+        postSuccess(msg.id, { kind: "merge", bytes: new Uint8Array(remove_metadata(msg.pdfBytes)) });
+        break;
+      }
+
+      case "read-metadata": {
+        postSuccess(msg.id, { kind: "metadata", values: read_metadata(msg.pdfBytes) });
+        break;
+      }
+
+      case "set-metadata": {
+        const result = set_metadata(msg.pdfBytes, msg.title, msg.author, msg.subject, msg.keywords);
+        postSuccess(msg.id, { kind: "merge", bytes: new Uint8Array(result) });
+        break;
+      }
+
+      case "unlock": {
+        postSuccess(msg.id, { kind: "merge", bytes: new Uint8Array(unlock_pdf(msg.pdfBytes, msg.password)) });
         break;
       }
     }

@@ -87,4 +87,31 @@ describe("PdfWorkerClient", () => {
     await expect(p).rejects.toThrow("post failed");
     expect(client.pendingCount).toBe(0);
   });
+
+  it("round-trips the sanitized and metadata payload kinds", async () => {
+    const { sent, client } = makeClient();
+    const asSanitized = (p: SuccessPayload) => {
+      if (p.kind !== "sanitized") throw new Error("unexpected payload");
+      return p;
+    };
+    const asMeta = (p: SuccessPayload) => {
+      if (p.kind !== "metadata") throw new Error("unexpected payload");
+      return p.values;
+    };
+    const p1 = client.request(
+      (id) => ({ type: "sanitize", id, pdfBytes: new Uint8Array(), keepComments: false }),
+      asSanitized,
+    );
+    const p2 = client.request((id) => ({ type: "read-metadata", id, pdfBytes: new Uint8Array() }), asMeta);
+    const id1 = (sent[0] as { id: number }).id;
+    const id2 = (sent[1] as { id: number }).id;
+    client.handleMessage({ type: "success", id: id2, payload: { kind: "metadata", values: ["T", "A", "S", "K"] } });
+    client.handleMessage({
+      type: "success",
+      id: id1,
+      payload: { kind: "sanitized", bytes: new Uint8Array([1]), report: [1, 2, 3, 4, 5, 6] },
+    });
+    await expect(p2).resolves.toEqual(["T", "A", "S", "K"]);
+    await expect(p1).resolves.toMatchObject({ report: [1, 2, 3, 4, 5, 6] });
+  });
 });

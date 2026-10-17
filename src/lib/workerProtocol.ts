@@ -25,7 +25,12 @@ export type ToWorker =
       g: number;
       b: number;
     }
-  | { type: "encrypt"; id: ReqId; pdfBytes: ArrayBuffer; userPassword: string; ownerPassword: string };
+  | { type: "encrypt"; id: ReqId; pdfBytes: ArrayBuffer; userPassword: string; ownerPassword: string }
+  | { type: "sanitize"; id: ReqId; pdfBytes: Uint8Array; keepComments: boolean }
+  | { type: "remove-metadata"; id: ReqId; pdfBytes: Uint8Array }
+  | { type: "read-metadata"; id: ReqId; pdfBytes: Uint8Array }
+  | { type: "set-metadata"; id: ReqId; pdfBytes: Uint8Array; title: string; author: string; subject: string; keywords: string }
+  | { type: "unlock"; id: ReqId; pdfBytes: Uint8Array; password: string };
 
 // The successful result of an operation, tagged by `kind` so the requesting side
 // can extract the right field with a runtime check (no unsafe casts).
@@ -33,7 +38,9 @@ export type SuccessPayload =
   | { kind: "split"; parts: PdfPart[] }
   | { kind: "merge"; bytes: Uint8Array }
   | { kind: "count"; count: number }
-  | { kind: "buffer"; result: ArrayBuffer };
+  | { kind: "buffer"; result: ArrayBuffer }
+  | { kind: "sanitized"; bytes: Uint8Array; report: number[] }
+  | { kind: "metadata"; values: string[] };
 
 // Worker → Main messages. `init-done`/`init-error` are the one-time handshake;
 // all operation responses carry the originating `id`.

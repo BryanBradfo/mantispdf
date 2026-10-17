@@ -4,6 +4,22 @@ import type { PdfPart } from "../types/pdf";
 import { readFileAsArrayBuffer } from "../lib/fileHelpers";
 import { PdfWorkerClient } from "../lib/workerClient";
 
+export interface SanitizeReport {
+  linksKept: number;
+  linksDropped: number;
+  commentsKept: number;
+  commentsDropped: number;
+  fieldsFlattened: number;
+  warnings: number;
+}
+
+export interface PdfMetadata {
+  title: string;
+  author: string;
+  subject: string;
+  keywords: string;
+}
+
 interface WorkerState {
   ready: boolean;
   initError: string | null;
@@ -48,6 +64,18 @@ const asCount = (p: SuccessPayload): number => {
 const asBuffer = (p: SuccessPayload): ArrayBuffer => {
   if (p.kind !== "buffer") throw new Error("Unexpected worker payload");
   return p.result;
+};
+
+const asSanitized = (p: SuccessPayload): { bytes: Uint8Array; report: SanitizeReport } => {
+  if (p.kind !== "sanitized") throw new Error("Unexpected worker payload");
+  const [linksKept = 0, linksDropped = 0, commentsKept = 0, commentsDropped = 0, fieldsFlattened = 0, warnings = 0] =
+    p.report;
+  return { bytes: p.bytes, report: { linksKept, linksDropped, commentsKept, commentsDropped, fieldsFlattened, warnings } };
+};
+const asMetadata = (p: SuccessPayload): PdfMetadata => {
+  if (p.kind !== "metadata") throw new Error("Unexpected worker payload");
+  const [title = "", author = "", subject = "", keywords = ""] = p.values;
+  return { title, author, subject, keywords };
 };
 
 export function usePdfWorker() {
@@ -212,8 +240,80 @@ export function usePdfWorker() {
     [run],
   );
 
+  const sanitizePdf = useCallback(
+    (pdfBytes: Uint8Array, keepComments: boolean): Promise<{ bytes: Uint8Array; report: SanitizeReport }> =>
+      run(null, (id) => ({ type: "sanitize", id, pdfBytes, keepComments }), asSanitized),
+    [run],
+  );
+
+  const removeMetadata = useCallback(
+    (pdfBytes: Uint8Array): Promise<Uint8Array> =>
+      run(null, (id) => ({ type: "remove-metadata", id, pdfBytes }), asBytes),
+    [run],
+  );
+
+  const readMetadata = useCallback(
+    (pdfBytes: Uint8Array): Promise<PdfMetadata> =>
+      run(null, (id) => ({ type: "read-metadata", id, pdfBytes }), asMetadata),
+    [run],
+  );
+
+  const setMetadata = useCallback(
+    (pdfBytes: Uint8Array, m: PdfMetadata): Promise<Uint8Array> =>
+      run(
+        null,
+        (id) => ({
+          type: "set-metadata",
+          id,
+          pdfBytes,
+          title: m.title,
+          author: m.author,
+          subject: m.subject,
+          keywords: m.keywords,
+        }),
+        asBytes,
+      ),
+    [run],
+  );
+
+  const unlockPdf = useCallback(
+    (pdfBytes: Uint8Array, password: string): Promise<Uint8Array> =>
+      run(null, (id) => ({ type: "unlock", id, pdfBytes, password }), asBytes),
+    [run],
+  );
+
   return useMemo(
-    () => ({ ...state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, applyPagePlan, watermarkPdf, encryptPdf }),
-    [state, splitPdf, mergePdfs, countPages, compressPdf, rotatePdf, applyPagePlan, watermarkPdf, encryptPdf],
+    () => ({
+      ...state,
+      splitPdf,
+      mergePdfs,
+      countPages,
+      compressPdf,
+      rotatePdf,
+      applyPagePlan,
+      watermarkPdf,
+      encryptPdf,
+      sanitizePdf,
+      removeMetadata,
+      readMetadata,
+      setMetadata,
+      unlockPdf,
+    }),
+    [
+      state,
+      splitPdf,
+      mergePdfs,
+      countPages,
+      compressPdf,
+      rotatePdf,
+      applyPagePlan,
+      watermarkPdf,
+      encryptPdf,
+      sanitizePdf,
+      removeMetadata,
+      readMetadata,
+      setMetadata,
+      unlockPdf,
+    ],
   );
 }
