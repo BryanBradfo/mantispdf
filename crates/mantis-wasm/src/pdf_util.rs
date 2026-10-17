@@ -5,11 +5,96 @@ use std::collections::{BTreeMap, HashSet};
 /// lopdf then returns Ok with an empty page tree and /Encrypt left in the
 /// trailer. Owner-only encrypted files (empty user password) load fine.
 pub(crate) fn load_pdf(bytes: &[u8]) -> Result<Document, String> {
-    let doc = Document::load_mem(bytes).map_err(|e| format!("Failed to parse PDF: {e}"))?;
+    let mut doc = Document::load_mem(bytes).map_err(|e| format!("Failed to parse PDF: {e}"))?;
     if doc.is_encrypted() {
         return Err("This PDF is password-protected. Unlock it first.".to_string());
     }
+    widen_page_boxes(&mut doc);
     Ok(doc)
+}
+
+const PAGE_BOXES: [&[u8]; 5] = [b"MediaBox", b"CropBox", b"BleedBox", b"TrimBox", b"ArtBox"];
+
+/// Apply `widen_box_edge` to every page box on page and page-tree nodes, so
+/// f32 rounding never moves a box edge inward. A box shared by reference is
+/// widened once.
+fn widen_page_boxes(doc: &mut Document) {
+    let nodes: Vec<ObjectId> = doc
+        .objects
+        .iter()
+        .filter(|(_, o)| {
+            o.as_dict()
+                .ok()
+                .and_then(|d| d.get(b"Type").ok()?.as_name().ok())
+                .is_some_and(|t| t == b"Page" || t == b"Pages")
+        })
+        .map(|(id, _)| *id)
+        .collect();
+    let mut shared = HashSet::new();
+    for id in nodes {
+        for key in PAGE_BOXES {
+            let Ok(dict) = doc.get_dictionary_mut(id) else {
+                continue;
+            };
+            let target = match dict.get_mut(key) {
+                Ok(Object::Array(edges)) => {
+                    widen_box(edges);
+                    continue;
+                }
+                Ok(Object::Reference(target)) => *target,
+                _ => continue,
+            };
+            if shared.insert(target)
+                && let Some(Object::Array(edges)) = doc.objects.get_mut(&target)
+            {
+                widen_box(edges);
+            }
+        }
+    }
+}
+
+/// Widen the Real edges of `[x0 y0 x1 y1]` (in either order) outward.
+fn widen_box(edges: &mut [Object]) {
+    if edges.len() != 4 {
+        return;
+    }
+    for (a, b) in [(0, 2), (1, 3)] {
+        let (Ok(va), Ok(vb)) = (edges[a].as_float(), edges[b].as_float()) else {
+            continue;
+        };
+        let (low, high) = if va <= vb { (a, b) } else { (b, a) };
+        for (i, up) in [(low, false), (high, true)] {
+            if let Object::Real(v) = edges[i] {
+                edges[i] = Object::Real(widen_box_edge(v, up));
+            }
+        }
+    }
+}
+
+/// Shortest decimal text of an f32 with at least this many significant
+/// digits cannot be the value the file wrote: the parse rounded it.
+const ROUNDED_DIGITS: usize = 8;
+
+/// Page box edge `v` moved one f32 step outward (`up` for a max edge, down
+/// for a min edge) when it was rounded on parse. lopdf stores reals as f32,
+/// so `764.15094` can come back a hair inside the page and renderers then
+/// snap the last pixel row or column differently. Values with fewer digits
+/// (`595.32`) were exact enough and are left alone: moving them changes
+/// rendering for the worse.
+fn widen_box_edge(v: f32, up: bool) -> f32 {
+    if !v.is_finite() {
+        return v;
+    }
+    let text = format!("{v}");
+    let digits = text
+        .bytes()
+        .filter(u8::is_ascii_digit)
+        .skip_while(|&d| d == b'0')
+        .count();
+    if digits < ROUNDED_DIGITS {
+        return v;
+    }
+    if up { v.next_up() } else { v.next_down() }
 }
 
 /// `load_pdf` with the 1-based document number in its errors (merge, plan).
@@ -130,7 +215,7 @@ pub fn make_inherited_test_pdf(n: u32) -> Vec<u8> {
 /// appended pages keep the source's size (not the base's).
 #[cfg(test)]
 pub fn make_inherited_test_pdf_sized(n: u32, width: i64, height: i64) -> Vec<u8> {
-    use lopdf::{content::Content, dictionary, Stream};
+    use lopdf::{Stream, content::Content, dictionary};
 
     let mut doc = Document::with_version("1.5");
     let pages_id = doc.new_object_id();
@@ -205,7 +290,7 @@ mod tests {
 
     #[test]
     fn every_tool_refuses_user_password_pdf_but_accepts_owner_only() {
-        use crate::{compress, edit, encrypt, merge, page_plan, rotate, split, watermark, WasmPdf};
+        use crate::{WasmPdf, compress, edit, encrypt, merge, page_plan, rotate, split, watermark};
         let plain = make_inherited_test_pdf(2);
         let locked = encrypt::encrypt_pdf_impl(&plain, "u", "o").unwrap();
         let owner_only = encrypt::encrypt_pdf_impl(&plain, "", "o").unwrap();
@@ -277,5 +362,60 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err, "PDF 2 is password-protected. Unlock it first.");
+    }
+
+    #[test]
+    fn long_box_edges_move_one_f32_step_outward() {
+        let up = widen_box_edge(764.15094, true);
+        assert!(up > 764.15094_f32, "max edge pushed up");
+        assert_eq!(up, f32::from_bits(764.15094_f32.to_bits() + 1));
+        let down = widen_box_edge(12.345678, false);
+        assert!(down < 12.345678_f32, "min edge pushed down");
+        assert_eq!(
+            widen_box_edge(595.32, true),
+            595.32,
+            "short value unchanged"
+        );
+        assert_eq!(widen_box_edge(0.0, false), 0.0);
+    }
+
+    #[test]
+    fn load_widens_long_page_box_edges() {
+        use lopdf::dictionary;
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let page = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), Object::Real(12.345678), Object::Real(595.32), Object::Real(764.15094)],
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1,
+                "CropBox" => vec![0.into(), 0.into(), Object::Real(595.32), Object::Real(764.15094)],
+            }),
+        );
+        let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", catalog);
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).unwrap();
+
+        let doc = load_pdf(&bytes).unwrap();
+        let reals = |id: ObjectId, key: &[u8]| -> Vec<f32> {
+            doc.get_dictionary(id)
+                .unwrap()
+                .get(key)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|o| o.as_float().unwrap())
+                .collect()
+        };
+        let mb = reals(page, b"MediaBox");
+        assert!(mb[1] < 12.345678_f32);
+        assert_eq!(mb[2], 595.32);
+        assert!(mb[3] > 764.15094_f32);
+        assert!(reals(pages_id, b"CropBox")[3] > 764.15094_f32);
     }
 }
