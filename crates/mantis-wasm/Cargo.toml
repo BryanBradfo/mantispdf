@@ -14,6 +14,9 @@ wasm-opt = false
 
 [dependencies]
 lopdf = "0.39"
+# Bounded decoding of content streams for scans (same crates lopdf uses).
+flate2 = "1"
+weezl = "0.1"
 wasm-bindgen = "0.2"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 js-sys = "0.3"

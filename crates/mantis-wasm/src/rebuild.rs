@@ -188,7 +188,7 @@ const MAX_REF_DEPTH: usize = 256;
 const MAX_CONTENT_NESTING: usize = 64;
 
 /// Resource names a content stream refers to, per resource category.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct UsedNames {
     pub by_category: HashMap<&'static [u8], HashSet<Vec<u8>>>,
 }
@@ -561,12 +561,174 @@ fn is_never_copied(dict: &Dictionary, key: &[u8], value: &Object) -> bool {
     !is_policy
 }
 
-/// Content of a stream after its filters, or the raw bytes when lopdf cannot
-/// undo them (the scan then most likely fails and keeps all resources).
-fn stream_content(stream: &lopdf::Stream) -> Vec<u8> {
-    stream
-        .decompressed_content()
-        .unwrap_or_else(|_| stream.content.clone())
+/// Decoded bytes one stream may expand to for a content scan; a larger one
+/// counts as undecodable (its resources are all kept).
+const MAX_STREAM_DECODED: usize = 64 << 20;
+/// Decoded bytes all content scans of one rebuild may produce together.
+const MAX_TOTAL_DECODED: usize = 512 << 20;
+
+/// Outcome of one decoding step of `bounded_content`.
+enum Step {
+    Done(Vec<u8>),
+    /// The output would exceed the cap.
+    TooLarge,
+    /// lopdf cannot undo the filter: the raw bytes are scanned instead.
+    Failed,
+}
+
+/// `io::Write` sink that refuses to hold more than `cap` bytes, growing its
+/// buffer geometrically but never past the cap.
+struct Capped {
+    buf: Vec<u8>,
+    cap: usize,
+    over: bool,
+}
+
+impl std::io::Write for Capped {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let len = self.buf.len() + data.len();
+        if len > self.cap {
+            self.over = true;
+            return Err(std::io::Error::other("decoded content over the cap"));
+        }
+        if len > self.buf.capacity() {
+            let target = (self.buf.capacity() * 2)
+                .max(len)
+                .max(64 << 10)
+                .min(self.cap);
+            self.buf.reserve_exact(target - self.buf.len());
+        }
+        self.buf.extend_from_slice(data);
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// One filter run by lopdf on its own, once its output is known to fit.
+fn lopdf_step(filter: &[u8], input: &[u8], params: Option<&Dictionary>) -> Step {
+    let mut dict = dictionary! { "Filter" => Object::Name(filter.to_vec()) };
+    if let Some(params) = params {
+        dict.set("DecodeParms", params.clone());
+    }
+    match lopdf::Stream::new(dict, input.to_vec()).decompressed_content() {
+        Ok(out) => Step::Done(out),
+        Err(_) => Step::Failed,
+    }
+}
+
+/// Row size of the PNG predictor lopdf applies after Flate/LZW with these
+/// parameters (saturating), None when there is no such predictor.
+fn predictor_row(params: Option<&Dictionary>) -> Option<usize> {
+    let params = params?;
+    let int =
+        |key: &[u8], default: i64| params.get(key).and_then(Object::as_i64).unwrap_or(default);
+    if !(10..=15).contains(&int(b"Predictor", 1)) {
+        return None;
+    }
+    let columns = int(b"Columns", 1).max(1) as usize;
+    let colors = int(b"Colors", 1).max(1) as usize;
+    let bits = int(b"BitsPerComponent", 8).max(8) as usize;
+    Some(colors.saturating_mul(bits) / 8 * columns)
+}
+
+/// FlateDecode or LZWDecode as lopdf does it (partial output on a corrupt
+/// stream, then the PNG predictor), stopping at `cap` bytes.
+fn inflate_step(filter: &[u8], input: &[u8], params: Option<&Dictionary>, cap: usize) -> Step {
+    let mut sink = Capped {
+        buf: Vec::new(),
+        cap,
+        over: false,
+    };
+    if filter == b"FlateDecode" {
+        if !input.is_empty() {
+            let _ = std::io::copy(&mut flate2::read::ZlibDecoder::new(input), &mut sink);
+        }
+    } else {
+        use weezl::{BitOrder, decode::Decoder};
+        let early_change = params
+            .and_then(|p| p.get(b"EarlyChange").ok())
+            .and_then(|v| v.as_i64().ok())
+            .is_none_or(|v| v != 0);
+        let mut decoder = if early_change {
+            Decoder::with_tiff_size_switch(BitOrder::Msb, 8)
+        } else {
+            Decoder::new(BitOrder::Msb, 8)
+        };
+        let _ = decoder.into_stream(&mut sink).decode_all(input);
+    }
+    if sink.over {
+        return Step::TooLarge;
+    }
+    match predictor_row(params) {
+        None => Step::Done(sink.buf),
+        // The predictor never grows the data, but allocates two rows first.
+        Some(row) if row <= cap => {
+            drop(sink);
+            lopdf_step(filter, input, params)
+        }
+        Some(_) => Step::TooLarge,
+    }
+}
+
+/// ASCII85Decode as lopdf does it, refused up front when its output could
+/// exceed `cap` (4 bytes per `z`, 4 per group of 5 digits).
+fn ascii85_step(input: &[u8], cap: usize) -> Step {
+    let (mut zs, mut digits) = (0usize, 0usize);
+    for &c in input {
+        match c {
+            b'z' => zs += 1,
+            b'!'..=b'u' => digits += 1,
+            c if c.is_ascii_whitespace() => {}
+            _ => break,
+        }
+    }
+    if zs.saturating_mul(4).saturating_add(digits.div_ceil(5) * 4) > cap {
+        return Step::TooLarge;
+    }
+    lopdf_step(b"ASCII85Decode", input, None)
+}
+
+/// Content of a stream after its filters as lopdf decodes it, or the raw
+/// bytes when lopdf cannot undo them (the scan then most likely fails and
+/// keeps all resources). None when that takes more than `cap` bytes: each
+/// step is bounded before it allocates. `charged` grows by the bytes decoded.
+fn bounded_content(stream: &lopdf::Stream, cap: usize, charged: &mut usize) -> Option<Vec<u8>> {
+    let raw = |charged: &mut usize| {
+        let len = stream.content.len();
+        *charged += len.min(cap);
+        (len <= cap).then(|| stream.content.clone())
+    };
+    let Ok(filters) = stream.filters() else {
+        return raw(charged);
+    };
+    let params = stream
+        .dict
+        .get(b"DecodeParms")
+        .and_then(Object::as_dict)
+        .ok();
+    let mut data = std::borrow::Cow::Borrowed(stream.content.as_slice());
+    for filter in filters {
+        let step = match filter {
+            b"FlateDecode" | b"LZWDecode" => inflate_step(filter, &data, params, cap),
+            b"ASCII85Decode" => ascii85_step(&data, cap),
+            _ => Step::Failed,
+        };
+        match step {
+            Step::Done(out) => {
+                *charged += out.len();
+                data = std::borrow::Cow::Owned(out);
+            }
+            Step::TooLarge => {
+                *charged += cap;
+                return None;
+            }
+            Step::Failed => return raw(charged),
+        }
+    }
+    Some(data.into_owned())
 }
 
 /// Streams that carry their own content and `/Resources`: Form XObjects and
@@ -593,6 +755,12 @@ pub struct SafeCopier<'s> {
     /// one output object per source object, role (a `/Resources`, None, or
     /// the category dictionary it is used as) and trimming.
     trimmed: HashMap<TrimmedKey, ObjectId>,
+    /// Scan result per (source, stream object id): a stream drawn from many
+    /// places (one glyph procedure shared by thousands of Type3 fonts) is
+    /// decoded and scanned once.
+    scans: HashMap<(usize, ObjectId), Option<UsedNames>>,
+    /// Decoded bytes content scans may still produce in this rebuild.
+    decode_budget: usize,
 }
 
 /// The resource names a trimmed copy keeps, per category, in a canonical
@@ -640,7 +808,40 @@ impl<'s> SafeCopier<'s> {
             too_deep: 0,
             page_numbers: HashMap::new(),
             trimmed: HashMap::new(),
+            scans: HashMap::new(),
+            decode_budget: MAX_TOTAL_DECODED,
         }
+    }
+
+    /// Decoded content of `stream` for a scan, within `MAX_STREAM_DECODED`
+    /// and what is left of the rebuild's budget. None: over either limit.
+    fn decode_for_scan(&mut self, stream: &lopdf::Stream) -> Option<Vec<u8>> {
+        let cap = MAX_STREAM_DECODED.min(self.decode_budget);
+        let mut charged = 0;
+        let content = bounded_content(stream, cap, &mut charged);
+        self.decode_budget = self.decode_budget.saturating_sub(charged);
+        content
+    }
+
+    /// `scan_content` of `stream`, memoized on its object when it is
+    /// indirect (`id`, in source `src`). None: undecodable or over a limit.
+    fn scan_stream(
+        &mut self,
+        src: usize,
+        id: Option<ObjectId>,
+        stream: &lopdf::Stream,
+    ) -> Option<UsedNames> {
+        let key = id.map(|id| (src, terminal(self.source(src), id)));
+        if let Some(known) = key.and_then(|key| self.scans.get(&key)) {
+            return known.clone();
+        }
+        let used = self
+            .decode_for_scan(stream)
+            .and_then(|content| scan_content(&content));
+        if let Some(key) = key {
+            self.scans.insert(key, used.clone());
+        }
+        used
     }
 
     /// 1-based number of `page_id` in source `src` (0 if not in its page
@@ -744,9 +945,11 @@ impl<'s> SafeCopier<'s> {
             let copied = if NAME_MAP_KEYS.contains(&key.as_slice()) {
                 self.copy_name_map(out, src, value)
             } else if key == b"Resources" {
-                let used = (name_of(dict, b"Subtype") == Some(b"Type3"))
-                    .then(|| type3_usage(self.source(src), dict))
-                    .flatten();
+                let used = if name_of(dict, b"Subtype") == Some(b"Type3") {
+                    type3_usage(self, src, dict)
+                } else {
+                    None
+                };
                 self.copy_any_resources(out, src, value, used.as_ref())
             } else {
                 self.copy(out, src, value)
@@ -849,7 +1052,7 @@ impl<'s> SafeCopier<'s> {
             }
             let copied = match own_resources {
                 Some(res) if key == b"Resources" => {
-                    let used = scan_content(&stream_content(stream));
+                    let used = self.scan_stream(src, None, stream);
                     Object::Dictionary(self.copy_resources(out, src, res, used.as_ref()))
                 }
                 _ => self.copy(out, src, value),
@@ -875,7 +1078,7 @@ impl<'s> SafeCopier<'s> {
         // A form without its own /Resources draws from the enclosing ones, so
         // its names count as used here. If one of those cannot be decoded,
         // fall back to keeping everything.
-        let expanded = used.and_then(|u| expand_usage(doc, res, u));
+        let expanded = used.and_then(|u| expand_usage(self, src, res, u));
         let used = expanded.as_ref();
 
         let mut copy = Dictionary::new();
@@ -928,12 +1131,13 @@ impl<'s> SafeCopier<'s> {
 /// Resource names drawn by all glyph procedures of Type3 font `font`, whose
 /// `/Resources` they share. None (keep every resource) when the font has no
 /// readable /CharProcs or one glyph cannot be scanned.
-fn type3_usage(doc: &Document, font: &Dictionary) -> Option<UsedNames> {
+fn type3_usage(copier: &mut SafeCopier, src: usize, font: &Dictionary) -> Option<UsedNames> {
+    let doc = copier.source(src);
     let procs = deref(doc, font.get(b"CharProcs").ok()?)?.as_dict().ok()?;
     let mut used = UsedNames::default();
     for (_, glyph) in procs.iter() {
-        let glyph = deref(doc, glyph)?.as_stream().ok()?;
-        used.merge(scan_content(&stream_content(glyph))?);
+        let stream = deref(doc, glyph)?.as_stream().ok()?;
+        used.merge(copier.scan_stream(src, glyph.as_reference().ok(), stream)?);
     }
     Some(used)
 }
@@ -942,10 +1146,17 @@ fn type3_usage(doc: &Document, font: &Dictionary) -> Option<UsedNames> {
 /// `/Resources` of their own and so use the enclosing ones: Form XObjects and
 /// tiling patterns, Type3 glyph procedures, and soft-mask group forms reached
 /// through an ExtGState. None when one of those streams cannot be scanned.
-fn expand_usage(doc: &Document, res: &Dictionary, used: &UsedNames) -> Option<UsedNames> {
+fn expand_usage(
+    copier: &mut SafeCopier,
+    src: usize,
+    res: &Dictionary,
+    used: &UsedNames,
+) -> Option<UsedNames> {
+    let doc = copier.source(src);
     let lookup = |category: &[u8], name: &[u8]| {
         let entries = deref(doc, res.get(category).ok()?)?.as_dict().ok()?;
-        deref(doc, entries.get(name).ok()?)
+        let entry = entries.get(name).ok()?;
+        Some((entry.as_reference().ok(), deref(doc, entry)?))
     };
     let mut result = UsedNames::default();
     for (&category, names) in &used.by_category {
@@ -971,9 +1182,9 @@ fn expand_usage(doc: &Document, res: &Dictionary, used: &UsedNames) -> Option<Us
             return Some(result);
         }
         for (category, name) in pending {
-            if let Some(entry) = lookup(category, &name) {
-                for stream in inheriting_streams(doc, category, entry) {
-                    result.merge(scan_content(&stream_content(stream))?);
+            if let Some((id, entry)) = lookup(category, &name) {
+                for (id, stream) in inheriting_streams(doc, category, id, entry) {
+                    result.merge(copier.scan_stream(src, id, stream)?);
                 }
             }
             visited.insert((category, name));
@@ -981,20 +1192,26 @@ fn expand_usage(doc: &Document, res: &Dictionary, used: &UsedNames) -> Option<Us
     }
 }
 
-/// The content streams reached from resource `entry` (of `category`) that
-/// draw with the enclosing resources because they lack their own.
+/// The content streams reached from resource `entry` (of `category`, object
+/// `id` when indirect) that draw with the enclosing resources because they
+/// lack their own, each with its object id when indirect.
 fn inheriting_streams<'a>(
     doc: &'a Document,
     category: &[u8],
+    id: Option<ObjectId>,
     entry: &'a Object,
-) -> Vec<&'a lopdf::Stream> {
+) -> Vec<(Option<ObjectId>, &'a lopdf::Stream)> {
     let resource_less_form = |obj: &'a Object| {
         obj.as_stream()
             .ok()
             .filter(|s| has_own_content(&s.dict) && !s.dict.has(b"Resources"))
     };
+    let with_id = |obj: &'a Object| Some((obj.as_reference().ok(), deref(doc, obj)?));
     match category {
-        XOBJECT | PATTERN => resource_less_form(entry).into_iter().collect(),
+        XOBJECT | PATTERN => resource_less_form(entry)
+            .map(|s| (id, s))
+            .into_iter()
+            .collect(),
         FONT => {
             let Ok(font) = entry.as_dict() else {
                 return vec![];
@@ -1008,7 +1225,10 @@ fn inheriting_streams<'a>(
                 .and_then(|p| p.as_dict().ok())
                 .into_iter()
                 .flat_map(|procs| procs.iter())
-                .filter_map(|(_, glyph)| deref(doc, glyph)?.as_stream().ok())
+                .filter_map(|(_, glyph)| {
+                    let (id, glyph) = with_id(glyph)?;
+                    Some((id, glyph.as_stream().ok()?))
+                })
                 .collect()
         }
         EXT_G_STATE => entry
@@ -1016,8 +1236,8 @@ fn inheriting_streams<'a>(
             .ok()
             .and_then(|gs| deref(doc, gs.get(b"SMask").ok()?))
             .and_then(|mask| mask.as_dict().ok())
-            .and_then(|mask| deref(doc, mask.get(b"G").ok()?))
-            .and_then(resource_less_form)
+            .and_then(|mask| with_id(mask.get(b"G").ok()?))
+            .and_then(|(id, group)| Some((id, resource_less_form(group)?)))
             .into_iter()
             .collect(),
         _ => vec![],
@@ -1103,11 +1323,18 @@ pub fn copy_page(
     let too_deep_before = copier.too_deep;
     let content_ids = doc.get_page_contents(page_id);
     let mut joined = Vec::new();
+    let mut over_limit = false;
     let mut contents = Vec::with_capacity(content_ids.len());
     for id in &content_ids {
-        if let Ok(stream) = doc.get_object(*id).and_then(Object::as_stream) {
-            joined.extend_from_slice(&stream_content(stream));
-            joined.push(b'\n');
+        // Over a decoding limit counts as undecodable: all resources kept.
+        if let (false, Ok(stream)) = (over_limit, doc.get_object(*id).and_then(Object::as_stream)) {
+            match copier.decode_for_scan(stream) {
+                Some(content) => {
+                    joined.extend_from_slice(&content);
+                    joined.push(b'\n');
+                }
+                None => over_limit = true,
+            }
         }
         contents.push(copier.copy(out, src, &Object::Reference(*id)));
     }
@@ -1124,7 +1351,11 @@ pub fn copy_page(
         .and_then(|r| r.as_dict().ok());
     let mut problems = Vec::new();
     if let Some(res) = resources {
-        let used = scan_content(&joined);
+        let used = if over_limit {
+            None
+        } else {
+            scan_content(&joined)
+        };
         if used.is_none() {
             problems.push("content not decodable, kept all resources");
         }
@@ -2825,5 +3056,312 @@ mod tests {
             assert!(bytes.len() < 1 << 20, "{name}: {} B", bytes.len());
             assert!(Document::load_mem(&bytes).is_ok(), "{name}: unreadable");
         }
+    }
+
+    // ---- decoded-content guards -----------------------------------------
+
+    /// Per-thread net heap use, so a test can measure the peak one call
+    /// reaches without other test threads interfering.
+    mod alloc_meter {
+        use std::alloc::{GlobalAlloc, Layout, System};
+        use std::cell::Cell;
+
+        thread_local! {
+            static NET: Cell<isize> = const { Cell::new(0) };
+            static PEAK: Cell<isize> = const { Cell::new(0) };
+        }
+
+        fn track(delta: isize) {
+            let _ = NET.try_with(|net| {
+                let now = net.get() + delta;
+                net.set(now);
+                let _ = PEAK.try_with(|peak| peak.set(peak.get().max(now)));
+            });
+        }
+
+        struct Meter;
+
+        unsafe impl GlobalAlloc for Meter {
+            unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+                track(layout.size() as isize);
+                unsafe { System.alloc(layout) }
+            }
+            unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+                track(layout.size() as isize);
+                unsafe { System.alloc_zeroed(layout) }
+            }
+            unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+                track(-(layout.size() as isize));
+                unsafe { System.dealloc(ptr, layout) }
+            }
+            unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+                track(new_size as isize - layout.size() as isize);
+                unsafe { System.realloc(ptr, layout, new_size) }
+            }
+        }
+
+        #[global_allocator]
+        static METER: Meter = Meter;
+
+        /// Result of `f` and the most heap it held at once beyond what was
+        /// live when it started.
+        pub fn peak_during<R>(f: impl FnOnce() -> R) -> (R, usize) {
+            let base = NET.with(Cell::get);
+            PEAK.with(|peak| peak.set(base));
+            let result = f();
+            (result, (PEAK.with(Cell::get) - base).max(0) as usize)
+        }
+    }
+
+    /// zlib stream inflating to `1 + 258 * matches` zero bytes: one literal,
+    /// then fixed-Huffman back-references (13 bits per 258 bytes).
+    fn zero_bomb(matches: usize) -> Vec<u8> {
+        let mut out = vec![0x78, 0x01];
+        let (mut acc, mut bits) = (0u64, 0u32);
+        let mut put = |out: &mut Vec<u8>, value: u64, n: u32| {
+            acc |= value << bits;
+            bits += n;
+            while bits >= 8 {
+                out.push(acc as u8);
+                acc >>= 8;
+                bits -= 8;
+            }
+        };
+        // Huffman codes go most significant bit first.
+        let code = |c: u64, n: u32| (0..n).fold(0, |r, i| r | ((c >> (n - 1 - i)) & 1) << i);
+        put(&mut out, 0b011, 3); // BFINAL, fixed Huffman
+        put(&mut out, code(0x30, 8), 8); // literal 0
+        for _ in 0..matches {
+            put(&mut out, code(0xC5, 8), 8); // length 258
+            put(&mut out, 0, 5); // distance 1
+        }
+        put(&mut out, 0, 7); // end of block
+        put(&mut out, 0, 7); // flush to a byte boundary
+        let len = (1 + 258 * matches) as u64;
+        let adler = ((len % 65521) << 16) | 1;
+        out.extend_from_slice(&(adler as u32).to_be_bytes());
+        out
+    }
+
+    #[test]
+    fn zero_bomb_inflates_as_announced() {
+        let bomb = Stream::new(dictionary! { "Filter" => "FlateDecode" }, zero_bomb(1000));
+        let plain = bomb.decompressed_content().unwrap();
+        assert_eq!(plain.len(), 1 + 258 * 1000);
+        assert!(plain.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn content_bomb_never_inflates_past_the_cap() {
+        // ~200 MB of zeros in ~1.2 MB of page content.
+        let matches = (200 << 20) / 258;
+        let mut src = Src::new();
+        let img = src.doc.add_object(image(b"SECRET_BOMBIMG"));
+        let page = src.add_page(
+            dictionary! { "XObject" => dictionary! { "Im1" => img } },
+            b"",
+        );
+        let bomb = Stream::new(
+            dictionary! { "Filter" => "FlateDecode" },
+            zero_bomb(matches),
+        );
+        let content = src.doc.add_object(bomb);
+        src.doc
+            .get_dictionary_mut(page)
+            .unwrap()
+            .set("Contents", content);
+        let doc = src.finish();
+        let page = doc.get_pages()[&1];
+        let pages = [OutPage::Page {
+            src: 0,
+            page,
+            rotate: 0,
+        }];
+        let ((out, report), peak) =
+            alloc_meter::peak_during(|| rebuild_document(&[doc], &pages, &PAGE_TOOLS).unwrap());
+        assert!(
+            peak < MAX_STREAM_DECODED + (16 << 20),
+            "peak heap {} MB",
+            peak >> 20
+        );
+        // Over the cap counts as undecodable: every resource is kept.
+        assert_eq!(
+            report.warnings,
+            ["Page 1: content not decodable, kept all resources"]
+        );
+        let mut bytes = Vec::new();
+        out.clone().save_to(&mut bytes).unwrap();
+        assert!(contains(&bytes, b"SECRET_BOMBIMG"));
+    }
+
+    #[test]
+    fn bounded_content_matches_lopdf_decoding() {
+        let plain: Vec<u8> = (0..4000u32).flat_map(|i| (i % 251).to_le_bytes()).collect();
+        let flate = {
+            use std::io::Write;
+            let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+            e.write_all(&plain).unwrap();
+            e.finish().unwrap()
+        };
+        // PNG "Up" predictor rows of 4 bytes over `plain`.
+        let png: Vec<u8> = plain
+            .chunks(4)
+            .enumerate()
+            .flat_map(|(r, row)| {
+                let prev = if r == 0 {
+                    [0; 4]
+                } else {
+                    <[u8; 4]>::try_from(&plain[(r - 1) * 4..r * 4]).unwrap()
+                };
+                std::iter::once(2u8).chain(row.iter().zip(prev).map(|(b, p)| b.wrapping_sub(p)))
+            })
+            .collect();
+        let png_flate = {
+            use std::io::Write;
+            let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+            e.write_all(&png).unwrap();
+            e.finish().unwrap()
+        };
+        let lzw = weezl::encode::Encoder::with_tiff_size_switch(weezl::BitOrder::Msb, 8)
+            .encode(&plain)
+            .unwrap();
+        let a85 = |data: &[u8]| {
+            let mut out = Vec::new();
+            for chunk in data.chunks(4) {
+                let mut word = [0u8; 4];
+                word[..chunk.len()].copy_from_slice(chunk);
+                let mut n = u32::from_be_bytes(word);
+                let mut digits = [0u8; 5];
+                for d in digits.iter_mut().rev() {
+                    *d = (n % 85) as u8 + b'!';
+                    n /= 85;
+                }
+                out.extend_from_slice(&digits[..chunk.len() + 1]);
+            }
+            out.extend_from_slice(b"~>");
+            out
+        };
+        let cases: Vec<(Dictionary, Vec<u8>)> = vec![
+            (dictionary! {}, plain.clone()),
+            (dictionary! { "Filter" => "FlateDecode" }, flate.clone()),
+            (
+                dictionary! { "Filter" => "FlateDecode",
+                "DecodeParms" => dictionary! { "Predictor" => 12, "Columns" => 4 } },
+                png_flate,
+            ),
+            (dictionary! { "Filter" => "LZWDecode" }, lzw),
+            (
+                dictionary! { "Filter" => vec!["ASCII85Decode".into(), "FlateDecode".into()] },
+                a85(&flate),
+            ),
+            (
+                dictionary! { "Filter" => "DCTDecode" },
+                b"not decoded".to_vec(),
+            ),
+            (
+                dictionary! { "Filter" => "FlateDecode" },
+                flate[..flate.len() / 2].to_vec(),
+            ),
+        ];
+        for (dict, content) in cases {
+            let stream = Stream::new(dict.clone(), content);
+            let expected = stream
+                .decompressed_content()
+                .unwrap_or_else(|_| stream.content.clone());
+            assert!(!expected.is_empty(), "{dict:?}");
+            let mut charged = 0;
+            let got = bounded_content(&stream, 1 << 20, &mut charged);
+            assert_eq!(got.as_deref(), Some(expected.as_slice()), "{dict:?}");
+            assert_eq!(
+                bounded_content(&stream, expected.len() - 1, &mut charged),
+                None,
+                "{dict:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn decode_budget_is_shared_by_the_whole_rebuild() {
+        let mut src = Src::new();
+        let img = src.doc.add_object(image(b"SECRET_USEDIMG"));
+        let unused = src.doc.add_object(image(b"SECRET_UNUSEDIMG"));
+        let mut content = b"/Im1 Do\n".to_vec();
+        content.resize(1000, b' ');
+        let res = || dictionary! { "XObject" => dictionary! { "Im1" => img, "Im2" => unused } };
+        src.add_page(res(), &content);
+        src.add_page(res(), &content);
+        let doc = src.finish();
+        let pages = doc.get_pages();
+        let sources = [doc];
+        let mut copier = SafeCopier::new(&sources);
+        copier.decode_budget = 1500;
+        let mut out = Document::with_version("1.7");
+        let mut report = RebuildReport::default();
+        let first = copy_page(&mut out, &mut copier, 0, pages[&1], 0, &mut report).unwrap();
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        let second = copy_page(&mut out, &mut copier, 0, pages[&2], 0, &mut report).unwrap();
+        // The budget left (500 B) is below the second page's content: it is
+        // not scanned and keeps every resource.
+        assert_eq!(
+            report.warnings,
+            ["Page 2: content not decodable, kept all resources"]
+        );
+        let bytes = assemble(out, &[first, second]);
+        assert!(contains(&bytes, b"SECRET_UNUSEDIMG"));
+    }
+
+    #[test]
+    fn type3_fonts_sharing_a_large_glyph_scan_it_once() {
+        let mut glyph = b"0 0 d0 /ImG Do\n".to_vec();
+        while glyph.len() < 128 << 10 {
+            glyph.extend_from_slice(b"0 0 m 1 1 l S\n");
+        }
+        let mut src = Src::new();
+        let glyph = src.doc.add_object(Stream::new(dictionary! {}, glyph));
+        src.doc
+            .get_object_mut(glyph)
+            .unwrap()
+            .as_stream_mut()
+            .unwrap()
+            .compress()
+            .unwrap();
+        let img = src.doc.add_object(image(b"SECRET_T3IMG"));
+        let res = src
+            .doc
+            .add_object(dictionary! { "XObject" => dictionary! { "ImG" => img } });
+        let mut fonts = Dictionary::new();
+        let mut content = b"BT ".to_vec();
+        for i in 0..10_000 {
+            let mut font = dictionary! {
+                "Type" => "Font", "Subtype" => "Type3", "CharProcs" => dictionary! { "g" => glyph },
+            };
+            // Half carry /Resources (scanned through `type3_usage`), half
+            // draw from the page's (scanned through `expand_usage`).
+            if i % 2 == 0 {
+                font.set("Resources", res);
+            }
+            fonts.set(format!("F{i}"), src.doc.add_object(font));
+            content.extend_from_slice(format!("/F{i} 1 Tf ").as_bytes());
+        }
+        content.extend_from_slice(b"ET");
+        src.add_page(
+            dictionary! { "Font" => fonts, "XObject" => dictionary! { "ImG" => img } },
+            &content,
+        );
+        // Timed on the copy path like `measure`: `rebuild_document` also runs
+        // lopdf's `prune_objects`, whose own cost grows with the object count.
+        let doc = src.finish();
+        let start = std::time::Instant::now();
+        let (bytes, _, report) = rebuild(doc, &[1]);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "took {elapsed:?}"
+        );
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        assert!(
+            contains(&bytes, b"SECRET_T3IMG"),
+            "glyph image must be kept"
+        );
     }
 }
