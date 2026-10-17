@@ -16,6 +16,10 @@ const ExtractPagesPage = lazy(() => import("./pages/ExtractPagesPage"));
 const PdfToImagePage = lazy(() => import("./pages/PdfToImagePage"));
 const WatermarkPdfPage = lazy(() => import("./pages/WatermarkPdfPage"));
 const EncryptPdfPage = lazy(() => import("./pages/EncryptPdfPage"));
+const SanitizePdfPage = lazy(() => import("./pages/SanitizePdfPage"));
+const RemoveMetadataPage = lazy(() => import("./pages/RemoveMetadataPage"));
+const EditMetadataPage = lazy(() => import("./pages/EditMetadataPage"));
+const UnlockPdfPage = lazy(() => import("./pages/UnlockPdfPage"));
 
 function PageSpinner() {
   return (
@@ -64,6 +68,10 @@ export default function App() {
               <Route path="/pdf-to-image" element={<PdfToImagePage />} />
               <Route path="/watermark" element={<WatermarkPdfPage />} />
               <Route path="/encrypt" element={<EncryptPdfPage />} />
+              <Route path="/sanitize" element={<SanitizePdfPage />} />
+              <Route path="/remove-metadata" element={<RemoveMetadataPage />} />
+              <Route path="/edit-metadata" element={<EditMetadataPage />} />
+              <Route path="/unlock" element={<UnlockPdfPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>

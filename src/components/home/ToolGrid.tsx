@@ -71,6 +71,34 @@ const tools = [
     icon: "🔒",
     available: true,
   },
+  {
+    title: "Sanitize PDF",
+    description: "Strip hidden data: metadata, scripts, attachments and form data.",
+    href: "/sanitize",
+    icon: "🧼",
+    available: true,
+  },
+  {
+    title: "Remove Metadata",
+    description: "Clear the title, author, subject and keywords.",
+    href: "/remove-metadata",
+    icon: "🏷️",
+    available: true,
+  },
+  {
+    title: "Edit Metadata",
+    description: "Change the title, author, subject and keywords.",
+    href: "/edit-metadata",
+    icon: "✍️",
+    available: true,
+  },
+  {
+    title: "Unlock PDF",
+    description: "Remove the password and restrictions from a PDF you can open.",
+    href: "/unlock",
+    icon: "🔓",
+    available: true,
+  },
 ];
 
 export default function ToolGrid() {

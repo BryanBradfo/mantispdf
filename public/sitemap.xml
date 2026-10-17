@@ -11,4 +11,8 @@
   <url><loc>https://mantispdf.vercel.app/watermark</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
   <url><loc>https://mantispdf.vercel.app/encrypt</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
   <url><loc>https://mantispdf.vercel.app/pdf-to-image</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/sanitize</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/remove-metadata</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/edit-metadata</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mantispdf.vercel.app/unlock</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
 </urlset>
