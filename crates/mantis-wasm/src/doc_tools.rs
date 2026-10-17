@@ -3,8 +3,14 @@
 use crate::rebuild::{OutPage, Policy, RebuildReport, rebuild_document};
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
-fn load(bytes: &[u8]) -> Result<Document, String> {
-    Document::load_mem(bytes).map_err(|e| format!("Failed to parse PDF: {e}"))
+/// Parse a PDF, refusing one that still needs a user password: lopdf then
+/// returns Ok with an empty page tree and /Encrypt left in the trailer.
+pub(crate) fn load(bytes: &[u8]) -> Result<Document, String> {
+    let doc = Document::load_mem(bytes).map_err(|e| format!("Failed to parse PDF: {e}"))?;
+    if doc.is_encrypted() {
+        return Err("This PDF is password-protected. Unlock it first.".to_string());
+    }
+    Ok(doc)
 }
 
 fn save(doc: &mut Document) -> Result<Vec<u8>, String> {
@@ -80,8 +86,28 @@ pub struct Metadata {
     pub keywords: String,
 }
 
-/// PDF text string: UTF-16BE with a BOM, otherwise PDFDocEncoding (treated
-/// as Latin-1).
+/// PDFDocEncoding for 0x18-0x1F and 0x80-0xA0 (ISO 32000 Annex D); the rest
+/// matches Latin-1. 0x9F is undefined and maps to U+FFFD.
+fn pdfdoc_char(b: u8) -> char {
+    const LOW: [char; 8] = [
+        '\u{2D8}', '\u{2C7}', '\u{2C6}', '\u{2D9}', '\u{2DD}', '\u{2DB}', '\u{2DA}', '\u{2DC}',
+    ];
+    const HIGH: [char; 33] = [
+        '\u{2022}', '\u{2020}', '\u{2021}', '\u{2026}', '\u{2014}', '\u{2013}', '\u{192}',
+        '\u{2044}', '\u{2039}', '\u{203A}', '\u{2212}', '\u{2030}', '\u{201E}', '\u{201C}',
+        '\u{201D}', '\u{2018}', '\u{2019}', '\u{201A}', '\u{2122}', '\u{FB01}', '\u{FB02}',
+        '\u{141}', '\u{152}', '\u{160}', '\u{178}', '\u{17D}', '\u{131}', '\u{142}', '\u{153}',
+        '\u{161}', '\u{17E}', '\u{FFFD}', '\u{20AC}',
+    ];
+    match b {
+        0x18..=0x1F => LOW[(b - 0x18) as usize],
+        0x80..=0xA0 => HIGH[(b - 0x80) as usize],
+        _ => b as char,
+    }
+}
+
+/// PDF text string: UTF-16BE with a BOM, UTF-8 with a BOM (PDF 2.0),
+/// otherwise PDFDocEncoding.
 fn decode_text(bytes: &[u8]) -> String {
     if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
         let units: Vec<u16> = rest
@@ -89,8 +115,10 @@ fn decode_text(bytes: &[u8]) -> String {
             .map(|c| u16::from_be_bytes([c[0], c[1]]))
             .collect();
         String::from_utf16_lossy(&units)
+    } else if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
+        String::from_utf8_lossy(rest).into_owned()
     } else {
-        bytes.iter().map(|&b| b as char).collect()
+        bytes.iter().map(|&b| pdfdoc_char(b)).collect()
     }
 }
 
@@ -219,6 +247,21 @@ mod tests {
             "Contents" => Object::string_literal("SECRETNOTE"),
         });
         let content = doc.add_object(Stream::new(dictionary! {}, b"BT (VISIBLE) Tj ET".to_vec()));
+        let page_xmp = doc.add_object(Stream::new(
+            dictionary! { "Type" => "Metadata", "Subtype" => "XML" },
+            b"<x>SECRETPAGEXMP</x>".to_vec(),
+        ));
+        let image_xmp = doc.add_object(Stream::new(
+            dictionary! { "Type" => "Metadata", "Subtype" => "XML" },
+            b"<x>SECRETIMGXMP</x>".to_vec(),
+        ));
+        let image = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => 1, "Height" => 1,
+                "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8, "Metadata" => image_xmp,
+            },
+            vec![0u8],
+        ));
         doc.objects.insert(
             page_id,
             Object::Dictionary(dictionary! {
@@ -227,6 +270,8 @@ mod tests {
                 "Contents" => content,
                 "Annots" => vec![widget.into(), link.into(), note.into()],
                 "PieceInfo" => dictionary! { "App" => Object::string_literal("SECRETPIECE") },
+                "Metadata" => page_xmp,
+                "Resources" => dictionary! { "XObject" => dictionary! { "Im1" => image } },
             }),
         );
         doc.objects.insert(
@@ -317,7 +362,14 @@ mod tests {
     fn remove_metadata_keeps_forms() {
         let src = hidden_pdf();
         let out = remove_metadata(&src).unwrap();
-        for s in ["SECRETINFO", "SECRETXMP", "SECRETCREATOR", "SECRETPIECE"] {
+        for s in [
+            "SECRETINFO",
+            "SECRETXMP",
+            "SECRETCREATOR",
+            "SECRETPIECE",
+            "SECRETPAGEXMP",
+            "SECRETIMGXMP",
+        ] {
             assert!(!contains(&out, s), "{s} survived");
         }
         let doc = Document::load_mem(&out).unwrap();
@@ -382,6 +434,49 @@ mod tests {
     }
 
     #[test]
+    fn password_protected_input_is_refused() {
+        let locked = encrypt_pdf_impl(&plain_with_id(), "u", "o").unwrap();
+        let want = "This PDF is password-protected. Unlock it first.";
+        let m = Metadata::default();
+        assert_eq!(sanitize(&locked, false).unwrap_err(), want);
+        assert_eq!(remove_metadata(&locked).unwrap_err(), want);
+        assert_eq!(read_metadata(&locked).unwrap_err(), want);
+        assert_eq!(set_metadata(&locked, &m).unwrap_err(), want);
+        assert_eq!(crate::split::page_count(&locked).unwrap_err(), want);
+        // Owner-only (empty user password) opens normally.
+        let owner_only = encrypt_pdf_impl(&plain_with_id(), "", "o").unwrap();
+        assert_eq!(crate::split::page_count(&owner_only).unwrap(), 1);
+        assert!(sanitize(&owner_only, false).is_ok());
+        assert_eq!(read_metadata(&owner_only).unwrap().author, "Old Author");
+    }
+
+    #[test]
+    fn decode_pdfdoc_and_utf8() {
+        assert_eq!(decode_text(&[0x84]), "\u{2014}");
+        assert_eq!(decode_text(&[0x93]), "\u{FB01}");
+        assert_eq!(decode_text(&[0xA0]), "\u{20AC}");
+        assert_eq!(decode_text(&[0x18]), "\u{02D8}");
+        assert_eq!(decode_text(&[0xE9]), "\u{E9}");
+        assert_eq!(
+            decode_text(&[0xEF, 0xBB, 0xBF, b'a', 0xC3, 0xA9]),
+            "a\u{E9}"
+        );
+    }
+
+    #[test]
+    fn metadata_round_trip_special_chars() {
+        let m = Metadata {
+            title: r"Plan (v2) \ draft".into(),
+            author: "Zoë (ÿ)".into(),
+            subject: String::new(),
+            keywords: String::new(),
+        };
+        let out = set_metadata(&hidden_pdf(), &m).unwrap();
+        assert_eq!(read_metadata(&out).unwrap().title, m.title);
+        assert_eq!(read_metadata(&out).unwrap().author, m.author);
+    }
+
+    #[test]
     fn unlock_round_trips() {
         let plain = plain_with_id();
         let locked = encrypt_pdf_impl(&plain, "u", "o").unwrap();
@@ -398,7 +493,10 @@ mod tests {
         assert!(unlock(&locked, "o").is_ok(), "owner password works");
 
         let owner_only = encrypt_pdf_impl(&plain, "", "o").unwrap();
-        assert!(unlock(&owner_only, "").is_ok());
+        let out = unlock(&owner_only, "").unwrap();
+        let doc = Document::load_mem(&out).unwrap();
+        assert!(!doc.is_encrypted());
+        assert_eq!(doc.get_pages().len(), 1);
 
         assert_eq!(
             unlock(&plain, "").unwrap_err(),

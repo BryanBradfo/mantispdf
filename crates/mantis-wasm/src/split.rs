@@ -2,7 +2,7 @@ use crate::rebuild::{OutPage, PAGE_TOOLS, rebuild_document};
 use lopdf::Document;
 
 pub fn page_count(pdf_bytes: &[u8]) -> Result<u32, String> {
-    let doc = Document::load_mem(pdf_bytes).map_err(|e| format!("Failed to parse PDF: {e}"))?;
+    let doc = crate::doc_tools::load(pdf_bytes)?;
     Ok(doc.get_pages().len() as u32)
 }
 
