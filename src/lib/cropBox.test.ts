@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCropJob, describeCrop, fitCropToPage, missedPagesProblem, moveCropRect, pagesMissedBy, resizeCropRect, type CropChoice } from "./cropBox";
+import { buildCropJob, cropTargetPages, describeCrop, fitCropToPage, missedPagesProblem, moveCropRect, pagesMissedBy, resizeCropRect, type CropChoice } from "./cropBox";
 import type { Rect } from "./geometryJob";
 
 const letter: [number, number] = [612, 792];
@@ -108,5 +108,20 @@ describe("missedPagesProblem", () => {
     expect(missedPagesProblem(many)).toBe(
       "The crop area misses pages 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 and 4 more. Use a page range or auto-detect.",
     );
+  });
+});
+
+describe("cropTargetPages", () => {
+  it("is every page for scope all, even with a leftover range", () => {
+    expect(cropTargetPages({ scope: "all", page: 2, range: [1, 2], total: 4 })).toEqual([1, 2, 3, 4]);
+  });
+  it("is the range for scope range and the shown page for scope this", () => {
+    expect(cropTargetPages({ scope: "range", page: 2, range: [1, 3], total: 4 })).toEqual([1, 3]);
+    expect(cropTargetPages({ scope: "this", page: 2, range: [1, 3], total: 4 })).toEqual([2]);
+  });
+  it("finds a missed page outside a leftover range when all pages are cropped", () => {
+    const sizes: [number, number][] = [[612, 792], [612, 792], [612, 792], [100, 100]];
+    const pages = cropTargetPages({ scope: "all", page: 1, range: [1, 2], total: 4 });
+    expect(pagesMissedBy([300, 300, 100, 100], sizes, pages)).toEqual([4]);
   });
 });

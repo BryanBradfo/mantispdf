@@ -81,6 +81,13 @@ export interface CropChoice {
   permanent: boolean;
 }
 
+/** Pages (1-based) a shared box applies to, as `buildCropJob` sends them: all pages for scope "all". */
+export function cropTargetPages(c: Pick<CropChoice, "scope" | "page" | "range" | "total">): number[] {
+  if (c.scope === "this") return [c.page];
+  if (c.scope === "all") return Array.from({ length: c.total }, (_, i) => i + 1);
+  return [...c.range];
+}
+
 /** The worker job for a crop choice. */
 export function buildCropJob(c: CropChoice): CropJobSpec {
   if (c.perPage) {

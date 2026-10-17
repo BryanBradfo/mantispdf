@@ -9,7 +9,7 @@ import RangeInput from "../components/planner/RangeInput";
 import LiveSummary from "../components/stamp/LiveSummary";
 import CropCanvas from "../components/geometry/CropCanvas";
 import { detectContentRects } from "../lib/autoMargins";
-import { buildCropJob, defaultCropRect, fitCropToPage, missedPagesProblem, pagesMissedBy, type CropScope } from "../lib/cropBox";
+import { buildCropJob, cropTargetPages, defaultCropRect, fitCropToPage, missedPagesProblem, pagesMissedBy, type CropScope } from "../lib/cropBox";
 import type { Rect } from "../lib/geometryJob";
 import { describePages } from "../lib/stampBuilders";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
@@ -115,8 +115,11 @@ export default function CropPdfPage() {
 
   // A shared box on pages of other sizes may not reach some of them.
   const missed = useMemo(
-    () => (!perPage && shown && scope !== "this" ? pagesMissedBy(shown, sizes, selected) : []),
-    [perPage, shown, scope, sizes, selected],
+    () =>
+      !perPage && shown && scope !== "this"
+        ? pagesMissedBy(shown, sizes, cropTargetPages({ scope, page, range: selected, total }))
+        : [],
+    [perPage, shown, scope, page, sizes, selected, total],
   );
 
   const problem =
