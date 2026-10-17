@@ -1071,7 +1071,8 @@ pub enum OutPage {
 
 const LETTER: [i64; 4] = [0, 0, 612, 792];
 
-/// Build a fresh document (catalog with /Type /Pages only, no Info) from
+/// Build a fresh document (catalog with /Type /Pages, plus /OCProperties
+/// when optional-content groups were copied; no Info) from
 /// `pages`. Nothing from `sources` reaches the output except what each kept
 /// page displays and the annotations `policy` keeps; a source page that
 /// appears more than once gets independent copies, and links resolve to its
@@ -1153,11 +1154,133 @@ pub fn rebuild_document(
         pages_id,
         Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => count }),
     );
-    let catalog = out.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    let mut catalog = dictionary! { "Type" => "Catalog", "Pages" => pages_id };
+    if let Some(oc) = optional_content(&copier, sources) {
+        catalog.set("OCProperties", oc);
+    }
+    let catalog = out.add_object(catalog);
     out.trailer.set("Root", catalog);
     // Safety net: objects created and then abandoned (dropped links) go too.
     out.prune_objects();
     Ok((out, report))
+}
+
+/// Nesting accepted in an optional-content `/Order` array.
+const MAX_ORDER_DEPTH: usize = 32;
+
+/// A minimal `/OCProperties` for the optional-content groups the copier
+/// actually copied, so layers hidden by default stay hidden: `/OCGs` lists
+/// them, `/D /OFF` the ones each source shows off by default (its /BaseState,
+/// /ON and /OFF resolved), and `/D /Order` is the source order restricted to
+/// them. Everything else (/Configs, /AS, /Locked, /RBGroups) is left out.
+/// None when no group was copied.
+fn optional_content(copier: &SafeCopier, sources: &[Document]) -> Option<Dictionary> {
+    let mut groups: Vec<Object> = Vec::new();
+    let mut hidden: Vec<Object> = Vec::new();
+    let mut order: Vec<Object> = Vec::new();
+    for (src, doc) in sources.iter().enumerate() {
+        let Some(props) = doc
+            .catalog()
+            .ok()
+            .and_then(|c| deref(doc, c.get(b"OCProperties").ok()?))
+            .and_then(|p| p.as_dict().ok())
+        else {
+            continue;
+        };
+        let refs_in = |obj: Option<&Object>| -> Vec<ObjectId> {
+            obj.and_then(|o| deref(doc, o))
+                .and_then(|o| o.as_array().ok())
+                .map(|items| items.iter().filter_map(|o| o.as_reference().ok()).collect())
+                .unwrap_or_default()
+        };
+        let config = props
+            .get(b"D")
+            .ok()
+            .and_then(|d| deref(doc, d))
+            .and_then(|d| d.as_dict().ok());
+        let base_off = config.and_then(|d| name_of(d, b"BaseState")) == Some(b"OFF".as_slice());
+        let on = refs_in(config.and_then(|d| d.get(b"ON").ok()));
+        let off = refs_in(config.and_then(|d| d.get(b"OFF").ok()));
+        let listed = refs_in(props.get(b"OCGs").ok());
+        for &id in &listed {
+            let Some(&new_id) = copier.memo.get(&(src, id)) else {
+                continue;
+            };
+            let new_ref = Object::Reference(new_id);
+            if groups.contains(&new_ref) {
+                continue;
+            }
+            let is_hidden = if base_off {
+                !on.contains(&id)
+            } else {
+                off.contains(&id)
+            };
+            if is_hidden {
+                hidden.push(new_ref.clone());
+            }
+            groups.push(new_ref);
+        }
+        if let Some(Object::Array(items)) = config
+            .and_then(|d| d.get(b"Order").ok())
+            .and_then(|o| deref(doc, o))
+        {
+            order.extend(filter_order(copier, doc, src, &listed, items, 0));
+        }
+    }
+    if groups.is_empty() {
+        return None;
+    }
+    let mut config = dictionary! { "OFF" => hidden };
+    if !order.is_empty() {
+        config.set("Order", order);
+    }
+    Some(dictionary! { "OCGs" => groups, "D" => config })
+}
+
+/// `/Order` entries of source `src` that point at copied groups (of `listed`), mapped to
+/// their output ids. A nested array survives only with at least one group;
+/// a text label is kept only as the first element of such an array.
+fn filter_order(
+    copier: &SafeCopier,
+    doc: &Document,
+    src: usize,
+    listed: &[ObjectId],
+    items: &[Object],
+    depth: usize,
+) -> Vec<Object> {
+    if depth >= MAX_ORDER_DEPTH {
+        return vec![];
+    }
+    let mut kept = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        match item {
+            Object::Reference(id) => match copier.memo.get(&(src, *id)) {
+                Some(&new_id) if listed.contains(id) => kept.push(Object::Reference(new_id)),
+                Some(_) => {}
+                None => {
+                    if let Some(Object::Array(nested)) = deref(doc, item) {
+                        let inner = filter_order(copier, doc, src, listed, nested, depth + 1);
+                        if !inner.is_empty() {
+                            kept.push(Object::Array(inner));
+                        }
+                    }
+                }
+            },
+            Object::Array(nested) => {
+                let inner = filter_order(copier, doc, src, listed, nested, depth + 1);
+                if !inner.is_empty() {
+                    kept.push(Object::Array(inner));
+                }
+            }
+            Object::String(..) if i == 0 && depth > 0 => kept.push(item.clone()),
+            _ => {}
+        }
+    }
+    // A label alone is not a group.
+    if kept.iter().all(|o| matches!(o, Object::String(..))) {
+        kept.clear();
+    }
+    kept
 }
 
 /// Empty page sized and turned like output page `reference`.
@@ -1913,6 +2036,95 @@ mod tests {
             .unwrap();
         let colorants = out_dict(&out, &cs[4]).get(b"Colorants").unwrap();
         assert!(out_dict(&out, colorants).has(b"A"), "colorant /A kept");
+    }
+
+    #[test]
+    fn hidden_optional_content_stays_hidden() {
+        let mut src = Src::new();
+        let ocg = |doc: &mut Document, name: &str| {
+            doc.add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal(name) })
+        };
+        let hidden = ocg(&mut src.doc, "Hidden");
+        let shown = ocg(&mut src.doc, "Shown");
+        let other = ocg(&mut src.doc, "SECRET_OTHERLAYER");
+        let page = src.add_page(
+            dictionary! { "Properties" => dictionary! { "oc1" => hidden, "oc2" => shown } },
+            b"/OC /oc1 BDC 0 0 1 1 re f EMC /OC /oc2 BDC 0 0 1 1 re f EMC",
+        );
+        src.add_page(
+            dictionary! { "Properties" => dictionary! { "oc3" => other } },
+            b"/OC /oc3 BDC 0 0 1 1 re f EMC",
+        );
+        // Object ids survive the save/load in `finish`.
+        let mut doc = src.finish();
+        let refs = |ids: &[ObjectId]| -> Object {
+            ids.iter()
+                .map(|&id| Object::Reference(id))
+                .collect::<Vec<_>>()
+                .into()
+        };
+        let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(catalog).unwrap().set(
+            "OCProperties",
+            dictionary! {
+                "OCGs" => refs(&[hidden, shown, other]),
+                "D" => dictionary! {
+                    "OFF" => refs(&[hidden, other]),
+                    "ON" => refs(&[shown]),
+                    "Order" => vec![Object::from(hidden), vec![Object::from(shown), other.into()].into(), other.into()],
+                    "AS" => vec![dictionary! { "Event" => "View", "OCGs" => refs(&[other]) }.into()],
+                },
+            },
+        );
+        let pages = [OutPage::Page {
+            src: 0,
+            page,
+            rotate: 0,
+        }];
+        let (out, _) = rebuild_document(&[doc], &pages, &PAGE_TOOLS).unwrap();
+
+        let copied_page = out.get_pages()[&1];
+        let props = out_dict(
+            &out,
+            out_dict(
+                &out,
+                out.get_dictionary(copied_page)
+                    .unwrap()
+                    .get(b"Resources")
+                    .unwrap(),
+            )
+            .get(b"Properties")
+            .unwrap(),
+        );
+        let new_hidden = props.get(b"oc1").unwrap().as_reference().unwrap();
+        let new_shown = props.get(b"oc2").unwrap().as_reference().unwrap();
+
+        let oc = out_dict(
+            &out,
+            out.catalog()
+                .unwrap()
+                .get(b"OCProperties")
+                .expect("/OCProperties"),
+        );
+        let ids = |obj: &Object| -> Vec<ObjectId> {
+            obj.as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|o| o.as_reference().ok())
+                .collect()
+        };
+        assert_eq!(ids(oc.get(b"OCGs").unwrap()), vec![new_hidden, new_shown]);
+        let d = out_dict(&out, oc.get(b"D").unwrap());
+        assert_eq!(ids(d.get(b"OFF").unwrap()), vec![new_hidden]);
+        assert!(!d.has(b"AS"), "auto-state entries are dropped");
+        let order = d.get(b"Order").unwrap().as_array().unwrap();
+        assert_eq!(order.len(), 2, "{order:?}");
+        assert_eq!(order[0].as_reference().unwrap(), new_hidden);
+        assert_eq!(ids(&order[1]), vec![new_shown]);
+
+        let mut bytes = Vec::new();
+        out.clone().save_to(&mut bytes).unwrap();
+        assert!(!contains(&bytes, b"SECRET_OTHERLAYER"));
     }
 
     #[test]
