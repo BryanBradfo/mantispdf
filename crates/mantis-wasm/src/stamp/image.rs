@@ -365,28 +365,28 @@ mod tests {
         input.extend(seg(0xE2, b"ICC_PROFILE\0icc"));
         input.extend(seg(0xEC, b"Ducky\0quality"));
         input.extend(seg(0xC0, &[8, 0, 2, 0, 3, 1, 1, 0x11, 0]));
-        input.extend_from_slice(&[0xFF, 0xDA, 0, 4, 0x55, 0xFF, 0xD9]);
+        input.extend_from_slice(&[0xFF, 0xDA, 0, 4, 1, 0, 0x55, 0xFF, 0xD9]);
         let out = strip_jpeg_metadata(&input);
         assert!(!has(&out, b"JFXX") && !has(&out, b"MPF\0") && !has(&out, b"Ducky"));
         assert!(has(&out, b"JFIF") && has(&out, b"ICC_PROFILE"));
-        assert!(out.ends_with(&[0xFF, 0xDA, 0, 4, 0x55, 0xFF, 0xD9]));
+        assert!(out.ends_with(&[0xFF, 0xDA, 0, 4, 1, 0, 0x55, 0xFF, 0xD9]));
     }
 
     #[test]
     fn progressive_scans_are_all_kept_and_metadata_between_them_dropped() {
         let mut input = vec![0xFF, 0xD8];
         input.extend(seg(0xC2, &[8, 0, 2, 0, 3, 1, 1, 0x11, 0]));
-        input.extend_from_slice(&[0xFF, 0xDA, 0, 4, 0x01, 0xFF, 0x00, 0x02]);
+        input.extend_from_slice(&[0xFF, 0xDA, 0, 4, 1, 0, 0x01, 0xFF, 0x00, 0x02]);
         input.extend(seg(0xC4, b"huffman"));
         input.extend(seg(0xFE, b"comment"));
-        input.extend_from_slice(&[0xFF, 0xFF, 0xDA, 0, 4, 0x03, 0xFF, 0xD0, 0x04, 0xFF, 0xD9]);
+        input.extend_from_slice(&[0xFF, 0xFF, 0xDA, 0, 4, 1, 0, 0x03, 0xFF, 0xD0, 0x04, 0xFF, 0xD9]);
         input.extend_from_slice(b"trailer");
         let out = strip_jpeg_metadata(&input);
         let mut expected = vec![0xFF, 0xD8];
         expected.extend(seg(0xC2, &[8, 0, 2, 0, 3, 1, 1, 0x11, 0]));
-        expected.extend_from_slice(&[0xFF, 0xDA, 0, 4, 0x01, 0xFF, 0x00, 0x02]);
+        expected.extend_from_slice(&[0xFF, 0xDA, 0, 4, 1, 0, 0x01, 0xFF, 0x00, 0x02]);
         expected.extend(seg(0xC4, b"huffman"));
-        expected.extend_from_slice(&[0xFF, 0xFF, 0xDA, 0, 4, 0x03, 0xFF, 0xD0, 0x04, 0xFF, 0xD9]);
+        expected.extend_from_slice(&[0xFF, 0xFF, 0xDA, 0, 4, 1, 0, 0x03, 0xFF, 0xD0, 0x04, 0xFF, 0xD9]);
         assert_eq!(out, expected);
     }
 
