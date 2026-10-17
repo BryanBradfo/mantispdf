@@ -8,7 +8,7 @@ import LiveSummary from "../components/stamp/LiveSummary";
 import PaperSizeFields, { CUSTOM_PAPER, paperToPt, type PaperChoice } from "../components/geometry/PaperSizeFields";
 import SheetPreview from "../components/geometry/SheetPreview";
 import { mmToPt, type Orientation, type ResizeJobSpec } from "../lib/geometryJob";
-import { resizeLayout } from "../lib/geometryLayout";
+import { mmSizeLabel, resizeLayout, resizeProblem } from "../lib/geometryLayout";
 import { describePages } from "../lib/stampBuilders";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
@@ -38,11 +38,7 @@ export default function ResizePdfPage() {
   const size = paperToPt(paper === "same" ? "A4" : paper, customMm);
   const margin = mmToPt(marginMm);
 
-  const problem =
-    selected.length === 0 ? "Select at least one page."
-    : !size ? "Custom size must be between 13 and 5080 mm on each side."
-    : !(marginMm >= 0 && marginMm <= 200) ? "Margin must be between 0 and 200 mm."
-    : null;
+  const problem = resizeProblem({ selected: selected.length, size, marginMm });
 
   const firstPage = selected[0];
   const firstSize = firstPage ? sizes[firstPage - 1] : undefined;
@@ -52,7 +48,7 @@ export default function ResizePdfPage() {
     return l.rect[2] > 0 && l.rect[3] > 0 ? l : null;
   }, [size, firstSize, problem, orientation, mode, margin]);
 
-  const paperLabel = paper === CUSTOM_PAPER ? `${customMm[0]} x ${customMm[1]} mm` : paper;
+  const paperLabel = paper === CUSTOM_PAPER ? mmSizeLabel(customMm) : paper;
   const summary = `${paperLabel} · ${orientation} · ${mode === "fit" ? "Fit" : "Extend"} · margin ${marginMm || 0} mm · ${describePages(selected, total)}`;
 
   const submit = (e: React.FormEvent) => {

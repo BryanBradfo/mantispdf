@@ -7,7 +7,7 @@ import LiveSummary from "../components/stamp/LiveSummary";
 import PaperSizeFields, { CUSTOM_PAPER, paperToPt, type PaperChoice } from "../components/geometry/PaperSizeFields";
 import SheetPreview from "../components/geometry/SheetPreview";
 import { mmToPt, type NupJobSpec, type Orientation } from "../lib/geometryJob";
-import { fitInCell, nupCells, nupGrid, nupSheetSize } from "../lib/geometryLayout";
+import { fitInCell, mmSizeLabel, nupCells, nupGrid, nupProblem, nupSheetSize } from "../lib/geometryLayout";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
 
@@ -55,7 +55,8 @@ export default function NupPdfPage() {
   const [marginMm, setMarginMm] = useState(10);
   const [gapMm, setGapMm] = useState(5);
   const [border, setBorder] = useState(false);
-  const [undecodable, setUndecodable] = useState<number[]>([]);
+  /** Pages the last run left blank, with the settings they were made with. */
+  const [undecodable, setUndecodable] = useState<{ settings: string; pages: number[] }>({ settings: "", pages: [] });
   const [made, setMade] = useState<{ sheets: number } | null>(null);
 
   const sizes = input?.data ?? [];
@@ -71,15 +72,13 @@ export default function NupPdfPage() {
     return { sheet, cells };
   }, [sheetPt, sizes, perSheet, orientation, order, margin, gap]);
 
-  const problem =
-    !sheetPt ? "Custom size must be between 13 and 5080 mm on each side."
-    : !(marginMm >= 0 && marginMm <= 200) ? "Margin must be between 0 and 200 mm."
-    : !(gapMm >= 0 && gapMm <= 200) ? "Gap must be between 0 and 200 mm."
-    : preview && preview.cells.length === 0 ? "The margin and gap leave no room for the pages."
-    : null;
+  const problem = nupProblem({ perSheet, sheet: sheetPt, orientation, order, first: sizes[0], marginMm, gapMm });
+  // The blank-pages warning describes the output of these exact settings only.
+  const settings = JSON.stringify([perSheet, paper, customMm, orientation, order, marginMm, gapMm, border]);
+  const blankPages = undecodable.settings === settings ? undecodable.pages : [];
 
   const sheetsCount = Math.ceil(total / perSheet);
-  const paperLabel = paper === "same" ? "same as first page" : paper === CUSTOM_PAPER ? `${customMm[0]} x ${customMm[1]} mm` : paper;
+  const paperLabel = paper === "same" ? "same as first page" : paper === CUSTOM_PAPER ? mmSizeLabel(customMm) : paper;
   const summary = `${perSheet} per sheet · ${paperLabel} · ${orientation} · ${order} · margin ${marginMm || 0} mm, gap ${gapMm || 0} mm · ${sheetsCount} sheet${sheetsCount === 1 ? "" : "s"}`;
 
   const items = useMemo(() => {
@@ -94,19 +93,19 @@ export default function NupPdfPage() {
     e.preventDefault();
     if (!input || busy || problem || !sheetPt) return;
     const job: NupJobSpec = { perSheet, sheet: sheetPt, orientation, order, margin, gap, border };
-    setUndecodable([]);
+    setUndecodable({ settings: "", pages: [] });
     setMade(null);
     void run(
       () => worker.nupPdf(input.bytes, job),
       (out) => {
-        setUndecodable(out.undecodable);
+        setUndecodable({ settings, pages: out.undecodable });
         setMade({ sheets: out.sheets });
         downloadBlob(out.bytes, `${baseName(input.file)}_${perSheet}-up.pdf`);
       },
     );
   };
 
-  const clear = () => { reset(); setUndecodable([]); setMade(null); };
+  const clear = () => { reset(); setUndecodable({ settings: "", pages: [] }); setMade(null); };
 
   return (
     <ToolShell
@@ -120,7 +119,7 @@ export default function NupPdfPage() {
 
       {!input && (
         <div className="mt-8">
-          <DropZone onFile={(f) => { setUndecodable([]); setMade(null); void pick(f); }} error={error} />
+          <DropZone onFile={(f) => { setUndecodable({ settings: "", pages: [] }); setMade(null); void pick(f); }} error={error} />
         </div>
       )}
 
@@ -207,10 +206,10 @@ export default function NupPdfPage() {
 
           <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
 
-          {made && undecodable.length > 0 && (
+          {made && blankPages.length > 0 && (
             <div role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-[#2a2210] dark:text-amber-200">
-              {undecodable.length === 1 ? "Page" : "Pages"} {undecodable.join(", ")} could not be read and{" "}
-              {undecodable.length === 1 ? "was" : "were"} left blank on the sheets.
+              {blankPages.length === 1 ? "Page" : "Pages"} {blankPages.join(", ")} could not be read and{" "}
+              {blankPages.length === 1 ? "was" : "were"} left blank on the sheets.
             </div>
           )}
 
