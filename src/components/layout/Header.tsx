@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 function useTheme() {
   const [dark, setDark] = useState<boolean>(() => {
@@ -30,8 +30,12 @@ function formatStars(n: number): string {
 export default function Header() {
   const [dark, setDark] = useTheme();
   const [stars, setStars] = useState<string | null>(null);
+  const onHome = useLocation().pathname === "/";
 
+  // The star count is a third-party request (api.github.com): only the home page makes it, so a
+  // tool page, where documents are open, never contacts another host.
   useEffect(() => {
+    if (!onHome || stars !== null) return;
     fetch("https://api.github.com/repos/BryanBradfo/mantispdf")
       .then((r) => r.json())
       .then((data) => {
@@ -42,7 +46,7 @@ export default function Header() {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [onHome, stars]);
 
   return (
     <header className="border-b border-gray-200 bg-white dark:border-[#1a1a1a] dark:bg-[#0c0c0c]">
