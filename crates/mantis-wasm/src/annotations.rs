@@ -199,6 +199,9 @@ pub fn finish_links(
     replies: PendingReplies,
     report: &mut RebuildReport,
 ) {
+    // Dropped links grouped per page so each /Annots is filtered once, not
+    // once per dropped link (quadratic on a page with many links).
+    let mut dropped: HashMap<ObjectId, HashSet<ObjectId>> = HashMap::new();
     for (annot, page, src, target) in links.items {
         if let Some(&new_target) = page_map.get(&(src, target)) {
             let dest: Vec<Object> = vec![new_target.into(), "Fit".into()];
@@ -206,10 +209,15 @@ pub fn finish_links(
             report.links_kept += 1;
             continue;
         }
+        dropped.entry(page).or_default().insert(annot);
+        out.objects.remove(&annot);
+        report.links_dropped += 1;
+    }
+    for (page, annots) in dropped {
         if let Ok(page) = out.get_dictionary_mut(page) {
             let now_empty = match page.get_mut(b"Annots") {
                 Ok(Object::Array(items)) => {
-                    items.retain(|o| o.as_reference().ok() != Some(annot));
+                    items.retain(|o| !o.as_reference().is_ok_and(|id| annots.contains(&id)));
                     items.is_empty()
                 }
                 _ => false,
@@ -218,8 +226,6 @@ pub fn finish_links(
                 page.remove(b"Annots");
             }
         }
-        out.objects.remove(&annot);
-        report.links_dropped += 1;
     }
     for (reply, src, target) in replies.items {
         if let Some(&new_target) = annot_map.get(&(src, target)) {
@@ -1001,6 +1007,49 @@ mod tests {
         assert!(!contains(&r.bytes, b"SECRET_AAJS"));
         assert!(!contains(&r.bytes, b"SECRET_NM"));
         assert_eq!(r.report.links_kept, 1);
+    }
+
+    #[test]
+    fn many_dropped_links_on_one_page_finish_fast() {
+        // Each dropped link used to rescan the page's whole /Annots: A^2.
+        const N: usize = 100_000;
+        let mut out = Document::with_version("1.7");
+        let page = out.add_object(dictionary! { "Type" => "Page" });
+        let other = out.add_object(dictionary! { "Type" => "Page" });
+        let kept = out.add_object(dictionary! { "Subtype" => "Text" });
+        let gone_target = (999_999, 0);
+        let mut links = PendingLinks::default();
+        let mut annots: Vec<Object> = vec![kept.into()];
+        for _ in 0..N {
+            let id = out.add_object(dictionary! { "Subtype" => "Link" });
+            annots.push(id.into());
+            links.items.push((id, page, 0, gone_target));
+        }
+        let lone = out.add_object(dictionary! { "Subtype" => "Link" });
+        links.items.push((lone, other, 0, gone_target));
+        out.get_dictionary_mut(page).unwrap().set("Annots", annots);
+        out.get_dictionary_mut(other)
+            .unwrap()
+            .set("Annots", vec![lone.into()]);
+
+        let mut report = RebuildReport::default();
+        let start = std::time::Instant::now();
+        finish_links(
+            &mut out,
+            &HashMap::new(),
+            &HashMap::new(),
+            links,
+            PendingReplies::default(),
+            &mut report,
+        );
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_secs_f64() < 1.0, "finish_links took {elapsed:?}");
+        assert_eq!(report.links_dropped as usize, N + 1);
+        let left = out.get_dictionary(page).unwrap().get(b"Annots").unwrap();
+        assert_eq!(left.as_array().unwrap(), &vec![Object::Reference(kept)]);
+        assert!(out.get_dictionary(other).unwrap().get(b"Annots").is_err());
+        assert!(!out.objects.contains_key(&lone));
+        assert!(out.objects.contains_key(&kept));
     }
 
     fn two_pages_with_internal_link() -> Document {
