@@ -350,7 +350,8 @@ fn named_value_target(doc: &Document, value: &Object) -> Option<ObjectId> {
 /// Every name of the source's /Names /Dests tree mapped to its target page
 /// (None when the value is not a usable destination). The first entry for a
 /// name wins, in the order a depth-first lookup would meet it. Each node
-/// object is read once, within the depth, node and entry caps.
+/// object is read once, within the depth, node and entry caps; every kid
+/// examined, even one already read, counts toward the node cap.
 fn flatten_dests(doc: &Document) -> HashMap<Vec<u8>, Option<ObjectId>> {
     let mut names = HashMap::new();
     let root = doc
@@ -388,12 +389,12 @@ impl TreeWalk {
         if depth >= MAX_NAME_TREE_DEPTH || self.nodes == 0 {
             return;
         }
+        self.nodes -= 1;
         if let Ok(id) = node.as_reference()
             && !self.seen.insert(id)
         {
             return;
         }
-        self.nodes -= 1;
         let Some(node) = deref(doc, node).and_then(|n| n.as_dict().ok()) else {
             return;
         };
@@ -412,6 +413,9 @@ impl TreeWalk {
         }
         if let Some(Object::Array(kids)) = node.get(b"Kids").ok().and_then(|k| deref(doc, k)) {
             for kid in kids {
+                if self.nodes == 0 {
+                    return;
+                }
                 self.node(doc, kid, depth + 1, names);
             }
         }
@@ -1136,6 +1140,45 @@ mod tests {
         );
         assert_eq!(r.report.links_kept, 1000);
         assert_eq!(r.report.links_dropped, 1000);
+    }
+
+    #[test]
+    fn name_tree_kids_are_charged_even_when_already_seen() {
+        // A root whose /Kids lists one small node 1000000 times, then a leaf
+        // holding the link's name: every kid examined costs budget, so the
+        // walk stops long before the leaf, and quickly.
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        let p2 = src.add_page(b"");
+        src.annotate(
+            p1,
+            dictionary! {
+                "Subtype" => "Link", "Rect" => rect(0, 0, 1, 1),
+                "Dest" => Object::string_literal("late"),
+            },
+        );
+        let mut doc = src.finish();
+        let small = doc.add_object(dictionary! { "Names" => vec![] });
+        let leaf = doc.add_object(dictionary! {
+            "Names" => vec![Object::string_literal("late"), vec![p2.into(), "Fit".into()].into()],
+        });
+        let mut kids = vec![Object::Reference(small); 1_000_000];
+        kids.push(leaf.into());
+        let root = doc.add_object(dictionary! { "Kids" => kids });
+        let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(catalog)
+            .unwrap()
+            .set("Names", dictionary! { "Dests" => root });
+
+        let start = std::time::Instant::now();
+        let r = rebuild_pages(doc, &[1, 2], &KEEP_ALL);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "took {elapsed:?}"
+        );
+        assert_eq!(r.report.links_kept, 0);
+        assert_eq!(r.report.links_dropped, 1);
     }
 
     #[test]
