@@ -9,7 +9,7 @@
 
 use crate::rebuild::{Policy, RebuildReport, SafeCopier, deref, name_of, unbalanced_saves};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Markup annotations kept as comments when the policy says so.
 const MARKUP_SUBTYPES: [&[u8]; 14] = [
@@ -73,6 +73,9 @@ const ALLOWED_SCHEMES: [&str; 3] = ["http", "https", "mailto"];
 #[derive(Default, Debug)]
 pub struct PendingLinks {
     pub items: Vec<(ObjectId, ObjectId, usize, ObjectId)>,
+    /// Per source: its /Names /Dests tree flattened by `flatten_dests`, built
+    /// on the first named link so each lookup is O(1).
+    named_dests: HashMap<usize, HashMap<Vec<u8>, Option<ObjectId>>>,
 }
 
 /// `/IRT` targets not on the same page:
@@ -291,79 +294,128 @@ fn rebuild_link(
         Err(_) if action_type == Some(b"GoTo") => action?.get(b"D").ok()?,
         Err(_) => return None,
     };
-    let target = explicit_dest(doc, dest)?.first()?.as_reference().ok()?;
+    let tree = links
+        .named_dests
+        .entry(src)
+        .or_insert_with(|| flatten_dests(doc));
+    let target = dest_target(doc, dest, tree)?;
     let id = out.add_object(link);
     links.items.push((id, new_page, src, target));
     Some(LinkKind::Internal(id))
 }
 
-/// Nesting accepted in a name tree, and nodes visited per lookup.
+/// Nesting accepted in a name tree, and nodes and entries read from it.
 const MAX_NAME_TREE_DEPTH: usize = 32;
 const MAX_NAME_TREE_NODES: usize = 10_000;
+const MAX_NAME_TREE_ENTRIES: usize = 500_000;
 
-/// The explicit destination array (`[page /XYZ ...]`) behind a link's
-/// destination: the array itself, or a named destination (a name or a
-/// string) looked up in the source catalog's /Dests dictionary or /Names
-/// /Dests name tree, whose value is an array or a dictionary with /D.
-fn explicit_dest<'a>(doc: &'a Document, dest: &'a Object) -> Option<&'a Vec<Object>> {
+/// Target page of a link destination `dest`: an explicit destination array
+/// (`[page /XYZ ...]`), or a named destination (a name or a string) looked
+/// up in the source catalog's /Dests dictionary or in `tree`, the flattened
+/// /Names /Dests name tree.
+fn dest_target(
+    doc: &Document,
+    dest: &Object,
+    tree: &HashMap<Vec<u8>, Option<ObjectId>>,
+) -> Option<ObjectId> {
     let named = match deref(doc, dest)? {
-        Object::Array(items) => return Some(items),
+        Object::Array(items) => return items.first()?.as_reference().ok(),
         Object::Name(name) => name,
         Object::String(name, _) => name,
         _ => return None,
     };
-    let catalog = doc.catalog().ok()?;
     let in_dests = || {
-        deref(doc, catalog.get(b"Dests").ok()?)?
-            .as_dict()
-            .ok()?
-            .get(named)
-            .ok()
+        let catalog = doc.catalog().ok()?;
+        let dests = deref(doc, catalog.get(b"Dests").ok()?)?.as_dict().ok()?;
+        Some(named_value_target(doc, dests.get(named).ok()?))
     };
-    let in_tree = || {
-        let names = deref(doc, catalog.get(b"Names").ok()?)?.as_dict().ok()?;
-        let root = deref(doc, names.get(b"Dests").ok()?)?;
-        let mut budget = MAX_NAME_TREE_NODES;
-        name_tree_lookup(doc, root, named, 0, &mut budget)
-    };
-    let value = match deref(doc, dest)? {
+    let in_tree = || tree.get(named).copied();
+    match deref(doc, dest)? {
         Object::Name(_) => in_dests().or_else(in_tree),
         _ => in_tree().or_else(in_dests),
-    }?;
-    match deref(doc, value)? {
-        Object::Array(items) => Some(items),
-        Object::Dictionary(d) => deref(doc, d.get(b"D").ok()?)?.as_array().ok(),
-        _ => None,
-    }
+    }?
 }
 
-/// Value for string key `key` in the name tree rooted at `node`.
-fn name_tree_lookup<'a>(
-    doc: &'a Document,
-    node: &'a Object,
-    key: &[u8],
-    depth: usize,
-    budget: &mut usize,
-) -> Option<&'a Object> {
-    if depth >= MAX_NAME_TREE_DEPTH || *budget == 0 {
-        return None;
+/// Target page of a named destination's value: an explicit destination
+/// array, or a dictionary with one under /D.
+fn named_value_target(doc: &Document, value: &Object) -> Option<ObjectId> {
+    let items = match deref(doc, value)? {
+        Object::Array(items) => items,
+        Object::Dictionary(d) => deref(doc, d.get(b"D").ok()?)?.as_array().ok()?,
+        _ => return None,
+    };
+    items.first()?.as_reference().ok()
+}
+
+/// Every name of the source's /Names /Dests tree mapped to its target page
+/// (None when the value is not a usable destination). The first entry for a
+/// name wins, in the order a depth-first lookup would meet it. Each node
+/// object is read once, within the depth, node and entry caps.
+fn flatten_dests(doc: &Document) -> HashMap<Vec<u8>, Option<ObjectId>> {
+    let mut names = HashMap::new();
+    let root = doc
+        .catalog()
+        .ok()
+        .and_then(|c| deref(doc, c.get(b"Names").ok()?))
+        .and_then(|n| n.as_dict().ok())
+        .and_then(|n| n.get(b"Dests").ok());
+    if let Some(root) = root {
+        let mut walk = TreeWalk {
+            seen: HashSet::new(),
+            nodes: MAX_NAME_TREE_NODES,
+            entries: MAX_NAME_TREE_ENTRIES,
+        };
+        walk.node(doc, root, 0, &mut names);
     }
-    *budget -= 1;
-    let node = deref(doc, node)?.as_dict().ok()?;
-    if let Some(Object::Array(pairs)) = node.get(b"Names").ok().and_then(|n| deref(doc, n)) {
-        for pair in pairs.chunks_exact(2) {
-            if let Some(Object::String(name, _)) = deref(doc, &pair[0])
-                && name.as_slice() == key
-            {
-                return Some(&pair[1]);
+    names
+}
+
+/// Caps and visited set of one `flatten_dests` walk.
+struct TreeWalk {
+    seen: HashSet<ObjectId>,
+    nodes: usize,
+    entries: usize,
+}
+
+impl TreeWalk {
+    fn node(
+        &mut self,
+        doc: &Document,
+        node: &Object,
+        depth: usize,
+        names: &mut HashMap<Vec<u8>, Option<ObjectId>>,
+    ) {
+        if depth >= MAX_NAME_TREE_DEPTH || self.nodes == 0 {
+            return;
+        }
+        if let Ok(id) = node.as_reference()
+            && !self.seen.insert(id)
+        {
+            return;
+        }
+        self.nodes -= 1;
+        let Some(node) = deref(doc, node).and_then(|n| n.as_dict().ok()) else {
+            return;
+        };
+        if let Some(Object::Array(pairs)) = node.get(b"Names").ok().and_then(|n| deref(doc, n)) {
+            for pair in pairs.chunks_exact(2) {
+                if self.entries == 0 {
+                    return;
+                }
+                self.entries -= 1;
+                if let Some(Object::String(name, _)) = deref(doc, &pair[0])
+                    && !names.contains_key(name)
+                {
+                    names.insert(name.clone(), named_value_target(doc, &pair[1]));
+                }
+            }
+        }
+        if let Some(Object::Array(kids)) = node.get(b"Kids").ok().and_then(|k| deref(doc, k)) {
+            for kid in kids {
+                self.node(doc, kid, depth + 1, names);
             }
         }
     }
-    let Some(Object::Array(kids)) = node.get(b"Kids").ok().and_then(|k| deref(doc, k)) else {
-        return None;
-    };
-    kids.iter()
-        .find_map(|kid| name_tree_lookup(doc, kid, key, depth + 1, budget))
 }
 
 /// New comment annotation from the allowlisted keys, values copied safely.
@@ -1029,6 +1081,61 @@ mod tests {
         assert!(r.annots(0).is_empty());
         assert_eq!(r.report.links_dropped, 2);
         assert!(!contains(&r.bytes, b"SECRET_PAGE2"));
+    }
+
+    #[test]
+    fn many_named_links_resolve_in_linear_time() {
+        // 2000 named entries in 20 leaves, each listed 50 times under the
+        // root, and 2000 links, half of them to names the tree lacks.
+        let mut src = Src::new();
+        let p1 = src.add_page(b"");
+        let p2 = src.add_page(b"");
+        for i in 0..2000 {
+            let name = if i % 2 == 0 {
+                format!("miss{i}")
+            } else {
+                format!("n{i}")
+            };
+            src.annotate(
+                p1,
+                dictionary! {
+                    "Subtype" => "Link", "Rect" => rect(0, 0, 1, 1),
+                    "Dest" => Object::string_literal(name),
+                },
+            );
+        }
+        let mut doc = src.finish();
+        let leaves: Vec<ObjectId> = (0..20)
+            .map(|leaf| {
+                let names = (leaf * 100..leaf * 100 + 100)
+                    .flat_map(|i| {
+                        [
+                            Object::string_literal(format!("n{i}")),
+                            vec![p2.into(), "Fit".into()].into(),
+                        ]
+                    })
+                    .collect::<Vec<Object>>();
+                doc.add_object(dictionary! { "Names" => names })
+            })
+            .collect();
+        let kids: Vec<Object> = (0..50)
+            .flat_map(|_| leaves.iter().map(|&id| Object::from(id)))
+            .collect();
+        let root = doc.add_object(dictionary! { "Kids" => kids });
+        let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(catalog)
+            .unwrap()
+            .set("Names", dictionary! { "Dests" => root });
+
+        let start = std::time::Instant::now();
+        let r = rebuild_pages(doc, &[1, 2], &KEEP_ALL);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "took {elapsed:?}"
+        );
+        assert_eq!(r.report.links_kept, 1000);
+        assert_eq!(r.report.links_dropped, 1000);
     }
 
     #[test]
