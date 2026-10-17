@@ -97,7 +97,9 @@ impl SanitizeOutput {
         self.bytes.clone()
     }
 
-    /// [links_kept, links_dropped, comments_kept, comments_dropped, fields_flattened, warnings]
+    /// [links_kept, links_dropped, comments_kept, comments_dropped, fields_flattened, warnings,
+    /// too_deep_pages]; `warnings` counts every page warning, `too_deep_pages`
+    /// those where deeply nested content was dropped.
     pub fn report(&self) -> Vec<u32> {
         self.report.clone()
     }
@@ -108,15 +110,38 @@ pub fn sanitize_pdf(pdf_bytes: &[u8], keep_comments: bool) -> Result<SanitizeOut
     let (bytes, r) = doc_tools::sanitize(pdf_bytes, keep_comments).map_err(|e| JsValue::from_str(&e))?;
     Ok(SanitizeOutput {
         bytes,
-        report: vec![
-            r.links_kept,
-            r.links_dropped,
-            r.comments_kept,
-            r.comments_dropped,
-            r.fields_flattened,
-            r.warnings.len() as u32,
-        ],
+        report: report_counts(&r),
     })
+}
+
+/// The wire form of a report; indexes are stable, new counters are appended.
+fn report_counts(r: &rebuild::RebuildReport) -> Vec<u32> {
+    vec![
+        r.links_kept,
+        r.links_dropped,
+        r.comments_kept,
+        r.comments_dropped,
+        r.fields_flattened,
+        r.warnings.len() as u32,
+        r.too_deep_pages,
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn report_counts_keep_indexes_and_append_deep_pages() {
+        let r = crate::rebuild::RebuildReport {
+            links_kept: 1,
+            links_dropped: 2,
+            comments_kept: 3,
+            comments_dropped: 4,
+            fields_flattened: 5,
+            warnings: vec!["a".into(), "b".into()],
+            too_deep_pages: 1,
+        };
+        assert_eq!(super::report_counts(&r), [1, 2, 3, 4, 5, 2, 1]);
+    }
 }
 
 #[wasm_bindgen]

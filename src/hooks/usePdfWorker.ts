@@ -10,7 +10,10 @@ export interface SanitizeReport {
   commentsKept: number;
   commentsDropped: number;
   fieldsFlattened: number;
+  /** Every page warning, including the deep-content ones. */
   warnings: number;
+  /** Pages where deeply nested content could not be copied. */
+  deepContentDropped: number;
 }
 
 export interface PdfMetadata {
@@ -68,9 +71,19 @@ const asBuffer = (p: SuccessPayload): ArrayBuffer => {
 
 const asSanitized = (p: SuccessPayload): { bytes: Uint8Array; report: SanitizeReport } => {
   if (p.kind !== "sanitized") throw new Error("Unexpected worker payload");
-  const [linksKept = 0, linksDropped = 0, commentsKept = 0, commentsDropped = 0, fieldsFlattened = 0, warnings = 0] =
-    p.report;
-  return { bytes: p.bytes, report: { linksKept, linksDropped, commentsKept, commentsDropped, fieldsFlattened, warnings } };
+  const [
+    linksKept = 0,
+    linksDropped = 0,
+    commentsKept = 0,
+    commentsDropped = 0,
+    fieldsFlattened = 0,
+    warnings = 0,
+    deepContentDropped = 0,
+  ] = p.report;
+  return {
+    bytes: p.bytes,
+    report: { linksKept, linksDropped, commentsKept, commentsDropped, fieldsFlattened, warnings, deepContentDropped },
+  };
 };
 const asMetadata = (p: SuccessPayload): PdfMetadata => {
   if (p.kind !== "metadata") throw new Error("Unexpected worker payload");

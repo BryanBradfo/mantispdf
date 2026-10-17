@@ -5,6 +5,7 @@ import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
+import { sanitizeWarnings } from "./sanitizeNotes";
 
 export default function SanitizePdfPage() {
   const worker = usePdfWorker();
@@ -76,9 +77,9 @@ export default function SanitizePdfPage() {
                 {summary.keptComments ? "Comments kept" : "Comments removed"}:{" "}
                 {summary.keptComments ? summary.report.commentsKept : summary.report.commentsDropped}
               </li>
-              {summary.report.warnings > 0 && (
-                <li>Some pages could not be fully analysed and kept all their resources.</li>
-              )}
+              {sanitizeWarnings(summary.report).map((note) => (
+                <li key={note}>{note}</li>
+              ))}
             </ul>
           )}
         </div>

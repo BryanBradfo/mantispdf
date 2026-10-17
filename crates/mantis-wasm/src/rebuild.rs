@@ -951,6 +951,10 @@ pub struct RebuildReport {
     pub comments_dropped: u32,
     pub fields_flattened: u32,
     pub warnings: Vec<String>,
+    /// Pages whose object graph was too deep, so some nested content was
+    /// dropped (each also has a warning). The other warnings are pages that
+    /// could not be analysed and kept all their resources.
+    pub too_deep_pages: u32,
 }
 
 /// Page rotation after turning a page with `/Rotate` value `current` by a
@@ -1049,6 +1053,7 @@ pub fn copy_page(
     }
     if copier.too_deep > too_deep_before {
         problems.push("object graph too deep, some content dropped");
+        report.too_deep_pages += 1;
     }
     if !problems.is_empty() {
         let number = copier.page_number(src, page_id);
@@ -2169,6 +2174,26 @@ mod tests {
         let mut bytes = Vec::new();
         out.save_to(&mut bytes).unwrap();
         assert!(Document::load_mem(&bytes).is_ok());
+    }
+
+    #[test]
+    fn deep_graph_pages_counted_apart_from_undecodable_ones() {
+        let mut src = Src::new();
+        let mut inner = src.doc.add_object(bare_form(b"0 0 m S"));
+        for _ in 0..300 {
+            inner = src.doc.add_object(form(
+                b"/F Do",
+                dictionary! { "XObject" => dictionary! { "F" => inner } },
+            ));
+        }
+        src.add_page(
+            dictionary! { "XObject" => dictionary! { "F" => inner } },
+            b"/F Do",
+        );
+        src.add_page(dictionary! {}, b"BT ( unterminated");
+        let (_, _, report) = rebuild(src.finish(), &[1, 2]);
+        assert_eq!(report.warnings.len(), 2, "{:?}", report.warnings);
+        assert_eq!(report.too_deep_pages, 1);
     }
 
     #[test]

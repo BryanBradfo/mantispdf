@@ -34,7 +34,7 @@ declare module "mantis-wasm" {
   export function apply_page_plan(pdf_list: Uint8Array[], plan: Int32Array): Uint8Array;
   export class SanitizeOutput {
     bytes(): Uint8Array;
-    /** [links_kept, links_dropped, comments_kept, comments_dropped, fields_flattened, warnings] */
+    /** [links_kept, links_dropped, comments_kept, comments_dropped, fields_flattened, warnings, too_deep_pages] */
     report(): Uint32Array;
     free(): void;
   }
