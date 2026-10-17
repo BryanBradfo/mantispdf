@@ -4,7 +4,8 @@
 //! XObjects recursively, with cycle and depth guards). Each image object is
 //! extracted once, credited to the first page that uses it. A JPEG
 //! (/DCTDecode) comes back as its original bytes; anything else is decoded
-//! within budgets and converted to RGBA8 by `colour`.
+//! within budgets and converted to RGBA8 by `colour`. Inline images (BI/ID/EI
+//! in page and form content) cannot be extracted; they are counted.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -12,7 +13,7 @@ use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
 use super::colour::{self, Base, Invalid, Layout, Space};
 use crate::pdf_util::{get_inherited_attr, load_pdf};
-use crate::rebuild::{Decoded, MAX_STREAM_DECODED, deref, name_of, strict_content};
+use crate::rebuild::{Decoded, MAX_STREAM_DECODED, count_inline_images, deref, filter_params, name_of, strict_content_in};
 
 pub enum ExtractedKind {
     Jpeg(Vec<u8>),
@@ -29,7 +30,8 @@ pub struct Extracted {
 
 pub struct ExtractResult {
     pub images: Vec<Extracted>,
-    /// (reason, count), sorted by reason.
+    /// (reason, count), sorted by reason. "alpha dropped" counts images that
+    /// were extracted, but opaque because their mask could not be applied.
     pub skipped: Vec<(String, u32)>,
 }
 
@@ -50,6 +52,8 @@ const COLOUR_SPACE: Skip = "colour space";
 const CORRUPT: Skip = "corrupt";
 const TOO_LARGE: Skip = "too large";
 const BUDGET: Skip = "budget";
+const INLINE: Skip = "inline";
+const ALPHA_DROPPED: Skip = "alpha dropped";
 
 pub fn extract_images(pdf: &[u8]) -> Result<ExtractResult, String> {
     Ok(extract_from_doc(&load_pdf(pdf)?))
@@ -70,9 +74,21 @@ fn extract_within(doc: &Document, max_decoded: usize, max_pixels: u64) -> Extrac
         images: Vec::new(),
         skipped: BTreeMap::new(),
         charged: 0,
+        content_charged: 0,
         pixels: 0,
     };
     for (page, page_id) in doc.get_pages() {
+        if let Ok(page_dict) = doc.get_dictionary(page_id) {
+            let streams: Vec<&Stream> = match page_dict.get(b"Contents").ok().and_then(|c| deref(doc, c)) {
+                Some(Object::Stream(s)) => vec![s],
+                Some(Object::Array(items)) => items
+                    .iter()
+                    .filter_map(|o| deref(doc, o).and_then(|o| o.as_stream().ok()))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            walker.count_inline(&streams);
+        }
         if let Some(resources) = get_inherited_attr(doc, page_id, b"Resources") {
             let mut index = 0;
             walker.walk(&resources, page, &mut index, 0);
@@ -92,15 +108,45 @@ struct Walker<'d> {
     skipped: BTreeMap<Skip, u32>,
     max_decoded: usize,
     max_pixels: u64,
-    /// Decoded bytes so far (against `max_decoded`).
+    /// Decoded image bytes so far (against `max_decoded`).
     charged: usize,
+    /// Decoded content bytes scanned for inline images (against `max_decoded`).
+    content_charged: usize,
     /// RGBA pixels so far (against `max_pixels`).
     pixels: u64,
 }
 
 impl<'d> Walker<'d> {
     fn skip(&mut self, reason: Skip) {
-        *self.skipped.entry(reason).or_insert(0) += 1;
+        self.skip_n(reason, 1);
+    }
+
+    fn skip_n(&mut self, reason: Skip, n: u32) {
+        if n > 0 {
+            *self.skipped.entry(reason).or_insert(0) += n;
+        }
+    }
+
+    /// Count the inline images of content split over `streams`. Content that
+    /// cannot be decoded or scanned within the budget is not counted.
+    fn count_inline(&mut self, streams: &[&Stream]) {
+        let mut joined = Vec::new();
+        for stream in streams {
+            let left = self.max_decoded.saturating_sub(self.content_charged);
+            if left == 0 {
+                return;
+            }
+            match strict_content_in(Some(self.doc), stream, MAX_STREAM_DECODED.min(left), &mut self.content_charged) {
+                Decoded::Content(data) => {
+                    joined.extend_from_slice(&data);
+                    joined.push(b'\n');
+                }
+                _ => return,
+            }
+        }
+        if let Some(n) = count_inline_images(&joined) {
+            self.skip_n(INLINE, u32::try_from(n).unwrap_or(u32::MAX));
+        }
     }
 
     /// Visit the /XObject entries of a resource dictionary.
@@ -122,7 +168,7 @@ impl<'d> Walker<'d> {
             };
             match name_of(&stream.dict, b"Subtype") {
                 Some(b"Image") => match id {
-                    None => self.skip("inline"),
+                    None => self.skip(INLINE),
                     Some(id) if self.seen_images.insert(id) => match self.image(stream, res) {
                         Ok(kind) => {
                             *index += 1;
@@ -133,6 +179,7 @@ impl<'d> Walker<'d> {
                     Some(_) => {}
                 },
                 Some(b"Form") if depth < MAX_DEPTH && id.is_none_or(|id| self.seen_forms.insert(id)) => {
+                    self.count_inline(&[stream]);
                     if let Ok(inner) = stream.dict.get(b"Resources") {
                         self.walk(inner, page, index, depth + 1);
                     }
@@ -159,7 +206,11 @@ impl<'d> Walker<'d> {
         if let Some((&last, outer)) = filters.split_last()
             && last == b"DCTDecode"
         {
-            return self.jpeg(stream, outer).map(ExtractedKind::Jpeg);
+            let jpeg = self.jpeg(stream, outer)?;
+            if self.has_mask(&stream.dict) {
+                self.skip(ALPHA_DROPPED);
+            }
+            return Ok(ExtractedKind::Jpeg(jpeg));
         }
 
         let dict = &stream.dict;
@@ -185,10 +236,12 @@ impl<'d> Walker<'d> {
         }
         .ok_or(CORRUPT)?;
         drop(data);
-        if space.is_some()
-            && let Some(alpha) = self.alpha(dict, &layout)
-        {
-            colour::apply_alpha(&mut rgba, &alpha);
+        if space.is_some() {
+            match self.alpha(dict, &layout) {
+                Ok(Some(alpha)) => colour::apply_alpha(&mut rgba, &alpha),
+                Ok(None) => {}
+                Err(()) => self.skip(ALPHA_DROPPED),
+            }
         }
         self.pixels += pixels;
         Ok(ExtractedKind::Rgba { width: layout.width as u32, height: layout.height as u32, pixels: rgba })
@@ -202,15 +255,15 @@ impl<'d> Walker<'d> {
         }
         let mut dict = Dictionary::new();
         dict.set("Filter", outer.iter().map(|f| Object::Name(f.to_vec())).collect::<Vec<_>>());
-        // Parameters of a filter array are an array too; the decoders take
-        // one dictionary, so only a single outer filter keeps its own.
-        let params = stream.dict.get(b"DecodeParms").ok().and_then(|p| deref(self.doc, p));
-        let first = match params {
-            Some(Object::Array(a)) => a.first().and_then(|p| deref(self.doc, p)),
-            other => other,
-        };
-        if let (1, Some(Object::Dictionary(p))) = (outer.len(), first) {
-            dict.set("DecodeParms", p.clone());
+        // The outer filters keep their own parameters (an array loses the
+        // entry of the DCTDecode filter).
+        if let Ok(params) = stream.dict.get(b"DecodeParms") {
+            match deref(self.doc, params) {
+                Some(Object::Array(items)) => {
+                    dict.set("DecodeParms", items.iter().take(outer.len()).cloned().collect::<Vec<_>>())
+                }
+                _ => dict.set("DecodeParms", params.clone()),
+            }
         }
         self.decoded(&Stream::new(dict, stream.content.clone()))
     }
@@ -224,11 +277,57 @@ impl<'d> Walker<'d> {
         if self.charged + layout.data_len() > self.max_decoded {
             return Err(BUDGET);
         }
-        let data = self.decoded(stream)?;
+        let mut data = self.decoded(stream)?;
+        self.undo_tiff_predictor(stream, &mut data)?;
         if data.len() < layout.data_len() {
             return Err(CORRUPT);
         }
         Ok(data)
+    }
+
+    /// Undo a TIFF predictor (/Predictor 2) after Flate or LZW, which the
+    /// decoders leave in place: 8 and 16 bits per component, else corrupt.
+    fn undo_tiff_predictor(&self, stream: &Stream, data: &mut [u8]) -> Result<(), Skip> {
+        let Ok(filters) = stream.filters() else {
+            return Ok(());
+        };
+        let Some(&last) = filters.last() else {
+            return Ok(());
+        };
+        if last != b"FlateDecode" && last != b"LZWDecode" {
+            return Ok(());
+        }
+        let Some(Some(params)) = filter_params(Some(self.doc), stream, filters.len()).pop() else {
+            return Ok(());
+        };
+        let int = |key: &[u8], default: i64| self.int_of(params, key).unwrap_or(default);
+        if int(b"Predictor", 1) != 2 {
+            return Ok(());
+        }
+        let (colors, columns, bits) = (int(b"Colors", 1), int(b"Columns", 1), int(b"BitsPerComponent", 8));
+        if !(1..=32).contains(&colors) || columns < 1 || !matches!(bits, 8 | 16) {
+            return Err(CORRUPT);
+        }
+        let (colors, bytes) = (colors as usize, bits as usize / 8);
+        let row = usize::try_from(columns)
+            .ok()
+            .and_then(|c| c.checked_mul(colors * bytes))
+            .filter(|&row| row <= data.len())
+            .ok_or(CORRUPT)?;
+        for row in data.chunks_exact_mut(row) {
+            if bytes == 1 {
+                for i in colors..row.len() {
+                    row[i] = row[i].wrapping_add(row[i - colors]);
+                }
+            } else {
+                for i in colors..row.len() / 2 {
+                    let prev = u16::from_be_bytes([row[2 * (i - colors)], row[2 * (i - colors) + 1]]);
+                    let cur = u16::from_be_bytes([row[2 * i], row[2 * i + 1]]);
+                    row[2 * i..2 * i + 2].copy_from_slice(&cur.wrapping_add(prev).to_be_bytes());
+                }
+            }
+        }
+        Ok(())
     }
 
     /// A stream's content after its filters, charged to the job budget.
@@ -237,7 +336,7 @@ impl<'d> Walker<'d> {
             return Err(BUDGET);
         }
         let cap = MAX_STREAM_DECODED.min(self.max_decoded - self.charged);
-        match strict_content(stream, cap, &mut self.charged) {
+        match strict_content_in(Some(self.doc), stream, cap, &mut self.charged) {
             Decoded::Content(data) => Ok(data),
             Decoded::TooLarge if cap < MAX_STREAM_DECODED => Err(BUDGET),
             Decoded::TooLarge => Err(TOO_LARGE),
@@ -245,31 +344,40 @@ impl<'d> Walker<'d> {
         }
     }
 
+    /// True when the image has an /SMask or /Mask entry (of any kind).
+    fn has_mask(&self, dict: &Dictionary) -> bool {
+        [b"SMask".as_slice(), b"Mask"]
+            .iter()
+            .any(|key| dict.get(key).ok().and_then(|o| deref(self.doc, o)).is_some_and(|o| !matches!(o, Object::Null)))
+    }
+
     /// Alpha from a same-size /SMask (soft mask) or /Mask (stencil) stream.
-    /// None when there is none or it cannot be used: the image stays opaque.
-    fn alpha(&mut self, dict: &Dictionary, image: &Layout) -> Option<Vec<u8>> {
+    /// Ok(None): no mask. Err: a mask that cannot be applied (other
+    /// dimensions, undecodable, over a budget, a colour-key /Mask array);
+    /// the image then stays opaque.
+    fn alpha(&mut self, dict: &Dictionary, image: &Layout) -> Result<Option<Vec<u8>>, ()> {
         let doc = self.doc;
-        let stream_of = |key: &[u8]| match dict.get(key).ok().and_then(|o| deref(doc, o)) {
-            Some(Object::Stream(s)) => Some(s),
-            _ => None,
+        let get = |key: &[u8]| dict.get(key).ok().and_then(|o| deref(doc, o)).filter(|o| !matches!(o, Object::Null));
+        let (mask, stencil) = match (get(b"SMask"), get(b"Mask")) {
+            (Some(Object::Stream(s)), _) => (s, false),
+            (Some(_), _) => return Err(()),
+            (None, Some(Object::Stream(s))) => (s, true),
+            (None, Some(_)) => return Err(()),
+            (None, None) => return Ok(None),
         };
-        let (mask, stencil) = match (stream_of(b"SMask"), stream_of(b"Mask")) {
-            (Some(s), _) => (s, false),
-            (None, Some(s)) => (s, true),
-            (None, None) => return None,
-        };
-        let bpc = if stencil { 1 } else { self.int_of(&mask.dict, b"BitsPerComponent")? };
-        let layout = self.layout(&mask.dict, bpc, 1).ok()?;
+        let bpc = if stencil { 1 } else { self.int_of(&mask.dict, b"BitsPerComponent").ok_or(())? };
+        let layout = self.layout(&mask.dict, bpc, 1).map_err(|_| ())?;
         if (layout.width, layout.height) != (image.width, image.height) {
-            return None;
+            return Err(());
         }
-        let data = self.samples(mask, &layout).ok()?;
+        let data = self.samples(mask, &layout).map_err(|_| ())?;
         let decode = self.decode_of(&mask.dict);
-        if stencil {
+        let alpha = if stencil {
             colour::stencil_alpha(&data, &layout, decode.as_deref())
         } else {
             colour::gray_alpha(&data, &layout, decode.as_deref())
-        }
+        };
+        alpha.map(Some).ok_or(())
     }
 
     fn layout(&self, dict: &Dictionary, bpc: i64, components: usize) -> Result<Layout, Skip> {
@@ -371,7 +479,7 @@ impl<'d> Walker<'d> {
             Some(Object::String(bytes, _)) => bytes.clone(),
             Some(Object::Stream(s)) => {
                 let mut charged = 0;
-                match strict_content(s, MAX_LOOKUP, &mut charged) {
+                match strict_content_in(Some(doc), s, MAX_LOOKUP, &mut charged) {
                     Decoded::Content(data) => data,
                     _ => return Err(CORRUPT),
                 }
@@ -415,12 +523,17 @@ mod tests {
     }
 
     /// Save a document whose pages have these /XObject resource dicts.
-    fn save(mut doc: Document, pages: Vec<Dictionary>) -> Vec<u8> {
+    fn save(doc: Document, pages: Vec<Dictionary>) -> Vec<u8> {
+        save_with(doc, pages.into_iter().map(|x| (x, b"q Q".to_vec())).collect())
+    }
+
+    /// `save` with each page's content stream.
+    fn save_with(mut doc: Document, pages: Vec<(Dictionary, Vec<u8>)>) -> Vec<u8> {
         let pages_id = doc.new_object_id();
         let kids: Vec<Object> = pages
             .into_iter()
-            .map(|xobjects| {
-                let content = doc.add_object(Stream::new(Dictionary::new(), b"q Q".to_vec()));
+            .map(|(xobjects, content)| {
+                let content = doc.add_object(Stream::new(Dictionary::new(), content));
                 doc.add_object(dictionary! {
                     "Type" => "Page",
                     "Parent" => pages_id,
@@ -564,6 +677,7 @@ mod tests {
         let odd = doc.add_object(image(3, 1, dictionary! { "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8 }, vec![0, 0, 0]));
         let id2 = doc.add_object(image(1, 1, dictionary! { "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8, "SMask" => odd }, vec![7]));
         let r = extract_images(&save(doc, vec![dictionary! { "Im0" => id, "Im1" => id2 }])).unwrap();
+        assert_eq!(skipped(&r), vec![("alpha dropped", 1)]);
         let by_index = |i: u32| r.images.iter().find(|e| e.index == i).unwrap();
         let pixels: Vec<&[u8]> = (1..=2).map(|i| rgba(by_index(i)).2).collect();
         assert!(pixels.contains(&&[1, 2, 3, 0, 4, 5, 6, 128][..]));
@@ -703,6 +817,80 @@ mod tests {
         // Decoded bytes: room for one 4-byte image.
         let r = extract_within(&doc, 6, JOB_PIXELS);
         assert_eq!((r.images.len(), skipped(&r)), (1, vec![("budget", 1)]));
+    }
+
+    /// 2x1 RGB, Flate + PNG predictor (rows prefixed with filter type 0),
+    /// with these /DecodeParms.
+    fn predicted_rgb(doc: &mut Document, parms: Object) -> ObjectId {
+        let raw = [0, 10, 20, 30, 40, 50, 60];
+        let mut s = flate_image(2, 1, dictionary! { "ColorSpace" => "DeviceRGB", "BitsPerComponent" => 8 }, &raw);
+        s.dict.set("DecodeParms", parms);
+        doc.add_object(s)
+    }
+
+    #[test]
+    fn decode_parms_array_and_reference_undo_the_predictor() {
+        let parms = || dictionary! { "Predictor" => 15, "Colors" => 3, "Columns" => 2 };
+        let mut doc = Document::with_version("1.7");
+        let a = predicted_rgb(&mut doc, vec![Object::Dictionary(parms())].into());
+        let parms_id = doc.add_object(parms());
+        let b = predicted_rgb(&mut doc, parms_id.into());
+        let c = predicted_rgb(&mut doc, vec![Object::Reference(parms_id)].into());
+        let r = extract_images(&save(doc, vec![dictionary! { "A" => a, "B" => b, "C" => c }])).unwrap();
+        assert_eq!(r.images.len(), 3);
+        for e in &r.images {
+            assert_eq!(rgba(e).2, &[10, 20, 30, 255, 40, 50, 60, 255]);
+        }
+    }
+
+    #[test]
+    fn tiff_predictor_is_undone_for_8_and_16_bit() {
+        let mut doc = Document::with_version("1.7");
+        let mut rgb = flate_image(2, 1, dictionary! { "ColorSpace" => "DeviceRGB", "BitsPerComponent" => 8 }, &[10, 20, 30, 5, 5, 250]);
+        rgb.dict.set("DecodeParms", dictionary! { "Predictor" => 2, "Colors" => 3, "Columns" => 2 });
+        let rgb = doc.add_object(rgb);
+        let mut gray = flate_image(2, 1, dictionary! { "ColorSpace" => "DeviceGray", "BitsPerComponent" => 16 }, &[0x01, 0xFF, 0x00, 0x02]);
+        gray.dict.set("DecodeParms", dictionary! { "Predictor" => 2, "BitsPerComponent" => 16, "Columns" => 2 });
+        let gray = doc.add_object(gray);
+        let mut nibbles = flate_image(2, 1, dictionary! { "ColorSpace" => "DeviceGray", "BitsPerComponent" => 4 }, &[0x12]);
+        nibbles.dict.set("DecodeParms", dictionary! { "Predictor" => 2, "BitsPerComponent" => 4, "Columns" => 2 });
+        let nibbles = doc.add_object(nibbles);
+        let r = extract_images(&save(doc, vec![dictionary! { "A" => rgb, "B" => gray, "C" => nibbles }])).unwrap();
+        assert_eq!(r.images.len(), 2);
+        assert_eq!(rgba(&r.images[0]).2, &[10, 20, 30, 255, 15, 25, 24, 255]);
+        // 0x01FF + 0x0002 = 0x0201: high bytes 0x01 then 0x02.
+        assert_eq!(rgba(&r.images[1]).2, &[1, 1, 1, 255, 2, 2, 2, 255]);
+        assert_eq!(skipped(&r), vec![("corrupt", 1)]);
+    }
+
+    #[test]
+    fn unusable_alpha_is_reported_and_the_image_kept() {
+        let mut doc = Document::with_version("1.7");
+        let mut bad = image(2, 1, dictionary! { "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8 }, vec![0, 0]);
+        bad.dict.set("Filter", "JBIG2Decode");
+        let bad = doc.add_object(bad);
+        let id = doc.add_object(image(2, 1, dictionary! { "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8, "SMask" => bad }, vec![5, 6]));
+        let r = extract_images(&save(doc, vec![dictionary! { "A" => id }])).unwrap();
+        assert_eq!(rgba(&r.images[0]).2, &[5, 5, 5, 255, 6, 6, 6, 255]);
+        assert_eq!(skipped(&r), vec![("alpha dropped", 1)]);
+    }
+
+    #[test]
+    fn inline_images_in_content_are_counted() {
+        let mut doc = Document::with_version("1.7");
+        let inline = b"q BI /W 1 /H 1 /CS /G /BPC 8 ID \x00 EI Q ".to_vec();
+        let form = doc.add_object(Stream::new(
+            dictionary! { "Type" => "XObject", "Subtype" => "Form", "Resources" => Dictionary::new() },
+            inline.clone(),
+        ));
+        let page1 = [inline.clone(), inline.clone(), b"(BI) Tj /Fm Do".to_vec()].concat();
+        let r = extract_images(&save_with(
+            doc,
+            vec![(dictionary! { "Fm" => form }, page1), (dictionary! { "Fm" => form }, b"/Fm Do".to_vec())],
+        ))
+        .unwrap();
+        // Two on page 1, one in the form (walked once).
+        assert_eq!(skipped(&r), vec![("inline", 3)]);
     }
 
     #[test]

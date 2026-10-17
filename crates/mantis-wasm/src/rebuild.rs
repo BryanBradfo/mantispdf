@@ -423,6 +423,12 @@ fn split_inline_images(c: &[u8]) -> Option<(Vec<u8>, Vec<Vec<u8>>)> {
     Some((rest, dicts))
 }
 
+/// Number of inline images (`BI ... ID <data> EI`) in `content`, None when
+/// the content cannot be split reliably (see `split_inline_images`).
+pub(crate) fn count_inline_images(content: &[u8]) -> Option<usize> {
+    split_inline_images(content).map(|(_, dicts)| dicts.len())
+}
+
 /// From just after a `BI` token: return the dictionary tokens and the index
 /// just past the closing `EI`.
 ///
@@ -726,7 +732,7 @@ pub(crate) enum Decoded {
 /// keeps all resources). None when that takes more than `cap` bytes: each
 /// step is bounded before it allocates. `charged` grows by the bytes decoded.
 pub(crate) fn bounded_content(stream: &lopdf::Stream, cap: usize, charged: &mut usize) -> Option<Vec<u8>> {
-    match decode_filters(stream, cap, charged, false) {
+    match decode_filters(None, stream, cap, charged, false) {
         Decoded::Content(out) => Some(out),
         Decoded::TooLarge => None,
         Decoded::Failed => {
@@ -740,13 +746,45 @@ pub(crate) fn bounded_content(stream: &lopdf::Stream, cap: usize, charged: &mut 
 /// Like `bounded_content`, but undecodable content is `Failed` instead of
 /// coming back raw (for callers that draw the content, not scan it).
 pub(crate) fn strict_content(stream: &lopdf::Stream, cap: usize, charged: &mut usize) -> Decoded {
-    decode_filters(stream, cap, charged, true)
+    decode_filters(None, stream, cap, charged, true)
+}
+
+/// `strict_content` resolving references in /DecodeParms through `doc`.
+pub(crate) fn strict_content_in(doc: Option<&Document>, stream: &lopdf::Stream, cap: usize, charged: &mut usize) -> Decoded {
+    decode_filters(doc, stream, cap, charged, true)
+}
+
+/// The /DecodeParms of each of `count` filters: a dictionary applies to
+/// every filter (as lopdf does), an array gives filter i its i-th entry
+/// (null or missing: none). References are followed through `doc`; without
+/// one they count as no parameters.
+pub(crate) fn filter_params<'a>(doc: Option<&'a Document>, stream: &'a lopdf::Stream, count: usize) -> Vec<Option<&'a Dictionary>> {
+    let resolve = |obj: &'a Object| -> Option<&'a Object> {
+        match (obj, doc) {
+            (Object::Reference(_), Some(doc)) => deref(doc, obj),
+            (Object::Reference(_), None) => None,
+            _ => Some(obj),
+        }
+    };
+    match stream.dict.get(b"DecodeParms").ok().and_then(resolve) {
+        Some(Object::Dictionary(params)) => vec![Some(params); count],
+        Some(Object::Array(items)) => (0..count)
+            .map(|i| items.get(i).and_then(resolve).and_then(|o| o.as_dict().ok()))
+            .collect(),
+        _ => vec![None; count],
+    }
 }
 
 /// The filter pipeline of `bounded_content` and `strict_content`. A stream
 /// without /Filter is its own content; `strict` turns a decoder failure
 /// that produced nothing into `Failed`.
-fn decode_filters(stream: &lopdf::Stream, cap: usize, charged: &mut usize, strict: bool) -> Decoded {
+fn decode_filters(
+    doc: Option<&Document>,
+    stream: &lopdf::Stream,
+    cap: usize,
+    charged: &mut usize,
+    strict: bool,
+) -> Decoded {
     if stream.dict.get(b"Filter").is_err() {
         let len = stream.content.len();
         *charged += len.min(cap);
@@ -755,13 +793,9 @@ fn decode_filters(stream: &lopdf::Stream, cap: usize, charged: &mut usize, stric
     let Ok(filters) = stream.filters() else {
         return Decoded::Failed;
     };
-    let params = stream
-        .dict
-        .get(b"DecodeParms")
-        .and_then(Object::as_dict)
-        .ok();
+    let params = filter_params(doc, stream, filters.len());
     let mut data = std::borrow::Cow::Borrowed(stream.content.as_slice());
-    for filter in filters {
+    for (filter, params) in filters.into_iter().zip(params) {
         let mut corrupt = false;
         let step = match filter {
             b"FlateDecode" | b"LZWDecode" => inflate_step(filter, &data, params, cap, &mut corrupt),
@@ -3245,6 +3279,48 @@ mod tests {
         let mut bytes = Vec::new();
         out.clone().save_to(&mut bytes).unwrap();
         assert!(contains(&bytes, b"SECRET_BOMBIMG"));
+    }
+
+    #[test]
+    fn decode_parms_arrays_and_references_reach_their_filter() {
+        let zlib = |data: &[u8]| {
+            use std::io::Write;
+            let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+            e.write_all(data).unwrap();
+            e.finish().unwrap()
+        };
+        let plain: Vec<u8> = (0..60u8).collect();
+        // PNG "Sub" rows of 6 bytes: without the predictor the bytes are wrong.
+        let png: Vec<u8> = plain
+            .chunks(6)
+            .flat_map(|row| {
+                std::iter::once(1u8).chain((0..6).map(move |i| if i == 0 { row[0] } else { row[i].wrapping_sub(row[i - 1]) }))
+            })
+            .collect();
+        let params = dictionary! { "Predictor" => 12, "Columns" => 6 };
+        let mut doc = Document::with_version("1.7");
+        let params_id = doc.add_object(params.clone());
+        let flate = || Object::Name(b"FlateDecode".to_vec());
+        let cases: Vec<(Dictionary, Vec<u8>, bool)> = vec![
+            (dictionary! { "Filter" => vec![flate()], "DecodeParms" => vec![params.clone().into()] }, zlib(&png), false),
+            (
+                dictionary! { "Filter" => vec![flate(), flate()], "DecodeParms" => vec![Object::Null, params.clone().into()] },
+                zlib(&zlib(&png)),
+                false,
+            ),
+            (dictionary! { "Filter" => "FlateDecode", "DecodeParms" => params_id }, zlib(&png), true),
+            (dictionary! { "Filter" => vec![flate()], "DecodeParms" => vec![params_id.into()] }, zlib(&png), true),
+        ];
+        for (dict, content, needs_doc) in cases {
+            let stream = Stream::new(dict.clone(), content);
+            let mut charged = 0;
+            let got = if needs_doc {
+                strict_content_in(Some(&doc), &stream, 1 << 20, &mut charged)
+            } else {
+                strict_content(&stream, 1 << 20, &mut charged)
+            };
+            assert_eq!(got, Decoded::Content(plain.clone()), "{dict:?}");
+        }
     }
 
     #[test]
