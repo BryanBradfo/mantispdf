@@ -116,9 +116,14 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
 
       case "sanitize": {
         const out = sanitize_pdf(msg.pdfBytes, msg.keepComments);
-        const bytes = out.bytes();
-        const report = Array.from(out.report());
-        out.free();
+        let bytes: Uint8Array;
+        let report: number[];
+        try {
+          bytes = out.bytes();
+          report = Array.from(out.report());
+        } finally {
+          out.free();
+        }
         postSuccess(msg.id, { kind: "sanitized", bytes, report });
         break;
       }
