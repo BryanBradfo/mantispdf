@@ -5,6 +5,7 @@ import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import RangeInput from "../components/planner/RangeInput";
 import PositionPicker from "../components/stamp/PositionPicker";
+import LiveSummary from "../components/stamp/LiveSummary";
 import TextStyleFields from "../components/stamp/TextStyleFields";
 import {
   ANCHOR_LABELS,
@@ -143,7 +144,7 @@ export default function PageNumbersPage() {
             />
           </label>
 
-          <p className="mt-4 text-sm text-gray-600 dark:text-[#888]" aria-live="polite">{summary}</p>
+          <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
 
           <ErrorAlert error={problem} className="mt-4" />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />

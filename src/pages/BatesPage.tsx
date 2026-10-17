@@ -19,6 +19,7 @@ import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import MergeFileList from "../components/merge/MergeFileList";
 import PositionPicker from "../components/stamp/PositionPicker";
+import LiveSummary from "../components/stamp/LiveSummary";
 import TextStyleFields from "../components/stamp/TextStyleFields";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 
@@ -210,10 +211,10 @@ export default function BatesPage() {
             />
           </label>
 
-          <p className="mt-4 text-sm text-gray-600 dark:text-[#888]" aria-live="polite">
-            {ANCHOR_LABELS[anchor]} · {describeStyle(style)}
-            {rangeText ? ` · ${rangeText}` : ""}
-          </p>
+          <LiveSummary
+            text={`${ANCHOR_LABELS[anchor]} · ${describeStyle(style)}${rangeText ? ` · ${rangeText}` : ""}`}
+            className="mt-4 text-sm text-gray-600 dark:text-[#888]"
+          />
 
           <ErrorAlert error={problem} className="mt-4" />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />

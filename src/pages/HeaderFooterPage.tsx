@@ -4,6 +4,7 @@ import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import RangeInput from "../components/planner/RangeInput";
+import LiveSummary from "../components/stamp/LiveSummary";
 import TextStyleFields from "../components/stamp/TextStyleFields";
 import {
   DEFAULT_MARGIN,
@@ -148,7 +149,7 @@ export default function HeaderFooterPage() {
             />
           </label>
 
-          <p className="mt-4 text-sm text-gray-600 dark:text-[#888]" aria-live="polite">{summary}</p>
+          <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
 
           <ErrorAlert error={problem} className="mt-4" />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
