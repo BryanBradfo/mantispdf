@@ -119,8 +119,9 @@ const NEVER_COPIED: [&[u8]; 10] = [
 
 /// Keys whose dictionary value maps arbitrary names (glyph names, colorant
 /// names) to values. Its keys are data, not PDF structure, so `NEVER_COPIED`
-/// must not filter them: a glyph named /A or /P is still a glyph.
-const NAME_MAP_KEYS: [&[u8]; 2] = [b"CharProcs", b"Colorants"];
+/// must not filter them: a glyph named /A or /P is still a glyph. /Solidities
+/// and /DotGain are the colorant maps of a DeviceN /MixingHints.
+const NAME_MAP_KEYS: [&[u8]; 4] = [b"CharProcs", b"Colorants", b"Solidities", b"DotGain"];
 
 /// `/Type` is optional almost everywhere, so structure is also recognized by
 /// shape. A page or page-tree node: one of these keys...
@@ -2584,5 +2585,58 @@ mod tests {
         let oc = out_dict(&out, out.catalog().unwrap().get(b"OCProperties").unwrap());
         let d = out_dict(&out, oc.get(b"D").unwrap());
         assert_eq!(d.get(b"OFF").unwrap().as_array().unwrap().len(), 2000);
+    }
+
+    #[test]
+    fn devicen_mixing_hints_keep_colorant_names() {
+        // /Solidities and /DotGain map colorant names, which may be /A or
+        // /JS, to values.
+        let mut src = Src::new();
+        let gain = dictionary! {
+            "FunctionType" => 2, "Domain" => vec![0.into(), 1.into()], "N" => 1,
+        };
+        let device_n: Object = vec![
+            Object::Name(b"DeviceN".to_vec()),
+            vec![Object::Name(b"A".to_vec()), Object::Name(b"JS".to_vec())].into(),
+            Object::Name(b"DeviceCMYK".to_vec()),
+            dictionary! {
+                "FunctionType" => 2, "Domain" => vec![0.into(), 1.into(), 0.into(), 1.into()],
+                "C0" => vec![0.into(), 0.into(), 0.into(), 0.into()],
+                "C1" => vec![1.into(), 0.into(), 0.into(), 0.into()], "N" => 1,
+            }
+            .into(),
+            dictionary! {
+                "MixingHints" => dictionary! {
+                    "Solidities" => dictionary! { "A" => 0.5, "JS" => 0.25 },
+                    "DotGain" => dictionary! { "A" => gain.clone(), "JS" => gain },
+                    "PrintingOrder" => vec![Object::Name(b"A".to_vec()), Object::Name(b"JS".to_vec())],
+                },
+            }
+            .into(),
+        ]
+        .into();
+        src.add_page(
+            dictionary! { "ColorSpace" => dictionary! { "CSN" => device_n } },
+            b"/CSN cs 1 1 scn",
+        );
+        let (_, out, _) = rebuild(src.finish(), &[1]);
+        let page = out
+            .objects
+            .values()
+            .filter_map(|o| o.as_dict().ok())
+            .find(|d| name_of(d, b"Type") == Some(b"Page"))
+            .unwrap();
+        let spaces = out_dict(&out, page.get(b"Resources").unwrap())
+            .get(b"ColorSpace")
+            .unwrap();
+        let cs = deref(&out, out_dict(&out, spaces).get(b"CSN").unwrap())
+            .unwrap()
+            .as_array()
+            .unwrap();
+        let hints = out_dict(&out, out_dict(&out, &cs[4]).get(b"MixingHints").unwrap());
+        for map in [&b"Solidities"[..], b"DotGain"] {
+            let map = out_dict(&out, hints.get(map).unwrap());
+            assert!(map.has(b"A") && map.has(b"JS"), "{map:?}");
+        }
     }
 }
