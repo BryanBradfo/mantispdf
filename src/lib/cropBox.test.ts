@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCropJob, describeCrop, fitCropToPage, moveCropRect, resizeCropRect, type CropChoice } from "./cropBox";
+import { buildCropJob, describeCrop, fitCropToPage, missedPagesProblem, moveCropRect, pagesMissedBy, resizeCropRect, type CropChoice } from "./cropBox";
 import type { Rect } from "./geometryJob";
 
 const letter: [number, number] = [612, 792];
@@ -81,5 +81,32 @@ describe("buildCropJob", () => {
       ],
       permanent: false,
     });
+  });
+});
+
+describe("pagesMissedBy", () => {
+  const sizes: [number, number][] = [[612, 792], [300, 300], [612, 792], [100, 900]];
+  it("lists the pages the shared box leaves less than 1 pt of", () => {
+    // [400, 500, 100, 100]: misses page 2 (300 x 300) and page 4 (100 wide).
+    expect(pagesMissedBy([400, 500, 100, 100], sizes, [1, 2, 3, 4])).toEqual([2, 4]);
+    expect(pagesMissedBy([400, 500, 100, 100], sizes, [1, 3])).toEqual([]);
+  });
+  it("counts an overlap under 1 pt as a miss", () => {
+    expect(pagesMissedBy([299.5, 0, 100, 100], [[300, 300]], [1])).toEqual([1]);
+    expect(pagesMissedBy([299, 0, 100, 100], [[300, 300]], [1])).toEqual([]);
+  });
+});
+
+describe("missedPagesProblem", () => {
+  it("names the pages", () => {
+    expect(missedPagesProblem([])).toBeNull();
+    expect(missedPagesProblem([3])).toBe("The crop area misses page 3. Use a page range or auto-detect.");
+    expect(missedPagesProblem([2, 4])).toBe("The crop area misses pages 2, 4. Use a page range or auto-detect.");
+  });
+  it("shortens a long list", () => {
+    const many = Array.from({ length: 14 }, (_, i) => i + 1);
+    expect(missedPagesProblem(many)).toBe(
+      "The crop area misses pages 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 and 4 more. Use a page range or auto-detect.",
+    );
   });
 });

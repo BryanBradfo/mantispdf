@@ -90,3 +90,30 @@ export function buildCropJob(c: CropChoice): CropJobSpec {
   const pages = c.scope === "this" ? [c.page] : c.scope === "all" || c.range.length === c.total ? "all" : [...c.range];
   return { pages, rect: c.rect, permanent: c.permanent };
 }
+
+/** Smallest overlap, in points, the engine accepts between a crop box and a page. */
+const MIN_OVERLAP_PT = 1;
+/** Page numbers listed in full in the "misses pages" message. */
+const LISTED_PAGES = 10;
+
+/** Pages of `pages` (1-based) on which the shared `rect` covers less than 1 pt on a side. */
+export function pagesMissedBy(rect: Rect, sizes: readonly Size[], pages: readonly number[]): number[] {
+  const [x, y, w, h] = rect;
+  return pages.filter((n) => {
+    const size = sizes[n - 1];
+    if (!size) return false;
+    const [vw, vh] = size;
+    const across = Math.min(x + w, vw) - Math.max(x, 0);
+    const up = Math.min(y + h, vh) - Math.max(y, 0);
+    return !(across >= MIN_OVERLAP_PT && up >= MIN_OVERLAP_PT);
+  });
+}
+
+/** The message for pages a shared crop box misses; null when there are none. */
+export function missedPagesProblem(missed: readonly number[]): string | null {
+  if (missed.length === 0) return null;
+  const listed = missed.slice(0, LISTED_PAGES).join(", ");
+  const more = missed.length > LISTED_PAGES ? ` and ${missed.length - LISTED_PAGES} more` : "";
+  const noun = missed.length === 1 ? "page" : "pages";
+  return `The crop area misses ${noun} ${listed}${more}. Use a page range or auto-detect.`;
+}

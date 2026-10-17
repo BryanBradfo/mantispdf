@@ -2,6 +2,8 @@ import type { Rect } from "./geometryJob";
 
 /** Render resolution of the auto-detect pass. */
 export const DETECT_DPI = 50;
+/** Longest side of the auto-detect render, in pixels (a huge page is rendered smaller). */
+export const MAX_DETECT_PX = 2000;
 /** A pixel is content when any of r, g, b is below this value. */
 export const WHITE_THRESHOLD = 245;
 /** Pixels this close to the image edge are ignored (anti-aliased page border, scanner edge). */
@@ -69,6 +71,13 @@ export function bboxToVisibleRect(
   return [left, bottom, right - left, top - bottom];
 }
 
+/** Render scale (pixels per point) for a page of `[w, h]` points: 50 dpi, capped at `MAX_DETECT_PX`. */
+export function detectScale([w, h]: [number, number]): number {
+  const longest = Math.max(w, h);
+  const dpi = DETECT_DPI / 72;
+  return longest > 0 ? Math.min(dpi, MAX_DETECT_PX / longest) : dpi;
+}
+
 export interface DetectOptions {
   /** Called after each page with the number of pages done so far. */
   onProgress?: (done: number, total: number) => void;
@@ -77,7 +86,8 @@ export interface DetectOptions {
 
 /**
  * Detect the content box of each of `pages` (1-based) of `bytes`, rendering locally with pdf.js at
- * 50 dpi. `sizes` are the visible page sizes in points (index = page - 1). Nothing leaves the device.
+ * 50 dpi (at most 2000 px on the longest side). `sizes` are the visible page sizes in points
+ * (index = page - 1). Nothing leaves the device.
  */
 export async function detectContentRects(
   bytes: Uint8Array,
@@ -96,7 +106,8 @@ export async function detectContentRects(
       signal?.throwIfAborted();
       const size = sizes[n - 1];
       const page = await pdf.getPage(n);
-      const viewport = page.getViewport({ scale: DETECT_DPI / 72 });
+      const natural = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: detectScale([natural.width, natural.height]) });
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.ceil(viewport.width));
       canvas.height = Math.max(1, Math.ceil(viewport.height));
@@ -108,7 +119,7 @@ export async function detectContentRects(
         await page.render({ canvasContext: ctx, viewport }).promise;
         const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const box = contentBBox(image.data, image.width, image.height);
-        const [vw, vh] = size ?? [viewport.width / (DETECT_DPI / 72), viewport.height / (DETECT_DPI / 72)];
+        const [vw, vh] = size ?? [natural.width, natural.height];
         const usable = vw > 0 && vh > 0 && viewport.width > 0 && viewport.height > 0;
         out.set(n, usable ? bboxToVisibleRect(box, [viewport.width / vw, viewport.height / vh], [vw, vh]) : [0, 0, vw, vh]);
       } finally {

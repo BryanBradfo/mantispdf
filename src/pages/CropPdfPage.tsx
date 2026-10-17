@@ -9,7 +9,7 @@ import RangeInput from "../components/planner/RangeInput";
 import LiveSummary from "../components/stamp/LiveSummary";
 import CropCanvas from "../components/geometry/CropCanvas";
 import { detectContentRects } from "../lib/autoMargins";
-import { buildCropJob, defaultCropRect, fitCropToPage, type CropScope } from "../lib/cropBox";
+import { buildCropJob, defaultCropRect, fitCropToPage, missedPagesProblem, pagesMissedBy, type CropScope } from "../lib/cropBox";
 import type { Rect } from "../lib/geometryJob";
 import { describePages } from "../lib/stampBuilders";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
@@ -42,6 +42,11 @@ export default function CropPdfPage() {
   const [detecting, setDetecting] = useState(false);
   const [notice, setNotice] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  /** The latest `perPage`, for a detection that finishes after the mode changed. */
+  const perPageRef = useRef(perPage);
+  useEffect(() => {
+    perPageRef.current = perPage;
+  }, [perPage]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -50,9 +55,10 @@ export default function CropPdfPage() {
   const pageSize = sizes[page - 1] ?? null;
   const selected = useMemo(() => range ?? Array.from({ length: total }, (_, i) => i + 1), [range, total]);
 
-  const shown: Rect | null = pageSize
-    ? perPage?.get(page) ?? fitCropToPage(rect ?? defaultCropRect(pageSize), pageSize)
-    : null;
+  const shown: Rect | null = useMemo(
+    () => (pageSize ? perPage?.get(page) ?? fitCropToPage(rect ?? defaultCropRect(pageSize), pageSize) : null),
+    [pageSize, perPage, page, rect],
+  );
 
   const onRect = (next: Rect) => {
     setNotice("");
@@ -69,6 +75,10 @@ export default function CropPdfPage() {
 
   const detect = (all: boolean) => {
     if (!input || busy) return;
+    if (all && total > MAX_PER_PAGE) {
+      setError(`Auto-detect works on up to ${MAX_PER_PAGE} pages at a time. Use one box for all pages instead.`);
+      return;
+    }
     stopDetection();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -96,17 +106,23 @@ export default function CropPdfPage() {
         }
         const box = found.get(shownPage);
         if (!box) return;
-        if (perPage) setPerPage((cur) => (cur ? new Map(cur).set(shownPage, box) : cur));
+        if (perPageRef.current) setPerPage((cur) => (cur ? new Map(cur).set(shownPage, box) : cur));
         else setRect(box);
         setNotice(`Detected margins on page ${shownPage}.`);
       },
     );
   };
 
+  // A shared box on pages of other sizes may not reach some of them.
+  const missed = useMemo(
+    () => (!perPage && shown && scope !== "this" ? pagesMissedBy(shown, sizes, selected) : []),
+    [perPage, shown, scope, sizes, selected],
+  );
+
   const problem =
     perPage ? (perPage.size > MAX_PER_PAGE ? `Auto-detect works on up to ${MAX_PER_PAGE} pages at a time.` : null)
     : scope === "range" && selected.length === 0 ? "Select at least one page."
-    : null;
+    : missedPagesProblem(missed);
 
   const r = Math.round;
   const target =
@@ -174,8 +190,9 @@ export default function CropPdfPage() {
                     type="button"
                     aria-label={`Page ${n}`}
                     aria-pressed={page === n}
+                    disabled={detecting}
                     onClick={() => setPage(n)}
-                    className={`w-20 shrink-0 overflow-hidden rounded-md border-2 bg-white text-xs dark:bg-[#111] ${
+                    className={`w-20 shrink-0 overflow-hidden rounded-md border-2 bg-white text-xs disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[#111] ${
                       page === n ? "border-mantis-600" : "border-transparent hover:border-gray-300 dark:hover:border-[#444]"
                     }`}
                   >
@@ -219,12 +236,17 @@ export default function CropPdfPage() {
           {perPage ? (
             <div className="mt-4 text-sm text-gray-700 dark:text-[#aaa]">
               <p>Each page is cropped to its own detected box. Pick a page above to adjust its box.</p>
-              <button type="button" onClick={() => { setPerPage(null); setNotice(""); }} className={`mt-2 ${secondaryButton}`}>
+              <button
+                type="button"
+                disabled={detecting}
+                onClick={() => { setPerPage(null); setNotice(""); }}
+                className={`mt-2 disabled:opacity-60 ${secondaryButton}`}
+              >
                 Use one box for all pages instead
               </button>
             </div>
           ) : (
-            <fieldset className="mt-4">
+            <fieldset className="mt-4" disabled={detecting}>
               <legend className="text-sm text-gray-700 dark:text-[#aaa]">Apply to</legend>
               <div className="mt-1 flex flex-wrap gap-4 text-sm text-gray-700 dark:text-[#aaa]">
                 {SCOPES.map((s) => (

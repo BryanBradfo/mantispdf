@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bboxToVisibleRect, contentBBox } from "./autoMargins";
+import { MAX_DETECT_PX, bboxToVisibleRect, contentBBox, detectScale } from "./autoMargins";
 
 /** A white RGBA image with the listed pixels painted `rgb`. */
 function image(width: number, height: number, dark: [number, number][], rgb: [number, number, number] = [0, 0, 0]) {
@@ -77,5 +77,16 @@ describe("bboxToVisibleRect", () => {
     expect(y).toBeCloseTo(612 - 150);
     expect(w).toBeCloseTo(100);
     expect(h).toBeCloseTo(100);
+  });
+});
+
+describe("detectScale", () => {
+  it("renders at 50 dpi", () => {
+    expect(detectScale([612, 792])).toBeCloseTo(50 / 72, 9);
+  });
+  it("caps the longest side at 2000 px", () => {
+    // 14400 pt at 50 dpi would be 10000 px.
+    expect(detectScale([14400, 1000]) * 14400).toBeCloseTo(MAX_DETECT_PX, 6);
+    expect(detectScale([1000, 14400]) * 14400).toBeCloseTo(2000, 6);
   });
 });
