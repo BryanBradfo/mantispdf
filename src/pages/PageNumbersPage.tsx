@@ -14,6 +14,8 @@ import {
   buildPageNumberJob,
   describePages,
   describeStyle,
+  pageNumberRange,
+  previewStampText,
   todayIso,
   type TextStyle,
 } from "../lib/stampBuilders";
@@ -49,7 +51,13 @@ export default function PageNumbersPage() {
     : !(margin >= 0 && margin <= 300) ? "Margin must be between 0 and 300 pt."
     : null;
 
-  const firstShown = template.replace(/\{n\}/g, String(numberStart)).replace(/\{total\}/g, String(selected.length ? numberStart + selected.length - 1 : numberStart));
+  const range = pageNumberRange(Number.isFinite(numberStart) ? numberStart : 1, selected);
+  const firstShown = previewStampText(template, {
+    n: range.first,
+    total: range.last,
+    date: todayIso(),
+    filename: input ? baseName(input.file) : "",
+  });
   const summary = `${ANCHOR_LABELS[anchor]} · ${describePages(selected, total)} · ${describeStyle(style)} · "${firstShown}"`;
 
   const submit = (e: React.FormEvent) => {

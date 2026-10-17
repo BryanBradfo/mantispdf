@@ -42,9 +42,23 @@ export interface StampJobSpec {
   bates?: { prefix: string; suffix: string; start: number; digits: number };
 }
 
-/** Substitute the JS-side tokens {date} and {filename}; {n}, {total}, {bates} are left for Rust. */
+/**
+ * Substitute the JS-side tokens {date} and {filename}; {n}, {total}, {bates} are left for Rust.
+ * Braces inside the substituted values are doubled, which the engine prints as literal braces,
+ * so a file named "report {n}.pdf" is not renumbered.
+ */
 export function substituteJsTokens(template: string, ctx: { date: string; filename: string }): string {
-  return template.replace(/\{(date|filename)\}/g, (_, key: "date" | "filename") => ctx[key]);
+  return template.replace(/\{(date|filename)\}/g, (_, key: "date" | "filename") => ctx[key].replace(/[{}]/g, "$&$&"));
+}
+
+/**
+ * JS mirror of the engine's token pass: `{{` and `}}` become literal braces, `{n}` and `{total}`
+ * are replaced, any other brace is kept as is. Used for on-screen previews only.
+ */
+export function resolveEngineTokens(template: string, n: number, total: number): string {
+  return template.replace(/\{\{|\}\}|\{n\}|\{total\}/g, (m) =>
+    m === "{{" ? "{" : m === "}}" ? "}" : m === "{n}" ? String(n) : String(total),
+  );
 }
 
 /** Shape sent to the WASM binding: a plain object copy so optional `bates` is simply absent. */

@@ -5,6 +5,8 @@ import {
   buildPageNumberJob,
   describePages,
   hexToRgb,
+  pageNumberRange,
+  previewStampText,
   todayIso,
   type HeaderFooterSlots,
 } from "./stampBuilders";
@@ -56,5 +58,34 @@ describe("buildHeaderFooterJob", () => {
       ["top-right", "2026-10-17"],
       ["bottom-center", "{n}/{total}"],
     ]);
+  });
+});
+
+describe("pageNumberRange (matches the engine: n counts from the first selected page)", () => {
+  it("all pages", () => {
+    expect(pageNumberRange(1, [1, 2, 3, 4])).toEqual({ first: 1, last: 4 });
+  });
+  it("keeps document distance across gaps", () => {
+    expect(pageNumberRange(1, [2, 5])).toEqual({ first: 1, last: 4 });
+    expect(pageNumberRange(10, [3, 4, 12])).toEqual({ first: 10, last: 19 });
+  });
+  it("is order independent", () => {
+    expect(pageNumberRange(1, [5, 2])).toEqual({ first: 1, last: 4 });
+  });
+  it("empty selection numbers from numberStart", () => {
+    expect(pageNumberRange(3, [])).toEqual({ first: 3, last: 3 });
+  });
+});
+
+describe("previewStampText", () => {
+  const v = { n: 3, total: 12, date: "2026-10-17", filename: "doc" };
+  it("resolves every token", () => {
+    expect(previewStampText("Page {n} of {total}, {filename} {date}", v)).toBe("Page 3 of 12, doc 2026-10-17");
+  });
+  it("doubled braces are literal, unknown tokens kept", () => {
+    expect(previewStampText("{{n}} {x} }}", v)).toBe("{n} {x} }");
+  });
+  it("a file name containing a token prints literally", () => {
+    expect(previewStampText("{filename}", { ...v, filename: "report {n}" })).toBe("report {n}");
   });
 });

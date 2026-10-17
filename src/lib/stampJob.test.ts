@@ -12,6 +12,13 @@ describe("substituteJsTokens", () => {
   it("does not interpret replacement patterns in values", () => {
     expect(substituteJsTokens("{filename}", { date: "", filename: "$&x" })).toBe("$&x");
   });
+  it("doubles braces in substituted values so the engine prints them literally", () => {
+    expect(substituteJsTokens("{filename}", { date: "", filename: "report {n}" })).toBe("report {{n}}");
+    expect(substituteJsTokens("[{date}]", { date: "a}b{", filename: "" })).toBe("[a}}b{{]");
+  });
+  it("leaves the user's own doubled braces alone", () => {
+    expect(substituteJsTokens("{{n}} {filename}", ctx)).toBe("{{n}} a.pdf");
+  });
 });
 
 describe("toWasmJob", () => {

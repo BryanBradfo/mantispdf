@@ -1,4 +1,4 @@
-import { substituteJsTokens, type Anchor, type StampJobSpec, type StdFont, type TextStampSpec } from "./stampJob";
+import { resolveEngineTokens, substituteJsTokens, type Anchor, type StampJobSpec, type StdFont, type TextStampSpec } from "./stampJob";
 
 export interface TextStyle {
   font: StdFont;
@@ -110,6 +110,25 @@ export function buildHeaderFooterJob(s: HeaderFooterSettings, ctx: JobContext): 
   );
   if (texts.length === 0) return null;
   return { pages: pagesSpec(ctx.pages, ctx.total), texts, images: [], numberStart: 1 };
+}
+
+/**
+ * Numbers printed on the first and last selected pages, as the engine computes them:
+ * {n} = numberStart + (page - first selected page), {total} = the number on the last selected page.
+ */
+export function pageNumberRange(numberStart: number, pages: readonly number[]): { first: number; last: number } {
+  if (pages.length === 0) return { first: numberStart, last: numberStart };
+  const lo = pages.reduce((a, b) => Math.min(a, b));
+  const hi = pages.reduce((a, b) => Math.max(a, b));
+  return { first: numberStart, last: numberStart + (hi - lo) };
+}
+
+/** What the engine prints for `template` on a page numbered `n` (preview only). */
+export function previewStampText(
+  template: string,
+  v: { n: number; total: number; date: string; filename: string },
+): string {
+  return resolveEngineTokens(substituteJsTokens(template, v), v.n, v.total);
 }
 
 export function describePages(pages: readonly number[], total: number): string {
