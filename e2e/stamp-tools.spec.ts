@@ -254,3 +254,39 @@ test("sign: no request leaves the app origin, and the script fonts are self-host
   await page.waitForLoadState("networkidle");
   expect(foreign).toEqual([]);
 });
+
+/**
+ * Every request a page makes stays on the app origin, except `allowed` (exact URLs). The UI fonts
+ * (Inter, JetBrains Mono) are self-hosted: they load from the app itself.
+ */
+async function expectSameOriginWithSelfHostedFonts(page: Page, baseURL: string, path: string, allowed: string[] = []) {
+  const origin = new URL(baseURL).origin;
+  const foreign: string[] = [];
+  page.on("request", (req) => {
+    const url = req.url();
+    if (url.startsWith("data:") || url.startsWith("blob:")) return;
+    if (new URL(url).origin !== origin && !allowed.includes(url)) foreign.push(url);
+  });
+  await page.goto(path);
+  for (const family of ["Inter Variable", "JetBrains Mono Variable"]) {
+    const loaded = await page.evaluate(async (f) => {
+      await document.fonts.load(`16px "${f}"`, "MantisPDF 0123");
+      return [...document.fonts].some((ff) => ff.family.replace(/"/g, "") === f && ff.status === "loaded");
+    }, family);
+    expect(loaded, `${family} loaded on ${path}`).toBe(true);
+  }
+  const bodyFont = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
+  expect(bodyFont).toContain("Inter Variable");
+  await page.waitForLoadState("networkidle");
+  expect(foreign, `foreign requests on ${path}`).toEqual([]);
+}
+
+// The home page alone asks GitHub for the star count (src/components/layout/Header.tsx): that one
+// documented request is allowed; tool pages make none.
+test("home: no request leaves the app origin except the GitHub star count", async ({ page, baseURL }) => {
+  await expectSameOriginWithSelfHostedFonts(page, baseURL!, "/", ["https://api.github.com/repos/BryanBradfo/mantispdf"]);
+});
+
+test("organize: no request leaves the app origin", async ({ page, baseURL }) => {
+  await expectSameOriginWithSelfHostedFonts(page, baseURL!, "/organize");
+});

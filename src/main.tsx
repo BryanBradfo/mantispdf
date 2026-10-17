@@ -2,6 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
 import App from "./App";
+// UI fonts, self-hosted (no request leaves the app origin). Every subset is
+// declared with its unicode-range, so a page in Latin script downloads only
+// the latin files.
+import "@fontsource-variable/inter/wght.css";
+import "@fontsource-variable/jetbrains-mono/wght.css";
 import "./index.css";
 // The pdf.js worker is configured in src/lib/pdf.ts (the single module every
 // react-pdf consumer imports through), so it lands on the same pdfjs instance
