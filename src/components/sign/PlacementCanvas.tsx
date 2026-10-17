@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import PageImage from "../common/PageImage";
+import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
   clampVisibleRect,
+  describePlacement,
   placementPreviewSize,
   previewToVisibleRect,
+  resizeVisibleRect,
   visibleToPreviewRect,
   type PreviewBox,
   type Size,
@@ -16,6 +19,8 @@ const PREVIEW_WIDTH = 560;
 const PREVIEW_MAX_HEIGHT = 800;
 /** Smallest signature width while resizing, in preview pixels. */
 const MIN_BOX = 16;
+/** Pause after the last key before the new position and size are announced. */
+const ANNOUNCE_DELAY_MS = 500;
 
 interface Props {
   source: Blob | Uint8Array;
@@ -37,6 +42,9 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
   const wrapRef = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState(PREVIEW_WIDTH);
   const gesture = useRef<Gesture | null>(null);
+  // Set by keyboard moves and resizes only; read out once the keys pause.
+  const [announcement, setAnnouncement] = useState("");
+  const spoken = useDebouncedValue(announcement, ANNOUNCE_DELAY_MS);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -89,11 +97,21 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
       ArrowUp: [0, step],
       ArrowDown: [0, -step],
     };
+    // "+" and "=" (the same key unshifted), "-" and "_": resize by `step` points of width.
+    const grow = e.key === "+" || e.key === "=" ? step : e.key === "-" || e.key === "_" ? -step : 0;
     const d = delta[e.key];
-    if (!d) return;
+    let next: VisibleRect;
+    if (d) {
+      const [x, y, w, h] = rect;
+      next = clampVisibleRect([x + d[0], y + d[1], w, h], pageSize);
+    } else if (grow !== 0) {
+      next = resizeVisibleRect(rect, grow, pageSize, MIN_BOX * (vw / pw));
+    } else {
+      return;
+    }
     e.preventDefault();
-    const [x, y, w, h] = rect;
-    onRect(clampVisibleRect([x + d[0], y + d[1], w, h], pageSize));
+    onRect(next);
+    setAnnouncement(describePlacement(next, pageSize));
   };
 
   if (degenerate) {
@@ -150,8 +168,10 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
         </div>
       </div>
       <p id="signature-position-help" className="mt-2 text-xs text-gray-500 dark:text-[#777]">
-        Drag the signature to move it, drag its corner to resize. Arrow keys move it by 1 pt (Shift: 10 pt).
+        Drag the signature to move it, drag its corner to resize. Arrow keys move it by 1 pt, + and - resize it
+        (Shift: 10 pt).
       </p>
+      <p className="sr-only" aria-live="polite">{spoken}</p>
     </div>
   );
 }

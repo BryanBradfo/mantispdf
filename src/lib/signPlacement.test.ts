@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   buildSignJob,
   clampVisibleRect,
+  describePlacement,
   estimateTextWidth,
   fitTypedFontSize,
   initialSignatureRect,
   placementPreviewSize,
   previewToVisibleRect,
   removeWhiteBackground,
+  resizeVisibleRect,
   signedOnOrigin,
   trimTransparent,
   visibleToPreviewRect,
@@ -200,5 +202,30 @@ describe("buildSignJob signed-on clamp", () => {
     const job = buildSignJob(sig, 1, [570, 300, 40, 20], [612, 792], text);
     const [x] = job.texts[0].at!;
     expect(x + estimateTextWidth(text, 9)).toBeLessThanOrEqual(610);
+  });
+});
+
+describe("resizeVisibleRect", () => {
+  const page: [number, number] = [600, 800];
+  it("grows and shrinks around the top-left corner, keeping the aspect", () => {
+    // Top edge at y + h = 300.
+    expect(resizeVisibleRect([100, 200, 200, 100], 10, page, 8)).toEqual([100, 195, 210, 105]);
+    expect(resizeVisibleRect([100, 200, 200, 100], -100, page, 8)).toEqual([100, 250, 100, 50]);
+  });
+  it("never shrinks below the minimum width", () => {
+    expect(resizeVisibleRect([100, 200, 20, 10], -100, page, 8)).toEqual([100, 206, 8, 4]);
+  });
+  it("stops at the right edge and at the bottom edge", () => {
+    expect(resizeVisibleRect([500, 600, 50, 25], 500, page, 8)).toEqual([500, 575, 100, 50]);
+    // Top at 40: the height can reach 40 at most, so the width 80.
+    expect(resizeVisibleRect([10, 20, 40, 20], 500, page, 8)).toEqual([10, 0, 80, 40]);
+  });
+});
+
+describe("describePlacement", () => {
+  it("rounds to whole points, measured from the top-left of the page", () => {
+    expect(describePlacement([100.4, 200.6, 150.2, 49.7], [600, 800])).toBe(
+      "Signature 150 by 50 pt, 100 pt from the left, 550 pt from the top.",
+    );
   });
 });

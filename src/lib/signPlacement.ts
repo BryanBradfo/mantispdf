@@ -54,6 +54,28 @@ export function clampVisibleRect(rect: VisibleRect, page: Size): VisibleRect {
   return [x, y, w, h];
 }
 
+/**
+ * Resize `rect` by `delta` points of width around its top-left corner, keeping its aspect ratio:
+ * never narrower than `minWidth`, never past the right or bottom edge of `page`.
+ */
+export function resizeVisibleRect(rect: VisibleRect, delta: number, page: Size, minWidth: number): VisibleRect {
+  const [pw] = page;
+  const [x, y, w, h] = rect;
+  const aspect = w / h;
+  const top = y + h;
+  const maxWidth = Math.max(minWidth, Math.min(pw - x, top * aspect));
+  const width = Math.min(maxWidth, Math.max(minWidth, w + delta));
+  const height = width / aspect;
+  return [x, top - height, width, height];
+}
+
+/** Spoken description of a signature placement, from the top-left of the page as it is shown. */
+export function describePlacement(rect: VisibleRect, page: Size): string {
+  const [x, y, w, h] = rect;
+  const r = Math.round;
+  return `Signature ${r(w)} by ${r(h)} pt, ${r(x)} pt from the left, ${r(page[1] - (y + h))} pt from the top.`;
+}
+
 /** Default placement: about 180 pt wide, near the bottom-right corner, `aspect` = width / height. */
 export function initialSignatureRect(aspect: number, page: Size): VisibleRect {
   const [pw, ph] = page;

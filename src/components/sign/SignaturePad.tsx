@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 // Self-hosted script fonts (OFL), latin 400 only. Imported here so they load with the Sign route
 // chunk and no request ever leaves the app origin.
 import "@fontsource/caveat/latin-400.css";
 import "@fontsource/dancing-script/latin-400.css";
 import "@fontsource/homemade-apple/latin-400.css";
+import { listStep } from "../../lib/gridNav";
 import { fitTypedFontSize, removeWhiteBackground, trimTransparent, type RgbaImage } from "../../lib/signPlacement";
 import { inputClass, secondaryButton } from "../../pages/ToolShell";
 
@@ -56,11 +57,25 @@ interface Props {
 
 export default function SignaturePad({ onChange }: Props) {
   const [mode, setMode] = useState<Mode>("draw");
+  const id = useId();
+  const tabId = (m: Mode) => `${id}-tab-${m}`;
+  const panelId = `${id}-panel`;
+  const tabs = useRef<Partial<Record<Mode, HTMLButtonElement | null>>>({});
 
   const choose = (m: Mode) => {
     if (m === mode) return;
     setMode(m);
     onChange(null);
+  };
+
+  // Tabs pattern: one tab stop, arrows (and Home/End) move between tabs and select them.
+  const onTabKey = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    const next = listStep(MODES.findIndex((m) => m.id === mode), e.key, MODES.length);
+    if (next === null) return;
+    e.preventDefault();
+    const m = MODES[next].id;
+    choose(m);
+    tabs.current[m]?.focus();
   };
 
   return (
@@ -69,10 +84,15 @@ export default function SignaturePad({ onChange }: Props) {
         {MODES.map((m) => (
           <button
             key={m.id}
+            ref={(el) => { tabs.current[m.id] = el; }}
+            id={tabId(m.id)}
             type="button"
             role="tab"
             aria-selected={mode === m.id}
+            aria-controls={panelId}
+            tabIndex={mode === m.id ? 0 : -1}
             onClick={() => choose(m.id)}
+            onKeyDown={onTabKey}
             className={`rounded-md px-4 py-1.5 text-sm font-medium ${
               mode === m.id
                 ? "bg-mantis-600 text-white"
@@ -83,7 +103,7 @@ export default function SignaturePad({ onChange }: Props) {
           </button>
         ))}
       </div>
-      <div className="mt-3" role="tabpanel">
+      <div className="mt-3" role="tabpanel" id={panelId} aria-labelledby={tabId(mode)}>
         {mode === "draw" && <DrawPad onChange={onChange} />}
         {mode === "type" && <TypePad onChange={onChange} />}
         {mode === "upload" && <UploadPad onChange={onChange} />}
@@ -263,7 +283,8 @@ function TypePad({ onChange }: Props) {
               }`}
             >
               <input type="radio" name="signature-font" value={f} checked={font === f} onChange={() => setFont(f)} className="sr-only" />
-              <span style={{ fontFamily: `"${f}", cursive` }} aria-label={f}>{name.trim() || "Signature"}</span>
+              <span aria-hidden="true" style={{ fontFamily: `"${f}", cursive` }}>{name.trim() || "Signature"}</span>
+              <span className="sr-only">{f}</span>
             </label>
           ))}
         </div>

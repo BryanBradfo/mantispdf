@@ -290,3 +290,65 @@ test("home: no request leaves the app origin except the GitHub star count", asyn
 test("organize: no request leaves the app origin", async ({ page, baseURL }) => {
   await expectSameOriginWithSelfHostedFonts(page, baseURL!, "/organize");
 });
+
+test("sign: tabs follow the tabs pattern, styles are named, the box resizes from the keyboard", async ({ page }) => {
+  await page.goto("/sign");
+  await uploadOne(page, fx("four-pages.pdf"), () =>
+    expect(page.getByLabel("Signature drawing area")).toBeVisible({ timeout: 3000 }));
+
+  // Arrow keys move between tabs (one tab stop); the panel is labelled by the selected tab.
+  const draw = page.getByRole("tab", { name: "Draw" });
+  const type = page.getByRole("tab", { name: "Type" });
+  await draw.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(type).toHaveAttribute("aria-selected", "true");
+  await expect(type).toBeFocused();
+  await expect(type).toHaveAttribute("tabindex", "0");
+  await expect(draw).toHaveAttribute("tabindex", "-1");
+  const panel = page.getByRole("tabpanel");
+  await expect(type).toHaveAttribute("aria-controls", (await panel.getAttribute("id"))!);
+  await expect(panel).toHaveAttribute("aria-labelledby", (await type.getAttribute("id"))!);
+  await page.keyboard.press("End");
+  await expect(page.getByRole("tab", { name: "Upload" })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(draw).toHaveAttribute("aria-selected", "true");
+  await type.click();
+
+  // Each style radio is named after its font.
+  for (const f of ["Caveat", "Dancing Script", "Homemade Apple"]) {
+    await expect(page.getByRole("radio", { name: f, exact: true })).toHaveCount(1);
+  }
+  await page.getByLabel("Your name").fill("Jane Doe");
+
+  // + and - resize the box (Shift: 10 pt); the new size is announced once the keys pause.
+  const sig = page.getByRole("group", { name: "Signature position" });
+  await expect(sig).toBeVisible();
+  // Layout box inside the page preview (unaffected by scrolling).
+  const layout = () => sig.evaluate((el: HTMLElement) => ({ left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth }));
+  await sig.focus();
+  const before = await layout();
+  await page.keyboard.press("Shift+Minus");
+  await page.keyboard.press("Shift+Minus");
+  const after = await layout();
+  expect(after.width).toBeLessThan(before.width - 5);
+  // Resized around the top-left corner.
+  expect(Math.abs(after.left - before.left)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(1);
+  await page.keyboard.press("=");
+  await expect.poll(async () => (await layout()).width).toBeGreaterThan(after.width);
+  await expect(page.locator('p.sr-only[aria-live="polite"]')).toHaveText(/^Signature \d+ by \d+ pt, \d+ pt from the left, \d+ pt from the top\.$/);
+});
+
+test("page numbers: the settings summary is announced after typing pauses", async ({ page }) => {
+  await page.goto("/page-numbers");
+  await uploadOne(page, fx("four-pages.pdf"), () =>
+    expect(page.getByText("four-pages.pdf (4 pages)")).toBeVisible({ timeout: 3000 }));
+  const shown = page.getByTestId("settings-summary");
+  const spoken = page.locator('p.sr-only[aria-live="polite"]');
+  await expect(spoken).toHaveText(await shown.innerText());
+  await page.getByLabel("First number").fill("7");
+  // Shown at once, spoken only after the pause.
+  await expect(shown).toContainText('"7"');
+  expect(await spoken.innerText()).not.toContain('"7"');
+  await expect(spoken).toContainText('"7"');
+});
