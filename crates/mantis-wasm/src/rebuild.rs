@@ -563,7 +563,7 @@ fn is_never_copied(dict: &Dictionary, key: &[u8], value: &Object) -> bool {
 
 /// Decoded bytes one stream may expand to for a content scan; a larger one
 /// counts as undecodable (its resources are all kept).
-const MAX_STREAM_DECODED: usize = 64 << 20;
+pub(crate) const MAX_STREAM_DECODED: usize = 64 << 20;
 /// Decoded bytes all content scans of one rebuild may produce together.
 const MAX_TOTAL_DECODED: usize = 512 << 20;
 
@@ -695,7 +695,7 @@ fn ascii85_step(input: &[u8], cap: usize) -> Step {
 /// bytes when lopdf cannot undo them (the scan then most likely fails and
 /// keeps all resources). None when that takes more than `cap` bytes: each
 /// step is bounded before it allocates. `charged` grows by the bytes decoded.
-fn bounded_content(stream: &lopdf::Stream, cap: usize, charged: &mut usize) -> Option<Vec<u8>> {
+pub(crate) fn bounded_content(stream: &lopdf::Stream, cap: usize, charged: &mut usize) -> Option<Vec<u8>> {
     let raw = |charged: &mut usize| {
         let len = stream.content.len();
         *charged += len.min(cap);
