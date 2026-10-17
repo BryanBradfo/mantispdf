@@ -7,3 +7,4 @@ pub(crate) mod geometry;
 pub(crate) mod image;
 pub(crate) mod binding;
 pub(crate) mod job;
+pub(crate) mod page_writer;

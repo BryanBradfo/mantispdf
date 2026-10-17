@@ -4,9 +4,9 @@
 use super::fonts::{StdFont, encode_winansi, text_width};
 use super::geometry::VisibleBox;
 use super::image::{BuiltImage, build_image};
-use crate::pdf_util::{get_inherited_attr, load_pdf};
-use crate::page_content::{BalanceScanner, original_contents, owned_dict, plain_stream};
-use lopdf::{Dictionary, Document, Object, ObjectId, dictionary};
+use super::page_writer::{Blend, DocWriter, escape_literal, lossy};
+use crate::pdf_util::load_pdf;
+use lopdf::{Document, Object, ObjectId};
 use std::collections::{BTreeSet, HashMap};
 
 /// Bound on coordinates, margins and sizes: far beyond any page (PDF limit
@@ -209,54 +209,23 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
         job.images.iter().map(|im| build_image(&im.image)).collect::<Result<_, _>>()?;
 
     // Shared new objects: one font per StdFont, one ExtGState per opacity,
-    // one XObject per image, one `q` stream. None of them pre-exists, so
-    // sharing them between pages mutates nothing of the original document.
-    let mut fonts: HashMap<&'static str, ObjectId> = HashMap::new();
-    let mut states: HashMap<u64, ObjectId> = HashMap::new();
+    // one XObject per image, one `q` stream (see `page_writer`).
     let mut image_ids: Vec<Option<ObjectId>> = vec![None; built.len()];
     let mut built: Vec<Option<BuiltImage>> = built.into_iter().map(Some).collect();
-    let mut open_q: Option<ObjectId> = None;
-    let mut scanner = BalanceScanner::new();
+    let mut writer = DocWriter::new();
 
     for plan in &plans {
-        let page = doc
-            .get_dictionary(plan.page_id)
-            .map_err(|e| format!("Page {:?} not found: {e}", plan.page_id))?;
-        let mut resources = owned_dict(&doc, get_inherited_attr(&doc, plan.page_id, b"Resources").as_ref());
-        let mut font_dict = owned_dict(&doc, resources.get(b"Font").ok());
-        let mut gs_dict = owned_dict(&doc, resources.get(b"ExtGState").ok());
-        let mut xobject_dict = owned_dict(&doc, resources.get(b"XObject").ok());
-        let original = original_contents(&doc, page.get(b"Contents").ok());
-        let open = scanner.unbalanced(&doc, &original);
-
-        // Page-local names, made unique against what the page already has.
-        let mut font_names: HashMap<&'static str, Vec<u8>> = HashMap::new();
-        let mut gs_names: HashMap<u64, Vec<u8>> = HashMap::new();
+        let mut pw = writer.page(&doc, plan.page_id)?;
         let matrix = plan.matrix.map(fmt_num).join(" ");
-        // Stamp operators; text bodies are WinAnsi bytes, not UTF-8.
-        let mut ops: Vec<u8> = Vec::new();
-        if !original.is_empty() {
-            ops.extend_from_slice(b"\nQ\n");
-            ops.extend_from_slice("Q\n".repeat(open).as_bytes());
-        }
 
         for t in &plan.texts {
-            let gs = gs_name(&mut doc, &mut states, &mut gs_names, &mut gs_dict, t.opacity);
-            let font = match font_names.get(t.font.base_font()) {
-                Some(n) => n.clone(),
-                None => {
-                    let id = *fonts.entry(t.font.base_font()).or_insert_with(|| doc.add_object(font_object(t.font)));
-                    let name = free_name(&font_dict, "MStF");
-                    font_dict.set(name.clone(), Object::Reference(id));
-                    font_names.insert(t.font.base_font(), name.clone());
-                    name
-                }
-            };
+            let gs = pw.gs(&mut doc, &mut writer, t.opacity, Blend::Normal);
+            let font = pw.font(&mut doc, &mut writer, t.font);
             let [r, g, b] = t.color.map(fmt_num);
             // Stamps are marked as artifacts so assistive technology and
             // text extraction of tagged documents skip them.
-            ops.extend_from_slice(if t.pagination { PAGINATION_ARTIFACT } else { ARTIFACT });
-            ops.extend_from_slice(
+            pw.ops.extend_from_slice(if t.pagination { PAGINATION_ARTIFACT } else { ARTIFACT });
+            pw.ops.extend_from_slice(
                 format!(
                     "q {matrix} cm /{} gs BT /{} {} Tf {r} {g} {b} rg {} {} Td (",
                     lossy(&gs),
@@ -267,8 +236,8 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
                 )
                 .as_bytes(),
             );
-            escape_literal(&t.bytes, &mut ops);
-            ops.extend_from_slice(b") Tj ET Q EMC\n");
+            escape_literal(&t.bytes, &mut pw.ops);
+            pw.ops.extend_from_slice(b") Tj ET Q EMC\n");
         }
 
         for &i in &plan.images {
@@ -276,22 +245,16 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
             let id = match image_ids[i] {
                 Some(id) => id,
                 None => {
-                    let BuiltImage { mut image, smask } = built[i].take().expect("image built once");
-                    if let Some(mask) = smask {
-                        let mask_id = doc.add_object(mask);
-                        image.dict.set("SMask", Object::Reference(mask_id));
-                    }
-                    let id = doc.add_object(image);
+                    let id = add_image(&mut doc, built[i].take().expect("image built once"));
                     image_ids[i] = Some(id);
                     id
                 }
             };
-            let gs = gs_name(&mut doc, &mut states, &mut gs_names, &mut gs_dict, stamp.opacity);
-            let name = free_name(&xobject_dict, "MStIm");
-            xobject_dict.set(name.clone(), Object::Reference(id));
+            let gs = pw.gs(&mut doc, &mut writer, stamp.opacity, Blend::Normal);
+            let name = pw.xobject(id);
             let [x, y, w, h] = stamp.rect.map(fmt_num);
-            ops.extend_from_slice(ARTIFACT);
-            ops.extend_from_slice(
+            pw.ops.extend_from_slice(ARTIFACT);
+            pw.ops.extend_from_slice(
                 format!(
                     "q {matrix} cm /{} gs {w} 0 0 {h} {x} {y} cm /{} Do Q EMC\n",
                     lossy(&gs),
@@ -301,30 +264,7 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
             );
         }
 
-        if !font_dict.is_empty() || resources.has(b"Font") {
-            resources.set("Font", font_dict);
-        }
-        if !gs_dict.is_empty() || resources.has(b"ExtGState") {
-            resources.set("ExtGState", gs_dict);
-        }
-        if !xobject_dict.is_empty() || resources.has(b"XObject") {
-            resources.set("XObject", xobject_dict);
-        }
-
-        let mut contents = Vec::with_capacity(original.len() + 2);
-        if !original.is_empty() {
-            let q = *open_q.get_or_insert_with(|| doc.add_object(plain_stream(b"q\n".to_vec())));
-            contents.push(Object::Reference(q));
-        }
-        contents.extend(original);
-        let tail = doc.add_object(plain_stream(ops));
-        contents.push(Object::Reference(tail));
-
-        let page = doc
-            .get_dictionary_mut(plan.page_id)
-            .map_err(|e| format!("Page {:?} not found: {e}", plan.page_id))?;
-        page.set("Resources", resources);
-        page.set("Contents", contents);
+        pw.finish(&mut doc, &mut writer)?;
     }
 
     let bytes = crate::pdf_util::save_pdf(&mut doc)?;
@@ -484,52 +424,14 @@ fn anchored_origin(t: &TextStamp, bytes: &[u8], w: f64, h: f64) -> (f64, f64) {
     (x, y)
 }
 
-/// Page-local name of the ExtGState for `opacity`, creating the document
-/// object on first use.
-fn gs_name(
-    doc: &mut Document,
-    states: &mut HashMap<u64, ObjectId>,
-    names: &mut HashMap<u64, Vec<u8>>,
-    gs_dict: &mut Dictionary,
-    opacity: f64,
-) -> Vec<u8> {
-    let opacity = opacity.clamp(0.0, 1.0);
-    let key = opacity.to_bits();
-    if let Some(n) = names.get(&key) {
-        return n.clone();
+/// Adds `built` (and its soft mask) to `doc`; returns the image id.
+pub(crate) fn add_image(doc: &mut Document, built: BuiltImage) -> ObjectId {
+    let BuiltImage { mut image, smask } = built;
+    if let Some(mask) = smask {
+        let mask_id = doc.add_object(mask);
+        image.dict.set("SMask", Object::Reference(mask_id));
     }
-    let id = *states.entry(key).or_insert_with(|| {
-        doc.add_object(dictionary! {
-            "Type" => "ExtGState",
-            "ca" => Object::Real(opacity as f32),
-            "CA" => Object::Real(opacity as f32),
-        })
-    });
-    let name = free_name(gs_dict, "MStGs");
-    gs_dict.set(name.clone(), Object::Reference(id));
-    names.insert(key, name.clone());
-    name
-}
-
-/// First `<prefix><k>` (k = 1, 2, ...) not already in `dict`.
-fn free_name(dict: &Dictionary, prefix: &str) -> Vec<u8> {
-    (1u32..)
-        .map(|k| format!("{prefix}{k}").into_bytes())
-        .find(|n| !dict.has(n))
-        .expect("a free name exists")
-}
-
-fn font_object(font: StdFont) -> Dictionary {
-    dictionary! {
-        "Type" => "Font",
-        "Subtype" => "Type1",
-        "BaseFont" => Object::Name(font.base_font().as_bytes().to_vec()),
-        "Encoding" => "WinAnsiEncoding",
-    }
-}
-
-fn lossy(name: &[u8]) -> std::borrow::Cow<'_, str> {
-    String::from_utf8_lossy(name)
+    doc.add_object(image)
 }
 
 fn fmt_num(v: f64) -> String {
@@ -537,20 +439,10 @@ fn fmt_num(v: f64) -> String {
     if r == 0.0 { "0".into() } else { format!("{r}") }
 }
 
-/// Append `bytes` as the body of a PDF literal string.
-fn escape_literal(bytes: &[u8], out: &mut Vec<u8>) {
-    for &b in bytes {
-        if matches!(b, b'\\' | b'(' | b')') {
-            out.push(b'\\');
-        }
-        out.push(b);
-    }
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::page_content::{BalanceScanner, original_contents};
     use crate::stamp::fonts::text_width;
     use crate::stamp::geometry::VisibleBox;
     use lopdf::content::Content;

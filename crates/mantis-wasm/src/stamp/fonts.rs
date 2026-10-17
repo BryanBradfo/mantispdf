@@ -54,7 +54,7 @@ const CP1252_HIGH: [(char, u8); 27] = [
 ];
 
 /// WinAnsi byte for `c`, or None when the standard fonts cannot show it.
-fn winansi_byte(c: char) -> Option<u8> {
+pub(crate) fn winansi_byte(c: char) -> Option<u8> {
     match u32::from(c) {
         0x20..=0x7E | 0xA0..=0xFF => Some(c as u8),
         _ => CP1252_HIGH.iter().find(|(ch, _)| *ch == c).map(|(_, b)| *b),

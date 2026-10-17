@@ -2,6 +2,9 @@ mod annotations;
 mod compress;
 mod doc_tools;
 mod edit;
+// Bindings land in a later task.
+#[allow(dead_code)]
+mod edit_ops;
 mod encrypt;
 mod geometry_ops;
 mod images;

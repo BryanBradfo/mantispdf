@@ -1,0 +1,23 @@
+[
+  { "text": "Hello world foo", "font": "Courier", "size": 10, "maxWidth": 70, "lines": ["Hello world", "foo"] },
+  { "text": "Hello world", "font": "Helvetica", "size": 10, "maxWidth": 49.45, "lines": ["Hello world"] },
+  { "text": "Hello world", "font": "Helvetica", "size": 10, "maxWidth": 49.44, "lines": ["Hello", "world"] },
+  { "text": "abcdefghij", "font": "Courier", "size": 10, "maxWidth": 25, "lines": ["abcd", "efgh", "ij"] },
+  { "text": "ab abcdefghij", "font": "Courier", "size": 10, "maxWidth": 25, "lines": ["ab", "abcd", "efgh", "ij"] },
+  { "text": "abcdefghij x", "font": "Courier", "size": 10, "maxWidth": 25, "lines": ["abcd", "efgh", "ij x"] },
+  { "text": "\n\n", "font": "Helvetica", "size": 12, "maxWidth": 100, "lines": ["", "", ""] },
+  { "text": "", "font": "Helvetica", "size": 12, "maxWidth": 100, "lines": [""] },
+  { "text": "Hello world   ", "font": "Courier", "size": 10, "maxWidth": 1000, "lines": ["Hello world"] },
+  { "text": "  a   b  ", "font": "Courier", "size": 10, "maxWidth": 1000, "lines": ["a b"] },
+  { "text": "   ", "font": "Courier", "size": 10, "maxWidth": 1000, "lines": [""] },
+  { "text": "a\tb", "font": "Courier", "size": 10, "maxWidth": 1000, "lines": ["a b"] },
+  { "text": "a\nb c", "font": "Courier", "size": 10, "maxWidth": 1000, "lines": ["a", "b c"] },
+  { "text": "a\r\nb\rc", "font": "Courier", "size": 10, "maxWidth": 1000, "lines": ["a", "b", "c"] },
+  { "text": "WW", "font": "Helvetica", "size": 10, "maxWidth": 5, "lines": ["W", "W"] },
+  { "text": "ab", "font": "Courier", "size": 10, "maxWidth": 0, "lines": ["a", "b"] },
+  { "text": "The quick brown fox", "font": "Times-Roman", "size": 12, "maxWidth": 80, "lines": ["The quick", "brown fox"] },
+  { "text": "café crème", "font": "Helvetica", "size": 10, "maxWidth": 49.46, "lines": ["café crème"] },
+  { "text": "café crème", "font": "Helvetica", "size": 10, "maxWidth": 49.45, "lines": ["café", "crème"] },
+  { "text": "Bold text here", "font": "Helvetica-Bold", "size": 20, "maxWidth": 100, "lines": ["Bold text", "here"] },
+  { "text": "one two\n\nthree", "font": "Courier", "size": 10, "maxWidth": 40, "lines": ["one", "two", "", "three"] }
+]
