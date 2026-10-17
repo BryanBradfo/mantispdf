@@ -4,6 +4,7 @@ mod encrypt;
 mod merge;
 mod page_plan;
 mod pdf_util;
+mod rebuild;
 mod rotate;
 mod split;
 mod watermark;
