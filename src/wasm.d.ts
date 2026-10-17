@@ -32,4 +32,22 @@ declare module "mantis-wasm" {
     owner_password: string,
   ): Uint8Array;
   export function apply_page_plan(pdf_list: Uint8Array[], plan: Int32Array): Uint8Array;
+  export class SanitizeOutput {
+    bytes(): Uint8Array;
+    /** [links_kept, links_dropped, comments_kept, comments_dropped, fields_flattened, warnings] */
+    report(): Uint32Array;
+    free(): void;
+  }
+  export function sanitize_pdf(pdf_bytes: Uint8Array, keep_comments: boolean): SanitizeOutput;
+  export function remove_metadata(pdf_bytes: Uint8Array): Uint8Array;
+  /** [title, author, subject, keywords] */
+  export function read_metadata(pdf_bytes: Uint8Array): string[];
+  export function set_metadata(
+    pdf_bytes: Uint8Array,
+    title: string,
+    author: string,
+    subject: string,
+    keywords: string,
+  ): Uint8Array;
+  export function unlock_pdf(pdf_bytes: Uint8Array, password: string): Uint8Array;
 }

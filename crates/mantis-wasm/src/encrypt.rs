@@ -19,7 +19,7 @@ pub fn encrypt_pdf(
         .map_err(|e| JsValue::from_str(&e))
 }
 
-fn encrypt_pdf_impl(
+pub(crate) fn encrypt_pdf_impl(
     pdf_bytes: &[u8],
     user_password: &str,
     owner_password: &str,

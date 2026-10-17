@@ -8,7 +8,7 @@ use crate::{page_plan, split};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 
 /// Every secret planted by `probe_pdf`, one per leak path.
-const SECRETS: [&str; 10] = [
+const SECRETS: [&str; 11] = [
     "SECRET_DEST",
     "SECRET_FIELDV",
     "SECRET_FIELDAP",
@@ -19,6 +19,7 @@ const SECRETS: [&str; 10] = [
     "SECRET_PAGEAA",
     "SECRET_IMG",
     "SECRET_FONTREF",
+    "SECRET_FLATE",
 ];
 
 fn rect() -> Object {
@@ -159,6 +160,15 @@ fn probe_pdf() -> Vec<u8> {
     );
     // SECRET_FONTREF lives in p3, reached from p1 only through the font's /Evil.
     let c3 = content(&mut doc, "BT /F1 12 Tf (SECRET_FONTREF) Tj ET");
+    // SECRET_FLATE: a Flate-compressed second content stream of p2, so the
+    // secret is invisible to a raw byte search and only the decompressed-stream
+    // check of `leaked` can see it.
+    let mut flate = Stream::new(
+        dictionary! {},
+        format!("BT (SECRET_FLATE) Tj ET {}", "0 0 m 1 1 l S ".repeat(40)).into_bytes(),
+    );
+    flate.compress().unwrap();
+    let c2_flate = doc.add_object(flate);
     let media = || -> Object { vec![0.into(), 0.into(), 612.into(), 792.into()].into() };
     let refs = |ids: &[ObjectId]| -> Vec<Object> { ids.iter().map(|&id| id.into()).collect() };
 
@@ -176,7 +186,7 @@ fn probe_pdf() -> Vec<u8> {
     doc.objects.insert(
         p2,
         Object::Dictionary(dictionary! {
-            "Type" => "Page", "Parent" => pages_id, "MediaBox" => media(), "Contents" => c2,
+            "Type" => "Page", "Parent" => pages_id, "MediaBox" => media(), "Contents" => refs(&[c2, c2_flate]),
             "Annots" => refs(&[widget_p2, note_p2]),
         }),
     );
@@ -341,8 +351,44 @@ fn split_keeps_page_one() {
 #[test]
 fn source_really_holds_every_secret() {
     // Guards the probe itself: a typo in the fixture must not pass silently.
+    // `leaked` also looks inside compressed streams.
     let src = probe_pdf();
+    let found = leaked(&src);
     for secret in SECRETS {
-        assert!(contains(&src, secret), "{secret} not planted");
+        assert!(found.contains(&secret), "{secret} not planted");
     }
+}
+
+#[test]
+fn detector_sees_inside_flate_streams() {
+    let src = probe_pdf();
+    assert!(
+        !contains(&src, "SECRET_FLATE"),
+        "must be hidden from raw bytes"
+    );
+    assert!(leaked(&src).contains(&"SECRET_FLATE"));
+}
+
+#[test]
+fn sanitize_leaves_nothing_of_dropped_pages() {
+    // Keeping every page, nothing reachable only through forms, actions or
+    // JavaScript may survive. Text drawn on kept pages (DEST, FONTREF, IMG,
+    // FLATE, and HIDE/FIELDAP via flattened widgets) is legitimately kept.
+    let src = probe_pdf();
+    let (out, _) = crate::doc_tools::sanitize(&src, true).unwrap();
+    let found = leaked(&out);
+    for gone in ["SECRET_RESET", "SECRET_PAGEAA", "SECRET_FIELDV"] {
+        assert!(!found.contains(&gone), "sanitize leaked {gone}");
+    }
+    // Comments are only kept on request.
+    let (no_comments, _) = crate::doc_tools::sanitize(&src, false).unwrap();
+    let found = leaked(&no_comments);
+    for gone in ["SECRET_NEXT", "SECRET_IRT"] {
+        assert!(!found.contains(&gone), "sanitize leaked {gone}");
+    }
+    let doc = Document::load_mem(&out).unwrap();
+    assert_eq!(doc.get_pages().len(), 3);
+    let page1 = doc.get_pages()[&1];
+    assert!(contains(&doc.get_page_content(page1).unwrap(), "KEEPME"));
+    assert!(!doc.trailer.has(b"Info"));
 }
