@@ -1,3 +1,4 @@
+mod annotations;
 mod compress;
 mod edit;
 mod encrypt;

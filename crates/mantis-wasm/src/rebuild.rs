@@ -480,7 +480,7 @@ fn skip_literal_string(c: &[u8], mut i: usize) -> usize {
 }
 
 /// Follow references (bounded) to the underlying object.
-fn deref<'a>(doc: &'a Document, mut obj: &'a Object) -> Option<&'a Object> {
+pub(crate) fn deref<'a>(doc: &'a Document, mut obj: &'a Object) -> Option<&'a Object> {
     for _ in 0..32 {
         match obj {
             Object::Reference(id) => obj = doc.get_object(*id).ok()?,
@@ -490,7 +490,7 @@ fn deref<'a>(doc: &'a Document, mut obj: &'a Object) -> Option<&'a Object> {
     None
 }
 
-fn name_of<'a>(dict: &'a Dictionary, key: &[u8]) -> Option<&'a [u8]> {
+pub(crate) fn name_of<'a>(dict: &'a Dictionary, key: &[u8]) -> Option<&'a [u8]> {
     dict.get(key).and_then(Object::as_name).ok()
 }
 
@@ -587,7 +587,7 @@ impl<'s> SafeCopier<'s> {
         numbers.get(&page_id).copied().unwrap_or(0)
     }
 
-    fn source(&self, src: usize) -> &'s Document {
+    pub(crate) fn source(&self, src: usize) -> &'s Document {
         &self.sources[src]
     }
 
