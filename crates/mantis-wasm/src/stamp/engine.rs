@@ -424,31 +424,12 @@ fn normalize_whitespace(text: &str) -> String {
         .collect()
 }
 
-/// Baseline origin of `bytes` in visible space for the stamp's anchor.
+/// `bytes` placed for `t` on a visible page of size `w` x `h`: at `t.at` when
+/// set, otherwise at the baseline origin the anchor and margins give.
 fn place_text(t: &TextStamp, bytes: Vec<u8>, w: f64, h: f64) -> PlacedText {
-    use Anchor::*;
-    let width = text_width(t.font, &bytes, t.size);
-    let (ascent, descent) = (t.font.ascent() * t.size / 1000.0, t.font.descent() * t.size / 1000.0);
-    if let Some([x, y]) = t.at {
-        return PlacedText {
-            font: t.font,
-            size: t.size,
-            color: t.color.map(|c| c.clamp(0.0, 1.0)),
-            opacity: t.opacity.clamp(0.0, 1.0),
-            x,
-            y,
-            bytes,
-        };
-    }
-    let x = match t.anchor {
-        TopLeft | MiddleLeft | BottomLeft => t.margin_x,
-        TopCenter | Center | BottomCenter => (w - width) / 2.0,
-        TopRight | MiddleRight | BottomRight => w - t.margin_x - width,
-    };
-    let y = match t.anchor {
-        TopLeft | TopCenter | TopRight => h - t.margin_y - ascent,
-        MiddleLeft | Center | MiddleRight => (h - (ascent + descent)) / 2.0,
-        BottomLeft | BottomCenter | BottomRight => t.margin_y - descent,
+    let (x, y) = match t.at {
+        Some([x, y]) => (x, y),
+        None => anchored_origin(t, &bytes, w, h),
     };
     PlacedText {
         font: t.font,
@@ -459,6 +440,26 @@ fn place_text(t: &TextStamp, bytes: Vec<u8>, w: f64, h: f64) -> PlacedText {
         y,
         bytes,
     }
+}
+
+/// Baseline origin of `bytes` in visible space for the stamp's anchor. The
+/// text width is only measured for centered and right-aligned anchors.
+fn anchored_origin(t: &TextStamp, bytes: &[u8], w: f64, h: f64) -> (f64, f64) {
+    use Anchor::*;
+    let width = || text_width(t.font, bytes, t.size);
+    let x = match t.anchor {
+        TopLeft | MiddleLeft | BottomLeft => t.margin_x,
+        TopCenter | Center | BottomCenter => (w - width()) / 2.0,
+        TopRight | MiddleRight | BottomRight => w - t.margin_x - width(),
+    };
+    let ascent = || t.font.ascent() * t.size / 1000.0;
+    let descent = || t.font.descent() * t.size / 1000.0;
+    let y = match t.anchor {
+        TopLeft | TopCenter | TopRight => h - t.margin_y - ascent(),
+        MiddleLeft | Center | MiddleRight => (h - (ascent() + descent())) / 2.0,
+        BottomLeft | BottomCenter | BottomRight => t.margin_y - descent(),
+    };
+    (x, y)
 }
 
 /// An owned copy of a dictionary held directly or by reference (empty when
