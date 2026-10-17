@@ -4,7 +4,7 @@ import type { MergeFile } from "../hooks/useMergeState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob, readFileAsUint8Array, validatePdfFile } from "../lib/fileHelpers";
 import { downloadAsZip } from "../lib/downloadZip";
-import { MAX_BATES, batesRanges, createBatesTokens, describeBatesRange } from "../lib/bates";
+import { MAX_BATES, MAX_BATES_AFFIX, batesRanges, createBatesTokens, describeBatesRange } from "../lib/bates";
 import {
   ANCHOR_LABELS,
   DEFAULT_MARGIN,
@@ -174,11 +174,11 @@ export default function BatesPage() {
             <div className="grid min-w-[12rem] flex-1 grid-cols-2 gap-4">
               <label className={labelClass}>
                 Prefix
-                <input value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="ACME-" className={inputClass} />
+                <input value={prefix} onChange={(e) => setPrefix(e.target.value)} maxLength={MAX_BATES_AFFIX} placeholder="ACME-" className={inputClass} />
               </label>
               <label className={labelClass}>
                 Suffix
-                <input value={suffix} onChange={(e) => setSuffix(e.target.value)} className={inputClass} />
+                <input value={suffix} onChange={(e) => setSuffix(e.target.value)} maxLength={MAX_BATES_AFFIX} className={inputClass} />
               </label>
               <label className={labelClass}>
                 Start number

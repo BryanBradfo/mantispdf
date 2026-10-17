@@ -1,5 +1,8 @@
 import { createLatest } from "./latest";
 
+/** Longest Bates prefix or suffix the engine accepts (characters). */
+export const MAX_BATES_AFFIX = 100;
+
 /** Same format as the Rust engine: prefix + zero-padded counter + suffix. */
 export function formatBates(prefix: string, suffix: string, digits: number, value: number): string {
   return `${prefix}${String(value).padStart(digits, "0")}${suffix}`;

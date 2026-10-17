@@ -3,8 +3,8 @@
 //! lives in `validate_job` so it is unit-testable without a JS runtime.
 
 use super::engine::{
-    Anchor, Bates, ImageData, ImageStamp, MAX_COORD, MAX_IMAGES, MAX_TEMPLATE_CHARS, MAX_TEXTS,
-    MAX_TOTAL_PIXELS, PageSelection, StampJob, TextStamp,
+    Anchor, Bates, ImageData, ImageStamp, MAX_BATES_AFFIX_CHARS, MAX_COORD, MAX_IMAGES, MAX_TEMPLATE_CHARS, MAX_TEXTS,
+    MAX_TOTAL_PIXELS, PageSelection, StampJob, TextStamp, uses_bates_token,
 };
 use super::fonts::StdFont;
 
@@ -132,6 +132,11 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<StampJob, String> {
         if t.template.chars().count() > MAX_TEMPLATE_CHARS {
             return Err(invalid(&f("template")));
         }
+        // A page-only text is not part of the selection, so it has no Bates
+        // number to print.
+        if t.page.is_some() && uses_bates_token(&t.template) {
+            return Err(invalid(&format!("{} ({{bates}} needs a page selection)", f("template"))));
+        }
         let font = parse_font(&t.font).ok_or_else(|| invalid(&f("font")))?;
         let anchor = parse_anchor(&t.anchor).ok_or_else(|| invalid(&f("anchor")))?;
         let mut color = [0.0; 3];
@@ -197,6 +202,8 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<StampJob, String> {
 
     let bates = match raw.bates {
         None => None,
+        Some(b) if b.prefix.chars().count() > MAX_BATES_AFFIX_CHARS => return Err(invalid("bates.prefix")),
+        Some(b) if b.suffix.chars().count() > MAX_BATES_AFFIX_CHARS => return Err(invalid("bates.suffix")),
         Some(b) => Some(Bates {
             prefix: b.prefix,
             suffix: b.suffix,
@@ -424,6 +431,34 @@ mod tests {
         let mut j = job();
         j.images = vec![big(), big(), rgba(5000.0, 4000.0, 5000 * 4000 * 4)];
         assert!(validate_job(j).is_ok());
+    }
+
+    #[test]
+    fn rejects_bates_token_in_page_only_text() {
+        let mut j = job();
+        j.texts[0].template = "Doc {bates}".into();
+        j.texts[0].page = Some(1.0);
+        assert_eq!(err(j), "Invalid stamp settings: texts[0].template ({bates} needs a page selection)");
+        // Literal braces and selection texts are fine.
+        let mut j = job();
+        j.texts[0].template = "{{bates}}".into();
+        j.texts[0].page = Some(1.0);
+        assert!(validate_job(j).is_ok());
+        let mut j = job();
+        j.texts[0].template = "{bates}".into();
+        assert!(validate_job(j).is_ok());
+    }
+
+    #[test]
+    fn bounds_on_bates_affixes() {
+        let bates = |prefix: &str, suffix: &str| {
+            let mut j = job();
+            j.bates = Some(RawBates { prefix: prefix.into(), suffix: suffix.into(), start: 1.0, digits: 6.0 });
+            j
+        };
+        assert!(validate_job(bates(&"é".repeat(100), &"x".repeat(100))).is_ok());
+        assert_eq!(err(bates(&"x".repeat(101), "")), "Invalid stamp settings: bates.prefix");
+        assert_eq!(err(bates("", &"x".repeat(101))), "Invalid stamp settings: bates.suffix");
     }
 
     #[test]

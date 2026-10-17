@@ -17,6 +17,8 @@ pub(crate) const MAX_TEMPLATE_CHARS: usize = 2000;
 /// Text and image stamps per job.
 pub(crate) const MAX_TEXTS: usize = 64;
 pub(crate) const MAX_IMAGES: usize = 16;
+/// Characters in a Bates prefix or suffix.
+pub(crate) const MAX_BATES_AFFIX_CHARS: usize = 100;
 /// RGBA pixels all images of one job may carry together.
 pub(crate) const MAX_TOTAL_PIXELS: u64 = 100_000_000;
 
@@ -414,6 +416,12 @@ fn resolve_tokens(template: &str, n: i64, total: i64, bates: Option<&str>) -> St
     }
     out.push_str(rest);
     out
+}
+
+/// Whether `template` contains a `{bates}` token (not a doubled-brace
+/// literal), parsed exactly as `resolve_tokens` does.
+pub(crate) fn uses_bates_token(template: &str) -> bool {
+    resolve_tokens(template, 0, 0, None) != resolve_tokens(template, 0, 0, Some(""))
 }
 
 /// Tabs and line breaks become spaces: a stamp is a single line, and the
