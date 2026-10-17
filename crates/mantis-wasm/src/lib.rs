@@ -3,9 +3,11 @@ mod compress;
 mod doc_tools;
 mod edit;
 mod encrypt;
+mod geometry_ops;
 #[cfg(test)]
 mod leak_probes;
 mod merge;
+mod page_content;
 mod page_plan;
 mod pdf_util;
 mod rebuild;

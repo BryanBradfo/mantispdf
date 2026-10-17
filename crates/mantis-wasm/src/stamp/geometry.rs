@@ -18,7 +18,7 @@ pub struct VisibleBox {
 const DEFAULT_BOX: [f64; 4] = [0.0, 0.0, 612.0, 792.0];
 
 /// `[x0 y0 x1 y1]` of an inherited box, normalized so x0 <= x1, y0 <= y1.
-fn read_box(doc: &Document, page: ObjectId, key: &[u8]) -> Option<[f64; 4]> {
+pub(crate) fn read_box(doc: &Document, page: ObjectId, key: &[u8]) -> Option<[f64; 4]> {
     let attr = get_inherited_attr(doc, page, key)?;
     let Object::Array(items) = deref(doc, &attr)? else {
         return None;
