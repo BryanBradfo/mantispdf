@@ -11,18 +11,29 @@ interface Props {
   customMm: [number, number];
   onCustomMm: (v: [number, number]) => void;
   allowSame?: boolean;
+  /** Adds a "Fit to image" choice; `fit` says it is selected, `onFit` toggles it. */
+  fit?: boolean;
+  onFit?: (fit: boolean) => void;
 }
 
 /** Paper size select plus custom width/height in mm. */
-export default function PaperSizeFields({ paper, onPaper, customMm, onCustomMm, allowSame = false }: Props) {
+export default function PaperSizeFields({ paper, onPaper, customMm, onCustomMm, allowSame = false, fit = false, onFit }: Props) {
   const num = (v: string) => (v === "" ? NaN : Number(v));
   const show = (v: number) => (Number.isFinite(v) ? v : "");
   return (
     <div>
       <label className="block text-sm text-gray-700 dark:text-[#aaa]">
         Sheet size
-        <select value={paper} onChange={(e) => onPaper(e.target.value as PaperChoice)} className={inputClass}>
+        <select
+          value={fit ? "fit" : paper}
+          onChange={(e) => {
+            const v = e.target.value;
+            onFit?.(v === "fit");
+            if (v !== "fit") onPaper(v as PaperChoice);
+          }}
+          className={inputClass}>
           {allowSame && <option value="same">Same as first page</option>}
+          {onFit && <option value="fit">Fit to image</option>}
           {(Object.keys(PAPER_SIZES) as PaperName[]).map((name) => (
             <option key={name} value={name}>
               {name} ({Math.round(ptToMm(PAPER_SIZES[name][0]))} x {Math.round(ptToMm(PAPER_SIZES[name][1]))} mm)
@@ -31,7 +42,7 @@ export default function PaperSizeFields({ paper, onPaper, customMm, onCustomMm, 
           <option value={CUSTOM_PAPER}>Custom…</option>
         </select>
       </label>
-      {paper === CUSTOM_PAPER && (
+      {!fit && paper === CUSTOM_PAPER && (
         <div className="mt-2 flex gap-3">
           <label className="block flex-1 text-sm text-gray-700 dark:text-[#aaa]">
             Width (mm)
