@@ -12,16 +12,19 @@ const PREVIEW_MAX_HEIGHT = 800;
 /** Pause after the last key before the new box is announced. */
 const ANNOUNCE_DELAY_MS = 500;
 
-/** Where each handle sits on the box, and its cursor. */
+/**
+ * Where each handle's center sits on the box, and its cursor. The handle is a 24 px hit area
+ * centered there (the visible dot is smaller).
+ */
 const HANDLE_STYLE: Record<Handle, string> = {
-  nw: "-left-1.5 -top-1.5 cursor-nwse-resize",
-  n: "left-1/2 -top-1.5 -ml-1.5 cursor-ns-resize",
-  ne: "-right-1.5 -top-1.5 cursor-nesw-resize",
-  e: "-right-1.5 top-1/2 -mt-1.5 cursor-ew-resize",
-  se: "-bottom-1.5 -right-1.5 cursor-nwse-resize",
-  s: "left-1/2 -bottom-1.5 -ml-1.5 cursor-ns-resize",
-  sw: "-bottom-1.5 -left-1.5 cursor-nesw-resize",
-  w: "-left-1.5 top-1/2 -mt-1.5 cursor-ew-resize",
+  nw: "left-0 top-0 cursor-nwse-resize",
+  n: "left-1/2 top-0 cursor-ns-resize",
+  ne: "left-full top-0 cursor-nesw-resize",
+  e: "left-full top-1/2 cursor-ew-resize",
+  se: "left-full top-full cursor-nwse-resize",
+  s: "left-1/2 top-full cursor-ns-resize",
+  sw: "left-0 top-full cursor-nesw-resize",
+  w: "left-0 top-1/2 cursor-ew-resize",
 };
 
 interface Props {
@@ -79,8 +82,11 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
     gesture.current = null;
   };
 
+  // Same convention as the signature placement: arrows move by 1 pt, Shift+arrows by 10 pt;
+  // Ctrl (or Cmd) resizes from the bottom-right corner instead. Alt is left to the browser.
   const key = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const step = e.altKey ? 10 : 1;
+    if (e.altKey) return;
+    const step = e.shiftKey ? 10 : 1;
     const delta: Record<string, [number, number]> = {
       ArrowLeft: [-step, 0],
       ArrowRight: [step, 0],
@@ -90,8 +96,9 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
     const d = delta[e.key];
     if (!d) return;
     e.preventDefault();
-    // Shift resizes from the bottom-right corner: Right/Down grow the box, Left/Up shrink it.
-    const next = e.shiftKey ? resizeCropRect(rect, "se", d[0], d[1], pageSize) : moveCropRect(rect, d[0], d[1], pageSize);
+    // Resizing moves the bottom-right corner: Right/Down grow the box, Left/Up shrink it.
+    const resize = e.ctrlKey || e.metaKey;
+    const next = resize ? resizeCropRect(rect, "se", d[0], d[1], pageSize) : moveCropRect(rect, d[0], d[1], pageSize);
     onRect(next);
     setAnnouncement(describeCrop(next, pageSize));
   };
@@ -107,40 +114,49 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
 
   return (
     <div ref={wrapRef} className="w-full max-w-[560px]">
-      <div
-        className="relative select-none overflow-hidden rounded-lg border border-gray-300 shadow-sm dark:border-[#333]"
-        style={{ width: pw, height: ph }}
-      >
-        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={`Page ${page}`} className="h-full" />
-        <div
-          role="group"
-          aria-roledescription="resizable crop box"
-          aria-label="Crop area"
-          aria-describedby="crop-area-help"
-          tabIndex={0}
-          onPointerDown={begin("move")}
-          onPointerMove={move}
-          onPointerUp={end}
-          onPointerCancel={end}
-          onKeyDown={key}
-          className="absolute cursor-move touch-none outline-none ring-2 ring-mantis-500 focus-visible:ring-4 focus-visible:ring-mantis-600"
-          // The shadow dims everything outside the box (the frame clips it).
-          style={{ left: box.left, top: box.top, width: box.width, height: box.height, boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.45)" }}
-        >
-          {HANDLES.map((h) => (
-            <span
-              key={h}
-              aria-hidden="true"
-              data-handle={h}
-              onPointerDown={begin(h)}
-              className={`absolute h-3 w-3 rounded-sm border border-white bg-mantis-600 ${HANDLE_STYLE[h]}`}
-            />
-          ))}
+      <div data-crop-frame className="relative select-none" style={{ width: pw, height: ph }}>
+        <div className="absolute inset-0 overflow-hidden rounded-lg border border-gray-300 shadow-sm dark:border-[#333]">
+          <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={`Page ${page}`} className="h-full" />
+          {/* Dims everything outside the box; the frame clips the shadow. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute"
+            style={{ left: box.left, top: box.top, width: box.width, height: box.height, boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.45)" }}
+          />
+        </div>
+        {/* Outside the clipping frame, so the handles on the page edge stay whole and grabbable. */}
+        <div className="absolute inset-px">
+          <div
+            role="group"
+            aria-roledescription="resizable crop box"
+            aria-label="Crop area"
+            aria-describedby="crop-area-help"
+            tabIndex={0}
+            onPointerDown={begin("move")}
+            onPointerMove={move}
+            onPointerUp={end}
+            onPointerCancel={end}
+            onKeyDown={key}
+            className="absolute cursor-move touch-none outline-none ring-2 ring-mantis-500 focus-visible:ring-4 focus-visible:ring-mantis-600"
+            style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+          >
+            {HANDLES.map((h) => (
+              <span
+                key={h}
+                aria-hidden="true"
+                data-handle={h}
+                onPointerDown={begin(h)}
+                className={`absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center ${HANDLE_STYLE[h]}`}
+              >
+                <span className="h-3 w-3 rounded-sm border border-white bg-mantis-600" />
+              </span>
+            ))}
+          </div>
         </div>
       </div>
       <p id="crop-area-help" className="mt-2 text-xs text-gray-500 dark:text-[#777]">
-        Drag the box to move it, drag a handle to resize it. Arrow keys move it by 1 pt, Shift+arrows resize it from the
-        bottom-right corner (hold Alt for 10 pt).
+        Drag the box to move it, drag a handle to resize it. Arrow keys move it by 1 pt (Shift+arrows by 10 pt);
+        Ctrl+arrows (Cmd on a Mac) resize it from the bottom-right corner by 1 pt, Ctrl+Shift+arrows by 10 pt.
       </p>
       <p className="sr-only" aria-live="polite">{spoken}</p>
     </div>

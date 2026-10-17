@@ -52,7 +52,8 @@ test("crop: dragging the box on a rotated page gives a page of the dragged size"
 
   const area = page.getByRole("group", { name: "Crop area" });
   await expect(area).toBeVisible();
-  const frame = (await area.locator("..").boundingBox())!;
+  // The preview frame: the box is drawn to its scale.
+  const frame = (await page.locator("[data-crop-frame]").boundingBox())!;
   const before = (await area.boundingBox())!;
   // Real mouse drag of the south-east handle, up and to the left: the box shrinks.
   const handle = (await area.locator('[data-handle="se"]').boundingBox())!;
@@ -141,7 +142,8 @@ test("crop then resize: content outside the crop stays hidden on the new sheet",
     expect(page.getByText("margins.pdf (2 pages)")).toBeVisible({ timeout: 3000 }));
   const area = page.getByRole("group", { name: "Crop area" });
   await expect(area).toBeVisible();
-  const frame = (await area.locator("..").boundingBox())!;
+  // The preview frame: the box is drawn to its scale.
+  const frame = (await page.locator("[data-crop-frame]").boundingBox())!;
   // Drag the left edge (north-west handle, horizontally only) about 220 pt right, into the rectangle.
   const handle = (await area.locator('[data-handle="nw"]').boundingBox())!;
   const [hx, hy] = [handle.x + handle.width / 2, handle.y + handle.height / 2];
@@ -176,6 +178,50 @@ test("crop then resize: content outside the crop stays hidden on the new sheet",
   const [hidden, shown] = await renderedLuminance(page, resized, [onSheet(hiddenX, 375), onSheet(cx0 + 20, 375)]);
   expect(shown, "content inside the old crop is drawn").toBeLessThan(80);
   expect(hidden, "content outside the old crop stays hidden").toBeGreaterThan(200);
+});
+
+test("crop: keyboard resizes with Ctrl (Cmd) + arrows and never navigates; handles are 24 px and not clipped", async ({ page }) => {
+  await page.goto("/crop");
+  await uploadOne(page, fx("margins.pdf"), () =>
+    expect(page.getByText("margins.pdf (2 pages)")).toBeVisible({ timeout: 3000 }));
+  const area = page.getByRole("group", { name: "Crop area" });
+  await expect(area).toBeVisible();
+  const url = page.url();
+  const k = (await page.locator("[data-crop-frame]").boundingBox())!.width / 612;
+  // Focus first: it may scroll the box into view, which moves its bounding box.
+  await area.focus();
+  const before = (await area.boundingBox())!;
+  await page.keyboard.press("Control+Shift+ArrowLeft");
+  await page.keyboard.press("Control+ArrowUp");
+  const resized = (await area.boundingBox())!;
+  // 10 pt narrower from the right, 1 pt shorter from the bottom; the top-left corner stays.
+  expect(Math.abs(before.width - resized.width - 10 * k)).toBeLessThan(1.5);
+  expect(Math.abs(before.height - resized.height - 1 * k)).toBeLessThan(1.5);
+  expect(Math.abs(resized.x - before.x)).toBeLessThan(0.5);
+  expect(Math.abs(resized.y - before.y)).toBeLessThan(0.5);
+
+  // Shift+arrows move by 10 pt without resizing.
+  await page.keyboard.press("Shift+ArrowRight");
+  const moved = (await area.boundingBox())!;
+  expect(Math.abs(moved.x - resized.x - 10 * k)).toBeLessThan(1.5);
+  expect(Math.abs(moved.width - resized.width)).toBeLessThan(0.5);
+
+  // Cmd+Left is "back" in some browsers: the box handles it instead.
+  await page.keyboard.press("Meta+ArrowLeft");
+  expect(page.url()).toBe(url);
+  await expect(page.getByText("margins.pdf (2 pages)")).toBeVisible();
+
+  // Grow the box to the right page edge: the handle there keeps its full 24 px hit area.
+  for (let i = 0; i < 6; i++) await page.keyboard.press("Control+Shift+ArrowRight");
+  const se = area.locator('[data-handle="se"]');
+  const box = (await se.boundingBox())!;
+  expect(Math.round(box.width)).toBe(24);
+  expect(Math.round(box.height)).toBe(24);
+  const hit = await page.evaluate(
+    ([x, y]) => document.elementFromPoint(x, y)?.closest("[data-handle]")?.getAttribute("data-handle") ?? null,
+    [box.x + box.width - 2, box.y + box.height / 2],
+  );
+  expect(hit, "the outer half of the edge handle is not clipped").toBe("se");
 });
 
 test("resize: Letter pages become A4 and keep their text inside", async ({ page }) => {
