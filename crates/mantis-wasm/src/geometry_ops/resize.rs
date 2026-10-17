@@ -99,8 +99,11 @@ fn resize_page(
 
     let page = doc.get_dictionary(id).map_err(|e| format!("Page {id:?} not found: {e}"))?;
     let original = original_contents(doc, page.get(b"Contents").ok());
+    // An annotation entirely outside the old visible box was hidden; the
+    // content clip does not reach annotations, so it leaves the page (the
+    // page gets its own /Annots array; a shared one is never edited).
     let annots: Option<Vec<Object>> = match page.get(b"Annots").ok().and_then(|a| deref(doc, a)) {
-        Some(Object::Array(items)) => Some(items.clone()),
+        Some(Object::Array(items)) => Some(items.iter().filter(|a| !hidden_by(doc, a, &vb)).cloned().collect()),
         _ => None,
     };
 
@@ -177,6 +180,16 @@ fn resize_page(
         page.set("CropBox", sheet);
     }
     Ok(())
+}
+
+/// True when the annotation's /Rect lies entirely outside `vb` (user space).
+/// An annotation without a readable /Rect is kept.
+fn hidden_by(doc: &Document, annot: &Object, vb: &VisibleBox) -> bool {
+    let Some(Object::Dictionary(dict)) = deref(doc, annot) else { return false };
+    let Some(r) = numbers(doc, dict.get(b"Rect").ok()).filter(|r| r.len() == 4) else { return false };
+    let (x0, x1) = (r[0].min(r[2]), r[0].max(r[2]));
+    let (y0, y1) = (r[1].min(r[3]), r[1].max(r[3]));
+    x1 < vb.x0 || x0 > vb.x1 || y1 < vb.y0 || y0 > vb.y1
 }
 
 /// Annotation object -> number of distinct pages listing it in /Annots.
@@ -795,5 +808,36 @@ mod tests {
             let s = streams(&doc, 0);
             assert_eq!(s[1], HELLO);
         }
+    }
+
+    #[test]
+    fn annotations_hidden_by_the_old_crop_box_are_dropped() {
+        // Cropped to [100 100 300 400]: an annotation entirely outside it was
+        // hidden and must not reappear; one that overlaps it stays. A shared
+        // /Annots array is replaced on the page, never edited.
+        let mut f = Fixture::new();
+        let square = |doc: &mut Document, r: [f64; 4]| {
+            doc.add_object(dictionary! { "Type" => "Annot", "Subtype" => "Square", "Rect" => nums(&r) })
+        };
+        let hidden = square(&mut f.doc, [400.0, 500.0, 450.0, 550.0]);
+        let edge = square(&mut f.doc, [250.0, 350.0, 350.0, 450.0]);
+        let inline = Object::Dictionary(dictionary! {
+            "Type" => "Annot", "Subtype" => "Square", "Rect" => nums(&[0.0, 0.0, 50.0, 50.0]),
+        });
+        let array = f.doc.add_object(vec![hidden.into(), edge.into(), inline]);
+        let crop = nums(&[100.0, 100.0, 300.0, 400.0]);
+        f.page(dictionary! { "MediaBox" => nums(&LETTER), "CropBox" => crop.clone(), "Annots" => array }, HELLO);
+        f.page(dictionary! { "MediaBox" => nums(&LETTER), "Annots" => array }, HELLO);
+        let pdf = f.finish(Dictionary::new());
+        let j = ResizeJob { pages: PageSelection::List(vec![1]), ..job(A4, ResizeMode::Fit) };
+        let doc = resize(&pdf, &j);
+        let annots = leaf(&doc, 0).get(b"Annots").unwrap().as_array().unwrap();
+        assert_eq!(annots.len(), 1, "{annots:?}");
+        // The overlapping one is the shared object's copy (the array is shared with page 2).
+        let kept = doc.get_dictionary(annots[0].as_reference().unwrap()).unwrap();
+        assert_eq!(kept.get(b"Subtype").unwrap(), &Object::Name(b"Square".to_vec()));
+        let shared = doc.get_object(array).unwrap().as_array().unwrap();
+        assert_eq!(shared.len(), 3, "the shared array is untouched");
+        assert_eq!(leaf(&doc, 1).get(b"Annots").unwrap(), &Object::Reference(array));
     }
 }
