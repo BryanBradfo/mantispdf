@@ -1,7 +1,8 @@
 import { toWasmJob } from "../lib/stampJob";
+import type { ExtractedImage } from "../lib/imageInput";
 import type { ToWorker, FromWorker, ReqId, SuccessPayload } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, crop_pdf, resize_pdf, nup_pdf, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf } from "mantis-wasm";
+import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, crop_pdf, resize_pdf, nup_pdf, images_to_pdf, extract_images, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf } from "mantis-wasm";
 
 let ready = false;
 
@@ -166,6 +167,40 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
           out.free();
         }
         postSuccess(msg.id, { kind: "nup", bytes, sheets, undecodable });
+        break;
+      }
+
+      case "images-to-pdf": {
+        postSuccess(msg.id, { kind: "merge", bytes: images_to_pdf(msg.images, msg.layout) });
+        break;
+      }
+
+      case "extract-images": {
+        const out = extract_images(msg.pdfBytes);
+        const images: ExtractedImage[] = [];
+        const transfer: Transferable[] = [];
+        const skipped: { reason: string; count: number }[] = [];
+        try {
+          for (let i = 0; i < out.count(); i++) {
+            const page = out.page(i);
+            const index = out.index(i);
+            if (out.is_jpeg(i)) {
+              const bytes = out.bytes(i);
+              images.push({ page, index, kind: "jpeg", bytes });
+              transfer.push(bytes.buffer as ArrayBuffer);
+            } else {
+              const pixels = out.pixels(i);
+              images.push({ page, index, kind: "rgba", width: out.width(i), height: out.height(i), pixels });
+              transfer.push(pixels.buffer as ArrayBuffer);
+            }
+          }
+          const reasons = out.skipped_reasons();
+          const counts = out.skipped_counts();
+          for (let i = 0; i < reasons.length; i++) skipped.push({ reason: reasons[i], count: counts[i] ?? 0 });
+        } finally {
+          out.free();
+        }
+        postSuccess(msg.id, { kind: "extracted", result: { images, skipped } }, transfer);
         break;
       }
 

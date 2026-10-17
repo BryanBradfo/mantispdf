@@ -55,6 +55,23 @@ declare module "mantis-wasm" {
     free(): void;
   }
   export function nup_pdf(pdf_bytes: Uint8Array, job: object): NupOutput;
+  export class ExtractOutput {
+    count(): number;
+    page(i: number): number;
+    index(i: number): number;
+    is_jpeg(i: number): boolean;
+    /** Original JPEG bytes (empty for an RGBA image). */
+    bytes(i: number): Uint8Array;
+    width(i: number): number;
+    height(i: number): number;
+    /** RGBA8 pixels (empty for a JPEG image). */
+    pixels(i: number): Uint8Array;
+    skipped_reasons(): string[];
+    skipped_counts(): Uint32Array;
+    free(): void;
+  }
+  export function extract_images(pdf_bytes: Uint8Array): ExtractOutput;
+  export function images_to_pdf(images: object[], layout: object): Uint8Array;
   /** Visible [w, h] of every page in points, flattened: [w1, h1, w2, h2, ...]. */
   export function visible_page_sizes(pdf_bytes: Uint8Array): Float64Array;
   export function remove_metadata(pdf_bytes: Uint8Array): Uint8Array;

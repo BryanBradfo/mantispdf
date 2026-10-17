@@ -191,6 +191,92 @@ pub fn nup_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<NupOutput, JsValue> {
     Ok(NupOutput { bytes: r.bytes, sheets: r.sheets, undecodable: r.undecodable_pages })
 }
 
+/// Result of `extract_images`: images in page order. `bytes(i)` is the
+/// original JPEG for a JPEG image, `pixels(i)` is RGBA8 for the others.
+#[wasm_bindgen]
+pub struct ExtractOutput {
+    images: Vec<images::extract::Extracted>,
+    skipped: Vec<(String, u32)>,
+}
+
+#[wasm_bindgen]
+impl ExtractOutput {
+    pub fn count(&self) -> u32 {
+        self.images.len() as u32
+    }
+
+    /// 1-based page of image `i` (0 when out of range).
+    pub fn page(&self, i: u32) -> u32 {
+        self.images.get(i as usize).map_or(0, |e| e.page)
+    }
+
+    /// 1-based order of image `i` within its page.
+    pub fn index(&self, i: u32) -> u32 {
+        self.images.get(i as usize).map_or(0, |e| e.index)
+    }
+
+    pub fn is_jpeg(&self, i: u32) -> bool {
+        matches!(self.images.get(i as usize).map(|e| &e.kind), Some(images::extract::ExtractedKind::Jpeg(_)))
+    }
+
+    /// JPEG bytes; empty for an RGBA image.
+    pub fn bytes(&self, i: u32) -> Vec<u8> {
+        match self.images.get(i as usize).map(|e| &e.kind) {
+            Some(images::extract::ExtractedKind::Jpeg(b)) => b.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn width(&self, i: u32) -> u32 {
+        match self.images.get(i as usize).map(|e| &e.kind) {
+            Some(images::extract::ExtractedKind::Rgba { width, .. }) => *width,
+            _ => 0,
+        }
+    }
+
+    pub fn height(&self, i: u32) -> u32 {
+        match self.images.get(i as usize).map(|e| &e.kind) {
+            Some(images::extract::ExtractedKind::Rgba { height, .. }) => *height,
+            _ => 0,
+        }
+    }
+
+    /// RGBA8 pixels; empty for a JPEG image.
+    pub fn pixels(&self, i: u32) -> Vec<u8> {
+        match self.images.get(i as usize).map(|e| &e.kind) {
+            Some(images::extract::ExtractedKind::Rgba { pixels, .. }) => pixels.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Why images were skipped; parallel to `skipped_counts`.
+    pub fn skipped_reasons(&self) -> Vec<String> {
+        self.skipped.iter().map(|(r, _)| r.clone()).collect()
+    }
+
+    pub fn skipped_counts(&self) -> Vec<u32> {
+        self.skipped.iter().map(|(_, c)| *c).collect()
+    }
+}
+
+#[wasm_bindgen]
+pub fn extract_images(pdf_bytes: &[u8]) -> Result<ExtractOutput, JsValue> {
+    let r = images::extract::extract_images(pdf_bytes).map_err(|e| JsValue::from_str(&e))?;
+    Ok(ExtractOutput { images: r.images, skipped: r.skipped })
+}
+
+/// `images`: `{kind:"jpeg", bytes} | {kind:"rgba", width, height, pixels}`
+/// plus `rotate` and `flipX`; `layout`: `{page: "fit" | [w, h], orientation, margin}`.
+#[wasm_bindgen]
+pub fn images_to_pdf(images: js_sys::Array, layout: JsValue) -> Result<Vec<u8>, JsValue> {
+    let run = || -> Result<Vec<u8>, String> {
+        let layout = images::job::validate_layout(images::binding::read_layout(&layout)?)?;
+        let list = images::job::validate_images(images::binding::read_images(&images)?)?;
+        images::to_pdf::images_to_pdf(&list, &layout)
+    };
+    run().map_err(|e| JsValue::from_str(&e))
+}
+
 /// Visible `[w, h]` of every page, flattened: `[w1, h1, w2, h2, ...]`.
 #[wasm_bindgen]
 pub fn visible_page_sizes(pdf_bytes: &[u8]) -> Result<Vec<f64>, JsValue> {

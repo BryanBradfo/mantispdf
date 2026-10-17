@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FromWorker, SuccessPayload, ToWorker } from "../lib/workerProtocol";
 import type { PdfPart } from "../types/pdf";
 import { readFileAsArrayBuffer } from "../lib/fileHelpers";
+import type { ExtractResultSpec, ImageInputSpec, ImageLayoutSpec } from "../lib/imageInput";
 import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob";
 import type { StampJobSpec } from "../lib/stampJob";
 import { PdfWorkerClient } from "../lib/workerClient";
@@ -74,6 +75,11 @@ const asBuffer = (p: SuccessPayload): ArrayBuffer => {
 const asNup = (p: SuccessPayload): { bytes: Uint8Array; sheets: number; undecodable: number[] } => {
   if (p.kind !== "nup") throw new Error("Unexpected worker payload");
   return { bytes: p.bytes, sheets: p.sheets, undecodable: p.undecodable };
+};
+
+const asExtracted = (p: SuccessPayload): ExtractResultSpec => {
+  if (p.kind !== "extracted") throw new Error("Unexpected worker payload");
+  return p.result;
 };
 
 const asStamped = (p: SuccessPayload): { bytes: Uint8Array; stampedPages: number } => {
@@ -300,6 +306,18 @@ export function usePdfWorker() {
     [run],
   );
 
+  const imagesToPdf = useCallback(
+    (images: ImageInputSpec[], layout: ImageLayoutSpec): Promise<Uint8Array> =>
+      run(null, (id) => ({ type: "images-to-pdf", id, images, layout }), asBytes),
+    [run],
+  );
+
+  const extractImages = useCallback(
+    (pdfBytes: Uint8Array): Promise<ExtractResultSpec> =>
+      run(null, (id) => ({ type: "extract-images", id, pdfBytes }), asExtracted),
+    [run],
+  );
+
   const removeMetadata = useCallback(
     (pdfBytes: Uint8Array): Promise<Uint8Array> =>
       run(null, (id) => ({ type: "remove-metadata", id, pdfBytes }), asBytes),
@@ -359,6 +377,8 @@ export function usePdfWorker() {
       cropPdf,
       resizePdf,
       nupPdf,
+      imagesToPdf,
+      extractImages,
       pageSizes,
       removeMetadata,
       readMetadata,
@@ -380,6 +400,8 @@ export function usePdfWorker() {
       cropPdf,
       resizePdf,
       nupPdf,
+      imagesToPdf,
+      extractImages,
       pageSizes,
       removeMetadata,
       readMetadata,

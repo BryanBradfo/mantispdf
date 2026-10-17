@@ -69,17 +69,17 @@ fn build_rgba(width: u32, height: u32, pixels: &[u8]) -> Result<BuiltImage, Stri
 
 /// What the embedding needs from a JPEG header.
 #[derive(Debug, PartialEq)]
-struct JpegInfo {
-    width: u32,
-    height: u32,
-    components: u8,
-    adobe: bool,
+pub(crate) struct JpegInfo {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) components: u8,
+    pub(crate) adobe: bool,
 }
 
 /// Read the frame header (SOF) and note an Adobe APP14 segment. Markers are
 /// walked by their lengths up to the first scan; entropy-coded data is never
 /// touched.
-fn jpeg_info(bytes: &[u8]) -> Result<JpegInfo, String> {
+pub(crate) fn jpeg_info(bytes: &[u8]) -> Result<JpegInfo, String> {
     let bad = || "Invalid JPEG image".to_string();
     if bytes.len() < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8 {
         return Err(bad());
