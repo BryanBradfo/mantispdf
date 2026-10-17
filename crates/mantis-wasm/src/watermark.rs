@@ -169,9 +169,17 @@ fn push_content_stream(doc: &mut Document, page_id: ObjectId, stream_id: ObjectI
     };
     let new_contents = match current {
         None => Object::Array(vec![Object::Reference(stream_id)]),
-        Some(Object::Reference(id)) => {
-            Object::Array(vec![Object::Reference(id), Object::Reference(stream_id)])
-        }
+        // A referenced array (possibly shared): copy its items into a direct
+        // array rather than nesting the reference, which is not a valid
+        // /Contents, and never mutate the shared object.
+        Some(Object::Reference(id)) => match doc.get_object(id) {
+            Ok(Object::Array(items)) => {
+                let mut arr = items.clone();
+                arr.push(Object::Reference(stream_id));
+                Object::Array(arr)
+            }
+            _ => Object::Array(vec![Object::Reference(id), Object::Reference(stream_id)]),
+        },
         Some(Object::Array(mut arr)) => {
             arr.push(Object::Reference(stream_id));
             Object::Array(arr)
@@ -199,7 +207,7 @@ fn patch_resources(doc: &mut Document, page_id: ObjectId, font_id: ObjectId, gs_
             Some(Object::Dictionary(d)) => d.clone(),
             _ => Dictionary::new(),
         };
-        inject_wm_res(&mut res, font_id, gs_id);
+        inject_wm_res(doc, &mut res, font_id, gs_id);
         doc.objects.insert(res_id, Object::Dictionary(res));
     } else {
         // Resources is inline on the leaf, inherited from /Pages, or absent.
@@ -228,26 +236,28 @@ fn patch_resources(doc: &mut Document, page_id: ObjectId, font_id: ObjectId, gs_
                 _ => Dictionary::new(),
             }
         };
-        inject_wm_res(&mut res, font_id, gs_id);
+        inject_wm_res(doc, &mut res, font_id, gs_id);
         if let Some(Object::Dictionary(d)) = doc.objects.get_mut(&page_id) {
             d.set("Resources", Object::Dictionary(res));
         }
     }
 }
 
-fn inject_wm_res(res: &mut Dictionary, font_id: ObjectId, gs_id: ObjectId) {
-    let mut font_dict = match res.get(b"Font") {
+/// Add /WMfont and /WMgs to the /Font and /ExtGState categories. A category
+/// held by reference is resolved into an owned copy first: replacing it with a
+/// fresh dict would drop every page font, and mutating the referenced object
+/// would leak our names into every other page sharing it.
+fn inject_wm_res(doc: &Document, res: &mut Dictionary, font_id: ObjectId, gs_id: ObjectId) {
+    let owned = |key: &[u8]| match res.get(key) {
         Ok(Object::Dictionary(d)) => d.clone(),
+        Ok(Object::Reference(id)) => doc.get_dictionary(*id).cloned().unwrap_or_default(),
         _ => Dictionary::new(),
     };
+    let mut font_dict = owned(b"Font");
+    let mut gs_dict = owned(b"ExtGState");
     font_dict.set("WMfont", Object::Reference(font_id));
-    res.set("Font", Object::Dictionary(font_dict));
-
-    let mut gs_dict = match res.get(b"ExtGState") {
-        Ok(Object::Dictionary(d)) => d.clone(),
-        _ => Dictionary::new(),
-    };
     gs_dict.set("WMgs", Object::Reference(gs_id));
+    res.set("Font", Object::Dictionary(font_dict));
     res.set("ExtGState", Object::Dictionary(gs_dict));
 }
 
@@ -300,6 +310,116 @@ mod tests {
                 "inherited original font /F1 must be preserved, not shadowed"
             );
         }
+    }
+
+    /// Two pages whose /Resources (one inline, one indirect) share an
+    /// indirect /Font dict holding /F1 and an indirect /ExtGState dict.
+    /// With `contents_array_ref`, each page's /Contents is a reference to an
+    /// array of streams instead of a stream.
+    fn indirect_category_pdf(contents_array_ref: bool) -> (Vec<u8>, ObjectId, ObjectId) {
+        use lopdf::dictionary;
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let font_id = doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+        });
+        let fonts_id = doc.add_object(dictionary! { "F1" => font_id });
+        let gs_id = doc.add_object(dictionary! { "Type" => "ExtGState", "ca" => 1.0 });
+        let gss_id = doc.add_object(dictionary! { "G1" => gs_id });
+        let res_id = doc.add_object(dictionary! {
+            "Font" => fonts_id, "ExtGState" => gss_id,
+        });
+        let mut kids = vec![];
+        for (i, res) in [
+            Object::Dictionary(dictionary! { "Font" => fonts_id, "ExtGState" => gss_id }),
+            Object::Reference(res_id),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let body = format!("q /G1 gs BT /F1 12 Tf 72 700 Td (Hello Page{i}) Tj ET Q");
+            let mut c = doc.add_object(Stream::new(Dictionary::new(), body.into_bytes()));
+            if contents_array_ref {
+                let tail = doc.add_object(Stream::new(Dictionary::new(), b"".to_vec()));
+                c = doc.add_object(vec![Object::Reference(c), Object::Reference(tail)]);
+            }
+            kids.push(Object::Reference(doc.add_object(dictionary! {
+                "Type" => "Page", "Parent" => pages_id, "Resources" => res,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Contents" => c,
+            })));
+        }
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => 2 }),
+        );
+        let cat = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", cat);
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        (buf, fonts_id, gss_id)
+    }
+
+    #[test]
+    fn test_watermark_keeps_fonts_of_indirect_font_dict() {
+        let (pdf, fonts_id, gss_id) = indirect_category_pdf(false);
+        let before = Document::load_mem(&pdf).unwrap();
+        let text_before = before.extract_text(&[1, 2]).unwrap();
+        assert!(text_before.contains("Hello Page0") && text_before.contains("Hello Page1"));
+
+        let out = add_watermark_impl(&pdf, "DRAFT", 48, 0.3, 45, 0.5, 0.5, 0.5).unwrap();
+        let doc = Document::load_mem(&out).unwrap();
+        for (_, page_id) in doc.get_pages() {
+            let page = doc.get_dictionary(page_id).unwrap();
+            let res = match page.get(b"Resources").unwrap() {
+                Object::Dictionary(d) => d,
+                Object::Reference(id) => doc.get_dictionary(*id).unwrap(),
+                _ => panic!("Resources must be a dict or reference"),
+            };
+            let cat = |key: &[u8]| match res.get(key).unwrap() {
+                Object::Dictionary(d) => d.clone(),
+                Object::Reference(id) => doc.get_dictionary(*id).unwrap().clone(),
+                _ => panic!("category must be a dict or reference"),
+            };
+            let fonts = cat(b"Font");
+            assert!(fonts.has(b"F1"), "page font /F1 must survive the watermark");
+            assert!(fonts.has(b"WMfont"));
+            let gss = cat(b"ExtGState");
+            assert!(gss.has(b"G1"), "page ExtGState /G1 must survive the watermark");
+            assert!(gss.has(b"WMgs"));
+        }
+        // The shared category dicts themselves are never mutated.
+        let shared_fonts = doc.get_dictionary(fonts_id).unwrap();
+        assert!(shared_fonts.has(b"F1") && !shared_fonts.has(b"WMfont"));
+        assert!(!doc.get_dictionary(gss_id).unwrap().has(b"WMgs"));
+
+        let text_after = doc.extract_text(&[1, 2]).unwrap();
+        assert!(text_after.contains("Hello Page0"), "text lost: {text_after:?}");
+        assert!(text_after.contains("Hello Page1"), "text lost: {text_after:?}");
+    }
+
+    #[test]
+    fn test_watermark_keeps_text_when_contents_is_a_referenced_array() {
+        // /Contents -> indirect array of streams: wrapping the reference itself
+        // in a new array makes an array-of-array the viewer rejects outright.
+        let (pdf, _, _) = indirect_category_pdf(true);
+        let out = add_watermark_impl(&pdf, "DRAFT", 48, 0.3, 45, 0.5, 0.5, 0.5).unwrap();
+        let doc = Document::load_mem(&out).unwrap();
+        for (_, page_id) in doc.get_pages() {
+            let page = doc.get_dictionary(page_id).unwrap();
+            let items = match page.get(b"Contents").unwrap() {
+                Object::Array(a) => a.clone(),
+                Object::Reference(id) => doc.get_object(*id).unwrap().as_array().unwrap().clone(),
+                _ => panic!("Contents must be an array"),
+            };
+            assert_eq!(items.len(), 3, "both original streams plus the watermark");
+            for item in &items {
+                let id = item.as_reference().expect("each /Contents item is a reference");
+                assert!(doc.get_object(id).unwrap().as_stream().is_ok(), "item must be a stream");
+            }
+        }
+        let text = doc.extract_text(&[1, 2]).unwrap();
+        assert!(text.contains("Hello Page0") && text.contains("Hello Page1"), "{text:?}");
     }
 
     #[test]
