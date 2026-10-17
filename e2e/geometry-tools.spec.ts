@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 
 const fx = (n: string) => fileURLToPath(new URL(`./fixtures/${n}`, import.meta.url));
 
@@ -99,6 +99,83 @@ test("crop: auto-detect trims both pages to the content, with no foreign request
   }
   await page.waitForLoadState("networkidle");
   expect(foreign).toEqual([]);
+});
+
+/** pdf.js browser build, injected into the page to render a PDF to a real canvas. */
+const PDFJS_BROWSER = fileURLToPath(new URL("../node_modules/pdfjs-dist/build/pdf.min.mjs", import.meta.url));
+
+/**
+ * Render page 1 of `bytes` in the browser at scale 1 (1 px per pt) on white and return the
+ * luminance (0 black .. 255 white) at each display-space point (origin top-left).
+ */
+async function renderedLuminance(page: Page, bytes: Uint8Array, points: [number, number][]): Promise<number[]> {
+  await page.addScriptTag({ path: PDFJS_BROWSER, type: "module" });
+  await page.waitForFunction(() => "pdfjsLib" in globalThis);
+  return page.evaluate(async ({ data, points }) => {
+    const lib = (globalThis as unknown as { pdfjsLib: Pdfjs }).pdfjsLib;
+    // The app may already have pinned the worker URL on its own copy; set it only when unset.
+    if (!lib.GlobalWorkerOptions.workerSrc) {
+      lib.GlobalWorkerOptions.workerSrc = new URL("/pdf.worker.min.mjs", location.origin).href;
+    }
+    const doc = await lib.getDocument({ data: new Uint8Array(data) }).promise;
+    const p = await doc.getPage(1);
+    const viewport = p.getViewport({ scale: 1 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await p.render({ canvasContext: ctx, viewport }).promise;
+    return points.map(([x, y]) => {
+      const [r, g, b] = ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data;
+      return (r + g + b) / 3;
+    });
+  }, { data: Array.from(bytes), points });
+}
+
+test("crop then resize: content outside the crop stays hidden on the new sheet", async ({ page }, testInfo) => {
+  // margins.pdf: a black rectangle x 100..400, y 150..600 (pt, origin bottom-left) on Letter pages.
+  await page.goto("/crop");
+  await uploadOne(page, fx("margins.pdf"), () =>
+    expect(page.getByText("margins.pdf (2 pages)")).toBeVisible({ timeout: 3000 }));
+  const area = page.getByRole("group", { name: "Crop area" });
+  await expect(area).toBeVisible();
+  const frame = (await area.locator("..").boundingBox())!;
+  // Drag the left edge (north-west handle, horizontally only) about 220 pt right, into the rectangle.
+  const handle = (await area.locator('[data-handle="nw"]').boundingBox())!;
+  const [hx, hy] = [handle.x + handle.width / 2, handle.y + handle.height / 2];
+  await page.mouse.move(hx, hy);
+  await page.mouse.down();
+  await page.mouse.move(hx + (220 * frame.width) / 612, hy, { steps: 12 });
+  await page.mouse.up();
+  const cropped = await download(page, "Crop and download");
+
+  const { getDocument } = await loadPdfjs();
+  const view = async (bytes: Uint8Array) => (await (await getDocument({ data: bytes.slice() }).promise).getPage(1)).view;
+  const [cx0, cy0, cx1, cy1] = await view(cropped);
+  expect(cx0, "the crop cuts into the rectangle").toBeGreaterThan(150);
+  expect(cx0).toBeLessThan(350);
+
+  const croppedPath = testInfo.outputPath("cropped.pdf");
+  await writeFile(croppedPath, cropped);
+  await page.goto("/resize");
+  await uploadOne(page, croppedPath, () =>
+    expect(page.getByText("cropped.pdf (2 pages)")).toBeVisible({ timeout: 3000 }));
+  const resized = await download(page, "Resize and download");
+  const [, , sw, sh] = await view(resized);
+
+  // Where a user-space point of the old page lands on the new sheet (Fit, centered), in display space.
+  const [w, h] = [cx1 - cx0, cy1 - cy0];
+  const s = Math.min(sw / w, sh / h);
+  const [tx, ty] = [(sw - s * w) / 2, (sh - s * h) / 2];
+  const onSheet = (x: number, y: number): [number, number] => [(x - cx0) * s + tx, sh - ((y - cy0) * s + ty)];
+  // A point of the rectangle just left of the old crop, inside the new sheet's side margin, and one just inside.
+  const hiddenX = cx0 - tx / (2 * s);
+  expect(hiddenX, "the hidden point is on the rectangle").toBeGreaterThan(105);
+  const [hidden, shown] = await renderedLuminance(page, resized, [onSheet(hiddenX, 375), onSheet(cx0 + 20, 375)]);
+  expect(shown, "content inside the old crop is drawn").toBeLessThan(80);
+  expect(hidden, "content outside the old crop stays hidden").toBeGreaterThan(200);
 });
 
 test("resize: Letter pages become A4 and keep their text inside", async ({ page }) => {
