@@ -6,6 +6,7 @@ import {
   describePages,
   hexToRgb,
   pageNumberRange,
+  previewHeaderFooter,
   previewStampText,
   todayIso,
   type HeaderFooterSlots,
@@ -48,7 +49,7 @@ describe("buildPageNumberJob", () => {
 });
 
 describe("buildHeaderFooterJob", () => {
-  const base = { style: DEFAULT_STYLE, margin: 20 };
+  const base = { style: DEFAULT_STYLE, margin: 20, numberStart: 1 };
   it("returns null when all blank", () => {
     expect(buildHeaderFooterJob({ ...base, slots: { ...empty, "top-left": "   " } }, ctx)).toBeNull();
   });
@@ -58,6 +59,27 @@ describe("buildHeaderFooterJob", () => {
       ["top-right", "2026-10-17"],
       ["bottom-center", "{n}/{total}"],
     ]);
+  });
+  it("passes the first number through to the engine", () => {
+    const job = buildHeaderFooterJob(
+      { ...base, numberStart: 7, slots: { ...empty, "bottom-center": "{n}" } },
+      { ...ctx, pages: [2, 3] },
+    );
+    expect(job?.numberStart).toBe(7);
+    expect(job?.pages).toEqual([2, 3]);
+  });
+});
+
+describe("previewHeaderFooter", () => {
+  it("resolves the filled slots for the first selected page", () => {
+    const slots = { ...empty, "top-left": "{filename} {date}", "bottom-center": "Page {n} of {total}", "bottom-right": "  " };
+    expect(previewHeaderFooter(slots, 5, { ...ctx, total: 6, pages: [2, 3, 4] })).toEqual([
+      { label: "Header left", text: "doc 2026-10-17" },
+      { label: "Footer center", text: "Page 5 of 7" },
+    ]);
+  });
+  it("is empty when nothing is filled", () => {
+    expect(previewHeaderFooter(empty, 1, ctx)).toEqual([]);
   });
 });
 

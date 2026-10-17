@@ -99,6 +99,21 @@ test("header and footer render {filename}, {date} and {n}", async ({ page }) => 
   });
 });
 
+test("header and footer: First number and pages shift {n}; the preview matches", async ({ page }) => {
+  await page.goto("/header-footer");
+  await uploadOne(page, fx("four-pages.pdf"), () =>
+    expect(page.getByText("four-pages.pdf (4 pages)")).toBeVisible({ timeout: 3000 }));
+  await page.getByLabel("Footer center").fill("Page {n} of {total}");
+  await page.getByLabel("Pages", { exact: true }).fill("2-");
+  await page.getByLabel("First number").fill("10");
+  const preview = page.getByTestId("hf-preview");
+  await expect(preview).toContainText("On page 2:");
+  await expect(preview).toContainText("Footer center: Page 10 of 12");
+  const pages = await pageTexts(await download(page, "Add and download"));
+  const footers = pages.map((p) => p.items.map((it) => it.str).filter((s) => /^Page \d+ of \d+$/.test(s)));
+  expect(footers).toEqual([[], ["Page 10 of 12"], ["Page 11 of 12"], ["Page 12 of 12"]]);
+});
+
 test("bates: two files give a ZIP that continues the count", async ({ page }) => {
   await page.goto("/bates");
   await expect(async () => {

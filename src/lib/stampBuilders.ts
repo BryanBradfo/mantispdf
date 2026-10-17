@@ -101,6 +101,8 @@ export interface HeaderFooterSettings {
   slots: HeaderFooterSlots;
   style: TextStyle;
   margin: number;
+  /** {n} printed on the first selected page. */
+  numberStart: number;
 }
 
 /** Returns null when every slot is blank (nothing to stamp). */
@@ -109,7 +111,7 @@ export function buildHeaderFooterJob(s: HeaderFooterSettings, ctx: JobContext): 
     textSpec(substituteJsTokens(s.slots[slot.anchor], ctx), slot.anchor, s.style, s.margin),
   );
   if (texts.length === 0) return null;
-  return { pages: pagesSpec(ctx.pages, ctx.total), texts, images: [], numberStart: 1 };
+  return { pages: pagesSpec(ctx.pages, ctx.total), texts, images: [], numberStart: s.numberStart };
 }
 
 /**
@@ -129,6 +131,19 @@ export function previewStampText(
   v: { n: number; total: number; date: string; filename: string },
 ): string {
   return resolveEngineTokens(substituteJsTokens(template, v), v.n, v.total);
+}
+
+/** The filled header and footer texts as printed on the first selected page (preview only). */
+export function previewHeaderFooter(
+  slots: HeaderFooterSlots,
+  numberStart: number,
+  ctx: JobContext,
+): { label: string; text: string }[] {
+  const range = pageNumberRange(numberStart, ctx.pages);
+  return HEADER_FOOTER_SLOTS.filter((slot) => slots[slot.anchor].trim() !== "").map((slot) => ({
+    label: slot.label,
+    text: previewStampText(slots[slot.anchor], { n: range.first, total: range.last, date: ctx.date, filename: ctx.filename }),
+  }));
 }
 
 export function describePages(pages: readonly number[], total: number): string {
