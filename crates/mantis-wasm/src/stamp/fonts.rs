@@ -84,12 +84,13 @@ pub fn encode_winansi(text: &str) -> Result<Vec<u8>, String> {
 /// 32..=255 have no glyph and count as zero.
 pub fn text_width(font: StdFont, bytes: &[u8], size: f64) -> f64 {
     let table = &WIDTHS[font.index()];
-    let units: u32 = bytes
+    // u64: a u32 sum overflows past ~4.3M glyphs.
+    let units: u64 = bytes
         .iter()
         .filter(|&&b| b >= 32)
-        .map(|&b| u32::from(table[usize::from(b) - 32]))
+        .map(|&b| u64::from(table[usize::from(b) - 32]))
         .sum();
-    f64::from(units) * size / 1000.0
+    units as f64 * size / 1000.0
 }
 
 #[cfg(test)]
@@ -147,6 +148,16 @@ mod tests {
         assert_eq!(StdFont::Helvetica.ascent(), 718.0);
         assert_eq!(StdFont::Helvetica.descent(), -207.0);
         assert_eq!(StdFont::Courier.ascent(), 629.0);
+    }
+
+    #[test]
+    fn long_runs_do_not_overflow() {
+        // 100k glyphs: exact sum.
+        let w = text_width(StdFont::Courier, &vec![b'x'; 100_000], 1.0);
+        assert_eq!(w, 60_000.0);
+        // 5M 'W' (944 units) is past u32::MAX units.
+        let w = text_width(StdFont::Helvetica, &vec![b'W'; 5_000_000], 1.0);
+        assert_eq!(w, 4_720_000.0);
     }
 
     #[test]
