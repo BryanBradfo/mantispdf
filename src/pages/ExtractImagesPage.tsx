@@ -92,7 +92,7 @@ function ImageCard({
         {url ? (
           <img src={url} alt={imageFileName(img)} className="max-h-full max-w-full object-contain" />
         ) : (
-          <span role="status" className="text-gray-500 dark:text-[#777]">{failed ? "Preview unavailable" : "Loading preview…"}</span>
+          <span className="text-gray-500 dark:text-[#777]">{failed ? "Preview unavailable" : "Loading preview…"}</span>
         )}
       </div>
       <div className="flex items-center gap-2 p-2 text-gray-700 dark:text-[#aaa]">
@@ -219,6 +219,10 @@ export default function ExtractImagesPage() {
 
   const skippedText = skipped ? skippedSummary(skipped) : "";
   const keptText = skipped ? keptWithoutAlphaSummary(skipped) : "";
+  // One polite announcement for the whole result, instead of a live region per card.
+  const announcement = skipped
+    ? [`${images.length} ${images.length === 1 ? "image" : "images"} found`, keptText, skippedText].filter(Boolean).join(". ") + "."
+    : "";
 
   return (
     <ToolShell
@@ -235,6 +239,8 @@ export default function ExtractImagesPage() {
           <DropZone onFile={start} error={error} />
         </div>
       )}
+
+      <p className="sr-only" aria-live="polite">{announcement}</p>
 
       {input && (
         <div className={panelClass}>

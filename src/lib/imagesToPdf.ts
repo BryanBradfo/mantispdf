@@ -1,3 +1,4 @@
+import { mmToPt } from "./geometryJob";
 import type { OrientationTransform } from "./imageInput";
 
 /**
@@ -34,6 +35,14 @@ export function imagesProblem(count: number, marginMm: number): string | null {
     return `Margin must be between 0 and ${MAX_MARGIN_MM} mm.`;
   }
   return null;
+}
+
+/** Error text when the margins leave nothing of the paper (the engine needs 2 x margin < the short side), else null. */
+export function marginProblem(marginMm: number, page: "fit" | [number, number] | null): string | null {
+  if (page === "fit" || page === null || !Number.isFinite(marginMm)) return null;
+  const short = Math.min(page[0], page[1]);
+  if (2 * mmToPt(marginMm) < short) return null;
+  return `Margin is too large for this page size: keep it under ${Math.floor(short / mmToPt(2))} mm.`;
 }
 
 export function layoutSummary(count: number, paperLabel: string, orientation: string, marginMm: number): string {

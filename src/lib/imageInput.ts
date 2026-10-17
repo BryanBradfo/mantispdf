@@ -96,6 +96,68 @@ function parseExif(view: DataView, start: number, end: number): Orientation {
   return 1;
 }
 
+export interface JpegFrame {
+  /** Frame marker: 0xC0..0xCF except DHT (C4), JPG (C8) and DAC (CC). */
+  sof: number;
+  precision: number;
+  width: number;
+  height: number;
+  components: number;
+}
+
+/** The first frame header (SOF) of a JPEG, walking markers by length; null if absent or malformed. */
+export function readJpegFrame(bytes: Uint8Array): JpegFrame | null {
+  if (!isJpeg(bytes)) return null;
+  let i = 2;
+  while (i + 4 <= bytes.length) {
+    if (bytes[i] !== 0xff) return null;
+    const marker = bytes[i + 1];
+    if (marker === 0xff) {
+      i += 1;
+      continue;
+    }
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      i += 2;
+      continue;
+    }
+    if (marker === 0xd9 || marker === 0xda) return null;
+    const len = (bytes[i + 2] << 8) | bytes[i + 3];
+    if (len < 2) return null;
+    const isSof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isSof) {
+      if (len < 8 || i + 10 > bytes.length) return null;
+      return {
+        sof: marker,
+        precision: bytes[i + 4],
+        height: (bytes[i + 5] << 8) | bytes[i + 6],
+        width: (bytes[i + 7] << 8) | bytes[i + 8],
+        components: bytes[i + 9],
+      };
+    }
+    i += 2 + len;
+  }
+  return null;
+}
+
+/**
+ * True when the engine can embed this JPEG as is (mirrors `jpeg_info` in
+ * crates/mantis-wasm/src/stamp/image.rs): an 8-bit baseline, extended or
+ * progressive Huffman frame with 1, 3 or 4 components. Anything else (12-bit,
+ * lossless, arithmetic-coded, hierarchical) is decoded to pixels instead.
+ */
+export function jpegPassthrough(bytes: Uint8Array): boolean {
+  const f = readJpegFrame(bytes);
+  return (
+    f !== null &&
+    f.sof >= 0xc0 &&
+    f.sof <= 0xc2 &&
+    f.precision === 8 &&
+    f.width > 0 &&
+    f.height > 0 &&
+    (f.components === 1 || f.components === 3 || f.components === 4)
+  );
+}
+
 /** The mirror (applied first) and clockwise rotation that display an image upright. */
 export function orientationToTransform(o: Orientation): OrientationTransform {
   switch (o) {
@@ -124,8 +186,6 @@ const MAX_DECODE_PIXELS = 100_000_000;
 export class BudgetError extends Error {}
 
 type Canvas2d = {
-  width: number;
-  height: number;
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
   toBlob: () => Promise<Blob>;
 };
@@ -135,7 +195,7 @@ function makeCanvas(width: number, height: number): Canvas2d {
     const c = new OffscreenCanvas(width, height);
     const ctx = c.getContext("2d");
     if (!ctx) throw new Error("Canvas is not available");
-    return { width, height, ctx, toBlob: () => c.convertToBlob({ type: "image/png" }) };
+    return { ctx, toBlob: () => c.convertToBlob({ type: "image/png" }) };
   }
   if (typeof document !== "undefined") {
     const c = document.createElement("canvas");
@@ -144,8 +204,6 @@ function makeCanvas(width: number, height: number): Canvas2d {
     const ctx = c.getContext("2d");
     if (!ctx) throw new Error("Canvas is not available");
     return {
-      width,
-      height,
       ctx,
       toBlob: () =>
         new Promise<Blob>((resolve, reject) =>
@@ -157,11 +215,17 @@ function makeCanvas(width: number, height: number): Canvas2d {
 }
 
 async function loadImage(file: Blob): Promise<{ source: CanvasImageSource; width: number; height: number; close: () => void }> {
+  const canUseImg = typeof document !== "undefined" && typeof Image !== "undefined";
   if (typeof createImageBitmap !== "undefined") {
-    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-    return { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+      return { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
+    } catch (err) {
+      // createImageBitmap refuses some formats an <img> decodes (SVG in particular).
+      if (!canUseImg) throw err;
+    }
   }
-  if (typeof document === "undefined" || typeof Image === "undefined") {
+  if (!canUseImg) {
     throw new Error("Image decoding is not supported in this browser");
   }
   const url = URL.createObjectURL(file);

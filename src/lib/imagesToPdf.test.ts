@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MAX_IMAGES, MAX_IMAGE_PIXELS, MAX_INPUT_BYTES, inputBytesProblem, totalSizeProblem, pixelBudgetProblem, sniffImageType, composeTransform, imagesPdfName, imagesProblem, layoutSummary, turn } from "./imagesToPdf";
+import { MAX_IMAGES, MAX_IMAGE_PIXELS, MAX_INPUT_BYTES, inputBytesProblem, marginProblem, totalSizeProblem, pixelBudgetProblem, sniffImageType, composeTransform, imagesPdfName, imagesProblem, layoutSummary, turn } from "./imagesToPdf";
 
 describe("imagesToPdf helpers", () => {
   it("composes rotation with exif, keeping the flip", () => {
@@ -24,6 +24,13 @@ describe("imagesToPdf helpers", () => {
     expect(layoutSummary(3, "Fit to image", "auto", NaN)).toContain("3 images · 3 pages");
     expect(imagesPdfName(["photo.final.jpg"])).toBe("photo.final.pdf");
     expect(imagesPdfName(["a.png", "b.png"])).toBe("images.pdf");
+  });
+  it("checks the margin against the paper", () => {
+    // 10 mm on A4 is fine; 150 mm leaves nothing of a 210 mm wide page.
+    expect(marginProblem(10, [595.28, 841.89])).toBeNull();
+    expect(marginProblem(150, [595.28, 841.89])).toMatch(/Margin is too large for this page size/);
+    expect(marginProblem(150, "fit")).toBeNull();
+    expect(marginProblem(NaN, [595.28, 841.89])).toBeNull();
   });
   it("checks pixel budgets", () => {
     expect(pixelBudgetProblem("a.png", 10001, 10000)).toMatch(/a\.png is too large/);

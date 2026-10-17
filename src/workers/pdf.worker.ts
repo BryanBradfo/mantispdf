@@ -171,7 +171,9 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       }
 
       case "images-to-pdf": {
-        postSuccess(msg.id, { kind: "merge", bytes: images_to_pdf(msg.images, msg.layout) });
+        const bytes = images_to_pdf(msg.images, msg.layout);
+        // Hand the (possibly very large) PDF over instead of copying it.
+        postSuccess(msg.id, { kind: "merge", bytes }, [bytes.buffer as ArrayBuffer]);
         break;
       }
 

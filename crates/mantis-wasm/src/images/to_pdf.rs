@@ -338,6 +338,19 @@ mod tests {
     }
 
     #[test]
+    fn flip_with_180_and_270() {
+        let l = layout(PageSize::FitImage, 0.0);
+        let doc = run(&[img(rgba(40, 80, 255), 180, true), img(rgba(40, 80, 255), 270, true)], &l);
+        let p = pages(&doc);
+        // Mirror then half turn = upside down: [iw 0 0 -ih x y+ih].
+        close(&media_box(&doc, p[0]), &[0.0, 0.0, 36.0, 60.0]);
+        assert_eq!(content(&doc, p[0]), "q 30 0 0 -60 3 60 cm /Im0 Do Q");
+        // Mirror then three quarters: the anti-transpose, [0 -iw -ih 0 x+ih y+iw].
+        close(&media_box(&doc, p[1]), &[0.0, 0.0, 60.0, 36.0]);
+        assert_eq!(content(&doc, p[1]), "q 0 -30 -60 0 60 33 cm /Im0 Do Q");
+    }
+
+    #[test]
     fn fit_image_page_is_natural_size_plus_margins() {
         let doc = run(&[img(rgba(1200, 800, 255), 0, false)], &layout(PageSize::FitImage, 10.0));
         let p = pages(&doc);

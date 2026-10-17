@@ -5,7 +5,9 @@ import {
   BudgetError,
   decodeToRgba,
   isJpeg,
+  jpegPassthrough,
   orientationToTransform,
+  readJpegFrame,
   readExifOrientation,
   type ImageInputSpec,
   type ImageLayoutSpec,
@@ -18,6 +20,7 @@ import {
   imagesProblem,
   inputBytesProblem,
   layoutSummary,
+  marginProblem,
   pixelBudgetProblem,
   sniffImageType,
   totalSizeProblem,
@@ -88,6 +91,8 @@ const ImageCard = memo(function ImageCard({
             src={url}
             alt={item.file.name}
             draggable={false}
+            decoding="async"
+            loading="lazy"
             className="h-full w-full object-contain transition-transform duration-150"
             style={{ transform: `rotate(${item.rotate}deg)` }}
           />
@@ -140,6 +145,15 @@ export default function ImagesToPdfPage() {
   const [busy, setBusy] = useState(false);
   const [prep, setPrep] = useState<{ progress: number; message: string }>({ progress: 0, message: "" });
   const genRef = useRef(0);
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+  // Leaving the page mid-build supersedes it: no download after unmount.
+  useEffect(
+    () => () => {
+      genRef.current++;
+    },
+    [],
+  );
 
   const queue = useMemo(
     () =>
@@ -164,6 +178,10 @@ export default function ImagesToPdfPage() {
 
   const handleFiles = useCallback(
     (files: File[]) => {
+      if (busyRef.current) {
+        setUploadError("A PDF is being built. Add more images once it is done.");
+        return;
+      }
       queue.enqueue(async () => {
         const images: ImageItem[] = [];
         let skipped = 0;
@@ -206,7 +224,9 @@ export default function ImagesToPdfPage() {
   };
 
   const pagePt = fit ? "fit" : paperToPt(paper, customMm);
-  const problem = imagesProblem(items.length, marginMm) ?? (pagePt === null ? "Enter a custom size between 13 and 5080 mm." : null);
+  const problem =
+    imagesProblem(items.length, marginMm) ??
+    (pagePt === null ? "Enter a custom size between 13 and 5080 mm." : marginProblem(marginMm, pagePt));
   const paperLabel = fit ? "fit to image" : paper === CUSTOM_PAPER ? mmSizeLabel(customMm) : paper;
   const summary = layoutSummary(items.length, paperLabel, fit ? "auto" : orientation, marginMm);
 
@@ -226,22 +246,32 @@ export default function ImagesToPdfPage() {
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
         const name = it.file.name;
+        // 1-based, as numbered on the cards.
+        const label = `Image ${i + 1} (${name})`;
         setPrep({ progress: (i / items.length) * 0.8, message: `Reading image ${i + 1} of ${items.length}…` });
-        const jpeg = isJpeg(new Uint8Array(await it.file.slice(0, 3).arrayBuffer()));
-        if (jpeg) {
+        let passthrough = false;
+        if (isJpeg(new Uint8Array(await it.file.slice(0, 3).arrayBuffer()))) {
           const tooMuch = inputBytesProblem(name, it.file.size, usedBytes);
           if (tooMuch) throw new Error(tooMuch);
           const bytes = new Uint8Array(await it.file.arrayBuffer());
-          const t = composeTransform(orientationToTransform(readExifOrientation(bytes)), it.rotate);
-          usedBytes += bytes.length;
-          specs.push({ kind: "jpeg", bytes, rotate: t.rotate, flipX: t.flipX });
-        } else {
+          const frame = readJpegFrame(bytes);
+          const tooBig = frame && pixelBudgetProblem(label, frame.width, frame.height);
+          if (tooBig) throw new Error(tooBig);
+          // 12-bit, lossless and arithmetic-coded JPEGs are decoded below instead.
+          if (jpegPassthrough(bytes)) {
+            const t = composeTransform(orientationToTransform(readExifOrientation(bytes)), it.rotate);
+            usedBytes += bytes.length;
+            specs.push({ kind: "jpeg", bytes, rotate: t.rotate, flipX: t.flipX });
+            passthrough = true;
+          }
+        }
+        if (!passthrough) {
           let decoded: Awaited<ReturnType<typeof decodeToRgba>>;
           try {
             // Refused before the pixel buffer is allocated.
             decoded = await decodeToRgba(
               it.file,
-              (w, h) => pixelBudgetProblem(name, w, h) ?? inputBytesProblem(name, w * h * 4, usedBytes),
+              (w, h) => pixelBudgetProblem(label, w, h) ?? inputBytesProblem(name, w * h * 4, usedBytes),
             );
           } catch (err) {
             if (err instanceof BudgetError) throw err;

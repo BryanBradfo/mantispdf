@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isJpeg, orientationToTransform, readExifOrientation, type Orientation } from "./imageInput";
+import { isJpeg, jpegPassthrough, orientationToTransform, readExifOrientation, readJpegFrame, type Orientation } from "./imageInput";
 
 function exifJpeg(little: boolean, value: number, tag = 0x0112): Uint8Array {
   const u16 = (v: number) => (little ? [v & 255, v >> 8] : [v >> 8, v & 255]);
@@ -111,5 +111,30 @@ describe("isJpeg", () => {
     expect(isJpeg(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe(true);
     expect(isJpeg(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBe(false);
     expect(isJpeg(new Uint8Array())).toBe(false);
+  });
+});
+
+/** SOI, an optional APP0, a frame header (`sof`, `precision`, `components`) and EOI. */
+function frameJpeg(sof: number, precision: number, w: number, h: number, components = 3): Uint8Array {
+  const frame = [precision, h >> 8, h & 255, w >> 8, w & 255, components];
+  for (let c = 0; c < components; c++) frame.push(c + 1, 0x11, 0);
+  const app0 = [0xff, 0xe0, 0, 7, 0x4a, 0x46, 0x49, 0x46, 0];
+  return new Uint8Array([0xff, 0xd8, ...app0, 0xff, sof, 0, frame.length + 2, ...frame, 0xff, 0xd9]);
+}
+
+describe("readJpegFrame / jpegPassthrough", () => {
+  it("reads the frame header", () => {
+    expect(readJpegFrame(frameJpeg(0xc2, 8, 300, 200))).toEqual({ sof: 0xc2, precision: 8, width: 300, height: 200, components: 3 });
+    expect(readJpegFrame(new Uint8Array([1, 2, 3]))).toBeNull();
+    expect(readJpegFrame(new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0, 2]))).toBeNull();
+  });
+
+  it("passes through only what the engine embeds: 8-bit baseline, extended or progressive Huffman", () => {
+    for (const sof of [0xc0, 0xc1, 0xc2]) expect(jpegPassthrough(frameJpeg(sof, 8, 10, 10))).toBe(true);
+    // 12-bit, lossless, arithmetic-coded and hierarchical frames are decoded instead.
+    expect(jpegPassthrough(frameJpeg(0xc1, 12, 10, 10))).toBe(false);
+    for (const sof of [0xc3, 0xc5, 0xc9, 0xca, 0xcb, 0xcd]) expect(jpegPassthrough(frameJpeg(sof, 8, 10, 10))).toBe(false);
+    expect(jpegPassthrough(frameJpeg(0xc0, 8, 10, 10, 2))).toBe(false);
+    expect(jpegPassthrough(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]))).toBe(false);
   });
 });
