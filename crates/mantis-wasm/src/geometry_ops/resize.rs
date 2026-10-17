@@ -1,7 +1,8 @@
 //! Resize: puts each selected page on a new sheet size. The visible page is
 //! scaled (Fit) or only shrunk when needed (Extend), centered, and drawn
 //! upright: `/Rotate` and the old boxes are dropped and the content is
-//! wrapped in `q <C> cm ... Q`, C mapping user space to the new sheet.
+//! wrapped in `q <C> cm <old visible box> re W n ... Q`, C mapping user space
+//! to the new sheet.
 
 use super::{apply, concat, invalid, invert, number, page_map, selected_numbers};
 use crate::page_content::{BalanceScanner, fmt_num, original_contents, plain_stream};
@@ -103,7 +104,7 @@ fn resize_page(
         _ => None,
     };
 
-    // The original content runs inside `q C cm ... Q`; the `q` it leaves
+    // The original content runs inside `q C cm <clip> ... Q`; the `q` it leaves
     // open are closed before the wrapper's own `Q` (as the stamp engine does).
     let contents = if original.is_empty() {
         None
@@ -111,7 +112,10 @@ fn resize_page(
         // A stray `Q` in the original would pop the wrapper's `q` and drop
         // `C cm`: as many extra `q` after it absorb them.
         let (open, excess) = scanner.balance(doc, &original);
-        let mut head = format!("q {} cm\n", c.map(fmt_num).join(" "));
+        // Clip to the old visible box (user space) so content the old
+        // CropBox hid does not reappear on the larger sheet.
+        let clip = [vb.x0, vb.y0, vb.x1 - vb.x0, vb.y1 - vb.y0].map(fmt_num).join(" ");
+        let mut head = format!("q {} cm\n{clip} re W n\n", c.map(fmt_num).join(" "));
         if excess > 0 {
             head.push_str(&vec!["q"; excess].join(" "));
             head.push('\n');
@@ -392,7 +396,8 @@ mod tests {
     /// The `cm` matrix the wrapper stream of page `n` opens with.
     fn wrap_matrix(doc: &Document, n: usize) -> (String, [f64; 6]) {
         let first = streams(doc, n).remove(0);
-        let body = first.trim().strip_prefix("q ").unwrap().strip_suffix(" cm").unwrap().to_string();
+        let line = first.lines().next().unwrap();
+        let body = line.trim().strip_prefix("q ").unwrap().strip_suffix(" cm").unwrap().to_string();
         let v: Vec<f64> = body.split(' ').map(|t| t.parse().unwrap()).collect();
         (body, [v[0], v[1], v[2], v[3], v[4], v[5]])
     }
@@ -660,7 +665,7 @@ mod tests {
         let pdf = one_page(dictionary! { "MediaBox" => nums(&LETTER) }, "Q Q q");
         let doc = resize(&pdf, &job(A4, ResizeMode::Fit));
         let s = streams(&doc, 0);
-        assert_eq!(s[0], "q 0.972673 0 0 0.972673 0 35.766412 cm\nq q\n");
+        assert_eq!(s[0], "q 0.972673 0 0 0.972673 0 35.766412 cm\n0 0 612 792 re W n\nq q\n");
         // Depth after the original: 2 extra q - 2 Q + 1 q = 1 open, then the wrap.
         assert_eq!(s.last().unwrap().matches('Q').count(), 2);
     }
@@ -753,5 +758,42 @@ mod tests {
         let doc = resize(&pdf, &j);
         let (_, id) = appearance_matrix(&doc, doc.get_dictionary(annot).unwrap());
         assert_eq!(id, ap);
+    }
+
+    /// The clip rectangle `x y w h re W n` of the wrapper stream of page `n`.
+    fn wrap_clip(doc: &Document, n: usize) -> [f64; 4] {
+        let first = streams(doc, n).remove(0);
+        let line = first.lines().nth(1).unwrap();
+        let body = line.strip_suffix(" re W n").unwrap_or_else(|| panic!("no clip: {first:?}"));
+        let v: Vec<f64> = body.split(' ').map(|t| t.parse().unwrap()).collect();
+        [v[0], v[1], v[2], v[3]]
+    }
+
+    fn inside(r: [f64; 4], (x, y): (f64, f64)) -> bool {
+        x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]
+    }
+
+    #[test]
+    fn content_outside_the_old_crop_box_stays_clipped() {
+        // Cropped to [100 100 300 400]: text at (72, 700) was hidden. The new
+        // sheet must clip to the old visible box (in user space, right after
+        // the wrap transform and before the original content).
+        for rotate in [0, 90] {
+            let pdf = one_page(
+                dictionary! {
+                    "MediaBox" => nums(&LETTER), "CropBox" => nums(&[100.0, 100.0, 300.0, 400.0]),
+                    "Rotate" => rotate,
+                },
+                HELLO,
+            );
+            let doc = resize(&pdf, &job(A4, ResizeMode::Fit));
+            let clip = wrap_clip(&doc, 0);
+            assert_eq!(clip, [100.0, 100.0, 200.0, 300.0], "{rotate}");
+            assert!(!inside(clip, (72.0, 700.0)), "{rotate}");
+            assert!(inside(clip, (150.0, 200.0)), "{rotate}");
+            // The clip is in the wrapper stream, ahead of the original content.
+            let s = streams(&doc, 0);
+            assert_eq!(s[1], HELLO);
+        }
     }
 }
