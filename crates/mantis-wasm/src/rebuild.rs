@@ -119,9 +119,36 @@ const NEVER_COPIED: [&[u8]; 10] = [
     b"StructParents",
 ];
 
+/// `/Type` is optional almost everywhere, so structure is also recognized by
+/// shape. A page or page-tree node: one of these keys...
+const PAGE_MARKERS: [&[u8]; 3] = [b"Contents", b"Kids", b"Annots"];
+/// ...together with one of these.
+const PAGE_CONTEXT: [&[u8]; 3] = [b"MediaBox", b"Parent", b"Resources"];
+/// An action: a Name `/S` plus one of the payload keys actions carry. Content
+/// dictionaries with a Name `/S` (transparency groups, soft masks) use none.
+const ACTION_PAYLOADS: [&[u8]; 11] = [
+    b"URI",
+    b"JS",
+    b"D",
+    b"N",
+    b"F",
+    b"Fields",
+    b"T",
+    b"Next",
+    b"AN",
+    b"Annotation",
+    b"TA",
+];
+
 /// Guard against stack exhaustion on adversarial reference chains (WASM has a
 /// small stack). Real resource graphs are a handful of levels deep.
 const MAX_REF_DEPTH: usize = 256;
+
+/// Maximum `[` / `<<` nesting accepted in content. lopdf's content parser
+/// recurses per level and overflows the stack on a few hundred, so deeper
+/// content is rejected (keep-all fallback) before lopdf ever sees it. Real
+/// content nests two or three levels.
+const MAX_CONTENT_NESTING: usize = 64;
 
 /// Resource names a content stream refers to, per resource category.
 #[derive(Default, Debug)]
@@ -238,29 +265,58 @@ fn is_pdf_regular(c: u8) -> bool {
     !is_pdf_whitespace(c) && !is_pdf_delimiter(c)
 }
 
+/// Tracks `[` and `<<` depth; `enter` fails past `MAX_CONTENT_NESTING`.
+#[derive(Default)]
+struct Nesting(usize);
+
+impl Nesting {
+    fn enter(&mut self) -> Option<()> {
+        self.0 += 1;
+        (self.0 <= MAX_CONTENT_NESTING).then_some(())
+    }
+
+    fn leave(&mut self) {
+        self.0 = self.0.saturating_sub(1);
+    }
+}
+
 /// Remove every `BI ... ID <data> EI` from `content`. Returns the remaining
 /// content and, per inline image, the raw dictionary tokens between BI and ID.
 /// A minimal lexer skips strings, names and comments so that `(BI)` or `/BI`
-/// are not mistaken for operators. None when an inline image is unterminated.
-///
-/// The image data end is found as whitespace + `EI` + whitespace/delimiter/EOF.
-/// Binary data that happens to contain that pattern would split early; the
-/// leftover bytes then fail `decode_complete`, which falls back to keeping all
-/// resources, so a misdetection costs trimming, never page content.
+/// are not mistaken for operators. None (caller keeps all resources) when an
+/// inline image is unterminated, when its end is ambiguous (see
+/// `inline_image_extent`), or when `[`/`<<` nest deeper than
+/// `MAX_CONTENT_NESTING`.
 fn split_inline_images(c: &[u8]) -> Option<(Vec<u8>, Vec<Vec<u8>>)> {
     let mut rest = Vec::with_capacity(c.len());
     let mut dicts = Vec::new();
     let mut copied_upto = 0;
+    let mut nesting = Nesting::default();
     let mut i = 0;
     while i < c.len() {
         match c[i] {
+            b'[' => {
+                nesting.enter()?;
+                i += 1;
+            }
+            b']' => {
+                nesting.leave();
+                i += 1;
+            }
+            b'>' if c.get(i + 1) == Some(&b'>') => {
+                nesting.leave();
+                i += 2;
+            }
             b'%' => {
                 while i < c.len() && c[i] != b'\n' && c[i] != b'\r' {
                     i += 1;
                 }
             }
             b'(' => i = skip_literal_string(c, i),
-            b'<' if c.get(i + 1) == Some(&b'<') => i += 2,
+            b'<' if c.get(i + 1) == Some(&b'<') => {
+                nesting.enter()?;
+                i += 2;
+            }
             b'<' => {
                 while i < c.len() && c[i] != b'>' {
                     i += 1;
@@ -278,7 +334,16 @@ fn split_inline_images(c: &[u8]) -> Option<(Vec<u8>, Vec<Vec<u8>>)> {
                 while i < c.len() && is_pdf_regular(c[i]) {
                     i += 1;
                 }
-                if &c[start..i] == b"BI" {
+                // Type3 glyph operators d0/d1 contain a digit, which lopdf's
+                // operator grammar (letters only) splits into `d` + a number
+                // operand that then sticks to the next operator (`0 /Im Do`),
+                // hiding its resource name. Rename them to a letters-only
+                // operator of the same length; the scan ignores it anyway.
+                if matches!(&c[start..i], b"d0" | b"d1") {
+                    rest.extend_from_slice(&c[copied_upto..start]);
+                    rest.extend_from_slice(b"dZ");
+                    copied_upto = i;
+                } else if &c[start..i] == b"BI" {
                     let (dict, end) = inline_image_extent(c, i)?;
                     rest.extend_from_slice(&c[copied_upto..start]);
                     rest.push(b' ');
@@ -296,14 +361,30 @@ fn split_inline_images(c: &[u8]) -> Option<(Vec<u8>, Vec<Vec<u8>>)> {
 
 /// From just after a `BI` token: return the dictionary tokens and the index
 /// just past the closing `EI`.
+///
+/// The data end is the first whitespace + `EI` + whitespace/delimiter/EOF.
+/// Binary data can contain that pattern. Usually the bytes left over then fail
+/// `decode_complete` (keep-all fallback), but a `%` after the false `EI` would
+/// turn the real remainder of the line into a "comment" and hide operators
+/// that use resources. So a `%` anywhere on the rest of that line makes the
+/// end ambiguous and the whole scan gives up (None).
 fn inline_image_extent(c: &[u8], mut i: usize) -> Option<(&[u8], usize)> {
     let dict_start = i;
+    let mut nesting = Nesting::default();
     // Find the ID token, skipping strings and names inside the dictionary.
     let dict_end = loop {
         if i >= c.len() {
             return None;
         }
         match c[i] {
+            b'[' | b'<' => {
+                nesting.enter()?;
+                i += 1;
+            }
+            b']' | b'>' => {
+                nesting.leave();
+                i += 1;
+            }
             b'(' => i = skip_literal_string(c, i),
             b'/' => {
                 i += 1;
@@ -333,7 +414,15 @@ fn inline_image_extent(c: &[u8], mut i: usize) -> Option<(&[u8], usize)> {
             && c.get(j + 2)
                 .is_none_or(|&b| is_pdf_whitespace(b) || is_pdf_delimiter(b))
         {
-            return Some((&c[dict_start..dict_end], j + 2));
+            let end = j + 2;
+            let line_end = c[end..]
+                .iter()
+                .position(|&b| b == b'\n' || b == b'\r')
+                .map_or(c.len(), |p| end + p);
+            if c[end..line_end].contains(&b'%') {
+                return None;
+            }
+            return Some((&c[dict_start..dict_end], end));
         }
         j += 1;
     }
@@ -384,9 +473,34 @@ fn is_blocked(obj: &Object) -> bool {
         Object::Stream(s) => &s.dict,
         _ => return false,
     };
+    let has_any = |keys: &[&[u8]]| keys.iter().any(|k| dict.has(k));
     name_of(dict, b"Type").is_some_and(|t| BLOCKED_TYPES.contains(&t))
         || dict.has(b"FT")
         || name_of(dict, b"Subtype").is_some_and(|s| ANNOT_SUBTYPES.contains(&s))
+        || (has_any(&PAGE_MARKERS) && has_any(&PAGE_CONTEXT))
+        || (name_of(dict, b"S").is_some() && has_any(&ACTION_PAYLOADS))
+        || (matches!(obj, Object::Stream(_)) && is_embedded_file_like(dict))
+}
+
+/// Embedded file streams carry `/Params` (size, dates, checksum) and a MIME
+/// type as `/Subtype` (e.g. `/application#2Fpdf`). Content streams never
+/// have `/Params`, and their subtypes (Image, Form, Type1C, CIDFontType0C,
+/// OpenType, ...) never contain a slash, so font programs stay copyable.
+fn is_embedded_file_like(dict: &Dictionary) -> bool {
+    dict.has(b"Params") || name_of(dict, b"Subtype").is_some_and(|s| s.contains(&b'/'))
+}
+
+/// Whether `key` (holding `value`) is left out of a copied dictionary.
+fn is_never_copied(dict: &Dictionary, key: &[u8], value: &Object) -> bool {
+    if !NEVER_COPIED.contains(&key) {
+        return false;
+    }
+    // On an optional-content membership dictionary /P is the visibility
+    // policy (/AllOn, /AnyOff, ...), not a parent link; dropping it would
+    // change what is shown.
+    let is_policy = key == b"P"
+        && (matches!(value, Object::Name(_)) || name_of(dict, b"Type") == Some(b"OCMD"));
+    !is_policy
 }
 
 /// Content of a stream after its filters, or the raw bytes when lopdf cannot
@@ -412,6 +526,11 @@ pub struct SafeCopier<'s> {
     /// because the entry is inserted before recursing.
     memo: HashMap<(usize, ObjectId), ObjectId>,
     depth: usize,
+    /// Edges replaced by null because `MAX_REF_DEPTH` was reached. `copy` has
+    /// no report to write to, so `copy_page` turns increments into warnings.
+    too_deep: u32,
+    /// Per source: page id -> 1-based page number, built on the first warning.
+    page_numbers: HashMap<usize, HashMap<ObjectId, u32>>,
 }
 
 impl<'s> SafeCopier<'s> {
@@ -422,7 +541,20 @@ impl<'s> SafeCopier<'s> {
             sources,
             memo: HashMap::new(),
             depth: 0,
+            too_deep: 0,
+            page_numbers: HashMap::new(),
         }
+    }
+
+    /// 1-based number of `page_id` in source `src` (0 if not in its page
+    /// tree). The page-tree walk happens once per source, not per warning.
+    fn page_number(&mut self, src: usize, page_id: ObjectId) -> u32 {
+        let doc = self.source(src);
+        let numbers = self
+            .page_numbers
+            .entry(src)
+            .or_insert_with(|| doc.get_pages().into_iter().map(|(n, id)| (id, n)).collect());
+        numbers.get(&page_id).copied().unwrap_or(0)
     }
 
     fn source(&self, src: usize) -> &'s Document {
@@ -450,7 +582,11 @@ impl<'s> SafeCopier<'s> {
         let Ok(target) = self.source(src).get_object(id) else {
             return Object::Null;
         };
-        if is_blocked(target) || self.depth >= MAX_REF_DEPTH {
+        if is_blocked(target) {
+            return Object::Null;
+        }
+        if self.depth >= MAX_REF_DEPTH {
+            self.too_deep += 1;
             return Object::Null;
         }
         let new_id = out.new_object_id();
@@ -465,7 +601,7 @@ impl<'s> SafeCopier<'s> {
     fn copy_dict(&mut self, out: &mut Document, src: usize, dict: &Dictionary) -> Dictionary {
         let mut copy = Dictionary::new();
         for (key, value) in dict.iter() {
-            if !NEVER_COPIED.contains(&key.as_slice()) {
+            if !is_never_copied(dict, key, value) {
                 copy.set(key.clone(), self.copy(out, src, value));
             }
         }
@@ -492,7 +628,7 @@ impl<'s> SafeCopier<'s> {
 
         let mut dict = Dictionary::new();
         for (key, value) in stream.dict.iter() {
-            if NEVER_COPIED.contains(&key.as_slice()) {
+            if is_never_copied(&stream.dict, key, value) {
                 continue;
             }
             let copied = match own_resources {
@@ -553,13 +689,14 @@ impl<'s> SafeCopier<'s> {
     }
 }
 
-/// Add the names used by resource-less forms and tiling patterns (which
-/// inherit the enclosing resources) to `used`, transitively. None when such a
-/// stream's content cannot be scanned.
+/// Add to `used`, transitively, the names drawn by streams that have no
+/// `/Resources` of their own and so use the enclosing ones: Form XObjects and
+/// tiling patterns, Type3 glyph procedures, and soft-mask group forms reached
+/// through an ExtGState. None when one of those streams cannot be scanned.
 fn expand_usage(doc: &Document, res: &Dictionary, used: &UsedNames) -> Option<UsedNames> {
     let lookup = |category: &[u8], name: &[u8]| {
         let entries = deref(doc, res.get(category).ok()?)?.as_dict().ok()?;
-        deref(doc, entries.get(name).ok()?)?.as_stream().ok()
+        deref(doc, entries.get(name).ok()?)
     };
     let mut result = UsedNames::default();
     for (&category, names) in &used.by_category {
@@ -569,7 +706,7 @@ fn expand_usage(doc: &Document, res: &Dictionary, used: &UsedNames) -> Option<Us
     }
     let mut visited: HashSet<(&'static [u8], Vec<u8>)> = HashSet::new();
     loop {
-        let pending: Vec<(&'static [u8], Vec<u8>)> = [XOBJECT, PATTERN]
+        let pending: Vec<(&'static [u8], Vec<u8>)> = [XOBJECT, PATTERN, FONT, EXT_G_STATE]
             .into_iter()
             .flat_map(|cat| {
                 result
@@ -585,14 +722,56 @@ fn expand_usage(doc: &Document, res: &Dictionary, used: &UsedNames) -> Option<Us
             return Some(result);
         }
         for (category, name) in pending {
-            if let Some(stream) = lookup(category, &name)
-                && has_own_content(&stream.dict)
-                && !stream.dict.has(b"Resources")
-            {
-                result.merge(scan_content(&stream_content(stream))?);
+            if let Some(entry) = lookup(category, &name) {
+                for stream in inheriting_streams(doc, category, entry) {
+                    result.merge(scan_content(&stream_content(stream))?);
+                }
             }
             visited.insert((category, name));
         }
+    }
+}
+
+/// The content streams reached from resource `entry` (of `category`) that
+/// draw with the enclosing resources because they lack their own.
+fn inheriting_streams<'a>(
+    doc: &'a Document,
+    category: &[u8],
+    entry: &'a Object,
+) -> Vec<&'a lopdf::Stream> {
+    let resource_less_form = |obj: &'a Object| {
+        obj.as_stream()
+            .ok()
+            .filter(|s| has_own_content(&s.dict) && !s.dict.has(b"Resources"))
+    };
+    match category {
+        XOBJECT | PATTERN => resource_less_form(entry).into_iter().collect(),
+        FONT => {
+            let Ok(font) = entry.as_dict() else {
+                return vec![];
+            };
+            if name_of(font, b"Subtype") != Some(b"Type3") || font.has(b"Resources") {
+                return vec![];
+            }
+            font.get(b"CharProcs")
+                .ok()
+                .and_then(|p| deref(doc, p))
+                .and_then(|p| p.as_dict().ok())
+                .into_iter()
+                .flat_map(|procs| procs.iter())
+                .filter_map(|(_, glyph)| deref(doc, glyph)?.as_stream().ok())
+                .collect()
+        }
+        EXT_G_STATE => entry
+            .as_dict()
+            .ok()
+            .and_then(|gs| deref(doc, gs.get(b"SMask").ok()?))
+            .and_then(|mask| mask.as_dict().ok())
+            .and_then(|mask| deref(doc, mask.get(b"G").ok()?))
+            .and_then(resource_less_form)
+            .into_iter()
+            .collect(),
+        _ => vec![],
     }
 }
 
@@ -665,6 +844,7 @@ pub fn copy_page(
     // exactly as they were. Usage is scanned on the concatenation; a newline
     // between streams keeps tokens at stream boundaries apart (lopdf's
     // get_page_content concatenates without a separator).
+    let too_deep_before = copier.too_deep;
     let content_ids = doc.get_page_contents(page_id);
     let mut joined = Vec::new();
     let mut contents = Vec::with_capacity(content_ids.len());
@@ -686,23 +866,25 @@ pub fn copy_page(
         .as_ref()
         .and_then(|r| deref(doc, r))
         .and_then(|r| r.as_dict().ok());
+    let mut problems = Vec::new();
     if let Some(res) = resources {
         let used = scan_content(&joined);
         if used.is_none() {
-            let number = doc
-                .get_pages()
-                .into_iter()
-                .find(|&(_, id)| id == page_id)
-                .map(|(n, _)| n)
-                .unwrap_or(0);
-            report.warnings.push(format!(
-                "Page {number}: content not decodable, kept all resources"
-            ));
+            problems.push("content not decodable, kept all resources");
         }
         page.set(
             "Resources",
             copier.copy_resources(out, src, res, used.as_ref()),
         );
+    }
+    if copier.too_deep > too_deep_before {
+        problems.push("object graph too deep, some content dropped");
+    }
+    if !problems.is_empty() {
+        let number = copier.page_number(src, page_id);
+        for problem in problems {
+            report.warnings.push(format!("Page {number}: {problem}"));
+        }
     }
 
     Ok(out.add_object(page))
@@ -877,6 +1059,16 @@ mod tests {
         // the scanner must treat that as undecodable, not as "uses nothing".
         assert!(scan_content(b"BT ( unterminated").is_none());
         assert!(scan_content(b"/Im1 Do ] /Im2 Do").is_none());
+    }
+
+    #[test]
+    fn scan_type3_glyph_operators() {
+        for op in ["d0", "d1"] {
+            let operands = if op == "d0" { "1 0" } else { "1 0 0 0 1 1" };
+            let content = format!("{operands} {op} /ImG Do");
+            let used = scan_content(content.as_bytes()).expect("decodable");
+            assert!(used.contains(b"XObject", b"ImG"), "{op}");
+        }
     }
 
     // ---- page copier ----------------------------------------------------
@@ -1060,5 +1252,228 @@ mod tests {
         assert!(contains(&bytes, b"PIXELS"));
         assert!(!contains(&bytes, b"SECRETXMP"));
         assert!(!contains(&bytes, b"SECRETPIECE"));
+    }
+
+    // ---- fix round 1 ----------------------------------------------------
+
+    /// Form XObject with no /Resources of its own (draws from the caller's).
+    fn bare_form(content: &[u8]) -> Stream {
+        let mut f = form(content, dictionary! {});
+        f.dict.remove(b"Resources");
+        f
+    }
+
+    /// One page drawing `/F1` from a font whose stray `/Evil` key points at `evil`.
+    fn page_with_evil_font(src: &mut Src, evil: Object) {
+        let font = src.doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Evil" => evil,
+        });
+        src.add_page(
+            dictionary! { "Font" => dictionary! { "F1" => font } },
+            b"BT /F1 12 Tf ET",
+        );
+    }
+
+    #[test]
+    fn untyped_page_dict_is_blocked() {
+        let mut src = Src::new();
+        let content = src.doc.add_object(Stream::new(
+            dictionary! {},
+            b"(SECRET_UNTYPEDPAGE) Tj".to_vec(),
+        ));
+        let untyped = src.doc.add_object(dictionary! {
+            "MediaBox" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+            "Contents" => content,
+        });
+        page_with_evil_font(&mut src, untyped.into());
+        let (bytes, _, _) = rebuild(src.finish(), &[1]);
+        assert!(contains(&bytes, b"Helvetica"));
+        assert!(!contains(&bytes, b"SECRET_UNTYPEDPAGE"));
+    }
+
+    #[test]
+    fn untyped_action_dicts_are_blocked() {
+        let mut src = Src::new();
+        let js = src.doc.add_object(dictionary! {
+            "S" => "JavaScript", "JS" => Object::string_literal("SECRET_JS"),
+        });
+        let uri = src.doc.add_object(dictionary! {
+            "S" => "URI", "URI" => Object::string_literal("SECRET_URI"),
+        });
+        let gs = src
+            .doc
+            .add_object(dictionary! { "CA" => 0.5, "Foo" => js, "Bar" => uri });
+        src.add_page(
+            dictionary! { "ExtGState" => dictionary! { "GS1" => gs } },
+            b"/GS1 gs",
+        );
+        let (bytes, _, _) = rebuild(src.finish(), &[1]);
+        assert!(contains(&bytes, b"/CA"), "the ExtGState itself is kept");
+        assert!(!contains(&bytes, b"SECRET_JS"));
+        assert!(!contains(&bytes, b"SECRET_URI"));
+    }
+
+    #[test]
+    fn embedded_file_like_stream_is_blocked_font_file_kept() {
+        let mut src = Src::new();
+        let embedded = src.doc.add_object(Stream::new(
+            dictionary! { "Params" => dictionary! { "Size" => 13 } },
+            b"SECRET_EMBED".to_vec(),
+        ));
+        let font_file = src.doc.add_object(Stream::new(
+            dictionary! { "Subtype" => "Type1C" },
+            b"CFFDATA".to_vec(),
+        ));
+        let descriptor = src
+            .doc
+            .add_object(dictionary! { "Type" => "FontDescriptor", "FontFile3" => font_file });
+        page_with_evil_font(&mut src, embedded.into());
+        let font = src
+            .doc
+            .objects
+            .iter()
+            .find(|(_, o)| o.as_dict().is_ok_and(|d| d.get(b"BaseFont").is_ok()))
+            .map(|(id, _)| *id)
+            .unwrap();
+        src.doc
+            .get_object_mut(font)
+            .unwrap()
+            .as_dict_mut()
+            .unwrap()
+            .set("FontDescriptor", descriptor);
+        let (bytes, _, _) = rebuild(src.finish(), &[1]);
+        assert!(
+            contains(&bytes, b"CFFDATA"),
+            "font programs are page content"
+        );
+        assert!(!contains(&bytes, b"SECRET_EMBED"));
+    }
+
+    #[test]
+    fn inline_image_comment_after_ei_falls_back() {
+        // 4 data bytes are " EI%": the first EI is inside the data, the real
+        // one follows. Trusting the first would hide /Im2 behind a comment.
+        let used = scan_content(b"q BI /W 4 /H 1 /CS /DeviceGray /BPC 8 ID  EI% EI /Im2 Do Q");
+        assert!(used.is_none_or(|u| u.contains(b"XObject", b"Im2")));
+    }
+
+    #[test]
+    fn deep_nesting_is_rejected_without_decoding() {
+        let mut content = Vec::new();
+        content.extend(std::iter::repeat_n(b'[', 600));
+        content.extend(std::iter::repeat_n(b']', 600));
+        content.extend_from_slice(b" TJ");
+        assert!(scan_content(&content).is_none());
+        let mut dicts = Vec::new();
+        for _ in 0..600 {
+            dicts.extend_from_slice(b"<< /A ");
+        }
+        dicts.extend(std::iter::repeat_n(b'>', 1200));
+        dicts.extend_from_slice(b" /Tag BDC EMC");
+        assert!(scan_content(&dicts).is_none());
+    }
+
+    #[test]
+    fn type3_glyph_resources_are_kept() {
+        let mut src = Src::new();
+        let img = src.doc.add_object(image(b"SECRET_GLYPHIMG"));
+        let glyph = src
+            .doc
+            .add_object(Stream::new(dictionary! {}, b"0 0 d0 /ImG Do".to_vec()));
+        let t3 = src.doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type3",
+            "FontBBox" => vec![0.into(), 0.into(), 1.into(), 1.into()],
+            "FontMatrix" => vec![1.into(), 0.into(), 0.into(), 1.into(), 0.into(), 0.into()],
+            "CharProcs" => dictionary! { "g0" => glyph },
+            "Encoding" => dictionary! { "Differences" => vec![97.into(), Object::Name(b"g0".to_vec())] },
+            "FirstChar" => 97, "LastChar" => 97, "Widths" => vec![1.into()],
+        });
+        src.add_page(
+            dictionary! { "Font" => dictionary! { "T3" => t3 }, "XObject" => dictionary! { "ImG" => img } },
+            b"BT /T3 12 Tf (a) Tj ET",
+        );
+        let (bytes, _, _) = rebuild(src.finish(), &[1]);
+        assert!(contains(&bytes, b"SECRET_GLYPHIMG"));
+    }
+
+    #[test]
+    fn smask_group_resources_are_kept() {
+        let mut src = Src::new();
+        let img = src.doc.add_object(image(b"SECRET_MASKIMG"));
+        let group = src.doc.add_object(bare_form(b"/ImM Do"));
+        let gs = src.doc.add_object(dictionary! {
+            "SMask" => dictionary! { "S" => "Luminosity", "G" => group },
+        });
+        src.add_page(
+            dictionary! { "ExtGState" => dictionary! { "GS1" => gs }, "XObject" => dictionary! { "ImM" => img } },
+            b"/GS1 gs 0 0 m S",
+        );
+        let (bytes, _, _) = rebuild(src.finish(), &[1]);
+        assert!(contains(&bytes, b"SECRET_MASKIMG"));
+    }
+
+    #[test]
+    fn ocmd_visibility_policy_is_kept() {
+        let mut src = Src::new();
+        let ocg = src
+            .doc
+            .add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal("Layer") });
+        let ocmd = src
+            .doc
+            .add_object(dictionary! { "Type" => "OCMD", "OCGs" => ocg, "P" => "AllOff" });
+        src.add_page(
+            dictionary! { "Properties" => dictionary! { "MC0" => ocmd } },
+            b"/OC /MC0 BDC EMC",
+        );
+        let (_, out, _) = rebuild(src.finish(), &[1]);
+        let copied = out.objects.values().find_map(|o| {
+            o.as_dict().ok().filter(|d| {
+                d.get(b"Type")
+                    .and_then(Object::as_name)
+                    .is_ok_and(|t| t == b"OCMD")
+            })
+        });
+        let p = copied.expect("OCMD copied").get(b"P").expect("/P kept");
+        assert_eq!(p.as_name().unwrap(), b"AllOff");
+    }
+
+    #[test]
+    fn too_deep_object_graph_is_reported() {
+        let mut src = Src::new();
+        let mut inner = src.doc.add_object(bare_form(b"0 0 m S"));
+        for _ in 0..300 {
+            inner = src.doc.add_object(form(
+                b"/F Do",
+                dictionary! { "XObject" => dictionary! { "F" => inner } },
+            ));
+        }
+        src.add_page(
+            dictionary! { "XObject" => dictionary! { "F" => inner } },
+            b"/F Do",
+        );
+        let (_, _, report) = rebuild(src.finish(), &[1]);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.starts_with("Page 1:") && w.contains("too deep")),
+            "{:?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn resource_less_form_keeps_parent_resource() {
+        let mut src = Src::new();
+        let img = src.doc.add_object(image(b"SECRET_PARENTIMG"));
+        let unused = src.doc.add_object(image(b"SECRET_UNUSEDIMG"));
+        let fm = src.doc.add_object(bare_form(b"/ImP Do"));
+        src.add_page(
+            dictionary! { "XObject" => dictionary! { "Fm1" => fm, "ImP" => img, "ImX" => unused } },
+            b"/Fm1 Do",
+        );
+        let (bytes, _, _) = rebuild(src.finish(), &[1]);
+        assert!(contains(&bytes, b"SECRET_PARENTIMG"));
+        assert!(!contains(&bytes, b"SECRET_UNUSEDIMG"));
     }
 }
