@@ -1,0 +1,268 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePdfWorker } from "../hooks/usePdfWorker";
+import { errorMessage } from "../lib/fileHelpers";
+import { downloadAsZip } from "../lib/downloadZip";
+import {
+  PngCache,
+  filterImages,
+  imageFileName,
+  imageKey,
+  imageSize,
+  skippedSummary,
+} from "../lib/extractImages";
+import type { ExtractResultSpec, ExtractedImage } from "../lib/imageInput";
+import DropZone from "../components/common/DropZone";
+import ErrorAlert from "../components/common/ErrorAlert";
+import LiveSummary from "../components/stamp/LiveSummary";
+import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import { baseName, usePdfInput } from "./usePdfInput";
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function ImageCard({
+  img,
+  cache,
+  checked,
+  onToggle,
+}: {
+  img: ExtractedImage;
+  cache: PngCache;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const ref = useRef<HTMLLabelElement>(null);
+  const size = imageSize(img);
+
+  useEffect(() => {
+    let cancelled = false;
+    let jpegUrl: string | null = null;
+    const load = () => {
+      if (img.kind === "jpeg") {
+        jpegUrl = URL.createObjectURL(new Blob([img.bytes], { type: "image/jpeg" }));
+        setUrl(jpegUrl);
+      } else {
+        cache.url(img).then(
+          (u) => { if (!cancelled) setUrl(u); },
+          () => { if (!cancelled) setFailed(true); },
+        );
+      }
+    };
+    const el = ref.current;
+    let observer: IntersectionObserver | null = null;
+    if (el && typeof IntersectionObserver !== "undefined") {
+      observer = new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          observer?.disconnect();
+          load();
+        }
+      });
+      observer.observe(el);
+    } else {
+      load();
+    }
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+      if (jpegUrl) URL.revokeObjectURL(jpegUrl);
+    };
+  }, [img, cache]);
+
+  return (
+    <label
+      ref={ref}
+      className="flex cursor-pointer flex-col overflow-hidden rounded-lg border border-gray-200 bg-white text-xs dark:border-[#333] dark:bg-[#111]"
+    >
+      <div className="flex h-32 items-center justify-center bg-gray-100 dark:bg-[#1a1a1a]">
+        {url ? (
+          <img src={url} alt={imageFileName(img)} className="max-h-full max-w-full object-contain" />
+        ) : (
+          <span className="text-gray-500 dark:text-[#777]">{failed ? "Preview unavailable" : "Loading…"}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 p-2 text-gray-700 dark:text-[#aaa]">
+        <input type="checkbox" checked={checked} onChange={onToggle} aria-label={`Select ${imageFileName(img)}`} />
+        <span>
+          Page {img.page}
+          {size ? ` · ${size.width}×${size.height}` : ""}
+        </span>
+      </div>
+    </label>
+  );
+}
+
+export default function ExtractImagesPage() {
+  const worker = usePdfWorker();
+  const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker);
+  const [result, setResult] = useState<ExtractResultSpec | null>(null);
+  const [skipSmall, setSkipSmall] = useState(true);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [progress, setProgress] = useState<string | null>(null);
+  const cache = useMemo(() => new PngCache(2), [result]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => cache.dispose(), [cache]);
+
+  const visible = useMemo(() => (result ? filterImages(result.images, skipSmall) : []), [result, skipSmall]);
+  const chosen = visible.filter((i) => selected.has(imageKey(i)));
+
+  const start = (f: File) => {
+    setResult(null);
+    void pick(f);
+  };
+
+  const extract = () => {
+    if (!input || busy) return;
+    void run(
+      () => worker.extractImages(input.bytes),
+      (res) => {
+        setResult(res);
+        setSelected(new Set(res.images.map(imageKey)));
+      },
+    );
+  };
+
+  const toggle = (key: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
+  const download = async () => {
+    if (!input || chosen.length === 0 || progress) return;
+    try {
+      if (chosen.length === 1) {
+        const img = chosen[0];
+        const blob =
+          img.kind === "jpeg" ? new Blob([img.bytes], { type: "image/jpeg" }) : await cache.blob(img);
+        saveBlob(blob, imageFileName(img));
+        return;
+      }
+      const parts: { name: string; bytes: Uint8Array }[] = [];
+      for (let i = 0; i < chosen.length; i++) {
+        setProgress(`Preparing ${i + 1} of ${chosen.length}…`);
+        const img = chosen[i];
+        const bytes =
+          img.kind === "jpeg" ? img.bytes : new Uint8Array(await (await cache.blob(img)).arrayBuffer());
+        parts.push({ name: imageFileName(img), bytes });
+      }
+      await downloadAsZip(parts, baseName(input.file), "images");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setProgress(null);
+    }
+  };
+
+  const doReset = () => {
+    setResult(null);
+    setSelected(new Set());
+    reset();
+  };
+
+  const skippedText = result ? skippedSummary(result.skipped) : "";
+
+  return (
+    <ToolShell
+      title="Extract images from PDF | MantisPDF"
+      description="Pull the embedded images out of a PDF as JPEG or PNG files. Free, private, nothing is uploaded."
+      path="/extract-images"
+      heading="Extract images"
+      intro="Save the images embedded in a PDF as JPEG or PNG files."
+    >
+      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+
+      {!input && (
+        <div className="mt-8">
+          <DropZone onFile={start} error={error} />
+        </div>
+      )}
+
+      {input && (
+        <div className={panelClass}>
+          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
+
+          {!result && (
+            <div className="mt-4 flex gap-3">
+              <button type="button" onClick={extract} disabled={busy} className={`flex-1 ${primaryButton}`}>
+                {busy ? "Extracting…" : "Extract images"}
+              </button>
+              <button type="button" onClick={doReset} className={secondaryButton}>
+                Choose another file
+              </button>
+            </div>
+          )}
+
+          {result && (
+            <>
+              <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-700 dark:text-[#aaa]">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={skipSmall} onChange={(e) => setSkipSmall(e.target.checked)} />
+                  Skip images smaller than 32x32
+                </label>
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() => setSelected(new Set(result.images.map(imageKey)))}
+                >
+                  Select all
+                </button>
+                <button type="button" className="underline" onClick={() => setSelected(new Set())}>
+                  Select none
+                </button>
+              </div>
+
+              {visible.length === 0 ? (
+                <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">No images to show in this PDF.</p>
+              ) : (
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {visible.map((img) => (
+                    <ImageCard
+                      key={imageKey(img)}
+                      img={img}
+                      cache={cache}
+                      checked={selected.has(imageKey(img))}
+                      onToggle={() => toggle(imageKey(img))}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {skippedText && <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">{skippedText}</p>}
+              <LiveSummary
+                text={`${chosen.length} of ${visible.length} selected`}
+                className="mt-2 text-sm text-gray-600 dark:text-[#888]"
+              />
+              <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => void download()}
+                  disabled={chosen.length === 0 || progress !== null}
+                  className={`flex-1 ${primaryButton}`}
+                >
+                  {progress ?? (chosen.length > 1 ? "Download ZIP" : "Download")}
+                </button>
+                <button type="button" onClick={doReset} className={secondaryButton}>
+                  Choose another file
+                </button>
+              </div>
+            </>
+          )}
+
+          {!result && <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />}
+        </div>
+      )}
+    </ToolShell>
+  );
+}
