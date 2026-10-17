@@ -4,6 +4,7 @@ mod doc_tools;
 mod edit;
 mod encrypt;
 mod geometry_ops;
+mod images;
 #[cfg(test)]
 mod leak_probes;
 mod merge;
