@@ -10,10 +10,7 @@ pub(crate) fn load(bytes: &[u8]) -> Result<Document, String> {
 }
 
 fn save(doc: &mut Document) -> Result<Vec<u8>, String> {
-    let mut buf = Vec::new();
-    doc.save_to(&mut buf)
-        .map_err(|e| format!("Failed to save PDF: {e}"))?;
-    Ok(buf)
+    crate::pdf_util::save_pdf(doc)
 }
 
 /// Rebuild every page from the allowlist: no metadata, scripts, attachments,

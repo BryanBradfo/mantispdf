@@ -37,10 +37,7 @@ pub fn merge_documents(pdfs: &[&[u8]]) -> Result<Vec<u8>, String> {
     // and intermediate /Pages nodes are now unreachable from base's trailer.
     base.prune_objects();
 
-    let mut buf = Vec::new();
-    base.save_to(&mut buf)
-        .map_err(|e| format!("Failed to save merged PDF: {e}"))?;
-    Ok(buf)
+    crate::pdf_util::save_pdf(&mut base)
 }
 
 fn find_pages_id(doc: &Document) -> Result<ObjectId, String> {

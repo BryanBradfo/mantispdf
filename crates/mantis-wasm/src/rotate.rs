@@ -29,10 +29,7 @@ pub(crate) fn rotate_pdf_impl(pdf_bytes: &[u8], rotations: &[i32]) -> Result<Vec
         }
     }
 
-    let mut buf = Vec::new();
-    doc.save_to(&mut buf)
-        .map_err(|e| e.to_string())?;
-    Ok(buf)
+    crate::pdf_util::save_pdf(&mut doc)
 }
 
 #[cfg(test)]

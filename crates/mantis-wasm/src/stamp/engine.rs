@@ -327,8 +327,7 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
         page.set("Contents", contents);
     }
 
-    let mut bytes = Vec::new();
-    doc.save_to(&mut bytes).map_err(|e| format!("Failed to write PDF: {e}"))?;
+    let bytes = crate::pdf_util::save_pdf(&mut doc)?;
     Ok(StampResult { bytes, stamped_pages: plans.len() as u32 })
 }
 

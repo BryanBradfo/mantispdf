@@ -59,10 +59,7 @@ pub(crate) fn reorder_inner(pdf_bytes: &[u8], new_order: &[u32]) -> Result<Vec<u
     // content/resource objects.
     doc.prune_objects();
 
-    let mut buf = Vec::new();
-    doc.save_to(&mut buf)
-        .map_err(|e| format!("Failed to save edited PDF: {e}"))?;
-    Ok(buf)
+    crate::pdf_util::save_pdf(&mut doc)
 }
 
 fn find_pages_id(doc: &Document) -> Result<ObjectId, String> {

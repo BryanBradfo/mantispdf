@@ -250,9 +250,7 @@ pub(crate) fn compress_pdf_impl(pdf_bytes: &[u8], quality: u8) -> Result<Vec<u8>
     // Pass 2: FlateDecode-compress remaining uncompressed content streams
     doc.compress();
 
-    let mut buf = Vec::new();
-    doc.save_to(&mut buf).map_err(|e| e.to_string())?;
-    Ok(buf)
+    crate::pdf_util::save_pdf(&mut doc)
 }
 
 #[cfg(test)]

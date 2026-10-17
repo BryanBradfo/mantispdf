@@ -59,9 +59,7 @@ pub(crate) fn add_watermark_impl(
         patch_resources(&mut doc, page_id, font_id, gs_id);
     }
 
-    let mut buf = Vec::new();
-    doc.save_to(&mut buf).map_err(|e| e.to_string())?;
-    Ok(buf)
+    crate::pdf_util::save_pdf(&mut doc)
 }
 
 fn page_rotation(doc: &Document, page_id: ObjectId) -> i32 {

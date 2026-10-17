@@ -68,9 +68,7 @@ pub fn apply_plan(sources: &[&[u8]], plan: &[PlanEntry]) -> Result<Vec<u8>, Stri
         .collect::<Result<_, String>>()?;
 
     let (mut out, _report) = rebuild_document(&docs, &pages, &PAGE_TOOLS)?;
-    let mut buf = Vec::new();
-    out.save_to(&mut buf).map_err(|e| format!("Failed to save PDF: {e}"))?;
-    Ok(buf)
+    crate::pdf_util::save_pdf(&mut out)
 }
 
 #[cfg(test)]

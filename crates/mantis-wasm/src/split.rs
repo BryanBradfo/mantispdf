@@ -29,9 +29,7 @@ pub fn extract_range_from_doc(doc: &Document, total_pages: u32, start: u32, end:
         })
         .collect::<Result<_, String>>()?;
     let (mut part, _report) = rebuild_document(std::slice::from_ref(doc), &pages, &PAGE_TOOLS)?;
-    let mut buf = Vec::new();
-    part.save_to(&mut buf).map_err(|e| format!("Failed to save PDF: {e}"))?;
-    Ok(buf)
+    crate::pdf_util::save_pdf(&mut part)
 }
 
 #[cfg(test)]

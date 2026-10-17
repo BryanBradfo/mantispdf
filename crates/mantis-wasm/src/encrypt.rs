@@ -25,6 +25,10 @@ pub(crate) fn encrypt_pdf_impl(
     owner_password: &str,
 ) -> Result<Vec<u8>, String> {
     let mut doc = crate::pdf_util::load_pdf(pdf_bytes)?;
+    // Renumber before encrypting: the keys of encrypted strings and streams
+    // derive from object numbers, so `save_pdf` must find nothing left to
+    // renumber afterwards.
+    crate::pdf_util::prepare_for_save(&mut doc);
 
     // AES-256 (PDF 2.0 security handler V5/R6) instead of the legacy, broken
     // RC4. Generate a random 32-byte file encryption key.
@@ -57,10 +61,7 @@ pub(crate) fn encrypt_pdf_impl(
     // length in BYTES here, so /Length 32 for AES-256.
     set_crypt_filter_length(&mut doc)?;
 
-    let mut buf = Vec::new();
-    doc.save_to(&mut buf)
-        .map_err(|e| e.to_string())?;
-    Ok(buf)
+    crate::pdf_util::save_pdf(&mut doc)
 }
 
 /// Add `/Length 32` to the `/StdCF` crypt filter written by lopdf.
