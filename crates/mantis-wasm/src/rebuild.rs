@@ -126,8 +126,11 @@ const PAGE_MARKERS: [&[u8]; 3] = [b"Contents", b"Kids", b"Annots"];
 const PAGE_CONTEXT: [&[u8]; 3] = [b"MediaBox", b"Parent", b"Resources"];
 /// An action: a Name `/S` plus one of the payload keys actions carry. Content
 /// dictionaries with a Name `/S` (transparency groups, soft masks) use none.
-const ACTION_PAYLOADS: [&[u8]; 11] = [
+const ACTION_PAYLOADS: [&[u8]; 14] = [
     b"URI",
+    b"Sound",
+    b"State",
+    b"Trans",
     b"JS",
     b"D",
     b"N",
@@ -138,6 +141,32 @@ const ACTION_PAYLOADS: [&[u8]; 11] = [
     b"AN",
     b"Annotation",
     b"TA",
+];
+
+/// ISO 32000 action types. A dictionary whose Name `/S` is one of these is an
+/// action even without any payload key. Content dictionaries use other `/S`
+/// names (`/Transparency` groups, `/Luminosity` and `/Alpha` soft masks).
+const ACTION_TYPES: [&[u8]; 20] = [
+    b"GoTo",
+    b"GoToR",
+    b"GoToE",
+    b"GoToDp",
+    b"Launch",
+    b"Thread",
+    b"URI",
+    b"Sound",
+    b"Movie",
+    b"Hide",
+    b"Named",
+    b"SubmitForm",
+    b"ResetForm",
+    b"ImportData",
+    b"JavaScript",
+    b"SetOCGState",
+    b"Rendition",
+    b"Trans",
+    b"GoTo3DView",
+    b"RichMediaExecute",
 ];
 
 /// Guard against stack exhaustion on adversarial reference chains (WASM has a
@@ -478,6 +507,7 @@ fn is_blocked(obj: &Object) -> bool {
         || dict.has(b"FT")
         || name_of(dict, b"Subtype").is_some_and(|s| ANNOT_SUBTYPES.contains(&s))
         || (has_any(&PAGE_MARKERS) && has_any(&PAGE_CONTEXT))
+        || name_of(dict, b"S").is_some_and(|s| ACTION_TYPES.contains(&s))
         || (name_of(dict, b"S").is_some() && has_any(&ACTION_PAYLOADS))
         || (matches!(obj, Object::Stream(_)) && is_embedded_file_like(dict))
 }
@@ -1311,6 +1341,46 @@ mod tests {
         assert!(contains(&bytes, b"/CA"), "the ExtGState itself is kept");
         assert!(!contains(&bytes, b"SECRET_JS"));
         assert!(!contains(&bytes, b"SECRET_URI"));
+    }
+
+    #[test]
+    fn action_dicts_blocked_by_s_type_name() {
+        let mut src = Src::new();
+        let sound = src.doc.add_object(Stream::new(
+            dictionary! { "R" => 8000 },
+            b"SECRET_SOUND".to_vec(),
+        ));
+        let action = src
+            .doc
+            .add_object(dictionary! { "S" => "Sound", "Sound" => sound });
+        let named = src.doc.add_object(
+            dictionary! { "S" => "Named", "Foo" => Object::string_literal("SECRET_NAMED") },
+        );
+        let gs = src.doc.add_object(dictionary! {
+            "CA" => 0.5, "Foo" => action, "Bar" => named,
+            "SMask" => dictionary! { "S" => "Alpha", "BC" => vec![0.into()] },
+        });
+        let page = src.add_page(
+            dictionary! { "ExtGState" => dictionary! { "GS1" => gs } },
+            b"/GS1 gs",
+        );
+        src.doc
+            .get_object_mut(page)
+            .unwrap()
+            .as_dict_mut()
+            .unwrap()
+            .set(
+                "Group",
+                dictionary! { "S" => "Transparency", "CS" => "DeviceRGB" },
+            );
+        let (bytes, _, _) = rebuild(src.finish(), &[1]);
+        assert!(!contains(&bytes, b"SECRET_SOUND"));
+        assert!(!contains(&bytes, b"SECRET_NAMED"));
+        assert!(
+            contains(&bytes, b"/Transparency"),
+            "transparency group kept"
+        );
+        assert!(contains(&bytes, b"/Alpha"), "soft mask kept");
     }
 
     #[test]
