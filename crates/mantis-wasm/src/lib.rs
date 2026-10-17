@@ -115,7 +115,8 @@ pub fn sanitize_pdf(pdf_bytes: &[u8], keep_comments: bool) -> Result<SanitizeOut
     })
 }
 
-/// Result of `stamp_pdf`: the stamped bytes and how many pages got text.
+/// Result of `stamp_pdf`: the stamped bytes and how many pages received any
+/// stamp (text or image).
 #[wasm_bindgen]
 pub struct StampOutput {
     bytes: Vec<u8>,

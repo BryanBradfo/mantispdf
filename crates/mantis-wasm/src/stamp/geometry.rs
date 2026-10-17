@@ -72,6 +72,8 @@ impl VisibleBox {
         }
     }
 
+    /// Test helper: the user-space point of a visible-space point.
+    #[cfg(test)]
     pub fn to_user(&self, vx: f64, vy: f64) -> (f64, f64) {
         let [a, b, c, d, e, f] = self.matrix();
         (a * vx + c * vy + e, b * vx + d * vy + f)
