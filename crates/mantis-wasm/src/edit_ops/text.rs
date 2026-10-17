@@ -202,6 +202,8 @@ mod tests {
 
     /// Minimal JSON reader for the shared test vectors (no serde in the crate).
     mod json {
+        // `Bool` is parsed for completeness; no vector reads it.
+        #[allow(dead_code)]
         #[derive(Debug, Clone)]
         pub enum Value {
             Null,

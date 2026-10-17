@@ -45,6 +45,7 @@ declare module "mantis-wasm" {
     free(): void;
   }
   export function stamp_pdf(pdf_bytes: Uint8Array, job: object): StampOutput;
+  export function edit_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
   export function crop_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
   export function resize_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
   export class NupOutput {

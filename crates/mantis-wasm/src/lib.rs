@@ -2,8 +2,6 @@ mod annotations;
 mod compress;
 mod doc_tools;
 mod edit;
-// Bindings land in a later task.
-#[allow(dead_code)]
 mod edit_ops;
 mod encrypt;
 mod geometry_ops;
@@ -147,6 +145,15 @@ pub fn stamp_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<StampOutput, JsValue>
     let job = stamp::job::validate_job(raw).map_err(|e| JsValue::from_str(&e))?;
     let r = stamp::engine::apply_stamps(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))?;
     Ok(StampOutput { bytes: r.bytes, stamped_pages: r.stamped_pages })
+}
+
+/// Bakes the items of an edit job (text, images, shapes, lines, highlights,
+/// freehand, whiteout) into the pages. See `src/lib/editor/toJob.ts` for the shape.
+#[wasm_bindgen]
+pub fn edit_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<Vec<u8>, JsValue> {
+    let raw = edit_ops::binding::read_job(&job).map_err(|e| JsValue::from_str(&e))?;
+    let job = edit_ops::job::validate_job(raw).map_err(|e| JsValue::from_str(&e))?;
+    edit_ops::edit_pdf(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))
 }
 
 #[wasm_bindgen]

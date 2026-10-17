@@ -3,6 +3,7 @@ import type { FromWorker, SuccessPayload, ToWorker } from "../lib/workerProtocol
 import type { PdfPart } from "../types/pdf";
 import { readFileAsArrayBuffer } from "../lib/fileHelpers";
 import type { ExtractResultSpec, ImageInputSpec, ImageLayoutSpec } from "../lib/imageInput";
+import { editJobTransferables, type EditJobSpec } from "../lib/editor/toJob";
 import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob";
 import type { StampJobSpec } from "../lib/stampJob";
 import { PdfWorkerClient } from "../lib/workerClient";
@@ -291,6 +292,13 @@ export function usePdfWorker() {
     [run],
   );
 
+  const editPdf = useCallback(
+    (pdfBytes: Uint8Array, job: EditJobSpec): Promise<Uint8Array> =>
+      // The input PDF stays with the caller; the job's image buffers are built per job and handed over.
+      run(null, (id) => ({ type: "edit-pdf", id, pdfBytes, job }), asBytes, { transfer: editJobTransferables(job) }),
+    [run],
+  );
+
   const cropPdf = useCallback(
     (pdfBytes: Uint8Array, job: CropJobSpec): Promise<Uint8Array> =>
       run(null, (id) => ({ type: "crop", id, pdfBytes, job }), asBytes),
@@ -384,6 +392,7 @@ export function usePdfWorker() {
       encryptPdf,
       sanitizePdf,
       stampPdf,
+      editPdf,
       cropPdf,
       resizePdf,
       nupPdf,
@@ -407,6 +416,7 @@ export function usePdfWorker() {
       encryptPdf,
       sanitizePdf,
       stampPdf,
+      editPdf,
       cropPdf,
       resizePdf,
       nupPdf,

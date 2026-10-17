@@ -3,7 +3,9 @@
 //! of what is there. Items are positioned in visible page space (see
 //! `stamp::geometry`) and painted in job order.
 
+pub(crate) mod binding;
 pub(crate) mod draw;
+pub(crate) mod job;
 pub(crate) mod text;
 
 use crate::page_content::fmt_num;
@@ -18,6 +20,10 @@ use std::collections::HashMap;
 
 /// Items per job.
 pub(crate) const MAX_ITEMS: usize = 2000;
+/// Image items per job.
+pub(crate) const MAX_IMAGES: usize = 200;
+/// Bytes of image data (JPEG bytes plus RGBA pixels) all images of a job may carry together.
+pub(crate) const MAX_IMAGE_BYTES: u64 = 512 * 1024 * 1024;
 /// Freehand points all strokes of a job may carry together.
 pub(crate) const MAX_FREEHAND_POINTS: usize = 20_000;
 /// Characters in one text box.
@@ -110,7 +116,7 @@ struct PagePlan {
     items: Vec<Planned>,
 }
 
-fn invalid(field: &str) -> String {
+pub(crate) fn invalid(field: &str) -> String {
     format!("Invalid edit settings: {field}")
 }
 
@@ -209,6 +215,8 @@ fn plan_item(item: &EditItem, built: &mut Vec<Option<BuiltImage>>) -> Result<Opt
         EditItem::Ellipse { rect, stroke, width, fill, opacity, .. } => {
             path(draw::ellipse_ops(*rect, *stroke, *width, *fill), *opacity, Blend::Normal)
         }
+        // A zero-length line draws nothing (its round caps are not a mark worth a rewrite).
+        EditItem::Line { from, to, .. } if from == to => None,
         EditItem::Line { from, to, color, width, opacity, arrow_start, arrow_end, .. } => path(
             Some(draw::line_ops(*from, *to, *color, *width, *arrow_start, *arrow_end)),
             *opacity,
@@ -222,6 +230,11 @@ fn plan_item(item: &EditItem, built: &mut Vec<Option<BuiltImage>>) -> Result<Opt
         }
         EditItem::Whiteout { rect, .. } => Some(Planned::Opaque { body: draw::fill_rect_ops(*rect, [1.0, 1.0, 1.0]) }),
     })
+}
+
+/// Per-job image budget: item count and total image bytes.
+fn images_ok(count: usize, bytes: u64) -> bool {
+    count <= MAX_IMAGES && bytes <= MAX_IMAGE_BYTES
 }
 
 fn validate(job: &EditJob, total: usize) -> Result<(), String> {
@@ -238,9 +251,11 @@ fn validate(job: &EditJob, total: usize) -> Result<(), String> {
         Paint::Rgb(c) => color_ok(c),
     };
     let width_ok = |w: f64| (0.0..=MAX_STROKE_WIDTH).contains(&w);
+    let stroke_ok = |w: f64| w > 0.0 && w <= MAX_STROKE_WIDTH;
 
     let mut points = 0usize;
     let mut pixels = 0u64;
+    let (mut images, mut image_bytes) = (0usize, 0u64);
     for item in &job.items {
         check((1..=total).contains(&(item.page() as usize)), "page")?;
         match item {
@@ -256,9 +271,15 @@ fn validate(job: &EditJob, total: usize) -> Result<(), String> {
                 check(rect_ok(rect), "rect")?;
                 check(unit(*opacity), "opacity")?;
                 check(matches!(rotation, 0 | 90 | 180 | 270), "rotation")?;
-                if let ImageData::Rgba { width, height, .. } = image {
-                    pixels += u64::from(*width) * u64::from(*height);
+                images += 1;
+                match image {
+                    ImageData::Rgba { width, height, pixels: data } => {
+                        pixels += u64::from(*width) * u64::from(*height);
+                        image_bytes += data.len() as u64;
+                    }
+                    ImageData::Jpeg(bytes) => image_bytes += bytes.len() as u64,
                 }
+                check(images_ok(images, image_bytes), "images")?;
             }
             EditItem::Rect { rect, stroke, width, fill, opacity, .. }
             | EditItem::Ellipse { rect, stroke, width, fill, opacity, .. } => {
@@ -270,7 +291,7 @@ fn validate(job: &EditJob, total: usize) -> Result<(), String> {
             EditItem::Line { from, to, color, width, opacity, .. } => {
                 check(bounded(from), "from")?;
                 check(bounded(to), "to")?;
-                check(width_ok(*width), "width")?;
+                check(stroke_ok(*width), "width")?;
                 check(color_ok(color), "color")?;
                 check(unit(*opacity), "opacity")?;
             }
@@ -283,7 +304,7 @@ fn validate(job: &EditJob, total: usize) -> Result<(), String> {
                 points += pts.len();
                 check(!pts.is_empty() && points <= MAX_FREEHAND_POINTS, "points")?;
                 check(pts.iter().all(|p| bounded(p)), "points")?;
-                check(width_ok(*width), "width")?;
+                check(stroke_ok(*width), "width")?;
                 check(color_ok(color), "color")?;
                 check(unit(*opacity), "opacity")?;
             }
@@ -697,6 +718,37 @@ mod tests {
         assert_eq!(err(vec![image]), e("rotation"));
         let far = EditItem::Freehand { page: 1, points: vec![[0.0, -1.5e6]], color: [0.0; 3], width: 1.0, opacity: 1.0 };
         assert_eq!(err(vec![far]), e("points"));
+    }
+
+    #[test]
+    fn line_and_freehand_need_a_positive_width() {
+        let e = |f: &str| format!("Invalid edit settings: {f}");
+        let line = |width: f64| EditItem::Line { page: 1, from: [0.0, 0.0], to: [5.0, 0.0], color: [0.0; 3], width, opacity: 1.0, arrow_start: false, arrow_end: false };
+        let free = |width: f64| EditItem::Freehand { page: 1, points: vec![[1.0, 1.0]], color: [0.0; 3], width, opacity: 1.0 };
+        assert_eq!(err(vec![line(0.0)]), e("width"));
+        assert_eq!(err(vec![free(0.0)]), e("width"));
+        assert_eq!(err(vec![line(100.5)]), e("width"));
+        assert!(run(&simple_pdf(1), vec![line(100.0), free(0.5)]).is_ok());
+    }
+
+    #[test]
+    fn zero_length_line_is_a_noop() {
+        let line = |to: [f64; 2]| EditItem::Line { page: 1, from: [3.0, 4.0], to, color: [0.0; 3], width: 2.0, opacity: 1.0, arrow_start: true, arrow_end: true };
+        let doc = run(&simple_pdf(1), vec![line([3.0, 4.0])]).unwrap();
+        assert_eq!(streams(&doc, page_ids(&doc)[0]).len(), 1);
+        let doc = run(&simple_pdf(1), vec![line([30.0, 4.0])]).unwrap();
+        assert_eq!(streams(&doc, page_ids(&doc)[0]).len(), 3);
+    }
+
+    #[test]
+    fn image_budget() {
+        let e = |f: &str| format!("Invalid edit settings: {f}");
+        let pixel = || EditItem::Image { page: 1, rect: [0.0, 0.0, 1.0, 1.0], image: ImageData::Rgba { width: 1, height: 1, pixels: vec![0; 4] }, opacity: 1.0, rotation: 0 };
+        assert_eq!(err(vec![pixel(); MAX_IMAGES + 1]), e("images"));
+        assert!(run(&simple_pdf(1), vec![pixel(); MAX_IMAGES]).is_ok());
+        assert!(images_ok(MAX_IMAGES, MAX_IMAGE_BYTES));
+        assert!(!images_ok(MAX_IMAGES, MAX_IMAGE_BYTES + 1));
+        assert!(!images_ok(MAX_IMAGES + 1, 0));
     }
 
     #[test]

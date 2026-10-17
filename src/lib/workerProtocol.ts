@@ -1,5 +1,6 @@
 import type { PdfPart } from "../types/pdf";
 import type { ImageInputSpec, ImageLayoutSpec, ExtractResultSpec } from "./imageInput";
+import type { EditJobSpec } from "./editor/toJob";
 import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "./geometryJob";
 import type { StampJobSpec } from "./stampJob";
 
@@ -31,6 +32,7 @@ export type ToWorker =
   | { type: "encrypt"; id: ReqId; pdfBytes: ArrayBuffer; userPassword: string; ownerPassword: string }
   | { type: "sanitize"; id: ReqId; pdfBytes: Uint8Array; keepComments: boolean }
   | { type: "stamp"; id: ReqId; pdfBytes: Uint8Array; job: StampJobSpec }
+  | { type: "edit-pdf"; id: ReqId; pdfBytes: Uint8Array; job: EditJobSpec }
   | { type: "crop"; id: ReqId; pdfBytes: Uint8Array; job: CropJobSpec }
   | { type: "resize"; id: ReqId; pdfBytes: Uint8Array; job: ResizeJobSpec }
   | { type: "nup"; id: ReqId; pdfBytes: Uint8Array; job: NupJobSpec }
