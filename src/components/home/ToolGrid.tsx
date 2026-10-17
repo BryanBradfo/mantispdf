@@ -124,7 +124,7 @@ const tools = [
     title: "Sign PDF",
     description: "Draw, type or upload your signature and place it on any page.",
     href: "/sign",
-    icon: "✍️",
+    icon: "🖋️",
     available: true,
   },
 ];
