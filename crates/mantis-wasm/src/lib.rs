@@ -141,6 +141,12 @@ pub fn stamp_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<StampOutput, JsValue>
     Ok(StampOutput { bytes: r.bytes, stamped_pages: r.stamped_pages })
 }
 
+/// Visible `[w, h]` of every page, flattened: `[w1, h1, w2, h2, ...]`.
+#[wasm_bindgen]
+pub fn visible_page_sizes(pdf_bytes: &[u8]) -> Result<Vec<f64>, JsValue> {
+    stamp::engine::visible_page_sizes(pdf_bytes).map_err(|e| JsValue::from_str(&e))
+}
+
 /// The wire form of a report; indexes are stable, new counters are appended.
 fn report_counts(r: &rebuild::RebuildReport) -> Vec<u32> {
     vec![

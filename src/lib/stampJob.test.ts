@@ -23,4 +23,21 @@ describe("toWasmJob", () => {
     const bates = { prefix: "A", suffix: "", start: 1, digits: 6 };
     expect(toWasmJob({ ...base, bates }).bates).toEqual(bates);
   });
+  it("passes absolute text placement through", () => {
+    const text = {
+      template: "Signed on 2026-10-17",
+      font: "Helvetica" as const,
+      size: 9,
+      color: [0, 0, 0] as [number, number, number],
+      opacity: 1,
+      anchor: "bottom-left" as const,
+      marginX: 0,
+      marginY: 0,
+      at: [100, 50] as [number, number],
+      page: 2,
+    };
+    const out = toWasmJob({ ...base, texts: [text] });
+    expect(out.texts[0].at).toEqual([100, 50]);
+    expect(out.texts[0].page).toBe(2);
+  });
 });

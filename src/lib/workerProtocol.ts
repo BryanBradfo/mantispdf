@@ -29,6 +29,7 @@ export type ToWorker =
   | { type: "encrypt"; id: ReqId; pdfBytes: ArrayBuffer; userPassword: string; ownerPassword: string }
   | { type: "sanitize"; id: ReqId; pdfBytes: Uint8Array; keepComments: boolean }
   | { type: "stamp"; id: ReqId; pdfBytes: Uint8Array; job: StampJobSpec }
+  | { type: "page-sizes"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "remove-metadata"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "read-metadata"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "set-metadata"; id: ReqId; pdfBytes: Uint8Array; title: string; author: string; subject: string; keywords: string }
@@ -43,6 +44,7 @@ export type SuccessPayload =
   | { kind: "buffer"; result: ArrayBuffer }
   | { kind: "sanitized"; bytes: Uint8Array; report: number[] }
   | { kind: "stamped"; bytes: Uint8Array; stampedPages: number }
+  | { kind: "sizes"; sizes: [number, number][] }
   | { kind: "metadata"; values: string[] };
 
 // Worker → Main messages. `init-done`/`init-error` are the one-time handshake;

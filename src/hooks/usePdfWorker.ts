@@ -75,6 +75,11 @@ const asStamped = (p: SuccessPayload): { bytes: Uint8Array; stampedPages: number
   return { bytes: p.bytes, stampedPages: p.stampedPages };
 };
 
+const asSizes = (p: SuccessPayload): [number, number][] => {
+  if (p.kind !== "sizes") throw new Error("Unexpected worker payload");
+  return p.sizes;
+};
+
 const asSanitized = (p: SuccessPayload): { bytes: Uint8Array; report: SanitizeReport } => {
   if (p.kind !== "sanitized") throw new Error("Unexpected worker payload");
   const [
@@ -301,6 +306,13 @@ export function usePdfWorker() {
     [run],
   );
 
+  /** Visible [width, height] in points of every page (CropBox, /Rotate applied). */
+  const pageSizes = useCallback(
+    (pdfBytes: Uint8Array): Promise<[number, number][]> =>
+      run(null, (id) => ({ type: "page-sizes", id, pdfBytes }), asSizes),
+    [run],
+  );
+
   const unlockPdf = useCallback(
     (pdfBytes: Uint8Array, password: string): Promise<Uint8Array> =>
       run(null, (id) => ({ type: "unlock", id, pdfBytes, password }), asBytes),
@@ -320,6 +332,7 @@ export function usePdfWorker() {
       encryptPdf,
       sanitizePdf,
       stampPdf,
+      pageSizes,
       removeMetadata,
       readMetadata,
       setMetadata,
@@ -337,6 +350,7 @@ export function usePdfWorker() {
       encryptPdf,
       sanitizePdf,
       stampPdf,
+      pageSizes,
       removeMetadata,
       readMetadata,
       setMetadata,

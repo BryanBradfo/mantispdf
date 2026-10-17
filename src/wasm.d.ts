@@ -45,6 +45,8 @@ declare module "mantis-wasm" {
     free(): void;
   }
   export function stamp_pdf(pdf_bytes: Uint8Array, job: object): StampOutput;
+  /** Visible [w, h] of every page in points, flattened: [w1, h1, w2, h2, ...]. */
+  export function visible_page_sizes(pdf_bytes: Uint8Array): Float64Array;
   export function remove_metadata(pdf_bytes: Uint8Array): Uint8Array;
   /** [title, author, subject, keywords] */
   export function read_metadata(pdf_bytes: Uint8Array): string[];

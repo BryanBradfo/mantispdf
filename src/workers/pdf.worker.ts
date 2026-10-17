@@ -1,7 +1,7 @@
 import { toWasmJob } from "../lib/stampJob";
 import type { ToWorker, FromWorker, ReqId, SuccessPayload } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, remove_metadata, read_metadata, set_metadata, unlock_pdf } from "mantis-wasm";
+import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf } from "mantis-wasm";
 
 let ready = false;
 
@@ -140,6 +140,14 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
           out.free();
         }
         postSuccess(msg.id, { kind: "stamped", bytes, stampedPages });
+        break;
+      }
+
+      case "page-sizes": {
+        const flat = visible_page_sizes(msg.pdfBytes);
+        const sizes: [number, number][] = [];
+        for (let i = 0; i + 1 < flat.length; i += 2) sizes.push([flat[i], flat[i + 1]]);
+        postSuccess(msg.id, { kind: "sizes", sizes });
         break;
       }
 

@@ -40,6 +40,12 @@ fn bytes(obj: &JsValue, key: &str, path: &str) -> Result<Vec<u8>, String> {
     }
 }
 
+/// `obj[key]`, or `None` when it is absent (undefined or null).
+fn optional(obj: &JsValue, key: &str, path: &str) -> Result<Option<JsValue>, String> {
+    let v = Reflect::get(obj, &JsValue::from_str(key)).map_err(|_| invalid(&format!("{path}.{key}")))?;
+    Ok(if v.is_undefined() || v.is_null() { None } else { Some(v) })
+}
+
 fn text(v: &JsValue, path: &str) -> Result<RawText, String> {
     let color = array(v, "color", path)?;
     if color.length() != 3 {
@@ -49,7 +55,27 @@ fn text(v: &JsValue, path: &str) -> Result<RawText, String> {
     for (i, slot) in c.iter_mut().enumerate() {
         *slot = color.get(i as u32).as_f64().ok_or_else(|| invalid(&format!("{path}.color")))?;
     }
+    let at = match optional(v, "at", path)? {
+        None => None,
+        Some(a) => {
+            let bad = || invalid(&format!("{path}.at"));
+            if !Array::is_array(&a) {
+                return Err(bad());
+            }
+            let a: Array = a.unchecked_into();
+            if a.length() != 2 {
+                return Err(bad());
+            }
+            Some([a.get(0).as_f64().ok_or_else(bad)?, a.get(1).as_f64().ok_or_else(bad)?])
+        }
+    };
+    let page = match optional(v, "page", path)? {
+        None => None,
+        Some(p) => Some(p.as_f64().ok_or_else(|| invalid(&format!("{path}.page")))?),
+    };
     Ok(RawText {
+        at,
+        page,
         template: string(v, "template", path)?,
         font: string(v, "font", path)?,
         size: num(v, "size", path)?,

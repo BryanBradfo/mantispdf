@@ -10,6 +10,8 @@ use super::fonts::StdFont;
 const MAX_PIXELS: u64 = 40_000_000;
 /// Largest integer a JS number holds exactly.
 const MAX_SAFE_INT: f64 = 9_007_199_254_740_991.0;
+/// Bound on absolute coordinates: far beyond any page (PDF limit 14 400 pt).
+const MAX_COORD: f64 = 1e6;
 
 pub(crate) enum RawPages {
     All,
@@ -25,6 +27,10 @@ pub(crate) struct RawText {
     pub anchor: String,
     pub margin_x: f64,
     pub margin_y: f64,
+    /// Optional visible-space baseline origin `[x, y]`.
+    pub at: Option<[f64; 2]>,
+    /// Optional 1-based page the text is restricted to.
+    pub page: Option<f64>,
 }
 
 pub(crate) enum RawImageData {
@@ -135,6 +141,15 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<StampJob, String> {
             anchor,
             margin_x: finite(t.margin_x, &f("marginX"))?,
             margin_y: finite(t.margin_y, &f("marginY"))?,
+            at: match t.at {
+                None => None,
+                Some(a) if a.iter().all(|v| v.is_finite() && v.abs() <= MAX_COORD) => Some(a),
+                Some(_) => return Err(invalid(&f("at"))),
+            },
+            page_only: match t.page {
+                None => None,
+                Some(p) => Some(int_in(p, 1.0, f64::from(u32::MAX), &f("page"))? as u32),
+            },
         });
     }
 
@@ -202,6 +217,8 @@ mod tests {
             anchor: "bottom-center".into(),
             margin_x: 36.0,
             margin_y: 36.0,
+            at: None,
+            page: None,
         }
     }
 
@@ -255,6 +272,31 @@ mod tests {
         let mut j = job();
         j.texts[0].margin_x = f64::INFINITY;
         assert_eq!(err(j), "Invalid stamp settings: texts[0].marginX");
+    }
+
+    #[test]
+    fn absolute_placement_and_page() {
+        let mut j = job();
+        j.texts[0].at = Some([100.0, -20.5]);
+        j.texts[0].page = Some(3.0);
+        let out = validate_job(j).unwrap();
+        assert_eq!(out.texts[0].at, Some([100.0, -20.5]));
+        assert_eq!(out.texts[0].page_only, Some(3));
+        let out = validate_job(job()).unwrap();
+        assert_eq!((out.texts[0].at, out.texts[0].page_only), (None, None));
+        for bad in [[f64::NAN, 0.0], [0.0, f64::INFINITY], [1e6 + 1.0, 0.0], [0.0, -2e6]] {
+            let mut j = job();
+            j.texts[0].at = Some(bad);
+            assert_eq!(err(j), "Invalid stamp settings: texts[0].at");
+        }
+        let mut j = job();
+        j.texts[0].at = Some([1e6, -1e6]);
+        assert!(validate_job(j).is_ok());
+        for bad in [0.0, 1.5, -1.0, f64::NAN] {
+            let mut j = job();
+            j.texts[0].page = Some(bad);
+            assert_eq!(err(j), "Invalid stamp settings: texts[0].page");
+        }
     }
 
     #[test]

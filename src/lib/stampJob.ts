@@ -19,6 +19,10 @@ export interface TextStampSpec {
   anchor: Anchor;
   marginX: number;
   marginY: number;
+  /** Visible-space baseline origin [x, y] in points; overrides anchor and margins. */
+  at?: [number, number];
+  /** 1-based page this text goes on, regardless of `pages`. */
+  page?: number;
 }
 
 export interface ImageStampSpec {

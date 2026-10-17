@@ -39,6 +39,12 @@ pub struct TextStamp {
     pub anchor: Anchor,
     pub margin_x: f64,
     pub margin_y: f64,
+    /// Visible-space baseline origin; when set, `anchor` and the margins are
+    /// ignored.
+    pub at: Option<[f64; 2]>,
+    /// 1-based page this text goes on, independent of `StampJob::pages`
+    /// (and not counted as a Bates-stamped page).
+    pub page_only: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -119,20 +125,27 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
     for &(number, page_id) in &pages {
         let vb = VisibleBox::of_page(&doc, page_id);
         let mut texts = Vec::new();
-        if selected.contains(&number) && !job.texts.is_empty() {
-            let bates = match &job.bates {
-                Some(b) => Some(format_bates(b, stamped_so_far)?),
-                None => None,
-            };
-            let n = i64::from(number).saturating_add(job.number_start).saturating_sub(1);
-            for t in &job.texts {
-                let resolved = resolve_tokens(&t.template, n, total, bates.as_deref());
-                let bytes = encode_winansi(&normalize_whitespace(&resolved))?;
-                if !bytes.is_empty() {
-                    texts.push(place_text(t, bytes, vb.width(), vb.height()));
-                }
+        let n = i64::from(number).saturating_add(job.number_start).saturating_sub(1);
+        let mut bates = None;
+        if selected.contains(&number) && job.texts.iter().any(|t| t.page_only.is_none()) {
+            if let Some(b) = &job.bates {
+                bates = Some(format_bates(b, stamped_so_far)?);
             }
             stamped_so_far += 1;
+        }
+        for t in &job.texts {
+            let applies = match t.page_only {
+                Some(p) => p == number,
+                None => selected.contains(&number),
+            };
+            if !applies {
+                continue;
+            }
+            let resolved = resolve_tokens(&t.template, n, total, bates.as_deref());
+            let bytes = encode_winansi(&normalize_whitespace(&resolved))?;
+            if !bytes.is_empty() {
+                texts.push(place_text(t, bytes, vb.width(), vb.height()));
+            }
         }
         let images: Vec<usize> =
             (0..job.images.len()).filter(|&i| job.images[i].page == number).collect();
@@ -262,6 +275,19 @@ pub fn apply_stamps(pdf: &[u8], job: &StampJob) -> Result<StampResult, String> {
     Ok(StampResult { bytes, stamped_pages: plans.len() as u32 })
 }
 
+/// Visible width and height of every page, in page order: `[w1, h1, w2, h2, ...]`.
+pub fn visible_page_sizes(pdf: &[u8]) -> Result<Vec<f64>, String> {
+    let doc = load_pdf(pdf)?;
+    Ok(doc
+        .get_pages()
+        .values()
+        .flat_map(|&id| {
+            let vb = VisibleBox::of_page(&doc, id);
+            [vb.width(), vb.height()]
+        })
+        .collect())
+}
+
 fn validate(job: &StampJob, total: u32) -> Result<(), String> {
     let finite = |v: &[f64]| v.iter().all(|x| x.is_finite());
     if let PageSelection::List(list) = &job.pages
@@ -273,8 +299,13 @@ fn validate(job: &StampJob, total: u32) -> Result<(), String> {
         if !(t.size.is_finite() && t.size > 0.0) {
             return Err("Font size must be a positive number".into());
         }
-        if !finite(&[t.opacity, t.margin_x, t.margin_y]) || !finite(&t.color) {
+        if !finite(&[t.opacity, t.margin_x, t.margin_y]) || !finite(&t.color) || !t.at.is_none_or(|a| finite(&a)) {
             return Err("Invalid text stamp settings".into());
+        }
+        if let Some(p) = t.page_only
+            && (p == 0 || p > total)
+        {
+            return Err(format!("Page {p} does not exist (the document has {total} pages)"));
         }
     }
     for im in &job.images {
@@ -335,6 +366,17 @@ fn place_text(t: &TextStamp, bytes: Vec<u8>, w: f64, h: f64) -> PlacedText {
     use Anchor::*;
     let width = text_width(t.font, &bytes, t.size);
     let (ascent, descent) = (t.font.ascent() * t.size / 1000.0, t.font.descent() * t.size / 1000.0);
+    if let Some([x, y]) = t.at {
+        return PlacedText {
+            font: t.font,
+            size: t.size,
+            color: t.color.map(|c| c.clamp(0.0, 1.0)),
+            opacity: t.opacity.clamp(0.0, 1.0),
+            x,
+            y,
+            bytes,
+        };
+    }
     let x = match t.anchor {
         TopLeft | MiddleLeft | BottomLeft => t.margin_x,
         TopCenter | Center | BottomCenter => (w - width) / 2.0,
@@ -544,6 +586,8 @@ mod tests {
             anchor,
             margin_x: 20.0,
             margin_y: 20.0,
+            at: None,
+            page_only: None,
         }
     }
 
@@ -955,5 +999,84 @@ mod tests {
         assert!(apply_stamps(&simple_pdf(2), &image_job(ImageData::Jpeg(tiny_jpeg()), 3)).is_err());
         let bad = ImageData::Rgba { width: 2, height: 2, pixels: vec![0; 3] };
         assert!(apply_stamps(&simple_pdf(2), &image_job(bad, 1)).is_err());
+    }
+
+    fn absolute(template: &str, at: [f64; 2], page: u32) -> TextStamp {
+        TextStamp { at: Some(at), page_only: Some(page), ..text(template, Anchor::BottomRight) }
+    }
+
+    #[test]
+    fn absolute_text_on_one_page_ignores_anchor_and_margins() {
+        let pdf = simple_pdf(3);
+        let before = load(&pdf);
+        let out = apply_stamps(&pdf, &job(PageSelection::All, vec![absolute("Signed", [100.0, 50.0], 2)])).unwrap();
+        assert_eq!(out.stamped_pages, 1);
+        let doc = load(&out.bytes);
+        let (pages, old) = (page_ids(&doc), page_ids(&before));
+        assert_eq!(tj_strings(&doc, pages[1]), vec![b"Signed".to_vec()]);
+        let td = nums(tail_ops(&doc, pages[1]).iter().find(|op| op.operator == "Td").unwrap());
+        assert_eq!(td, vec![100.0, 50.0]);
+        for i in [0, 2] {
+            assert_eq!(doc.get_object(pages[i]).unwrap(), before.get_object(old[i]).unwrap());
+        }
+    }
+
+    #[test]
+    fn absolute_text_on_rotated_page_maps_through_visible_space() {
+        let mut f = Fixture::new();
+        f.page(dictionary! { "Rotate" => 90 }, HELLO);
+        let pdf = f.finish();
+        let out = apply_stamps(&pdf, &job(PageSelection::List(vec![]), vec![absolute("x", [100.0, 50.0], 1)])).unwrap();
+        let doc = load(&out.bytes);
+        let page = page_ids(&doc)[0];
+        let vb = VisibleBox::of_page(&doc, page);
+        let ops = tail_ops(&doc, page);
+        let cm = nums(ops.iter().rfind(|op| op.operator == "cm").unwrap());
+        let td = nums(ops.iter().find(|op| op.operator == "Td").unwrap());
+        let user = (cm[0] * td[0] + cm[2] * td[1] + cm[4], cm[1] * td[0] + cm[3] * td[1] + cm[5]);
+        assert_eq!(user, vb.to_user(100.0, 50.0));
+        assert_eq!(user, (550.0, 100.0));
+    }
+
+    #[test]
+    fn page_only_text_mixes_with_selection_and_keeps_bates_count() {
+        let mut j = job(
+            PageSelection::List(vec![1, 3]),
+            vec![text("{bates}", Anchor::BottomRight), absolute("p{n}", [10.0, 10.0], 2)],
+        );
+        j.bates = Some(Bates { prefix: String::new(), suffix: String::new(), start: 7, digits: 2 });
+        let out = apply_stamps(&simple_pdf(3), &j).unwrap();
+        assert_eq!(out.stamped_pages, 3);
+        let doc = load(&out.bytes);
+        let pages = page_ids(&doc);
+        assert_eq!(tj_strings(&doc, pages[0]), vec![b"07".to_vec()]);
+        assert_eq!(tj_strings(&doc, pages[1]), vec![b"p2".to_vec()]);
+        assert_eq!(tj_strings(&doc, pages[2]), vec![b"08".to_vec()]);
+    }
+
+    #[test]
+    fn page_only_out_of_range_rejected() {
+        let err = apply_stamps(&simple_pdf(2), &job(PageSelection::All, vec![absolute("x", [1.0, 1.0], 3)])).unwrap_err();
+        assert!(err.contains("Page 3 does not exist"), "{err}");
+        let mut t = absolute("x", [f64::NAN, 1.0], 1);
+        assert!(apply_stamps(&simple_pdf(1), &job(PageSelection::All, vec![t.clone()])).is_err());
+        t.at = Some([1.0, f64::INFINITY]);
+        assert!(apply_stamps(&simple_pdf(1), &job(PageSelection::All, vec![t])).is_err());
+    }
+
+    #[test]
+    fn visible_sizes_per_page() {
+        let mut f = Fixture::new();
+        f.page(Dictionary::new(), HELLO);
+        f.page(dictionary! { "Rotate" => 270 }, HELLO);
+        f.page(
+            dictionary! { "CropBox" => vec![10.into(), 20.into(), 110.into(), 70.into()], "Rotate" => 90 },
+            HELLO,
+        );
+        assert_eq!(
+            visible_page_sizes(&f.finish()).unwrap(),
+            vec![600.0, 800.0, 800.0, 600.0, 50.0, 100.0]
+        );
+        assert!(visible_page_sizes(b"not a pdf").is_err());
     }
 }
