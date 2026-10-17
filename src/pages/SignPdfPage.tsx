@@ -138,7 +138,7 @@ export default function SignPdfPage() {
                       signatureUrl={signature.url}
                       rect={rect}
                       onRect={setRect}
-                      caption={signedOn ? { text: signedOn, at: signedOnOrigin(rect, SIGNED_ON_SIZE, pageSize[1]), size: SIGNED_ON_SIZE } : null}
+                      caption={signedOn ? { text: signedOn, at: signedOnOrigin(rect, SIGNED_ON_SIZE, pageSize, signedOn), size: SIGNED_ON_SIZE } : null}
                     />
                   )}
                 </div>

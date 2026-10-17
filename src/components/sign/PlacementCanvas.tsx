@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import PageImage from "../common/PageImage";
 import {
   clampVisibleRect,
+  placementPreviewSize,
   previewToVisibleRect,
   visibleToPreviewRect,
   type PreviewBox,
@@ -11,6 +12,8 @@ import {
 
 /** Render width of the page preview (also its maximum on-screen width). */
 const PREVIEW_WIDTH = 560;
+/** Maximum on-screen height: a very tall page is shown narrower instead. */
+const PREVIEW_MAX_HEIGHT = 800;
 /** Smallest signature width while resizing, in preview pixels. */
 const MIN_BOX = 16;
 
@@ -44,9 +47,9 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
   }, []);
 
   const [vw, vh] = pageSize;
-  const pw = Math.min(PREVIEW_WIDTH, available);
-  const ph = (pw * vh) / vw;
-  const preview: Size = [pw, ph];
+  const preview: Size = placementPreviewSize(available, pageSize, PREVIEW_WIDTH, PREVIEW_MAX_HEIGHT);
+  const [pw, ph] = preview;
+  const degenerate = !(vw > 0 && vh > 0);
   const box = visibleToPreviewRect(rect, preview, pageSize);
   const aspect = rect[2] / rect[3];
 
@@ -92,6 +95,15 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
     const [x, y, w, h] = rect;
     onRect(clampVisibleRect([x + d[0], y + d[1], w, h], pageSize));
   };
+
+  if (degenerate) {
+    // Same root element as below, so the ResizeObserver keeps watching it.
+    return (
+      <div ref={wrapRef} className="w-full max-w-[560px]">
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">This page has no visible area to sign on.</p>
+      </div>
+    );
+  }
 
   const scale = pw / vw;
   return (

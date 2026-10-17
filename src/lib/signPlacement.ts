@@ -68,12 +68,72 @@ export function initialSignatureRect(aspect: number, page: Size): VisibleRect {
   return clampVisibleRect([x, y, w, h], page);
 }
 
-/** Baseline origin of the "Signed on" line: just under the box, or just above it when there is no room. */
-export function signedOnOrigin(rect: VisibleRect, size: number, pageHeight = Infinity): [number, number] {
-  const [x, y, , h] = rect;
-  const below = y - size - 2;
-  if (below >= 2) return [x, below];
-  return [x, Math.min(y + h + 3, pageHeight - size)];
+/**
+ * Width estimate of a Helvetica line: 0.56 em per character. That is a Helvetica digit (556/1000),
+ * wider than the average of mixed text, so a date line is never underestimated.
+ */
+export function estimateTextWidth(text: string, size: number): number {
+  return 0.56 * size * text.length;
+}
+
+/**
+ * Baseline origin of the "Signed on" line: just under the box, or just above it when there is no
+ * room; pulled left so the whole line ends at least 2 pt inside the page.
+ */
+export function signedOnOrigin(rect: VisibleRect, size: number, page: Size, text: string): [number, number] {
+  const [pw, ph] = page;
+  const [bx, by, , bh] = rect;
+  const x = Math.max(0, Math.min(bx, pw - estimateTextWidth(text, size) - 2));
+  const below = by - size - 2;
+  const y = below >= 2 ? below : Math.max(0, Math.min(by + bh + 3, ph - size));
+  return [x, y];
+}
+
+/** Pixels whose r, g and b are all at least this value start to fade out. */
+const WHITE_FADE_START = 235;
+/** ... and are fully transparent from this value. */
+const WHITE_FADE_END = 250;
+
+/**
+ * Make a scanned or photographed signature's paper transparent: with m = min(r, g, b), alpha is
+ * kept below 235, scaled down linearly from 235 to 250 (soft edge), and 0 from 250. Returns a copy.
+ */
+export function removeWhiteBackground(pixels: Uint8ClampedArray): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(pixels);
+  for (let i = 0; i < out.length; i += 4) {
+    const m = Math.min(out[i], out[i + 1], out[i + 2]);
+    if (m < WHITE_FADE_START) continue;
+    const keep = Math.max(0, (WHITE_FADE_END - m) / (WHITE_FADE_END - WHITE_FADE_START));
+    out[i + 3] = Math.round(out[i + 3] * keep);
+  }
+  return out;
+}
+
+/**
+ * Font size for a typed signature so the text (`textWidth` measured at `size`) plus `size` of
+ * padding fits a canvas `maxWidth` wide. Returns `size` when it already fits.
+ */
+export function fitTypedFontSize(textWidth: number, size: number, maxWidth: number): number {
+  const needed = textWidth + size;
+  if (needed <= maxWidth) return size;
+  return Math.max(1, Math.floor((size * maxWidth) / needed));
+}
+
+/**
+ * On-screen size of the placement preview: as wide as `available` (at most `maxWidth`), height from
+ * the page aspect, capped at `maxHeight` (then the width follows). A degenerate page or container
+ * falls back to a Letter-shaped preview so the layout never gets NaN or zero sizes.
+ */
+export function placementPreviewSize(available: number, page: Size, maxWidth: number, maxHeight: number): Size {
+  const [vw, vh] = page;
+  const aspect = vw > 0 && vh > 0 && Number.isFinite(vw / vh) ? vw / vh : 612 / 792;
+  let w = available > 0 && Number.isFinite(available) ? Math.min(maxWidth, available) : maxWidth;
+  let h = w / aspect;
+  if (h > maxHeight) {
+    h = maxHeight;
+    w = h * aspect;
+  }
+  return [w, h];
 }
 
 /** Crop fully transparent margins. Returns null when nothing is opaque. */
@@ -139,7 +199,7 @@ export function buildSignJob(
             anchor: "bottom-left",
             marginX: 0,
             marginY: 0,
-            at: signedOnOrigin(rect, SIGNED_ON_SIZE, pageSize[1]),
+            at: signedOnOrigin(rect, SIGNED_ON_SIZE, pageSize, signedOn),
             page,
           },
         ],

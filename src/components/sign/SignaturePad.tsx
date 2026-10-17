@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { trimTransparent, type RgbaImage } from "../../lib/signPlacement";
+// Self-hosted script fonts (OFL), latin 400 only. Imported here so they load with the Sign route
+// chunk and no request ever leaves the app origin.
+import "@fontsource/caveat/latin-400.css";
+import "@fontsource/dancing-script/latin-400.css";
+import "@fontsource/homemade-apple/latin-400.css";
+import { fitTypedFontSize, removeWhiteBackground, trimTransparent, type RgbaImage } from "../../lib/signPlacement";
 import { inputClass, secondaryButton } from "../../pages/ToolShell";
 
 /** A trimmed RGBA signature plus a data URL of it for on-screen previews. */
@@ -15,7 +20,7 @@ const MODES: { id: Mode; label: string }[] = [
   { id: "upload", label: "Upload" },
 ];
 
-/** Script fonts loaded from Google Fonts in index.html (display=swap). */
+/** Script fonts, self-hosted via @fontsource (imported above). */
 export const SIGNATURE_FONTS = ["Caveat", "Dancing Script", "Homemade Apple"] as const;
 type SignatureFont = (typeof SIGNATURE_FONTS)[number];
 
@@ -24,13 +29,19 @@ const PAD_W = 560;
 const PAD_H = 180;
 /** Longest side of an uploaded image after downscaling. */
 const MAX_UPLOAD_SIDE = 1600;
+/** Widest canvas a typed signature is rendered on. */
+const MAX_TYPED_WIDTH = 4000;
 
-/** Trim a canvas to its opaque pixels and package it as a Signature (null when empty). */
-function canvasToSignature(canvas: HTMLCanvasElement): Signature | null {
+/**
+ * Trim a canvas to its opaque pixels and package it as a Signature (null when empty).
+ * `dropWhite` first makes near-white pixels transparent (paper behind an uploaded signature).
+ */
+function canvasToSignature(canvas: HTMLCanvasElement, dropWhite = false): Signature | null {
   const ctx = canvas.getContext("2d");
   if (!ctx || canvas.width === 0 || canvas.height === 0) return null;
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const trimmed = trimTransparent(data.data, canvas.width, canvas.height);
+  const pixels = dropWhite ? removeWhiteBackground(data.data) : data.data;
+  const trimmed = trimTransparent(pixels, canvas.width, canvas.height);
   if (!trimmed) return null;
   const out = document.createElement("canvas");
   out.width = trimmed.width;
@@ -132,7 +143,9 @@ function DrawPad({ onChange }: Props) {
     // Smooth: quadratic curve through the midpoints, the sampled point as control.
     const [a, b, c] = [pts[n - 3], pts[n - 2], pts[n - 1]];
     ctx.beginPath();
-    ctx.moveTo((a.x + b.x) / 2, (a.y + b.y) / 2);
+    // The first curve starts at the first point itself, so the stroke has no gap after the dot.
+    if (n === 3) ctx.moveTo(a.x, a.y);
+    else ctx.moveTo((a.x + b.x) / 2, (a.y + b.y) / 2);
     ctx.quadraticCurveTo(b.x, b.y, (b.x + c.x) / 2, (b.y + c.y) / 2);
     ctx.stroke();
   };
@@ -146,7 +159,9 @@ function DrawPad({ onChange }: Props) {
     if (ctx && pts.length >= 2) {
       const [b, c] = [pts[pts.length - 2], pts[pts.length - 1]];
       ctx.beginPath();
-      ctx.moveTo((b.x + c.x) / 2, (b.y + c.y) / 2);
+      // With only two points no curve was drawn yet: join them from the first point.
+      if (pts.length === 2) ctx.moveTo(b.x, b.y);
+      else ctx.moveTo((b.x + c.x) / 2, (b.y + c.y) / 2);
       ctx.lineTo(c.x, c.y);
       ctx.stroke();
     }
@@ -187,25 +202,27 @@ function DrawPad({ onChange }: Props) {
 }
 
 async function renderTyped(name: string, font: SignatureFont): Promise<Signature | null> {
-  const size = 96;
-  const spec = `${size}px "${font}"`;
+  const base = 96;
   if (typeof document.fonts?.load === "function") {
     try {
-      await document.fonts.load(spec, name);
+      await document.fonts.load(`${base}px "${font}"`, name);
     } catch {
-      // Offline or blocked: the canvas falls back to a default cursive font.
+      // Blocked: the canvas falls back to a default cursive font.
     }
   }
   const canvas = document.createElement("canvas");
   const measure = canvas.getContext("2d");
   if (!measure) return null;
-  measure.font = `${spec}, cursive`;
-  const width = Math.ceil(measure.measureText(name).width) + size;
-  canvas.width = Math.min(width, 4000);
+  measure.font = `${base}px "${font}", cursive`;
+  // A very long name is drawn smaller instead of being clipped at the canvas edge.
+  const size = fitTypedFontSize(measure.measureText(name).width, base, MAX_TYPED_WIDTH);
+  const spec = `${size}px "${font}", cursive`;
+  measure.font = spec;
+  canvas.width = Math.min(Math.ceil(measure.measureText(name).width) + size, MAX_TYPED_WIDTH);
   canvas.height = Math.ceil(size * 2);
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  ctx.font = `${spec}, cursive`;
+  ctx.font = spec;
   ctx.fillStyle = INK;
   ctx.textBaseline = "middle";
   ctx.fillText(name, size / 2, canvas.height / 2);
@@ -255,7 +272,7 @@ function TypePad({ onChange }: Props) {
   );
 }
 
-async function loadImage(file: File): Promise<Signature | null> {
+async function loadImage(file: File, dropWhite: boolean): Promise<Signature | null> {
   const url = URL.createObjectURL(file);
   try {
     const img = new Image();
@@ -266,7 +283,7 @@ async function loadImage(file: File): Promise<Signature | null> {
     canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
     canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvasToSignature(canvas);
+    return canvasToSignature(canvas, dropWhite);
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -275,39 +292,67 @@ async function loadImage(file: File): Promise<Signature | null> {
 function UploadPad({ onChange }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [dropWhite, setDropWhite] = useState(true);
+  // Bumped by every new load and on unmount (switching mode unmounts this pad), so a slow decode
+  // never reports a signature the user has moved away from.
+  const generation = useRef(0);
+  useEffect(() => () => { generation.current++; }, []);
 
-  const pick = async (file: File | undefined) => {
+  const load = async (f: File | null, white: boolean) => {
+    const mine = ++generation.current;
+    const current = () => mine === generation.current;
     setError(null);
     setPreview(null);
     onChange(null);
-    if (!file) return;
-    if (!/^image\/(png|jpeg)$/.test(file.type)) {
+    if (!f) return;
+    if (!/^image\/(png|jpeg)$/.test(f.type)) {
       setError("Choose a PNG or JPG image.");
       return;
     }
     try {
-      const sig = await loadImage(file);
+      const sig = await loadImage(f, white);
+      if (!current()) return;
       if (!sig) {
-        setError("This image is fully transparent.");
+        setError(white ? "Nothing is left once the white background is removed." : "This image is fully transparent.");
         return;
       }
       setPreview(sig.url);
       onChange(sig);
     } catch {
-      setError("Could not read this image.");
+      if (current()) setError("Could not read this image.");
     }
+  };
+
+  const pick = (f: File | undefined) => {
+    setFile(f ?? null);
+    void load(f ?? null, dropWhite);
+  };
+
+  const toggleWhite = (on: boolean) => {
+    setDropWhite(on);
+    if (file) void load(file, on);
   };
 
   return (
     <div className="space-y-2">
       <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-        Signature image (PNG with a transparent background works best)
+        Signature image (PNG or JPG)
         <input
           type="file"
           accept="image/png,image/jpeg"
-          onChange={(e) => void pick(e.target.files?.[0])}
+          onChange={(e) => pick(e.target.files?.[0])}
           className="mt-1 block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-mantis-600 file:px-3 file:py-2 file:text-white dark:text-[#aaa]"
         />
+      </label>
+      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+        <input
+          type="checkbox"
+          checked={dropWhite}
+          onChange={(e) => toggleWhite(e.target.checked)}
+          className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+        />
+        Remove white background
       </label>
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       {preview && <img src={preview} alt="Uploaded signature" className="max-h-24 rounded border border-gray-200 bg-white p-2 dark:border-[#333]" />}
