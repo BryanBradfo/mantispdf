@@ -2,6 +2,8 @@
 
 pub(crate) mod appearance;
 pub(crate) mod binding;
+#[cfg(test)]
+mod fixture_tests;
 pub(crate) mod fill;
 pub(crate) mod flatten;
 pub(crate) mod job;
