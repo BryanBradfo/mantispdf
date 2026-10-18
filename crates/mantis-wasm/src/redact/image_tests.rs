@@ -71,7 +71,7 @@ fn redact_page(mut page: Page, content: &[u8], rects: &[Rect], fill: Fill, budge
     let ops = decode_ops(content).unwrap();
     let events = Interp::new(&page.doc, page.resources.clone()).run(&ops, IDENTITY, &mut Budget::page(1 << 20)).unwrap();
     let mut resources = page.resources.clone();
-    let mut edit = PageEdit { doc: &mut page.doc, resources: &mut resources, fill, budget };
+    let mut edit = PageEdit::new(&mut page.doc, &mut resources, fill, budget);
     let (ops, report) = redact_content(&mut edit, &ops, &events, rects).unwrap();
     Out { content: encode_ops(&ops), report, doc: page.doc, resources }
 }

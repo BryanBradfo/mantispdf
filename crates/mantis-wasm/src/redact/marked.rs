@@ -1,8 +1,9 @@
 //! Marked content around removed content: /ActualText, /Alt and /E can
 //! repeat what was removed, so they go from every enclosing sequence.
 
-use super::interp::Event;
-use lopdf::Object;
+use super::interp::{Event, page_resources_dict};
+use crate::rebuild::{deref, name_of};
+use lopdf::{Dictionary, Document, Object};
 use lopdf::content::Operation;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -58,4 +59,34 @@ pub(crate) fn strip_replacement_text(ops: &[Operation], events: &[Event], touche
         }
     }
     out
+}
+
+/// Give `resources` private copies of the /Properties entries `names`
+/// without /ActualText, /Alt and /E. Optional-content groups (and their
+/// membership dictionaries) are left as they are: their identity matters
+/// and they carry no replacement text. Originals are never changed.
+pub(crate) fn strip_named_properties(doc: &mut Document, resources: &mut Dictionary, names: &BTreeSet<Vec<u8>>) {
+    if names.is_empty() {
+        return;
+    }
+    let mut properties = page_resources_dict(doc, resources, b"Properties");
+    let mut changed = false;
+    for name in names {
+        let Some(Object::Dictionary(dict)) = properties.get(name).ok().and_then(|o| deref(doc, o)) else {
+            continue;
+        };
+        if matches!(name_of(dict, b"Type"), Some(b"OCG" | b"OCMD")) || !REPLACEMENT_TEXT_KEYS.iter().any(|k| dict.has(k)) {
+            continue;
+        }
+        let mut copy = dict.clone();
+        for key in REPLACEMENT_TEXT_KEYS {
+            copy.remove(key);
+        }
+        let id = doc.add_object(copy);
+        properties.set(name.clone(), id);
+        changed = true;
+    }
+    if changed {
+        resources.set("Properties", properties);
+    }
 }

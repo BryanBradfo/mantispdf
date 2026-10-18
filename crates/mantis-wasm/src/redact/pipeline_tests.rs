@@ -1,0 +1,364 @@
+//! `redact_plan` and `redact` on whole documents: forms, annotations,
+//! assembly through the 2c rebuild, hidden data and verification.
+
+use super::interp::{Glyph, Rect};
+use super::verify::page_glyphs;
+use super::*;
+use crate::pdf_util::{load_pdf, save_pdf};
+use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat, dictionary};
+
+fn helvetica() -> Dictionary {
+    dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding" }
+}
+
+fn stream(content: &str) -> Stream {
+    Stream::new(dictionary! {}, content.as_bytes().to_vec())
+}
+
+fn text(s: &str) -> Object {
+    Object::String(s.as_bytes().to_vec(), StringFormat::Literal)
+}
+
+fn rect_array(v: [i64; 4]) -> Object {
+    Object::Array(v.iter().map(|n| Object::Integer(*n)).collect())
+}
+
+/// Page 1: "Hello World" (Helvetica 10 at 100, 700) with two links and a
+/// comment, a thumbnail, piece info, metadata and an /AA. Pages 2 and 3 draw
+/// the same form (shared resources): "SECRET DATA" at (110, 450).
+/// The catalog has XMP metadata, JavaScript, attachments, an /OpenAction and
+/// a structure tree; the trailer an /Info.
+fn fixture() -> Document {
+    let mut doc = Document::with_version("1.7");
+    let font = doc.add_object(helvetica());
+    let fonts = dictionary! { "H" => font };
+    let form = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 300, 100]),
+            "Resources" => dictionary! { "Font" => fonts.clone() },
+        },
+        b"BT /H 10 Tf 10 50 Td (SECRET DATA) Tj ET".to_vec(),
+    ));
+    let shared = doc.add_object(dictionary! { "XObject" => dictionary! { "Fm1" => form } });
+    let pages_id = doc.new_object_id();
+    let js = doc.add_object(dictionary! { "S" => "JavaScript", "JS" => text("app.alert('secret')") });
+    let link = |doc: &mut Document, r: [i64; 4]| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Link", "Rect" => rect_array(r),
+            "A" => dictionary! { "S" => "URI", "URI" => text("https://example.com") },
+        })
+    };
+    let link_in = link(&mut doc, [130, 698, 140, 710]);
+    let link_out = link(&mut doc, [10, 10, 50, 30]);
+    let square = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Square", "Rect" => rect_array([300, 300, 320, 320]), "Contents" => text("note"),
+    });
+    let thumb = doc.add_object(stream("thumbnail"));
+    let page_meta = doc.add_object(stream("<x:xmpmeta>page secret</x:xmpmeta>"));
+    let c1 = doc.add_object(stream("BT /H 10 Tf 100 700 Td (Hello World) Tj ET"));
+    let page1 = doc.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages_id, "Contents" => c1,
+        "Resources" => dictionary! { "Font" => fonts.clone() },
+        "Annots" => vec![link_in.into(), link_out.into(), square.into()],
+        "Thumb" => thumb, "PieceInfo" => dictionary! { "App" => dictionary! { "Private" => text("secret") } },
+        "Metadata" => page_meta, "AA" => dictionary! { "O" => js }, "StructParents" => 0,
+    });
+    let c2 = doc.add_object(stream("q 1 0 0 1 100 400 cm /Fm1 Do Q"));
+    let c3 = doc.add_object(stream("q 1 0 0 1 100 400 cm /Fm1 Do Q"));
+    let page2 = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages_id, "Contents" => c2, "Resources" => shared });
+    let page3 = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages_id, "Contents" => c3, "Resources" => shared });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![page1.into(), page2.into(), page3.into()], "Count" => 3,
+            "MediaBox" => rect_array([0, 0, 612, 792]),
+        }),
+    );
+    let xmp = doc.add_object(stream("<x:xmpmeta>document secret</x:xmpmeta>"));
+    let attachment = doc.add_object(dictionary! { "Type" => "Filespec", "F" => text("secret.txt") });
+    let struct_root = doc.add_object(dictionary! {
+        "Type" => "StructTreeRoot",
+        "K" => dictionary! { "S" => "P", "ActualText" => text("Hello World"), "Alt" => text("World") },
+    });
+    let catalog = doc.add_object(dictionary! {
+        "Type" => "Catalog", "Pages" => pages_id, "Metadata" => xmp, "OpenAction" => js,
+        "Names" => dictionary! {
+            "JavaScript" => dictionary! { "Names" => vec![text("init"), js.into()] },
+            "EmbeddedFiles" => dictionary! { "Names" => vec![text("secret.txt"), attachment.into()] },
+        },
+        "StructTreeRoot" => struct_root, "MarkInfo" => dictionary! { "Marked" => true },
+    });
+    doc.trailer.set("Root", catalog);
+    let info = doc.add_object(dictionary! { "Title" => text("Secret report"), "Author" => text("Agent") });
+    doc.trailer.set("Info", info);
+    doc
+}
+
+fn bytes(mut doc: Document) -> Vec<u8> {
+    save_pdf(&mut doc).unwrap()
+}
+
+/// A visible-space area on a page (1-based).
+fn area(page: u32, x: f64, y: f64, w: f64, h: f64) -> RedactRect {
+    RedactRect { page, rect: [x, y, w, h] }
+}
+
+fn job(rects: Vec<RedactRect>) -> RedactJob {
+    RedactJob { rects, fill: Fill::Black, remove_metadata: true }
+}
+
+/// "World" on page 1 (the space before it stays clear).
+fn world() -> RedactRect {
+    area(1, 127.0, 700.0, 30.0, 5.0)
+}
+
+/// "SECRET" in the form drawn on page 2.
+fn secret_on_page_2() -> RedactRect {
+    area(2, 111.0, 450.0, 38.0, 5.0)
+}
+
+fn page_ids(doc: &Document) -> Vec<ObjectId> {
+    doc.get_pages().into_values().collect()
+}
+
+fn text_of(doc: &Document, page: ObjectId) -> String {
+    let glyphs: Vec<Glyph> = page_glyphs(doc, page).unwrap();
+    glyphs.iter().map(|g| char::from_u32(g.code).unwrap()).collect()
+}
+
+fn run(doc: Document, rects: Vec<RedactRect>) -> (Document, RedactSummary) {
+    let (out, summary) = redact(&bytes(doc), &job(rects)).unwrap();
+    (load_pdf(&out).unwrap(), summary)
+}
+
+#[test]
+fn page_text_is_removed_and_other_pages_untouched() {
+    let (out, summary) = run(fixture(), vec![world()]);
+    let pages = page_ids(&out);
+    assert_eq!(text_of(&out, pages[0]), "Hello ");
+    assert_eq!(text_of(&out, pages[1]), "SECRET DATA");
+    assert_eq!(text_of(&out, pages[2]), "SECRET DATA");
+    assert_eq!(summary.glyphs_removed, 5);
+    assert_eq!(summary.pages_redacted, vec![1]);
+}
+
+#[test]
+fn text_inside_a_form_is_removed_and_the_shared_form_kept_elsewhere() {
+    let (out, summary) = run(fixture(), vec![secret_on_page_2()]);
+    let pages = page_ids(&out);
+    assert_eq!(text_of(&out, pages[1]), " DATA");
+    assert_eq!(text_of(&out, pages[2]), "SECRET DATA");
+    assert_eq!(summary.glyphs_removed, 6);
+    assert_eq!(summary.forms_redacted, 1);
+}
+
+#[test]
+fn form_text_is_removed_on_the_source_without_touching_the_shared_objects() {
+    let mut doc = fixture();
+    let before: Vec<(ObjectId, Object)> = doc.objects.iter().map(|(id, o)| (*id, o.clone())).collect();
+    let page2 = page_ids(&doc)[1];
+    let rects = page_rects_user(&doc, page2, &[secret_on_page_2()]);
+    let mut budget = Budget::page(64 << 20);
+    redact_page(&mut doc, page2, &rects, Fill::Black, &mut budget).unwrap();
+    for (id, object) in before {
+        if id != page2 {
+            assert_eq!(doc.objects.get(&id), Some(&object), "object {id:?} changed");
+        }
+    }
+}
+
+#[test]
+fn annotations_under_an_area_are_removed_others_kept_by_policy() {
+    let (out, summary) = run(fixture(), vec![world()]);
+    let page = out.get_dictionary(page_ids(&out)[0]).unwrap();
+    let annots = page.get(b"Annots").map(|a| out.dereference(a).unwrap().1.as_array().unwrap().clone()).unwrap_or_default();
+    let rects: Vec<Vec<f32>> = annots
+        .iter()
+        .map(|a| {
+            let d = out.dereference(a).unwrap().1.as_dict().unwrap();
+            d.get(b"Rect").unwrap().as_array().unwrap().iter().map(|n| n.as_float().unwrap()).collect()
+        })
+        .collect();
+    // The inside link is gone; the outside link stays; comments never survive.
+    assert_eq!(rects, vec![vec![10.0, 10.0, 50.0, 30.0]]);
+    assert_eq!(summary.annotations_removed, 1);
+}
+
+fn catalog(doc: &Document) -> &Dictionary {
+    doc.catalog().unwrap()
+}
+
+#[test]
+fn hidden_data_is_gone() {
+    let (out, _) = run(fixture(), vec![world()]);
+    let root = catalog(&out);
+    for key in [&b"Metadata"[..], b"OpenAction", b"Names", b"StructTreeRoot", b"AA"] {
+        assert!(!root.has(key), "catalog keeps {}", String::from_utf8_lossy(key));
+    }
+    assert!(out.trailer.get(b"Info").is_err(), "Info removed");
+    let page = out.get_dictionary(page_ids(&out)[0]).unwrap();
+    for key in [&b"Thumb"[..], b"PieceInfo", b"Metadata", b"AA", b"StructParents"] {
+        assert!(!page.has(key), "page keeps {}", String::from_utf8_lossy(key));
+    }
+    // Nothing anywhere still carries the secrets.
+    let mut raw = bytes(out);
+    raw.retain(|b| *b != 0);
+    let raw = String::from_utf8_lossy(&raw);
+    for secret in ["app.alert", "secret.txt", "document secret", "page secret", "Secret report", "World)", "Private"] {
+        assert!(!raw.contains(secret), "{secret} survived");
+    }
+}
+
+#[test]
+fn info_can_be_kept_on_request() {
+    let mut j = job(vec![world()]);
+    j.remove_metadata = false;
+    let (out, _) = redact(&bytes(fixture()), &j).unwrap();
+    let out = load_pdf(&out).unwrap();
+    let info = out.trailer.get(b"Info").and_then(|i| out.dereference(i)).unwrap().1.as_dict().unwrap().clone();
+    assert_eq!(info.get(b"Title").unwrap().as_str().unwrap(), b"Secret report");
+    assert!(catalog(&out).get(b"Metadata").is_err(), "XMP still goes");
+}
+
+#[test]
+fn verification_catches_a_planted_leak() {
+    plant_leak_for_tests(true);
+    let result = redact(&bytes(fixture()), &job(vec![world()]));
+    plant_leak_for_tests(false);
+    assert_eq!(result.unwrap_err(), "Redaction verification failed on page 1");
+}
+
+#[test]
+fn plan_reports_pages_that_need_a_raster() {
+    let mut doc = fixture();
+    // Page 3 now uses a Type3 font.
+    let page3 = page_ids(&doc)[2];
+    let t3 = doc.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type3" });
+    let c = doc.add_object(stream("BT /T 10 Tf (x) Tj ET"));
+    let d = doc.get_dictionary_mut(page3).unwrap();
+    d.set("Contents", c);
+    d.set("Resources", dictionary! { "Font" => dictionary! { "T" => t3 } });
+    let plan = redact_plan(&bytes(doc), &[world(), area(3, 0.0, 0.0, 10.0, 10.0), area(1, 0.0, 0.0, 5.0, 5.0)]).unwrap();
+    assert_eq!(plan.len(), 2);
+    assert_eq!((plan[0].page, plan[0].reason.as_deref()), (1, None));
+    assert_eq!(plan[1].page, 3);
+    assert!(plan[1].reason.as_deref().unwrap().contains("Type3"));
+    // Redacting without a raster for it is refused.
+    let err = redact(&bytes(fixture_with_type3()), &job(vec![area(3, 0.0, 0.0, 10.0, 10.0)])).unwrap_err();
+    assert_eq!(err, "Invalid redact settings: raster");
+}
+
+fn fixture_with_type3() -> Document {
+    let mut doc = fixture();
+    let page3 = page_ids(&doc)[2];
+    let t3 = doc.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type3" });
+    let c = doc.add_object(stream("BT /T 10 Tf (x) Tj ET"));
+    let d = doc.get_dictionary_mut(page3).unwrap();
+    d.set("Contents", c);
+    d.set("Resources", dictionary! { "Font" => dictionary! { "T" => t3 } });
+    doc
+}
+
+#[test]
+fn settings_are_validated() {
+    let pdf = bytes(fixture());
+    let err = |rects: Vec<RedactRect>| redact(&pdf, &job(rects)).unwrap_err();
+    assert_eq!(err(vec![area(0, 0.0, 0.0, 1.0, 1.0)]), "Invalid redact settings: rects[0].page");
+    assert_eq!(err(vec![world(), area(4, 0.0, 0.0, 1.0, 1.0)]), "Invalid redact settings: rects[1].page");
+    assert_eq!(err(vec![area(1, f64::NAN, 0.0, 1.0, 1.0)]), "Invalid redact settings: rects[0].x");
+    assert_eq!(err(vec![area(1, 0.0, 2e6, 1.0, 1.0)]), "Invalid redact settings: rects[0].y");
+    assert_eq!(err(vec![area(1, 0.0, 0.0, 0.0, 1.0)]), "Invalid redact settings: rects[0].width");
+    assert_eq!(err(vec![area(1, 0.0, 0.0, 1.0, -1.0)]), "Invalid redact settings: rects[0].height");
+    assert_eq!(err(vec![world(); 10_001]), "Invalid redact settings: rects");
+    assert_eq!(redact_plan(&pdf, &[area(9, 0.0, 0.0, 1.0, 1.0)]).unwrap_err(), "Invalid redact settings: rects[0].page");
+}
+
+#[test]
+fn visible_areas_map_to_user_space_on_rotated_pages() {
+    let mut doc = fixture();
+    let page1 = page_ids(&doc)[0];
+    doc.get_dictionary_mut(page1).unwrap().set("Rotate", 90);
+    // Rotate 90 on [0 0 612 792]: visible (vx, vy) is user (612 - vy, vx).
+    let rects = page_rects_user(&doc, page1, &[area(1, 700.0, 485.0, 5.0, 30.0)]);
+    assert_eq!(rects, vec![Rect { x0: 97.0, y0: 700.0, x1: 127.0, y1: 705.0 }]);
+}
+
+#[test]
+fn named_properties_get_private_stripped_copies_ocgs_stay_shared() {
+    let mut doc = fixture();
+    let page1 = page_ids(&doc)[0];
+    let ocg = doc.add_object(dictionary! { "Type" => "OCG", "Name" => text("Layer") });
+    let span = doc.add_object(dictionary! { "ActualText" => text("World"), "Lang" => text("en") });
+    let c = doc.add_object(stream("/OC /L0 BDC /Span /MC0 BDC BT /H 10 Tf 100 700 Td (Hello World) Tj ET EMC EMC"));
+    let font = doc.add_object(helvetica());
+    let d = doc.get_dictionary_mut(page1).unwrap();
+    d.set("Contents", c);
+    d.set("Resources", dictionary! { "Font" => dictionary! { "H" => font }, "Properties" => dictionary! { "L0" => ocg, "MC0" => span } });
+    let rects = page_rects_user(&doc, page1, &[world()]);
+    redact_page(&mut doc, page1, &rects, Fill::Black, &mut Budget::page(64 << 20)).unwrap();
+    let res = doc.get_dictionary(page1).unwrap().get(b"Resources").unwrap().as_dict().unwrap().clone();
+    let props = super::interp::page_resources_dict(&doc, &res, b"Properties");
+    assert_eq!(props.get(b"L0").unwrap(), &Object::Reference(ocg), "the OCG keeps its identity");
+    let mc0 = props.get(b"MC0").unwrap();
+    assert_ne!(mc0, &Object::Reference(span), "a private copy");
+    let mc0 = doc.dereference(mc0).unwrap().1.as_dict().unwrap();
+    assert!(!mc0.has(b"ActualText") && mc0.has(b"Lang"));
+    assert!(doc.get_dictionary(span).unwrap().has(b"ActualText"), "the original stays for other users");
+}
+
+#[test]
+fn images_inside_forms_are_redacted_copy_on_write() {
+    let mut doc = fixture();
+    let page2 = page_ids(&doc)[1];
+    let image = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 2, "Height" => 1,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        vec![200, 200],
+    ));
+    let form = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 100, 100]),
+            "Resources" => dictionary! { "XObject" => dictionary! { "Im" => image } },
+        },
+        b"q 20 0 0 10 0 0 cm /Im Do Q".to_vec(),
+    ));
+    let c = doc.add_object(stream("q 1 0 0 1 100 100 cm /Fm Do Q"));
+    let d = doc.get_dictionary_mut(page2).unwrap();
+    d.set("Contents", c);
+    d.set("Resources", dictionary! { "XObject" => dictionary! { "Fm" => form } });
+    let rects = page_rects_user(&doc, page2, &[area(2, 100.0, 100.0, 10.0, 10.0)]);
+    let report = redact_page(&mut doc, page2, &rects, Fill::Black, &mut Budget::page(64 << 20)).unwrap();
+    assert_eq!((report.images_redacted, report.forms_redacted), (1, 1));
+    assert_eq!(doc.get_object(image).unwrap().as_stream().unwrap().content, vec![200, 200], "original image kept");
+    assert_eq!(
+        doc.get_object(form).unwrap().as_stream().unwrap().content,
+        b"q 20 0 0 10 0 0 cm /Im Do Q".to_vec(),
+        "original form kept"
+    );
+}
+
+#[test]
+fn form_cycles_and_depth_are_unsupported() {
+    let mut doc = fixture();
+    let page2 = page_ids(&doc)[1];
+    let id = doc.new_object_id();
+    doc.objects.insert(
+        id,
+        Object::Stream(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 10, 10]),
+                "Resources" => dictionary! { "XObject" => dictionary! { "Me" => id } },
+            },
+            b"/Me Do".to_vec(),
+        )),
+    );
+    let c = doc.add_object(stream("/Me Do"));
+    let d = doc.get_dictionary_mut(page2).unwrap();
+    d.set("Contents", c);
+    d.set("Resources", dictionary! { "XObject" => dictionary! { "Me" => id } });
+    let rects = page_rects_user(&doc, page2, &[area(2, 0.0, 0.0, 5.0, 5.0)]);
+    let err = redact_page(&mut doc, page2, &rects, Fill::Black, &mut Budget::page(64 << 20)).unwrap_err();
+    assert!(err.0.contains("cycle") || err.0.contains("deep"), "{err:?}");
+}

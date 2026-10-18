@@ -80,7 +80,7 @@ fn try_redact(content: &[u8], rects: &[Rect]) -> Result<(Vec<lopdf::content::Ope
     let events = Interp::new(&doc, resources.clone()).run(&ops, IDENTITY, &mut Budget::page(1 << 20)).unwrap();
     let mut page_resources = resources;
     let mut budget = Budget::page(1 << 20);
-    let mut page = PageEdit { doc: &mut doc, resources: &mut page_resources, fill: Fill::Black, budget: &mut budget };
+    let mut page = PageEdit::new(&mut doc, &mut page_resources, Fill::Black, &mut budget);
     redact_content(&mut page, &ops, &events, rects)
 }
 
@@ -90,7 +90,7 @@ fn redact(content: &[u8], rects: &[Rect]) -> Out {
     let events = Interp::new(&doc, resources.clone()).run(&ops, IDENTITY, &mut Budget::page(1 << 20)).unwrap();
     let mut resources = resources;
     let mut budget = Budget::page(1 << 20);
-    let mut page = PageEdit { doc: &mut doc, resources: &mut resources, fill: Fill::Black, budget: &mut budget };
+    let mut page = PageEdit::new(&mut doc, &mut resources, Fill::Black, &mut budget);
     let (new_ops, report) = redact_content(&mut page, &ops, &events, rects).unwrap();
     let content = encode_ops(&new_ops);
     assert_no_number_runs(&content);

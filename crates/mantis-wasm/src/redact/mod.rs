@@ -8,19 +8,196 @@
 #[cfg(test)]
 mod content_tests;
 pub(crate) mod fonts;
+pub(crate) mod forms;
 pub(crate) mod graphics;
 #[cfg(test)]
 mod image_tests;
 pub(crate) mod images;
 pub(crate) mod interp;
 pub(crate) mod marked;
+pub(crate) mod page;
+#[cfg(test)]
+mod pipeline_tests;
 pub(crate) mod text;
+pub(crate) mod verify;
+
+pub(crate) use page::{page_rects_user, redact_page};
+#[cfg(test)]
+pub(crate) use page::plant_leak_for_tests;
+
+/// Most areas one job may mark.
+pub(crate) const MAX_RECTS: usize = 10_000;
+/// Largest coordinate magnitude of an area (visible space, points).
+pub(crate) const MAX_COORD: f64 = 1e6;
+/// Decoded bytes one job may produce (content, forms, images).
+pub(crate) const JOB_DECODED: usize = 512 << 20;
+
+/// One area to redact: `[x, y, width, height]` in the visible space of
+/// 1-based `page` (origin bottom-left, rotation applied).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RedactRect {
+    pub(crate) page: u32,
+    pub(crate) rect: [f64; 4],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RedactJob {
+    pub(crate) rects: Vec<RedactRect>,
+    pub(crate) fill: Fill,
+    /// Drop the document information dictionary too (XMP always goes).
+    pub(crate) remove_metadata: bool,
+}
+
+/// Whether a page with areas can be redacted by rewriting its content;
+/// `reason` says why not (it then needs a raster).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PageStatus {
+    pub(crate) page: u32,
+    pub(crate) reason: Option<String>,
+}
+
+/// What a redaction job did, for the UI.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RedactSummary {
+    pub(crate) pages_redacted: Vec<u32>,
+    pub(crate) glyphs_removed: usize,
+    pub(crate) paths_removed: usize,
+    pub(crate) images_redacted: usize,
+    pub(crate) images_removed: usize,
+    pub(crate) forms_redacted: usize,
+    pub(crate) annotations_removed: usize,
+}
+
+fn invalid(field: &str) -> String {
+    format!("Invalid redact settings: {field}")
+}
+
+/// The areas grouped by page (1-based), after checking every setting
+/// against a document of `page_count` pages.
+fn areas_by_page(rects: &[RedactRect], page_count: usize) -> Result<BTreeMap<u32, Vec<RedactRect>>, String> {
+    if rects.len() > MAX_RECTS {
+        return Err(invalid("rects"));
+    }
+    let mut by_page: BTreeMap<u32, Vec<RedactRect>> = BTreeMap::new();
+    for (i, area) in rects.iter().enumerate() {
+        let field = |name: &str| invalid(&format!("rects[{i}].{name}"));
+        if area.page == 0 || area.page as usize > page_count {
+            return Err(field("page"));
+        }
+        let [x, y, w, h] = area.rect;
+        let coord = |v: f64| v.is_finite() && v.abs() <= MAX_COORD;
+        let size = |v: f64| v.is_finite() && v > 0.0 && v <= 2.0 * MAX_COORD;
+        if !coord(x) {
+            return Err(field("x"));
+        }
+        if !coord(y) {
+            return Err(field("y"));
+        }
+        if !size(w) {
+            return Err(field("width"));
+        }
+        if !size(h) {
+            return Err(field("height"));
+        }
+        by_page.entry(area.page).or_default().push(area.clone());
+    }
+    Ok(by_page)
+}
+
+/// Redact every page with areas in `doc` (sharing one job budget); one
+/// result per page, in page order.
+fn redact_pages(doc: &mut Document, by_page: &BTreeMap<u32, Vec<RedactRect>>, fill: Fill) -> Vec<(u32, Vec<Rect>, Result<Report, Unsupported>)> {
+    let pages = doc.get_pages();
+    let mut decoded = JOB_DECODED;
+    let mut out = Vec::new();
+    for (&number, areas) in by_page {
+        let Some(&page) = pages.get(&number) else {
+            continue;
+        };
+        let rects = page_rects_user(doc, page, areas);
+        let mut budget = Budget::page(decoded);
+        let result = redact_page(doc, page, &rects, fill, &mut budget);
+        decoded = budget.decoded;
+        out.push((number, rects, result));
+    }
+    out
+}
+
+/// Which pages with areas can be redacted in place.
+pub(crate) fn redact_plan(pdf: &[u8], rects: &[RedactRect]) -> Result<Vec<PageStatus>, String> {
+    let mut doc = load_pdf(pdf)?;
+    let by_page = areas_by_page(rects, doc.get_pages().len())?;
+    Ok(redact_pages(&mut doc, &by_page, Fill::Black)
+        .into_iter()
+        .map(|(page, _, result)| PageStatus { page, reason: result.err().map(|u| u.0) })
+        .collect())
+}
+
+/// Redact `job.rects` from `pdf`: remove the content under them, rebuild
+/// the document without hidden data, verify, and return the new bytes.
+pub(crate) fn redact(pdf: &[u8], job: &RedactJob) -> Result<(Vec<u8>, RedactSummary), String> {
+    let mut doc = load_pdf(pdf)?;
+    let by_page = areas_by_page(&job.rects, doc.get_pages().len())?;
+    let mut summary = RedactSummary::default();
+    let mut checks = Vec::new();
+    for (number, rects, result) in redact_pages(&mut doc, &by_page, job.fill) {
+        // Pages that need a raster arrive with one (Task 5); none yet.
+        let report = result.map_err(|_| invalid("raster"))?;
+        summary.pages_redacted.push(number);
+        summary.glyphs_removed += report.glyphs_removed;
+        summary.paths_removed += report.paths_removed + report.shadings_removed;
+        summary.images_redacted += report.images_redacted;
+        summary.images_removed += report.images_removed.len();
+        summary.forms_redacted += report.forms_redacted;
+        summary.annotations_removed += report.annotations_removed;
+        checks.push((number, rects));
+    }
+    let pages: Vec<OutPage> =
+        doc.get_pages().into_values().map(|page| OutPage::Page { src: 0, page, rotate: 0 }).collect();
+    let policy = Policy { keep_links: true, keep_comments: false, strip_image_metadata: true };
+    let sources = [doc];
+    let (mut out, _) = rebuild_document(&sources, &pages, &policy)?;
+    if !job.remove_metadata {
+        copy_info(&sources[0], &mut out);
+    }
+    let bytes = save_pdf(&mut out)?;
+    // Verify what a reader will see: the saved file, parsed again.
+    let saved = load_pdf(&bytes)?;
+    let saved_pages = saved.get_pages();
+    for (number, rects) in checks {
+        let ok = saved_pages.get(&number).is_some_and(|&page| verify::verify_page(&saved, page, &rects));
+        if !ok {
+            return Err(format!("Redaction verification failed on page {number}"));
+        }
+    }
+    Ok((bytes, summary))
+}
+
+/// Copy the text entries of the source's document information dictionary.
+fn copy_info(source: &Document, out: &mut Document) {
+    let Some(Object::Dictionary(info)) = source.trailer.get(b"Info").ok().and_then(|i| rebuild::deref(source, i)) else {
+        return;
+    };
+    let mut copy = lopdf::Dictionary::new();
+    for key in [&b"Title"[..], b"Author", b"Subject", b"Keywords", b"Creator", b"Producer", b"CreationDate", b"ModDate"] {
+        if let Some(Object::String(text, format)) = info.get(key).ok().and_then(|v| rebuild::deref(source, v)) {
+            copy.set(key.to_vec(), Object::String(text.clone(), *format));
+        }
+    }
+    if !copy.is_empty() {
+        let id = out.add_object(copy);
+        out.trailer.set("Info", id);
+    }
+}
 
 use crate::rebuild;
 use interp::{Event, Rect};
 use lopdf::content::Operation;
 use lopdf::Object;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use crate::pdf_util::{load_pdf, save_pdf};
+use crate::rebuild::{OutPage, Policy, rebuild_document};
+use lopdf::Document;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// Why a page cannot be redacted by rewriting its content (the page is then
 /// rasterized instead).
@@ -88,6 +265,15 @@ pub(crate) struct PageEdit<'a> {
     pub(crate) resources: &'a mut lopdf::Dictionary,
     pub(crate) fill: Fill,
     pub(crate) budget: &'a mut Budget,
+    /// Form XObjects being redacted around this content (cycle and depth
+    /// guard).
+    pub(crate) forms: Vec<lopdf::ObjectId>,
+}
+
+impl<'a> PageEdit<'a> {
+    pub(crate) fn new(doc: &'a mut lopdf::Document, resources: &'a mut lopdf::Dictionary, fill: Fill, budget: &'a mut Budget) -> Self {
+        PageEdit { doc, resources, fill, budget, forms: Vec::new() }
+    }
 }
 
 /// What `redact_content` removed.
@@ -101,6 +287,10 @@ pub(crate) struct Report {
     pub(crate) images_redacted: usize,
     /// Why each image under a rect was removed entirely instead.
     pub(crate) images_removed: Vec<&'static str>,
+    /// Form XObjects drawn from redacted private copies.
+    pub(crate) forms_redacted: usize,
+    /// Annotations removed from the page.
+    pub(crate) annotations_removed: usize,
     /// /Properties names of marked-content sequences around removed content:
     /// the page needs private copies of them without /ActualText, /Alt and
     /// /E (page assembly does that; inline property lists are rewritten
@@ -134,10 +324,16 @@ fn add_image(page: &mut PageEdit, mut image: lopdf::Stream, smask: Option<lopdf:
         let id = page.doc.add_object(smask);
         image.dict.set("SMask", id);
     }
-    let id = page.doc.add_object(image);
+    add_xobject(page, image, "RedactedIm")
+}
+
+/// Add `stream` as a new object under a fresh name (`prefix` + number) in
+/// the page's own /XObject dictionary.
+pub(crate) fn add_xobject(page: &mut PageEdit, stream: lopdf::Stream, prefix: &str) -> Vec<u8> {
+    let id = page.doc.add_object(stream);
     let mut xobjects = interp::page_resources_dict(page.doc, page.resources, b"XObject");
     let name = (1..)
-        .map(|n| format!("RedactedIm{n}").into_bytes())
+        .map(|n| format!("{prefix}{n}").into_bytes())
         .find(|n| !xobjects.has(n))
         .unwrap_or_default();
     xobjects.set(name.clone(), id);
@@ -145,12 +341,26 @@ fn add_image(page: &mut PageEdit, mut image: lopdf::Stream, smask: Option<lopdf:
     name
 }
 
+impl Report {
+    /// Add the counts of a form's redaction to this content's.
+    fn absorb(&mut self, other: Report) {
+        self.glyphs_removed += other.glyphs_removed;
+        self.paths_removed += other.paths_removed;
+        self.shadings_removed += other.shadings_removed;
+        self.inline_images_removed += other.inline_images_removed;
+        self.images_redacted += other.images_redacted;
+        self.images_removed.extend(other.images_removed);
+        self.forms_redacted += other.forms_redacted;
+        self.annotations_removed += other.annotations_removed;
+    }
+}
+
 
 /// `ops` without the glyphs, painted paths, shadings and image pixels of
 /// `events` (their interpretation) that intersect any of `rects` (user
 /// space). Images under a rect are redrawn from new objects added to
-/// `page.doc` under new names in `page.resources`. Form XObjects are left
-/// to their own pass.
+/// `page.doc` under new names in `page.resources`; so are forms with
+/// anything to remove (private copies, recursively).
 pub(crate) fn redact_content(
     page: &mut PageEdit,
     ops: &[Operation],
@@ -171,7 +381,7 @@ pub(crate) fn redact_content(
         }
         match event {
             Event::Glyph(g) => {
-                let removed = graphics::quad_hit(&g.box_user, rects);
+                let removed = graphics::quad_hit(&g.box_user, rects) && !page::leak_planted();
                 if removed {
                     cut_shows.insert(g.op_index);
                 }
@@ -190,6 +400,15 @@ pub(crate) fn redact_content(
                 }
                 None => {}
             },
+            Event::Form(f) => {
+                let (name, sub) = forms::redact_form(page, f, rects)?;
+                report.absorb(sub);
+                if let Some(name) = name {
+                    replaced.insert(f.op_index, vec![Operation::new("Do", vec![Object::Name(name)])]);
+                    report.forms_redacted += 1;
+                    touched.extend(f.marked);
+                }
+            }
             Event::Shading(s) if graphics::shading_hit(s, rects) => {
                 dropped.insert(s.op_index);
                 report.shadings_removed += 1;
@@ -221,7 +440,7 @@ pub(crate) fn redact_content(
         return Err(Unsupported::new("glyph outside the content"));
     }
     let edits = text::rewrite_text(ops, &glyphs)?;
-    report.glyphs_removed = edits.removed;
+    report.glyphs_removed += edits.removed;
     replaced.extend(edits.replaced);
     // Every glyph of a cut show counts as touched (a whole show may go).
     touched.extend(glyphs.iter().filter(|(g, _)| cut_shows.contains(&g.op_index)).filter_map(|(g, _)| g.marked));
@@ -239,6 +458,7 @@ pub(crate) fn redact_content(
         }
     }
     prune_resources(page, ops, &out)?;
+    marked::strip_named_properties(page.doc, page.resources, &report.named_properties);
     Ok((out, report))
 }
 
