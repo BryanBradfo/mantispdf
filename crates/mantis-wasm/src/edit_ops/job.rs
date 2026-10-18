@@ -6,6 +6,7 @@
 use super::{Align, EditItem, EditJob, MAX_IMAGES, Paint, invalid};
 use crate::stamp::engine::ImageData;
 use crate::stamp::fonts::StdFont;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub(crate) enum RawPaint {
@@ -17,6 +18,8 @@ pub(crate) enum RawPaint {
 pub(crate) enum RawImageData {
     Jpeg(Vec<u8>),
     Rgba { width: f64, height: f64, pixels: Vec<u8> },
+    /// The same image data as the image item at this index of the job (read once).
+    Same(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -90,14 +93,21 @@ fn paint(p: RawPaint) -> Paint {
     }
 }
 
-fn image(data: RawImageData, i: usize) -> Result<ImageData, String> {
+/// `shared[j]` is the image of item `j` when it is an image item.
+fn image(data: RawImageData, i: usize, shared: &[Option<Arc<ImageData>>]) -> Result<Arc<ImageData>, String> {
     Ok(match data {
-        RawImageData::Jpeg(bytes) => ImageData::Jpeg(bytes),
-        RawImageData::Rgba { width, height, pixels } => ImageData::Rgba {
+        RawImageData::Jpeg(bytes) => Arc::new(ImageData::Jpeg(bytes)),
+        RawImageData::Rgba { width, height, pixels } => Arc::new(ImageData::Rgba {
             width: whole(width, f64::from(u32::MAX), format!("items[{i}].image.width"))?,
             height: whole(height, f64::from(u32::MAX), format!("items[{i}].image.height"))?,
             pixels,
-        },
+        }),
+        RawImageData::Same(j) => shared
+            .get(j)
+            .and_then(Option::as_ref)
+            .filter(|_| j < i)
+            .map(Arc::clone)
+            .ok_or_else(|| invalid(&format!("items[{i}].image")))?,
     })
 }
 
@@ -107,8 +117,9 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<EditJob, String> {
         return Err(invalid("images"));
     }
     let mut items = Vec::with_capacity(raw.items.len());
+    let mut shared: Vec<Option<Arc<ImageData>>> = Vec::with_capacity(raw.items.len());
     for (i, it) in raw.items.into_iter().enumerate() {
-        items.push(match it {
+        let item = match it {
             RawItem::Text { page: p, rect, text, font: f, size, color, opacity, align: a, line_height } => EditItem::Text {
                 page: page(p, i)?,
                 rect,
@@ -123,7 +134,7 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<EditJob, String> {
             RawItem::Image { page: p, rect, image: data, opacity, rotation } => EditItem::Image {
                 page: page(p, i)?,
                 rect,
-                image: image(data, i)?,
+                image: image(data, i, &shared)?,
                 opacity,
                 rotation: whole(rotation, 270.0, format!("items[{i}].rotation"))
                     .ok()
@@ -144,7 +155,12 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<EditJob, String> {
                 EditItem::Freehand { page: page(p, i)?, points, color, width, opacity }
             }
             RawItem::Whiteout { page: p, rect } => EditItem::Whiteout { page: page(p, i)?, rect },
+        };
+        shared.push(match &item {
+            EditItem::Image { image, .. } => Some(Arc::clone(image)),
+            _ => None,
         });
+        items.push(item);
     }
     Ok(EditJob { items })
 }
@@ -191,7 +207,8 @@ mod tests {
         ];
         let job = validate_job(RawJob { items }).unwrap();
         assert!(matches!(&job.items[0], EditItem::Text { page: 2, font: StdFont::Courier, align: Align::Center, .. }));
-        assert!(matches!(&job.items[1], EditItem::Image { rotation: 90, image: ImageData::Rgba { width: 1, height: 1, .. }, .. }));
+        let EditItem::Image { rotation: 90, image, .. } = &job.items[1] else { panic!("{:?}", job.items[1]) };
+        assert!(matches!(&**image, ImageData::Rgba { width: 1, height: 1, .. }));
         assert!(matches!(&job.items[2], EditItem::Rect { stroke: Paint::Rgb(_), fill: Paint::None, .. }));
         assert!(matches!(&job.items[3], EditItem::Whiteout { page: 1, .. }));
     }
@@ -221,5 +238,17 @@ mod tests {
         assert_eq!(err(items.clone()), "Invalid edit settings: images");
         items.pop();
         assert!(validate_job(RawJob { items }).is_ok());
+    }
+
+    #[test]
+    fn same_image_shares_the_earlier_data() {
+        let same = |j: usize| RawItem::Image { page: 1.0, rect: [0.0, 0.0, 1.0, 1.0], image: RawImageData::Same(j), opacity: 1.0, rotation: 0.0 };
+        let job = validate_job(RawJob { items: vec![image(0.0), text(1.0, "Helvetica", "left"), same(0)] }).unwrap();
+        let (EditItem::Image { image: a, .. }, EditItem::Image { image: b, .. }) = (&job.items[0], &job.items[2]) else { panic!() };
+        assert!(Arc::ptr_eq(a, b));
+        // Only an earlier image item can be referenced.
+        assert_eq!(err(vec![image(0.0), text(1.0, "Helvetica", "left"), same(1)]), "Invalid edit settings: items[2].image");
+        assert_eq!(err(vec![same(0)]), "Invalid edit settings: items[0].image");
+        assert_eq!(err(vec![image(0.0), same(5)]), "Invalid edit settings: items[1].image");
     }
 }

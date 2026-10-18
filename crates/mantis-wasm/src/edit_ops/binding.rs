@@ -5,7 +5,7 @@
 
 use super::job::{RawImageData, RawItem, RawJob, RawPaint};
 use super::{MAX_FREEHAND_POINTS, MAX_IMAGE_BYTES, MAX_IMAGES, MAX_ITEMS, invalid};
-use js_sys::{Array, Reflect, Uint8Array};
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue};
 
 fn get(obj: &JsValue, key: &str, path: &str) -> Result<JsValue, String> {
@@ -66,14 +66,26 @@ fn paint(obj: &JsValue, key: &str, path: &str) -> Result<RawPaint, String> {
     }
 }
 
-/// Image bytes; `budget` is what the job may still carry (checked on the
-/// JS length before anything is copied).
-fn bytes(obj: &JsValue, key: &str, path: &str, budget: &mut u64) -> Result<Vec<u8>, String> {
+/// Image data of the job read so far, to recognise a buffer placed again.
+struct ImageReader {
+    placements: usize,
+    /// What the job may still carry, counted once per distinct buffer.
+    budget: u64,
+    /// Data buffers already read and the index of the item that read them.
+    seen: Vec<(JsValue, usize)>,
+}
+
+/// The `Uint8Array` at `obj[key]`, not copied yet.
+fn data(obj: &JsValue, key: &str, path: &str) -> Result<Uint8Array, String> {
     let v = get(obj, key, path)?;
     if !v.is_instance_of::<Uint8Array>() {
         return Err(invalid(&format!("{path}.{key}")));
     }
-    let arr: Uint8Array = v.unchecked_into();
+    Ok(v.unchecked_into())
+}
+
+/// Copies `arr` once the budget allows it (checked on the JS length before copying).
+fn copy(arr: &Uint8Array, budget: &mut u64) -> Result<Vec<u8>, String> {
     let len = u64::from(arr.length());
     if len > *budget {
         return Err(invalid("images"));
@@ -82,21 +94,36 @@ fn bytes(obj: &JsValue, key: &str, path: &str, budget: &mut u64) -> Result<Vec<u
     Ok(arr.to_vec())
 }
 
-fn image(v: &JsValue, path: &str, budget: &mut u64) -> Result<RawImageData, String> {
+/// The image of item `index`. A data buffer already read by an earlier item (the same picked
+/// image placed again: `buildEditJob` shares it) is neither copied nor charged again; the engine
+/// then embeds it once.
+fn image(v: &JsValue, index: usize, path: &str, reader: &mut ImageReader) -> Result<RawImageData, String> {
     let img = get(v, "image", path)?;
     let ipath = format!("{path}.image");
-    match string(&img, "kind", &ipath)?.as_str() {
-        "jpeg" => Ok(RawImageData::Jpeg(bytes(&img, "bytes", &ipath, budget)?)),
-        "rgba" => Ok(RawImageData::Rgba {
+    let kind = string(&img, "kind", &ipath)?;
+    let key = match kind.as_str() {
+        "jpeg" => "bytes",
+        "rgba" => "pixels",
+        _ => return Err(invalid(&format!("{ipath}.kind"))),
+    };
+    let arr = data(&img, key, &ipath)?;
+    if let Some(&(_, j)) = reader.seen.iter().find(|(prev, _)| Object::is(prev, &arr)) {
+        return Ok(RawImageData::Same(j));
+    }
+    let out = if kind == "jpeg" {
+        RawImageData::Jpeg(copy(&arr, &mut reader.budget)?)
+    } else {
+        RawImageData::Rgba {
             width: num(&img, "width", &ipath)?,
             height: num(&img, "height", &ipath)?,
-            pixels: bytes(&img, "pixels", &ipath, budget)?,
-        }),
-        _ => Err(invalid(&format!("{ipath}.kind"))),
-    }
+            pixels: copy(&arr, &mut reader.budget)?,
+        }
+    };
+    reader.seen.push((arr.into(), index));
+    Ok(out)
 }
 
-fn item(v: &JsValue, path: &str, images: &mut usize, budget: &mut u64) -> Result<RawItem, String> {
+fn item(v: &JsValue, index: usize, path: &str, reader: &mut ImageReader) -> Result<RawItem, String> {
     let page = num(v, "page", path)?;
     Ok(match string(v, "kind", path)?.as_str() {
         "text" => RawItem::Text {
@@ -111,14 +138,14 @@ fn item(v: &JsValue, path: &str, images: &mut usize, budget: &mut u64) -> Result
             line_height: num(v, "lineHeight", path)?,
         },
         "image" => {
-            *images += 1;
-            if *images > MAX_IMAGES {
+            reader.placements += 1;
+            if reader.placements > MAX_IMAGES {
                 return Err(invalid("images"));
             }
             RawItem::Image {
                 page,
                 rect: nums(v, "rect", path)?,
-                image: image(v, path, budget)?,
+                image: image(v, index, path, reader)?,
                 opacity: num(v, "opacity", path)?,
                 rotation: num(v, "rotation", path)?,
             }
@@ -183,10 +210,10 @@ pub(crate) fn read_job(job: &JsValue) -> Result<RawJob, String> {
     if list.length() as usize > MAX_ITEMS {
         return Err(invalid("items"));
     }
-    let (mut images, mut budget) = (0usize, MAX_IMAGE_BYTES);
+    let mut reader = ImageReader { placements: 0, budget: MAX_IMAGE_BYTES, seen: Vec::new() };
     let mut items = Vec::with_capacity(list.length() as usize);
     for i in 0..list.length() {
-        items.push(item(&list.get(i), &format!("items[{i}]"), &mut images, &mut budget)?);
+        items.push(item(&list.get(i), i as usize, &format!("items[{i}]"), &mut reader)?);
     }
     Ok(RawJob { items })
 }

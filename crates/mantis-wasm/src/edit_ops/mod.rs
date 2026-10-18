@@ -17,13 +17,15 @@ use crate::stamp::image::{BuiltImage, build_image};
 use crate::stamp::page_writer::{Blend, DocWriter, escape_literal, lossy};
 use lopdf::ObjectId;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Items per job.
 pub(crate) const MAX_ITEMS: usize = 2000;
 /// Image items per job.
 pub(crate) const MAX_IMAGES: usize = 200;
-/// Bytes of image data (JPEG bytes plus RGBA pixels) all images of a job may carry together.
-pub(crate) const MAX_IMAGE_BYTES: u64 = 512 * 1024 * 1024;
+/// Bytes of image data (JPEG bytes plus RGBA pixels) all images of a job may carry together,
+/// counted once per distinct image (wasm32 memory peaks: input, decoded copy and output).
+pub(crate) const MAX_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
 /// Freehand points all strokes of a job may carry together.
 pub(crate) const MAX_FREEHAND_POINTS: usize = 20_000;
 /// Characters in one text box.
@@ -61,7 +63,8 @@ pub enum EditItem {
         align: Align,
         line_height: f64,
     },
-    Image { page: u32, rect: [f64; 4], image: ImageData, opacity: f64, rotation: u16 },
+    /// Items sharing one `Arc` (the same picked image placed several times) share one XObject.
+    Image { page: u32, rect: [f64; 4], image: Arc<ImageData>, opacity: f64, rotation: u16 },
     Rect { page: u32, rect: [f64; 4], stroke: Paint, width: f64, fill: Paint, opacity: f64 },
     Ellipse { page: u32, rect: [f64; 4], stroke: Paint, width: f64, fill: Paint, opacity: f64 },
     Line {
@@ -131,9 +134,9 @@ pub fn edit_pdf(pdf: &[u8], job: &EditJob) -> Result<Vec<u8>, String> {
     // in job order.
     let mut plans: Vec<PagePlan> = Vec::new();
     let mut plan_of: HashMap<ObjectId, usize> = HashMap::new();
-    let mut built: Vec<Option<BuiltImage>> = Vec::new();
+    let mut images = Images::default();
     for item in &job.items {
-        let Some(planned) = plan_item(item, &mut built)? else {
+        let Some(planned) = plan_item(item, &mut images)? else {
             continue;
         };
         let page_id = pages[item.page() as usize - 1];
@@ -175,7 +178,7 @@ pub fn edit_pdf(pdf: &[u8], job: &EditJob) -> Result<Vec<u8>, String> {
                     ops
                 }
                 Planned::Image { image, matrix: placement, opacity } => {
-                    let id = add_image(&mut doc, built[*image].take().expect("image placed once"));
+                    let id = images.object(&mut doc, *image);
                     let gs = pw.gs(&mut doc, &mut writer, *opacity, Blend::Normal);
                     let name = pw.xobject(id);
                     let placement = placement.map(fmt_num).join(" ");
@@ -189,10 +192,42 @@ pub fn edit_pdf(pdf: &[u8], job: &EditJob) -> Result<Vec<u8>, String> {
     save_pdf(&mut doc)
 }
 
+/// The job's distinct images: built once each, added to the document on first use.
+#[derive(Default)]
+struct Images {
+    index: HashMap<*const ImageData, usize>,
+    built: Vec<Option<BuiltImage>>,
+    ids: Vec<Option<ObjectId>>,
+}
+
+impl Images {
+    /// Index of `data`, built on its first placement.
+    fn plan(&mut self, data: &Arc<ImageData>) -> Result<usize, String> {
+        if let Some(&i) = self.index.get(&Arc::as_ptr(data)) {
+            return Ok(i);
+        }
+        self.built.push(Some(build_image(data)?));
+        self.ids.push(None);
+        let i = self.built.len() - 1;
+        self.index.insert(Arc::as_ptr(data), i);
+        Ok(i)
+    }
+
+    /// The image XObject of index `i`, added to `doc` the first time it is drawn.
+    fn object(&mut self, doc: &mut lopdf::Document, i: usize) -> ObjectId {
+        if let Some(id) = self.ids[i] {
+            return id;
+        }
+        let id = add_image(doc, self.built[i].take().expect("image added once"));
+        self.ids[i] = Some(id);
+        id
+    }
+}
+
 /// What `item` draws, or None when it is invisible (a shape with neither
 /// stroke nor fill, a text box with only blank lines). Images are built
-/// into `built`.
-fn plan_item(item: &EditItem, built: &mut Vec<Option<BuiltImage>>) -> Result<Option<Planned>, String> {
+/// into `images`.
+fn plan_item(item: &EditItem, images: &mut Images) -> Result<Option<Planned>, String> {
     let path = |body: Option<String>, opacity: f64, blend: Blend| body.map(|body| Planned::Path { body, opacity, blend });
     Ok(match item {
         EditItem::Text { rect, text, font, size, color, opacity, align, line_height, .. } => {
@@ -206,8 +241,8 @@ fn plan_item(item: &EditItem, built: &mut Vec<Option<BuiltImage>>) -> Result<Opt
             })
         }
         EditItem::Image { rect, image, opacity, rotation, .. } => {
-            built.push(Some(build_image(image)?));
-            Some(Planned::Image { image: built.len() - 1, matrix: draw::image_matrix(*rect, *rotation), opacity: *opacity })
+            let image = images.plan(image)?;
+            Some(Planned::Image { image, matrix: draw::image_matrix(*rect, *rotation), opacity: *opacity })
         }
         EditItem::Rect { rect, stroke, width, fill, opacity, .. } => {
             path(draw::rect_ops(*rect, *stroke, *width, *fill), *opacity, Blend::Normal)
@@ -237,6 +272,35 @@ fn images_ok(count: usize, bytes: u64) -> bool {
     count <= MAX_IMAGES && bytes <= MAX_IMAGE_BYTES
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct ImageBudget {
+    /// Image items.
+    placements: usize,
+    /// Data bytes and RGBA pixels, each distinct image (shared `Arc`) counted once.
+    bytes: u64,
+    pixels: u64,
+}
+
+fn image_budget(items: &[EditItem]) -> ImageBudget {
+    let mut seen = std::collections::HashSet::new();
+    let mut b = ImageBudget { placements: 0, bytes: 0, pixels: 0 };
+    for item in items {
+        let EditItem::Image { image, .. } = item else { continue };
+        b.placements += 1;
+        if !seen.insert(Arc::as_ptr(image)) {
+            continue;
+        }
+        match &**image {
+            ImageData::Rgba { width, height, pixels } => {
+                b.pixels += u64::from(*width) * u64::from(*height);
+                b.bytes += pixels.len() as u64;
+            }
+            ImageData::Jpeg(bytes) => b.bytes += bytes.len() as u64,
+        }
+    }
+    b
+}
+
 fn validate(job: &EditJob, total: usize) -> Result<(), String> {
     if job.items.len() > MAX_ITEMS {
         return Err(invalid("items"));
@@ -254,8 +318,6 @@ fn validate(job: &EditJob, total: usize) -> Result<(), String> {
     let stroke_ok = |w: f64| w > 0.0 && w <= MAX_STROKE_WIDTH;
 
     let mut points = 0usize;
-    let mut pixels = 0u64;
-    let (mut images, mut image_bytes) = (0usize, 0u64);
     for item in &job.items {
         check((1..=total).contains(&(item.page() as usize)), "page")?;
         match item {
@@ -267,19 +329,10 @@ fn validate(job: &EditJob, total: usize) -> Result<(), String> {
                 check(color_ok(color), "color")?;
                 check(unit(*opacity), "opacity")?;
             }
-            EditItem::Image { rect, image, opacity, rotation, .. } => {
+            EditItem::Image { rect, opacity, rotation, .. } => {
                 check(rect_ok(rect), "rect")?;
                 check(unit(*opacity), "opacity")?;
                 check(matches!(rotation, 0 | 90 | 180 | 270), "rotation")?;
-                images += 1;
-                match image {
-                    ImageData::Rgba { width, height, pixels: data } => {
-                        pixels += u64::from(*width) * u64::from(*height);
-                        image_bytes += data.len() as u64;
-                    }
-                    ImageData::Jpeg(bytes) => image_bytes += bytes.len() as u64,
-                }
-                check(images_ok(images, image_bytes), "images")?;
             }
             EditItem::Rect { rect, stroke, width, fill, opacity, .. }
             | EditItem::Ellipse { rect, stroke, width, fill, opacity, .. } => {
@@ -311,7 +364,9 @@ fn validate(job: &EditJob, total: usize) -> Result<(), String> {
             EditItem::Whiteout { rect, .. } => check(rect_ok(rect), "rect")?,
         }
     }
-    if pixels > MAX_TOTAL_PIXELS {
+    let budget = image_budget(&job.items);
+    check(images_ok(budget.placements, budget.bytes), "images")?;
+    if budget.pixels > MAX_TOTAL_PIXELS {
         return Err("Images are too large".into());
     }
     Ok(())
@@ -322,6 +377,7 @@ mod tests {
     use super::*;
     use lopdf::content::{Content, Operation};
     use lopdf::{Dictionary, Document, Object, Stream, dictionary};
+    use std::sync::Arc;
 
     struct Fixture {
         doc: Document,
@@ -642,7 +698,7 @@ mod tests {
         let item = EditItem::Image {
             page: 1,
             rect: [10.0, 20.0, 100.0, 50.0],
-            image: ImageData::Rgba { width: 2, height: 1, pixels },
+            image: Arc::new(ImageData::Rgba { width: 2, height: 1, pixels }),
             opacity: 0.5,
             rotation: 90,
         };
@@ -714,7 +770,7 @@ mod tests {
         assert_eq!(err(vec![rect_with(1.0, Paint::Rgb([f64::INFINITY, 0.0, 0.0]))]), e("color"));
         let line = EditItem::Line { page: 1, from: [0.0, f64::NAN], to: [1.0, 1.0], color: [0.0; 3], width: 1.0, opacity: 1.0, arrow_start: false, arrow_end: false };
         assert_eq!(err(vec![line]), e("from"));
-        let image = EditItem::Image { page: 1, rect: [0.0, 0.0, 1.0, 1.0], image: ImageData::Rgba { width: 1, height: 1, pixels: vec![0; 4] }, opacity: 1.0, rotation: 45 };
+        let image = EditItem::Image { page: 1, rect: [0.0, 0.0, 1.0, 1.0], image: Arc::new(ImageData::Rgba { width: 1, height: 1, pixels: vec![0; 4] }), opacity: 1.0, rotation: 45 };
         assert_eq!(err(vec![image]), e("rotation"));
         let far = EditItem::Freehand { page: 1, points: vec![[0.0, -1.5e6]], color: [0.0; 3], width: 1.0, opacity: 1.0 };
         assert_eq!(err(vec![far]), e("points"));
@@ -741,9 +797,9 @@ mod tests {
     }
 
     #[test]
-    fn image_budget() {
+    fn image_count_and_byte_limits() {
         let e = |f: &str| format!("Invalid edit settings: {f}");
-        let pixel = || EditItem::Image { page: 1, rect: [0.0, 0.0, 1.0, 1.0], image: ImageData::Rgba { width: 1, height: 1, pixels: vec![0; 4] }, opacity: 1.0, rotation: 0 };
+        let pixel = || EditItem::Image { page: 1, rect: [0.0, 0.0, 1.0, 1.0], image: Arc::new(ImageData::Rgba { width: 1, height: 1, pixels: vec![0; 4] }), opacity: 1.0, rotation: 0 };
         assert_eq!(err(vec![pixel(); MAX_IMAGES + 1]), e("images"));
         assert!(run(&simple_pdf(1), vec![pixel(); MAX_IMAGES]).is_ok());
         assert!(images_ok(MAX_IMAGES, MAX_IMAGE_BYTES));
@@ -753,7 +809,7 @@ mod tests {
 
     #[test]
     fn bad_image_rejected_before_write() {
-        let item = EditItem::Image { page: 1, rect: [0.0, 0.0, 1.0, 1.0], image: ImageData::Jpeg(vec![1, 2, 3]), opacity: 1.0, rotation: 0 };
+        let item = EditItem::Image { page: 1, rect: [0.0, 0.0, 1.0, 1.0], image: Arc::new(ImageData::Jpeg(vec![1, 2, 3])), opacity: 1.0, rotation: 0 };
         assert!(!err(vec![item]).is_empty());
     }
 
@@ -763,5 +819,48 @@ mod tests {
         let doc = run(&simple_pdf(1), vec![item]).unwrap();
         let t = tail(&doc, page_ids(&doc)[0]);
         assert!(t.contains("0.3 0 0 rg 0 100000 0.1 0.2 re f"), "{t}");
+    }
+
+    fn count_images(doc: &Document) -> usize {
+        doc.objects
+            .values()
+            .filter(|o| o.as_stream().is_ok_and(|s| s.dict.get(b"Subtype").and_then(|v| v.as_name()).is_ok_and(|n| n == b"Image")))
+            .count()
+    }
+
+    #[test]
+    fn one_image_placed_twice_is_embedded_once() {
+        let shared = Arc::new(ImageData::Rgba { width: 2, height: 1, pixels: vec![255, 0, 0, 255, 0, 255, 0, 255] });
+        let at = |page: u32, x: f64| EditItem::Image { page, rect: [x, 0.0, 10.0, 5.0], image: Arc::clone(&shared), opacity: 1.0, rotation: 0 };
+        let doc = run(&simple_pdf(2), vec![at(1, 0.0), at(1, 50.0), at(2, 0.0)]).unwrap();
+        assert_eq!(count_images(&doc), 1);
+        let ids = page_ids(&doc);
+        let target = |p: ObjectId| {
+            let ops = tail_ops(&doc, p);
+            let xo = category(&doc, p, b"XObject");
+            ops.iter()
+                .filter(|o| o.operator == "Do")
+                .map(|o| xo.get(o.operands[0].as_name().unwrap()).unwrap().as_reference().unwrap())
+                .collect::<Vec<_>>()
+        };
+        let (t1, t2) = (target(ids[0]), target(ids[1]));
+        assert_eq!(t1.len(), 2);
+        assert_eq!(t1[0], t1[1]);
+        assert_eq!(t2, vec![t1[0]]);
+
+        // Equal pixels in two separate buffers are two images (only shared data is deduplicated).
+        let copy = |x: f64| EditItem::Image { page: 1, rect: [x, 0.0, 10.0, 5.0], image: Arc::new((*shared).clone()), opacity: 1.0, rotation: 0 };
+        let doc = run(&simple_pdf(1), vec![copy(0.0), copy(50.0)]).unwrap();
+        assert_eq!(count_images(&doc), 2);
+    }
+
+    #[test]
+    fn image_budget_counts_shared_data_once() {
+        assert_eq!(MAX_IMAGE_BYTES, 256 * 1024 * 1024);
+        let shared = Arc::new(ImageData::Jpeg(vec![0; 100]));
+        let other = Arc::new(ImageData::Rgba { width: 2, height: 2, pixels: vec![0; 16] });
+        let img = |d: &Arc<ImageData>| EditItem::Image { page: 1, rect: [0.0, 0.0, 1.0, 1.0], image: Arc::clone(d), opacity: 1.0, rotation: 0 };
+        let budget = image_budget(&[img(&shared), img(&shared), img(&other), img(&shared)]);
+        assert_eq!(budget, ImageBudget { placements: 4, bytes: 116, pixels: 4 });
     }
 }

@@ -16,7 +16,7 @@ const image = (id: string, bytes: number, page = 1): ImageItem => ({
 describe("LIMITS", () => {
   it("mirrors the engine image budget", () => {
     expect(LIMITS.maxImages).toBe(200);
-    expect(LIMITS.maxImageBytes).toBe(512 * 1024 * 1024);
+    expect(LIMITS.maxImageBytes).toBe(256 * 1024 * 1024);
     expect(LIMITS.minStrokeWidth).toBeGreaterThan(0);
   });
 });
@@ -59,10 +59,19 @@ describe("imageBudgetError", () => {
     expect(imageBudgetError(items, source(1))).toMatch(/200 images/);
   });
 
-  it("refuses an image that would pass the byte budget, counting each placement", () => {
+  it("refuses an image that would pass the byte budget, counting each distinct image once", () => {
     const half = LIMITS.maxImageBytes / 2;
     expect(imageBudgetError([image("a", half)], source(half))).toBeNull();
-    expect(imageBudgetError([image("a", half), image("b", 1)], source(half))).toMatch(/512 MB/);
+    expect(imageBudgetError([image("a", half), image("b", 1)], source(half))).toMatch(/256 MB/);
+  });
+
+  it("does not charge the bytes again for one more placement of an image already placed", () => {
+    const big = source(LIMITS.maxImageBytes);
+    const placed = (id: string): ImageItem => ({ ...image(id, 0), image: big });
+    // The same picked image (same blob) is embedded once by the engine.
+    expect(imageBudgetError([placed("a"), placed("b")], big)).toBeNull();
+    // A different image of any size no longer fits.
+    expect(imageBudgetError([placed("a")], source(1))).toMatch(/256 MB/);
   });
 });
 

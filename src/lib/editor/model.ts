@@ -176,8 +176,11 @@ export const LIMITS = {
   maxLineHeight: 5,
   /** Image items per job (`MAX_IMAGES`). */
   maxImages: 200,
-  /** Image data of all image items together (`MAX_IMAGE_BYTES`): JPEG bytes plus RGBA pixels. */
-  maxImageBytes: 512 * 1024 * 1024,
+  /**
+   * Image data of a job (`MAX_IMAGE_BYTES`): JPEG bytes plus RGBA pixels, each distinct image
+   * counted once (placements of one picked image share their data and their XObject).
+   */
+  maxImageBytes: 256 * 1024 * 1024,
 } as const;
 
 /** Kinds with a stroke `width`. */
@@ -210,19 +213,22 @@ export function addError(items: readonly Item[], item: NewItem | Item): string |
 }
 
 /**
- * Why one more placement of `image` would exceed the engine's image budget (all pages count,
- * every placement carries its own data), or null when it fits.
+ * Why one more placement of `image` would exceed the engine's image budget, or null when it
+ * fits. Every placement counts against the image limit (all pages); the bytes of one picked
+ * image (one blob, which `buildEditJob` reads once) count once, like the engine.
  */
 export function imageBudgetError(items: readonly Item[], image: ImageSource): string | null {
   let count = 1;
-  let bytes = image.bytes;
+  const distinct = new Map<Blob, number>([[image.blob, image.bytes]]);
   for (const it of items) {
     if (it.kind !== "image") continue;
     count += 1;
-    bytes += it.image.bytes;
+    distinct.set(it.image.blob, it.image.bytes);
   }
+  let bytes = 0;
+  for (const b of distinct.values()) bytes += b;
   if (count > LIMITS.maxImages) return `A document can hold at most ${LIMITS.maxImages} images.`;
-  if (bytes > LIMITS.maxImageBytes) return "Images can add up to at most 512 MB of image data per document.";
+  if (bytes > LIMITS.maxImageBytes) return "Images can add up to at most 256 MB of image data per document.";
   return null;
 }
 
