@@ -54,7 +54,7 @@ const normalized = ([x, y, w, h]: Rect): Rect => [Math.min(x, x + w), Math.min(y
  * The engine areas of `marks`, by page: a page mark covers the page's visible `[width, height]`
  * from `pageSizes` (index = page - 1); marks on pages without a size are skipped.
  */
-export function marksToRects(marks: Mark[], pageSizes: [number, number][]): RedactRectWire[] {
+export function marksToRects(marks: readonly Mark[], pageSizes: [number, number][]): RedactRectWire[] {
   const out: RedactRectWire[] = [];
   for (const m of marks) {
     const size = pageSizes[m.page - 1];
@@ -65,12 +65,12 @@ export function marksToRects(marks: Mark[], pageSizes: [number, number][]): Reda
 }
 
 /** The pages with at least one mark, ascending. */
-export function pagesWithMarks(marks: Mark[]): number[] {
+export function pagesWithMarks(marks: readonly Mark[]): number[] {
   return [...new Set(marks.map((m) => m.page))].sort((a, b) => a - b);
 }
 
 export function toJob(
-  marks: Mark[],
+  marks: readonly Mark[],
   pageSizes: [number, number][],
   options: { fill: Fill; removeMetadata: boolean },
   rasters: RasterWire[],
@@ -95,4 +95,27 @@ export interface RedactSearchWire {
    */
   truncated: boolean;
   unsearchedPages: number[];
+}
+
+/**
+ * What one redaction runs with, taken when the user starts it: the plan, the rasters, the job
+ * and the report all use this, never the marks as they are later.
+ */
+export interface RedactRun {
+  marks: readonly Mark[];
+  fill: Fill;
+  removeMetadata: boolean;
+}
+
+export const takeRun = (marks: readonly Mark[], fill: Fill, removeMetadata: boolean): RedactRun => ({ marks, fill, removeMetadata });
+
+/** The same marks (by id and geometry, in order) and options. */
+export function sameRun(a: RedactRun, b: RedactRun): boolean {
+  if (a.fill !== b.fill || a.removeMetadata !== b.removeMetadata || a.marks.length !== b.marks.length) return false;
+  return a.marks.every((m, i) => {
+    const n = b.marks[i];
+    if (m === n) return true;
+    if (m.id !== n.id || m.kind !== n.kind || m.page !== n.page) return false;
+    return m.kind === "page" || (n.kind !== "page" && m.rect.every((v, k) => v === n.rect[k]));
+  });
 }

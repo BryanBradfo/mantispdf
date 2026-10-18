@@ -22,6 +22,8 @@ interface Props {
   onFill: (fill: Fill) => void;
   removeMetadata: boolean;
   onRemoveMetadata: (on: boolean) => void;
+  /** A redaction is running or waiting for its go-ahead: nothing here can change. */
+  locked: boolean;
 }
 
 const smallButton =
@@ -40,7 +42,7 @@ function describe(m: Mark): string {
 
 /** The marks by page, history, whole-page toggle and output options. */
 export default function MarksPanel(props: Props) {
-  const { marks, page } = props;
+  const { marks, page, locked } = props;
   const pages = [...new Set(marks.map((m) => m.page))].sort((a, b) => a - b);
 
   return (
@@ -51,10 +53,10 @@ export default function MarksPanel(props: Props) {
             Marks ({marks.length})
           </h2>
           <div className="flex gap-1">
-            <button type="button" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!props.canUndo} onClick={props.onUndo} className={smallButton}>
+            <button type="button" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={locked || !props.canUndo} onClick={props.onUndo} className={smallButton}>
               <Undo2 aria-hidden="true" className="h-4 w-4" />
             </button>
-            <button type="button" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled={!props.canRedo} onClick={props.onRedo} className={smallButton}>
+            <button type="button" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled={locked || !props.canRedo} onClick={props.onRedo} className={smallButton}>
               <Redo2 aria-hidden="true" className="h-4 w-4" />
             </button>
           </div>
@@ -64,6 +66,7 @@ export default function MarksPanel(props: Props) {
           <input
             type="checkbox"
             checked={props.wholePage}
+            disabled={locked}
             onChange={props.onToggleWholePage}
             className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
           />
@@ -104,7 +107,7 @@ export default function MarksPanel(props: Props) {
                         >
                           {describe(m)}
                         </button>
-                        <button type="button" aria-label={`Remove ${describe(m).toLowerCase()} on page ${m.page}`} onClick={() => props.onRemove(m.id)} className={smallButton}>
+                        <button type="button" aria-label={`Remove ${describe(m).toLowerCase()} on page ${m.page}`} disabled={locked} onClick={() => props.onRemove(m.id)} className={smallButton}>
                           <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
                         </button>
                       </li>
@@ -115,7 +118,7 @@ export default function MarksPanel(props: Props) {
           </ol>
         )}
         {marks.length > 0 && (
-          <button type="button" onClick={props.onClear} className={`mt-3 ${smallButton}`}>
+          <button type="button" disabled={locked} onClick={props.onClear} className={`mt-3 ${smallButton}`}>
             Remove all marks
           </button>
         )}
@@ -131,6 +134,7 @@ export default function MarksPanel(props: Props) {
                   type="radio"
                   name="redact-fill"
                   checked={props.fill === f}
+                  disabled={locked}
                   onChange={() => props.onFill(f)}
                   className="h-4 w-4 border-gray-300 text-mantis-600 focus:ring-mantis-500"
                 />
@@ -143,6 +147,7 @@ export default function MarksPanel(props: Props) {
           <input
             type="checkbox"
             checked={props.removeMetadata}
+            disabled={locked}
             onChange={(e) => props.onRemoveMetadata(e.target.checked)}
             className="mt-0.5 h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
           />

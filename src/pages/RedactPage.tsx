@@ -25,7 +25,17 @@ import {
 } from "../lib/redact/model";
 import { chooseDpi, renderRaster } from "../lib/redact/raster";
 import { findMatches, type TextRun } from "../lib/redact/search";
-import { marksToRects, toJob, type Fill, type PageStatusWire, type RasterWire, type RedactResultWire } from "../lib/redact/toJob";
+import {
+  marksToRects,
+  sameRun,
+  takeRun,
+  toJob,
+  type Fill,
+  type PageStatusWire,
+  type RasterWire,
+  type RedactResultWire,
+  type RedactRun,
+} from "../lib/redact/toJob";
 import ToolShell, { primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 
@@ -72,9 +82,11 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   const [fill, setFill] = useState<Fill>("black");
   const [removeMetadata, setRemoveMetadata] = useState(true);
   const [searching, setSearching] = useState(false);
-  const [search, setSearch] = useState<(SearchResult & { marks: MarkInput[]; undecodablePages: number[] }) | null>(null);
-  // Pages the engine cannot redact in place, waiting for the user's go-ahead.
-  const [confirm, setConfirm] = useState<PageStatusWire[] | null>(null);
+  const [search, setSearch] = useState<
+    (SearchResult & { marks: MarkInput[]; undecodablePages: number[]; truncated: boolean; unsearchedPages: number[] }) | null
+  >(null);
+  // Pages the engine cannot redact in place, waiting for the user's go-ahead, for that run.
+  const [confirm, setConfirm] = useState<{ run: RedactRun; pages: PageStatusWire[] } | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [report, setReport] = useState<RedactResultWire | null>(null);
   const docRef = useRef<Promise<PdfDocument> | null>(null);
@@ -110,13 +122,18 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     return () => window.removeEventListener("beforeunload", warn);
   }, [hasMarks]);
 
-  // A pending go-ahead was for the marks as they were: any change asks again.
-  useEffect(() => setConfirm(null), [marks, fill]);
+  // Marks are locked while a redaction runs or waits for its go-ahead: the run uses a snapshot.
+  const locked = busy || confirm !== null;
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
+  // The marks and options as they are now, for the defensive check before a run goes on.
+  const currentRun = useRef<RedactRun>(takeRun(marks, fill, removeMetadata));
+  currentRun.current = takeRun(marks, fill, removeMetadata);
 
-  // Undo / redo from the keyboard, except while typing in a field.
+  // Undo / redo from the keyboard, except while typing in a field or while locked.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTyping(e.target) || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (lockedRef.current || isTyping(e.target) || !(e.ctrlKey || e.metaKey) || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === "z" && !e.shiftKey) setState(undo);
       else if ((key === "z" && e.shiftKey) || key === "y") setState(redo);
@@ -128,6 +145,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   }, []);
 
   const change = (next: (s: MarksState) => MarksState) => {
+    if (lockedRef.current) return;
     setReport(null);
     setState(next);
   };
@@ -136,26 +154,42 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     setSearching(true);
     setError(null);
     try {
-      const doc = await openDoc();
+      // The engine finds the exact glyph boxes, one rect per line of each match.
+      const result = await worker.redactSearch(input.bytes, query, { wholeWord, caseSensitive: false });
       const found: MarkInput[] = [];
-      const pages: number[] = [];
-      let count = 0;
-      for (let n = 1; n <= doc.numPages; n++) {
-        const p = await doc.getPage(n);
-        const content = await p.getTextContent();
-        const runs: TextRun[] = [];
-        for (const item of content.items) {
-          if ("str" in item) runs.push({ str: item.str, transform: item.transform, width: item.width, hasEOL: item.hasEOL });
-        }
-        const view = p.view as [number, number, number, number];
-        // Whole items: the per-character split is approximate, a whole item never misses a glyph.
-        const matches = findMatches(runs, { view, rotate: p.rotate }, query, { wholeWord, wholeItem: true });
-        if (matches.length > 0) pages.push(n);
-        count += matches.length;
-        // One mark per line of a match, never their union (which would cover the lines between).
-        for (const m of matches) for (const rect of m.rects) found.push({ kind: "search", page: n, rect, query });
+      const pages = new Set<number>();
+      for (const { page: n, quads } of result.pages) {
+        if (quads.length > 0) pages.add(n);
+        for (const rect of quads) found.push({ kind: "search", page: n, rect, query });
       }
-      setSearch({ query, count, pages, marks: found, undecodablePages: [] });
+      // Pages whose text the engine cannot decode: pdf.js may still read it. Whole items, since
+      // its per-character split is approximate (a whole item never misses a glyph).
+      if (result.undecodablePages.length > 0) {
+        const doc = await openDoc();
+        for (const n of result.undecodablePages) {
+          const p = await doc.getPage(n);
+          const content = await p.getTextContent();
+          const runs: TextRun[] = [];
+          for (const item of content.items) {
+            if ("str" in item) runs.push({ str: item.str, transform: item.transform, width: item.width, hasEOL: item.hasEOL });
+          }
+          const view = p.view as [number, number, number, number];
+          for (const m of findMatches(runs, { view, rotate: p.rotate }, query, { wholeWord, wholeItem: true })) {
+            // One mark per line of a match, never their union (which would cover the lines between).
+            for (const rect of m.rects) found.push({ kind: "search", page: n, rect, query });
+            pages.add(n);
+          }
+        }
+      }
+      setSearch({
+        query,
+        count: found.length,
+        pages: [...pages].sort((a, b) => a - b),
+        marks: found,
+        undecodablePages: result.undecodablePages,
+        truncated: result.truncated,
+        unsearchedPages: result.unsearchedPages,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -164,24 +198,24 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   };
 
   const markAll = () => {
-    if (!search) return;
+    if (!search || lockedRef.current) return;
     change((s) => addMarks(s, search.marks));
     if (search.pages.length > 0 && !search.pages.includes(page)) setPage(search.pages[0]);
     setSearch(null);
   };
 
   /**
-   * Rasters for `pages` (rendered again on every attempt: they are handed over to the worker),
-   * then the redaction, then the download.
+   * For `snap`: rasters of `pages` (rendered again on every attempt: they are handed over to the
+   * worker), then the redaction, then the download.
    */
-  const redactWith = (pages: number[]) => {
+  const redactWith = (snap: RedactRun, pages: number[]) => {
     setConfirm(null);
     const dpi = chooseDpi(pages.map((p) => sizes[p - 1] ?? [0, 0]));
     if (dpi === null) {
       setError("Too many pages need to be converted to images at once. Split the PDF first.");
       return;
     }
-    const rects = marksToRects(marks, sizes);
+    const rects = marksToRects(snap.marks, sizes);
     const name = `${baseName(input.file)}_redacted.pdf`;
     void run(
       async () => {
@@ -191,10 +225,10 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
             setProgress(`Converting page ${p} to an image (${i + 1} of ${pages.length})…`);
             const doc = await openDoc();
             const pageRects: Rect[] = rects.filter((r) => r.page === p).map((r) => r.rect);
-            rasters.push(await renderRaster(doc, p, pageRects, fill, dpi));
+            rasters.push(await renderRaster(doc, p, pageRects, snap.fill, dpi));
           }
           setProgress("Removing the marked content…");
-          return await worker.redactPdf(input.bytes, toJob(marks, sizes, { fill, removeMetadata }, rasters));
+          return await worker.redactPdf(input.bytes, toJob(snap.marks, sizes, { fill: snap.fill, removeMetadata: snap.removeMetadata }, rasters));
         } finally {
           setProgress(null);
         }
@@ -206,18 +240,35 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     );
   };
 
-  const start = () => {
-    if (busy || marks.length === 0) return;
-    setReport(null);
-    const rects = marksToRects(marks, sizes);
+  /** Plan `snap`; a run whose marks changed meanwhile is dropped and planned again. */
+  const plan = (snap: RedactRun) => {
+    const rects = marksToRects(snap.marks, sizes);
     void run(
       () => worker.redactPlan(input.bytes, rects),
-      (plan) => {
-        const fallback = plan.filter((p) => p.reason !== null);
-        if (fallback.length > 0) setConfirm(fallback);
-        else redactWith([]);
+      (result) => {
+        if (!sameRun(snap, currentRun.current)) return plan(currentRun.current);
+        const fallback = result.filter((p) => p.reason !== null);
+        if (fallback.length > 0) setConfirm({ run: snap, pages: fallback });
+        else redactWith(snap, []);
       },
     );
+  };
+
+  const start = () => {
+    if (busy || confirm !== null || marks.length === 0) return;
+    setReport(null);
+    plan(takeRun(marks, fill, removeMetadata));
+  };
+
+  const goAhead = () => {
+    if (!confirm) return;
+    // Defensive: editing is locked meanwhile, but never redact with rasters of other marks.
+    if (!sameRun(confirm.run, currentRun.current)) {
+      setConfirm(null);
+      plan(currentRun.current);
+      return;
+    }
+    redactWith(confirm.run, confirm.pages.map((p) => p.page));
   };
 
   const startOver = () => {
@@ -259,7 +310,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
             Some pages cannot be redacted in place:
           </p>
           <ul className="mt-1 list-disc pl-5 text-sm text-amber-900 dark:text-amber-200">
-            {confirm.map((p) => (
+            {confirm.pages.map((p) => (
               <li key={p.page}>
                 Page {p.page} will be converted to an image ({p.reason}).
               </li>
@@ -267,7 +318,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           </ul>
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">Its text will no longer be selectable or searchable.</p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" onClick={() => redactWith(confirm.map((p) => p.page))} className={primaryButton}>
+            <button type="button" onClick={goAhead} className={primaryButton}>
               Continue
             </button>
             <button type="button" onClick={() => setConfirm(null)} className={secondaryButton}>
@@ -301,6 +352,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
               pageSize={pageSize}
               marks={pageMarks}
               fill={fill}
+              locked={locked}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onAdd={(rect) => change((s) => addMarks(s, [{ kind: "area", page, rect }]))}
@@ -313,7 +365,14 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           )}
         </div>
         <aside className="space-y-4">
-          <SearchBar searching={searching} result={search} onFind={(q, w) => void find(q, w)} onMarkAll={markAll} />
+          <SearchBar searching={searching} result={search} onFind={(q, w) => void find(q, w)} onMarkAll={markAll} locked={locked} />
+          {search && search.truncated && (
+            <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
+              Too many matches; showing the first {search.count}. Refine the search.
+              {search.unsearchedPages.length > 0 &&
+                ` Not searched: ${search.unsearchedPages.length === 1 ? "page" : "pages"} ${search.unsearchedPages.join(", ")}.`}
+            </p>
+          )}
           {search && search.undecodablePages.length > 0 && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
               Search may miss text on {search.undecodablePages.length === 1 ? "page" : "pages"} {search.undecodablePages.join(", ")}. Mark those areas by hand.
@@ -343,6 +402,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
             onFill={setFill}
             removeMetadata={removeMetadata}
             onRemoveMetadata={setRemoveMetadata}
+            locked={locked}
           />
         </aside>
       </div>

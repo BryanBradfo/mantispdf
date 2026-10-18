@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 
 export interface SearchResult {
   query: string;
-  /** Matches found (a match spanning several text items still counts once). */
+  /** Areas found: one per line of each match. */
   count: number;
   /** Pages with at least one match, ascending. */
   pages: number[];
@@ -14,6 +14,8 @@ interface Props {
   result: SearchResult | null;
   onFind: (query: string, wholeWord: boolean) => void;
   onMarkAll: () => void;
+  /** Marks cannot change while a redaction runs: "Mark all" waits. */
+  locked: boolean;
 }
 
 const fieldClass =
@@ -22,7 +24,7 @@ const buttonClass =
   "rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 disabled:opacity-50 dark:border-[#333] dark:text-[#bbb] dark:hover:bg-[#1a1a1a]";
 
 /** "Find text": every case-insensitive match on every page, then "Mark all". */
-export default function SearchBar({ searching, result, onFind, onMarkAll }: Props) {
+export default function SearchBar({ searching, result, onFind, onMarkAll, locked }: Props) {
   const [query, setQuery] = useState("");
   const [wholeWord, setWholeWord] = useState(false);
   const id = useId();
@@ -75,7 +77,7 @@ export default function SearchBar({ searching, result, onFind, onMarkAll }: Prop
                 {result.count} {result.count === 1 ? "match" : "matches"} for "{result.query}" on{" "}
                 {result.pages.length === 1 ? "page" : "pages"} {pagesLabel(result.pages)}.
               </p>
-              <button type="button" onClick={onMarkAll} className={`mt-2 ${buttonClass}`}>
+              <button type="button" onClick={onMarkAll} disabled={locked} className={`mt-2 ${buttonClass}`}>
                 Mark all
               </button>
             </>

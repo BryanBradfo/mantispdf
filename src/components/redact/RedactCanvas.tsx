@@ -47,6 +47,8 @@ interface Props {
   /** Marks of this page. */
   marks: readonly Mark[];
   fill: Fill;
+  /** A redaction is running or waiting for its go-ahead: marks are shown but cannot change. */
+  locked: boolean;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onAdd: (rect: Rect) => void;
@@ -65,7 +67,7 @@ function handlePoint([x, y, w, h]: Rect, handle: BoxHandle): [number, number] {
  * The page with its redaction marks as hatched boxes: drag on the page to mark an area, drag a
  * mark to move it, its handles to resize it (search matches too, to widen them).
  */
-export default function RedactCanvas({ source, page, pageSize, marks, fill, selectedId, onSelect, onAdd, onUpdate, onDelete }: Props) {
+export default function RedactCanvas({ source, page, pageSize, marks, fill, locked, selectedId, onSelect, onAdd, onUpdate, onDelete }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -111,6 +113,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, sele
   const rectOf = (m: Extract<Mark, { rect: Rect }>): Rect => (draft && draft.id === m.id ? draft.rect : m.rect);
 
   const begin = (e: React.PointerEvent, g: Gesture) => {
+    if (locked) return;
     e.preventDefault();
     e.stopPropagation();
     rootRef.current?.focus({ preventScroll: true });
@@ -192,7 +195,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, sele
         tabIndex={0}
         data-testid="redact-canvas"
         onKeyDown={(e) => {
-          if (!selected) return;
+          if (!selected || locked) return;
           if (e.key === "Delete" || e.key === "Backspace") {
             e.preventDefault();
             onDelete(selected.id);
@@ -212,7 +215,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, sele
           width={pw}
           height={ph}
           viewBox={`0 0 ${pw} ${ph}`}
-          style={{ cursor: "crosshair" }}
+          style={{ cursor: locked ? "not-allowed" : "crosshair" }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -262,6 +265,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, sele
             return <rect x={b.left} y={b.top} width={b.width} height={b.height} fill={`url(#${hatchId})`} stroke={stroke} strokeDasharray="4 3" pointerEvents="none" />;
           })()}
           {selected &&
+            !locked &&
             HANDLES.map((handle) => {
               const r = rectOf(selected);
               const b = box([...handlePoint(r, handle), 0, 0] as Rect);
