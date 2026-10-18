@@ -15,7 +15,7 @@ use crate::doc_tools::pdfdoc_char;
 use crate::pdf_util::{load_pdf, save_pdf};
 use crate::rebuild::{add_rotation, deref};
 use crate::stamp::engine::MAX_COORD;
-use crate::stamp::fonts::{StdFont, encode_winansi};
+use crate::stamp::fonts::{StdFont, encode_winansi, winansi_byte};
 use crate::stamp::page_writer::font_object;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat, dictionary};
 use std::collections::{HashMap, HashSet};
@@ -78,6 +78,7 @@ pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Resu
     // text and choice fields that have a value when the source asked for a
     // rebuild or a visible widget has no normal appearance. Buttons keep
     // theirs; /AS already picks the state.
+    let mut viewers_must_rebuild = false;
     for (index, (field, field_ref)) in tree.info.fields.iter().zip(&tree.refs).enumerate() {
         if changed.contains(&index) || field.value == Value::None {
             continue;
@@ -86,13 +87,30 @@ pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Resu
             continue;
         };
         let visible = || field.widgets.iter().zip(&field_ref.widgets).filter(|(w, _)| !w.hidden);
-        if rebuild_all || visible().any(|(_, r)| !has_normal_appearance(doc, r.obj)) {
-            let only: Vec<usize> = (0..field.widgets.len()).filter(|&i| !field.widgets[i].hidden).collect();
-            draw_field(doc, field, field_ref, &shown, &only, &mut fonts);
+        let missing = visible().any(|(_, r)| !has_normal_appearance(doc, r.obj));
+        if !(rebuild_all || missing) {
+            continue;
         }
+        if !shown_in_standard_fonts(field, &shown) {
+            // Our fonts cannot show it: keep the file's appearances, and let
+            // viewers build the missing ones with the field's own fonts.
+            viewers_must_rebuild |= missing;
+            continue;
+        }
+        let only: Vec<usize> = (0..field.widgets.len()).filter(|&i| !field.widgets[i].hidden).collect();
+        draw_field(doc, field, field_ref, &shown, &only, &mut fonts);
     }
-    mark_form(doc);
+    mark_form(doc, viewers_must_rebuild);
     Ok(())
+}
+
+/// Every character the widgets would show is WinAnsi (line breaks aside).
+fn shown_in_standard_fonts(field: &Field, shown: &Shown) -> bool {
+    let ok = |text: &str| text.chars().all(|c| matches!(c, '\r' | '\n') || winansi_byte(c).is_some());
+    match shown {
+        Shown::Text(t) => ok(t),
+        Shown::List(selected) => selected.iter().all(|&i| field.options.get(i).is_none_or(|(_, d)| ok(d))),
+    }
 }
 
 fn has_normal_appearance(doc: &Document, widget: ObjectId) -> bool {
@@ -457,8 +475,9 @@ fn add_button_states(doc: &mut Document, widget: ObjectId, da: &DefaultAppearanc
 }
 
 /// /NeedAppearances false (every changed widget has our appearance, the
-/// others keep theirs) and no /XFA on the AcroForm.
-fn mark_form(doc: &mut Document) {
+/// others keep theirs; true only when an unchanged value our fonts cannot
+/// show has a widget without appearance) and no /XFA on the AcroForm.
+fn mark_form(doc: &mut Document, viewers_must_rebuild: bool) {
     let Some(root) = doc.trailer.get(b"Root").ok().and_then(|r| r.as_reference().ok()) else {
         return;
     };
@@ -476,7 +495,7 @@ fn mark_form(doc: &mut Document) {
             .and_then(|f| f.as_dict_mut().ok()),
     };
     if let Some(form) = form {
-        form.set("NeedAppearances", false);
+        form.set("NeedAppearances", viewers_must_rebuild);
         form.remove(b"XFA");
     }
 }
@@ -919,5 +938,34 @@ mod tests {
         assert!(String::from_utf8_lossy(&ap.content).starts_with("1 g\n0 0 20 200 re f\n"));
         assert_eq!(dict(&doc, orphan).get(b"V").unwrap(), &Object::string_literal("y"));
         assert!(String::from_utf8_lossy(&normal_ap(&doc, orphan).1.content).contains("(y) Tj"));
+    }
+
+    #[test]
+    fn non_winansi_values_keep_their_appearances() {
+        let (mut doc, page) = base(0);
+        let utf16 = |s: &str| {
+            let mut b = vec![0xFE, 0xFF];
+            for u in s.encode_utf16() {
+                b.extend_from_slice(&u.to_be_bytes());
+            }
+            Object::String(b, StringFormat::Literal)
+        };
+        let good_ap = doc.add_object(Stream::new(dictionary! { "BBox" => rect([0, 0, 200, 20]) }, b"(cjk) Tj".to_vec()));
+        let with_ap = text_field(&mut doc, page, "jp", vec![("V", utf16("日本語")), ("AP", dictionary! { "N" => good_ap }.into())]);
+        finish(&mut doc, page, &[with_ap], &[with_ap], vec![("NeedAppearances", true.into())]);
+        fill_document(&mut doc, &[]).unwrap();
+        // Kept as it was, and no reason to ask viewers to rebuild.
+        assert_eq!(normal_ap(&doc, with_ap).0, good_ap);
+        assert_eq!(acroform(&doc).get(b"NeedAppearances").unwrap(), &Object::Boolean(false));
+
+        // Same value without any appearance: viewers must build it.
+        let (mut doc, page) = base(0);
+        let bare = text_field(&mut doc, page, "jp", vec![("V", utf16("日本語"))]);
+        let other = text_field(&mut doc, page, "x", vec![]);
+        finish(&mut doc, page, &[bare, other], &[bare, other], vec![]);
+        fill_document(&mut doc, &[(1, Value::Text("ok".into()))]).unwrap();
+        assert!(!dict(&doc, bare).has(b"AP"));
+        assert_eq!(acroform(&doc).get(b"NeedAppearances").unwrap(), &Object::Boolean(true));
+        assert!(String::from_utf8_lossy(&normal_ap(&doc, other).1.content).contains("(ok) Tj"));
     }
 }
