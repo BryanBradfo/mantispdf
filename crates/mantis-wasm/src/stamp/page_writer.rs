@@ -35,6 +35,7 @@ pub(crate) struct PageWriter {
     font_dict: Dictionary,
     gs_dict: Dictionary,
     xobject_dict: Dictionary,
+    properties_dict: Dictionary,
     original: Vec<Object>,
     font_names: HashMap<&'static str, Vec<u8>>,
     gs_names: HashMap<(u64, Blend), Vec<u8>>,
@@ -55,6 +56,7 @@ impl DocWriter {
         let font_dict = owned_dict(doc, resources.get(b"Font").ok());
         let gs_dict = owned_dict(doc, resources.get(b"ExtGState").ok());
         let xobject_dict = owned_dict(doc, resources.get(b"XObject").ok());
+        let properties_dict = owned_dict(doc, resources.get(b"Properties").ok());
         let original = original_contents(doc, page.get(b"Contents").ok());
         let open = self.scanner.unbalanced(doc, &original);
         let mut ops = Vec::new();
@@ -68,6 +70,7 @@ impl DocWriter {
             font_dict,
             gs_dict,
             xobject_dict,
+            properties_dict,
             original,
             font_names: HashMap::new(),
             gs_names: HashMap::new(),
@@ -126,9 +129,21 @@ impl PageWriter {
         name
     }
 
+    /// A fresh page-local /Properties name for `properties` (an optional
+    /// content group or membership dictionary, kept as given: a reference
+    /// stays a reference).
+    pub(crate) fn properties(&mut self, properties: Object) -> Vec<u8> {
+        let name = free_name(&self.properties_dict, "MStOC");
+        self.properties_dict.set(name.clone(), properties);
+        name
+    }
+
     /// Writes the page's new resources and content list.
     pub(crate) fn finish(self, doc: &mut Document, w: &mut DocWriter) -> Result<(), String> {
-        let PageWriter { page_id, mut resources, font_dict, gs_dict, xobject_dict, original, ops, .. } = self;
+        let PageWriter { page_id, mut resources, font_dict, gs_dict, xobject_dict, properties_dict, original, ops, .. } = self;
+        if !properties_dict.is_empty() || resources.has(b"Properties") {
+            resources.set("Properties", properties_dict);
+        }
         if !font_dict.is_empty() || resources.has(b"Font") {
             resources.set("Font", font_dict);
         }

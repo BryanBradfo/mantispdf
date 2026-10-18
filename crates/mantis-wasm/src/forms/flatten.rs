@@ -15,8 +15,9 @@ use std::collections::HashSet;
 /// What one page draws and keeps.
 struct PagePlan {
     page: ObjectId,
-    /// Appearance XObject and `cm` per visible widget, in /Annots order.
-    draws: Vec<(ObjectId, [f64; 6])>,
+    /// Appearance XObject, `cm` and optional content (/OC) per visible
+    /// widget, in /Annots order.
+    draws: Vec<(ObjectId, [f64; 6], Option<Object>)>,
     /// /Annots without widgets.
     kept: Vec<Object>,
     /// Widget annotations taken out of /Annots (indirect ones).
@@ -40,7 +41,7 @@ fn plan_page(doc: &Document, page: ObjectId) -> Option<PagePlan> {
             plan.removed.push(id);
         }
         if let Some((Object::Reference(appearance), cm)) = widget_placement(doc, annot) {
-            plan.draws.push((*appearance, cm));
+            plan.draws.push((*appearance, cm, annot.get(b"OC").ok().cloned()));
         }
     }
     Some(plan)
@@ -143,12 +144,23 @@ pub(crate) fn flatten_document(doc: &mut Document) -> Result<(), String> {
     for plan in plans {
         if !plan.draws.is_empty() {
             let mut page = writer.page(doc, plan.page)?;
-            for (appearance, cm) in &plan.draws {
+            for (appearance, cm, oc) in &plan.draws {
                 let name = page.xobject_with_prefix(*appearance, "Fw");
                 let cm = cm.map(fmt_num).join(" ");
+                // A widget on a layer stays on it: the same OCG (or OCMD),
+                // referenced, around its appearance.
+                let layer = oc.clone().map(|oc| page.properties(oc));
+                if let Some(layer) = &layer {
+                    page.ops.extend_from_slice(b"/OC /");
+                    page.ops.extend_from_slice(layer);
+                    page.ops.extend_from_slice(b" BDC\n");
+                }
                 page.ops.extend_from_slice(format!("q {cm} cm /").as_bytes());
                 page.ops.extend_from_slice(&name);
                 page.ops.extend_from_slice(b" Do Q\n");
+                if layer.is_some() {
+                    page.ops.extend_from_slice(b"EMC\n");
+                }
             }
             page.finish(doc, &mut writer)?;
         }
@@ -515,5 +527,119 @@ mod tests {
             let saved = save_pdf(&mut doc).unwrap();
             assert_eq!(load_pdf(&saved).unwrap().get_pages().len(), 1, "{target}");
         }
+    }
+}
+
+#[cfg(test)]
+mod optional_content_tests {
+    use super::*;
+    use crate::forms::fill::fill_form;
+    use crate::pdf_util::{load_pdf, save_pdf};
+    use lopdf::{Stream, StringFormat, dictionary};
+
+    /// One page whose text widget (showing HIDDENVALUE) sits on an OCG that
+    /// is off by default. Returns the document and the OCG id.
+    pub(crate) fn hidden_layer_widget() -> (Document, ObjectId) {
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let font = doc.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding" });
+        let ocg = doc.add_object(dictionary! { "Type" => "OCG", "Name" => Object::String(b"Off".to_vec(), StringFormat::Literal) });
+        let ap = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Form", "BBox" => vec![0.into(), 0.into(), 200.into(), 20.into()],
+                "Resources" => dictionary! { "Font" => dictionary! { "H" => font } },
+            },
+            b"BT /H 10 Tf 2 5 Td (HIDDENVALUE) Tj ET".to_vec(),
+        ));
+        let page = doc.new_object_id();
+        let widget = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx", "T" => Object::String(b"f".to_vec(), StringFormat::Literal),
+            "Rect" => vec![100.into(), 600.into(), 300.into(), 620.into()], "AP" => dictionary! { "N" => ap }, "P" => page, "OC" => ocg,
+        });
+        let content = doc.add_object(Stream::new(dictionary! {}, b"BT /H 10 Tf 100 700 Td (Visible) Tj ET".to_vec()));
+        doc.objects.insert(
+            page,
+            Object::Dictionary(dictionary! {
+                "Type" => "Page", "Parent" => pages_id, "Contents" => content, "Annots" => vec![widget.into()],
+                "Resources" => dictionary! { "Font" => dictionary! { "H" => font } },
+            }),
+        );
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1, "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            }),
+        );
+        let catalog = doc.add_object(dictionary! {
+            "Type" => "Catalog", "Pages" => pages_id, "AcroForm" => dictionary! { "Fields" => vec![widget.into()] },
+            "OCProperties" => dictionary! { "OCGs" => vec![ocg.into()], "D" => dictionary! { "OFF" => vec![ocg.into()] } },
+        });
+        doc.trailer.set("Root", catalog);
+        (doc, ocg)
+    }
+
+    /// The flattened page's content and its /Properties.
+    fn flattened(doc: &Document) -> (String, lopdf::Dictionary) {
+        let page = doc.get_pages()[&1];
+        let content = String::from_utf8_lossy(&doc.get_page_content(page).unwrap()).into_owned();
+        let res = doc.get_dictionary(page).unwrap().get(b"Resources").unwrap().as_dict().unwrap();
+        let props = crate::page_content::owned_dict(doc, res.get(b"Properties").ok());
+        (content, props)
+    }
+
+    fn assert_on_layer(doc: &Document, ocg: ObjectId) {
+        let (content, props) = flattened(doc);
+        let at = content.find("/OC /").expect("the widget is drawn inside /OC marked content");
+        let name = content[at + 5..].split_whitespace().next().unwrap();
+        assert!(content[at..].contains(" BDC") && content[at..].contains("Do") && content[at..].contains("EMC"), "{content}");
+        assert_eq!(props.get(name.as_bytes()).unwrap(), &Object::Reference(ocg), "the OCG is referenced, not copied");
+    }
+
+    #[test]
+    fn flattened_widgets_keep_their_layer() {
+        let (mut doc, ocg) = hidden_layer_widget();
+        flatten_document(&mut doc).unwrap();
+        assert_on_layer(&doc, ocg);
+    }
+
+    #[test]
+    fn fill_form_flatten_keeps_the_layer_too() {
+        let (mut doc, ocg) = hidden_layer_widget();
+        let out = fill_form(&save_pdf(&mut doc).unwrap(), &[], true).unwrap();
+        let out = load_pdf(&out).unwrap();
+        // The OCG keeps its id through the save (same document, same objects).
+        assert_on_layer(&out, ocg);
+    }
+}
+
+#[cfg(test)]
+mod hidden_layer_redaction_tests {
+    use super::optional_content_tests_support::hidden_layer_widget_pdf;
+    use crate::pdf_util::load_pdf;
+    use crate::redact::{Fill, RedactJob, RedactRect, redact};
+
+    #[test]
+    fn redaction_removes_a_hidden_layer_widget_under_an_area() {
+        let job = RedactJob { rects: vec![RedactRect { page: 1, rect: [95.0, 595.0, 210.0, 30.0] }], fill: Fill::Black, remove_metadata: true, rasters: Vec::new() };
+        let (out, summary) = redact(&hidden_layer_widget_pdf(), job).unwrap();
+        assert!(summary.glyphs_removed > 0);
+        let out = load_pdf(&out).unwrap();
+        let mut all = Vec::new();
+        for object in out.objects.values() {
+            if let lopdf::Object::Stream(s) = object {
+                all.extend(s.decompressed_content().unwrap_or_else(|_| s.content.clone()));
+            }
+        }
+        assert!(!String::from_utf8_lossy(&all).contains("HIDDENVALUE"));
+    }
+}
+
+#[cfg(test)]
+mod optional_content_tests_support {
+    use crate::pdf_util::save_pdf;
+
+    pub(crate) fn hidden_layer_widget_pdf() -> Vec<u8> {
+        let (mut doc, _) = super::optional_content_tests::hidden_layer_widget();
+        save_pdf(&mut doc).unwrap()
     }
 }
