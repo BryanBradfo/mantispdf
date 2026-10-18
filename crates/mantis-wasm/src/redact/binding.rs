@@ -182,7 +182,7 @@ fn page_rects_to_js(pages: &[PageHits], key: &str) -> JsValue {
 }
 
 /// `{ pages: [{ page, quads }], matches: [{ page, rects, context: { before, text, after } }],
-/// unknownBoxes: [{ page, rects }], undecodablePages, truncated, unsearchedPages }`; every rect
+/// unknownBoxes: [{ page, rects }], unknownComplete, undecodablePages, truncated, unsearchedPages }`; every rect
 /// `[x, y, w, h]` in visible space.
 pub(crate) fn search_to_js(result: &SearchResult) -> JsValue {
     let matches: Array = result
@@ -204,6 +204,7 @@ pub(crate) fn search_to_js(result: &SearchResult) -> JsValue {
     set(&obj, "pages", &page_rects_to_js(&result.pages, "quads"));
     set(&obj, "matches", &matches.into());
     set(&obj, "unknownBoxes", &page_rects_to_js(&result.unknown_boxes, "rects"));
+    set(&obj, "unknownComplete", &numbers(&result.unknown_complete));
     set(&obj, "undecodablePages", &numbers(&result.undecodable_pages));
     set(&obj, "truncated", &JsValue::from_bool(result.truncated));
     set(&obj, "unsearchedPages", &numbers(&result.unsearched_pages));

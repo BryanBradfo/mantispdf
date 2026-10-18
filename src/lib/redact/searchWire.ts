@@ -25,4 +25,9 @@ export interface RedactSearchResultWire extends RedactSearchWire {
   matches: SearchMatchWire[];
   /** Per page, boxes of glyphs whose text is unknown (each run on a line merged): search cannot see there. */
   unknownBoxes: { page: number; rects: Rect[] }[];
+  /**
+   * Pages whose `unknownBoxes` cover all their unknown text. Only these may have fallback matches
+   * filtered; absent (an older engine) means none.
+   */
+  unknownComplete?: number[];
 }

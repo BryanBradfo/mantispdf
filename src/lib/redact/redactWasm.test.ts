@@ -121,6 +121,9 @@ describe.skipIf(!built)("redact_search binding", () => {
     expect(found.matches[0].rects).toEqual([found.pages[0].quads[0]]);
     expect(found.matches[0].context.text.toLowerCase()).toBe("world");
     expect(Array.isArray(found.unknownBoxes)).toBe(true);
+    // Page 1 has no unknown text; page 2's Type3 glyphs are all boxed.
+    expect(found.unknownComplete).toEqual([1, 2]);
+    expect(found.unknownBoxes.map((p) => p.page)).toEqual([2]);
     expect(found.undecodablePages).toEqual([2]);
     expect(found.truncated).toBe(false);
     expect(found.unsearchedPages).toEqual([]);

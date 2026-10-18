@@ -64,6 +64,11 @@ pub(crate) struct SearchResult {
     /// Per page, the visible-space boxes of glyphs whose text is unknown
     /// (each run of them on a line merged): where search cannot see.
     pub(crate) unknown_boxes: Vec<PageHits>,
+    /// Pages whose every unknown glyph lies in `unknown_boxes` (pages with
+    /// none included). Not a page the interpreter could not read (or that
+    /// ran out of budget or had too much text), nor one whose boxes the
+    /// `MAX_RECTS` cap cut short: those must be treated as unknown whole.
+    pub(crate) unknown_complete: Vec<u32>,
     /// Pages with text whose characters cannot be known (or that cannot be
     /// read at all, or have too much text): search may miss text there.
     pub(crate) undecodable_pages: Vec<u32>,
@@ -327,11 +332,18 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
         if glyphs.iter().any(|g| g.text.is_none()) {
             result.undecodable_pages.push(number);
             let room = MAX_RECTS.saturating_sub(unknown);
-            let rects: Vec<[f64; 4]> = unknown_rects(&glyphs, &lines, &vb).into_iter().take(room).collect();
+            let all = unknown_rects(&glyphs, &lines, &vb);
+            let complete = all.len() <= room;
+            let rects: Vec<[f64; 4]> = all.into_iter().take(room).collect();
             if !rects.is_empty() {
                 unknown += rects.len();
                 result.unknown_boxes.push(PageHits { page: number, rects });
             }
+            if complete {
+                result.unknown_complete.push(number);
+            }
+        } else {
+            result.unknown_complete.push(number);
         }
         if needle.is_empty() {
             continue;

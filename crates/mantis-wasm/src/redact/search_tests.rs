@@ -652,3 +652,40 @@ fn a_match_rect_never_cuts_a_matched_glyph() {
     assert_eq!(search_redact_content(were, "We"), "e");
     assert_eq!(search_redact_content(were, "re"), "W");
 }
+
+/// /H (Helvetica) and /T, a Type3 font of three squares (codes a, b, c).
+fn with_helvetica_and_type3(d: &mut Document) -> Dictionary {
+    let mut fonts = with_helvetica(d);
+    let square = d.add_object(Stream::new(dictionary! {}, b"750 0 0 0 750 750 d1 0 0 750 750 re f".to_vec()));
+    let t3 = d.add_object(dictionary! {
+        "Type" => "Font", "Subtype" => "Type3", "FontMatrix" => vec![Object::Real(0.001), 0.into(), 0.into(), Object::Real(0.001), 0.into(), 0.into()],
+        "FontBBox" => rect_array([0, 0, 750, 750]), "FirstChar" => 97, "LastChar" => 99, "Widths" => vec![750.into(), 750.into(), 750.into()],
+        "Encoding" => dictionary! { "Differences" => vec![97.into(), "a".into(), "b".into(), "c".into()] },
+        "CharProcs" => dictionary! { "a" => square, "b" => square, "c" => square },
+    });
+    fonts.get_mut(b"Font").unwrap().as_dict_mut().unwrap().set("T", t3);
+    fonts
+}
+
+#[test]
+fn pages_whose_unknown_boxes_are_complete_are_listed() {
+    // Every unknown glyph boxed (and a page with none): complete.
+    let doc = one_page("BT /H 10 Tf 100 700 Td (Visible) Tj ET BT /T 24 Tf 100 600 Td (abc) Tj ET", with_helvetica_and_type3);
+    assert_eq!(redact_search(&bytes(doc), "visible", &opts()).unwrap().unknown_complete, vec![1]);
+    let doc = one_page("BT /H 10 Tf 100 700 Td (Visible) Tj ET", with_helvetica);
+    assert_eq!(redact_search(&bytes(doc), "visible", &opts()).unwrap().unknown_complete, vec![1]);
+    // A page the interpreter cannot read: not complete.
+    let doc = one_page("BT /V 10 Tf 100 700 Td <0041> Tj ET", |d| {
+        let cid = d.add_object(dictionary! { "Type" => "Font", "Subtype" => "CIDFontType0" });
+        let font = d.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type0", "Encoding" => "Identity-V", "DescendantFonts" => vec![cid.into()] });
+        dictionary! { "Font" => dictionary! { "V" => font } }
+    });
+    let found = redact_search(&bytes(doc), "a", &opts()).unwrap();
+    assert_eq!((found.undecodable_pages, found.unknown_complete), (vec![1], vec![]));
+    // More unknown runs than the box cap: not complete.
+    let runs = "/T 10 Tf (a) Tj /H 10 Tf (x) Tj ".repeat(MAX_RECTS + 1);
+    let doc = one_page(&format!("BT 0 700 Td 0.001 Tz {runs} ET"), with_helvetica_and_type3);
+    let found = redact_search(&bytes(doc), "x", &opts()).unwrap();
+    assert_eq!(found.unknown_boxes.iter().map(|p| p.rects.len()).sum::<usize>(), MAX_RECTS);
+    assert_eq!(found.unknown_complete, Vec::<u32>::new());
+}
