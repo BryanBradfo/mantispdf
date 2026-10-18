@@ -90,12 +90,12 @@ function charCentres(items: TextItemLike[]): { ch: string; x: number; y: number 
 const inside = ([x, y, w, h]: Box, px: number, py: number, margin = 0) =>
   px > x + margin && px < x + w - margin && py > y + margin && py < y + h - margin;
 
-/** RGB of page `n` at 72 dpi (1 px per point) through pdftoppm, or null when it is not installed. */
-function render(bytes: Uint8Array, n: number): ((x: number, y: number) => [number, number, number]) | null {
+/** RGB of page `n` at 72 dpi (1 px per point) through pdftoppm (poppler-utils, required). */
+function render(bytes: Uint8Array, n: number): (x: number, y: number) => [number, number, number] {
   try {
     execFileSync("pdftoppm", ["-v"], { stdio: "ignore" });
   } catch {
-    return null;
+    throw new Error("redact.spec.ts needs pdftoppm (poppler-utils) for its pixel checks: install it");
   }
   const dir = mkdtempSync(join(tmpdir(), "redact-e2e-"));
   writeFileSync(join(dir, "in.pdf"), bytes);
@@ -159,6 +159,7 @@ test("redacts an area, a search match and a whole page, rasterizing what it must
   expect(page1).not.toContain("SMITH");
   expect(page1).toContain("Public line stays");
   expect(page1).toContain("Account");
+  expect(page1).not.toContain("number");
   expect(page1).toContain("4417 1234 5678 9113");
   // (pdf.js adds a space where it sees a gap: not a glyph.)
   for (const c of charCentres(after[0]).filter((c) => c.ch.trim() !== "")) expect(inside(NUMBER, c.x, c.y, 3), `"${c.ch}" at ${c.x}`).toBe(false);
@@ -171,24 +172,27 @@ test("redacts an area, a search match and a whole page, rasterizing what it must
   expect(all).not.toContain("SMITH");
   expect(all).toContain("JOHN");
 
-  // Pixels (when poppler is installed): the marked half of the JPEG is black, the other half
-  // still blue; the boxes are black; page 4 shows its picture with the area painted.
+  // Pixels: the marked half of the JPEG is black, the other half still blue (one sample on
+  // each side of the split at x 152); the boxes are black; page 4 shows its picture with the
+  // area painted, and only the area.
   const p1 = render(out, 1);
-  if (p1) {
-    expect(near(p1(100, 560), [0, 0, 0])).toBe(true);
-    expect(near(p1(200, 560), [30, 30, 220])).toBe(true);
-    expect(near(p1(140, 722), [0, 0, 0])).toBe(true);
-    expect(near(p1(400, 300), [255, 255, 255])).toBe(true);
-    const p4 = render(out, 4);
-    expect(p4).not.toBeNull();
-    if (p4) {
-      expect(near(p4(110, 610), [0, 0, 0])).toBe(true);
-      // "Type3 page" (Helvetica, at 72, 720) was rendered into the picture: some dark pixels.
-      let dark = 0;
-      for (let x = 72; x < 140; x++) if (p4(x, 723)[0] < 128) dark++;
-      expect(dark).toBeGreaterThan(5);
-    }
-  }
+  expect(near(p1(100, 560), [0, 0, 0])).toBe(true);
+  expect(near(p1(148, 560), [0, 0, 0])).toBe(true);
+  expect(near(p1(156, 560), [30, 30, 220])).toBe(true);
+  expect(near(p1(200, 560), [30, 30, 220])).toBe(true);
+  expect(near(p1(140, 722), [0, 0, 0])).toBe(true);
+  expect(near(p1(400, 300), [255, 255, 255])).toBe(true);
+  const original4 = render(original, 4);
+  const p4 = render(out, 4);
+  // (140, 625) was white (right of the squares) and is inside the area: painted.
+  expect(near(original4(140, 625), [255, 255, 255])).toBe(true);
+  expect(near(p4(140, 625), [0, 0, 0])).toBe(true);
+  // Just outside the area (x 150): still white.
+  expect(near(p4(155, 625), [255, 255, 255])).toBe(true);
+  // "Type3 page" (Helvetica, at 72, 720) was rendered into the picture: some dark pixels.
+  let dark = 0;
+  for (let x = 72; x < 140; x++) if (p4(x, 723)[0] < 128) dark++;
+  expect(dark).toBeGreaterThan(5);
 
   expect(foreign).toEqual([]);
 });
