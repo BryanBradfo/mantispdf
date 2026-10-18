@@ -1,6 +1,6 @@
 import { test, expect, type Download, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -173,6 +173,30 @@ function expectPopplerWordsAt(bytes: Uint8Array, pageNumber: number, visibleHeig
 }
 
 const ocrWorkers = (page: Page) => page.workers().filter((w) => w.url().includes("/ocr/worker.min.js"));
+/** Most tesseract workers the engine runs (min(2, cores - 1)). */
+const MAX_OCR_WORKERS = 2;
+
+/** No tesseract worker, and none coming back: 0 reached, then 0 at every look for `stableMs`. */
+async function expectNoOcrWorkers(page: Page, stableMs = 2000) {
+  await expect.poll(() => ocrWorkers(page).length, { timeout: 20000 }).toBe(0);
+  const until = Date.now() + stableMs;
+  while (Date.now() < until) {
+    expect(ocrWorkers(page).length).toBe(0);
+    await page.waitForTimeout(100);
+  }
+}
+
+/** Page `n` rendered by poppler (pdftoppm, 72 dpi, PPM bytes). */
+function renderPage(bytes: Uint8Array, n: number): Buffer {
+  const dir = mkdtempSync(join(tmpdir(), "ocr-e2e-"));
+  writeFileSync(join(dir, "in.pdf"), bytes);
+  try {
+    execFileSync("pdftoppm", ["-r", "72", "-f", String(n), "-l", String(n), "-singlefile", join(dir, "in.pdf"), join(dir, "out")]);
+  } catch {
+    throw new Error("ocr.spec.ts needs pdftoppm (poppler-utils) for its render checks: install it");
+  }
+  return readFileSync(join(dir, "out.ppm"));
+}
 
 test("makes a scan searchable where the words are, exports the text, all from the origin", async ({ page, baseURL }) => {
   test.setTimeout(240_000);
@@ -209,10 +233,13 @@ test("skips a page that already has text and leaves it as it was", async ({ page
   await expect(page.getByText("Skipped (already had text): page 1.")).toBeVisible();
   await expect(page.getByText("Text recognised on 1 page (7 words).")).toBeVisible();
 
-  const original = await textItems(new Uint8Array(await readFile(fx("scan-mixed.pdf"))));
+  const input = new Uint8Array(await readFile(fx("scan-mixed.pdf")));
+  const original = await textItems(input);
   const { bytes } = await downloadOf(page, "Download searchable PDF");
   const out = await textItems(bytes);
   expect(out[0]).toEqual(original[0]);
+  // The skipped page renders exactly as before.
+  expect(renderPage(bytes, 1).equals(renderPage(input, 1))).toBe(true);
   expectWordsAt(out[1], (await expected())["scan-mixed.pdf"]["2"]);
   expectPopplerWordsAt(bytes, 2, 792, (await expected())["scan-mixed.pdf"]["2"]);
 
@@ -230,34 +257,39 @@ test("places words in visible space on a rotated, cropped page", async ({ page }
   expectPopplerWordsAt(bytes, 1, 540, (await expected())["scan-rotated.pdf"]["1"]);
 });
 
-test("cancel while the engine starts, and while pages are read, leaves no worker and no error", async ({ page }) => {
+test("cancel while the engine starts, and while pages are read, leaves no worker and no error", async ({ page, baseURL }) => {
   test.setTimeout(240_000);
+  const net = watchNetwork(page, new URL(baseURL ?? "http://localhost").origin);
   const errors = watchErrors(page);
   // 12 scanned pages: a run that lasts long enough to cancel in the middle.
   await upload(page, "scan-long.pdf");
   const run = page.getByRole("button", { name: "Run OCR" });
 
-  // During startup (worker, core and model loading).
+  // During startup (worker, core and model loading; a fresh context has no cached models).
   await run.click();
+  await expect(page.getByText(/^Loading the OCR engine and languages/)).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(run).toBeEnabled();
-  await expect.poll(() => ocrWorkers(page).length, { timeout: 20000 }).toBe(0);
+  await expectNoOcrWorkers(page);
 
   // Mid-run: workers up, a page done and more to go.
   await run.click();
   await expect(page.getByText(/^Reading page \d+ \([1-9]\d* of 12 done\)/)).toBeVisible({ timeout: OCR_TIMEOUT });
   expect(ocrWorkers(page).length).toBeGreaterThan(0);
+  expect(ocrWorkers(page).length).toBeLessThanOrEqual(MAX_OCR_WORKERS);
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(run).toBeEnabled();
   await expect(page.getByRole("progressbar", { name: "OCR progress" })).toHaveCount(0);
   await expect(page.getByText(/^Text recognised on/)).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect.poll(() => ocrWorkers(page).length, { timeout: 20000 }).toBe(0);
+  await expectNoOcrWorkers(page);
   expect(errors).toEqual([]);
+  expect(net.foreign).toEqual([]);
 });
 
-test("Redact finds an OCR'd word by search and removes it", async ({ page }) => {
+test("Redact finds an OCR'd word by search and removes it in place", async ({ page, baseURL }) => {
   test.setTimeout(300_000);
+  const net = watchNetwork(page, new URL(baseURL ?? "http://localhost").origin);
   await upload(page, "scan.pdf");
   await runOcr(page);
   const { bytes: searchable } = await downloadOf(page, "Download searchable PDF");
@@ -272,17 +304,17 @@ test("Redact finds an OCR'd word by search and removes it", async ({ page }) => 
   await expect(page.getByText(/1 match for "MANTIS" on page 1/)).toBeVisible({ timeout: 20000 });
   await page.getByRole("button", { name: "Mark all" }).click();
 
-  const downloaded = page.waitForEvent("download", { timeout: 60000 });
-  await page.getByRole("button", { name: "Redact and download" }).click();
-  // The plan may ask to confirm (a page converted to an image): continue if it does.
-  const dialog = page.getByRole("alertdialog");
-  const first = await Promise.race([downloaded.then(() => "download"), dialog.waitFor({ timeout: 60000 }).then(() => "dialog")]);
-  if (first === "dialog") await dialog.getByRole("button", { name: "Continue" }).click();
-  const out = new Uint8Array(await readFile(await (await downloaded).path()));
+  // The OCR layer is ordinary text: the page is redacted in place, never converted to an image
+  // (that would ask first in an alertdialog and the download would not start).
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByRole("button", { name: "Redact and download" }).click()]);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByText(/Converted to images/)).toHaveCount(0);
+  const out = new Uint8Array(await readFile(await download.path()));
 
   const [items] = await textItems(out);
   const all = items.map((i) => i.str).join(" ");
   expect(all).not.toContain("MANTIS");
   expect(all).toContain("OCR");
   expect(all).toContain("SEARCHABLE");
+  expect(net.foreign).toEqual([]);
 });
