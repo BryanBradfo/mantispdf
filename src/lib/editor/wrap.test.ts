@@ -72,7 +72,8 @@ describe("afm", () => {
 
 describe("wrapLines", () => {
   it("matches every shared vector (same file as the Rust test)", () => {
-    expect(vectors.length).toBeGreaterThanOrEqual(21);
+    // Pinned: a vector lost on either side fails here and in text.rs.
+    expect(vectors).toHaveLength(29);
     for (const v of vectors) {
       expect(wrapLines(v.text, v.font as StdFont, v.size, v.maxWidth), JSON.stringify(v)).toEqual(v.lines);
     }

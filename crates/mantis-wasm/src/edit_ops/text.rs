@@ -141,7 +141,8 @@ mod tests {
     fn shared_vectors_match() {
         let vectors = json::parse(include_str!("../../../../src/lib/editor/wrapVectors.json"));
         let json::Value::Array(cases) = vectors else { panic!("vectors must be an array") };
-        assert!(cases.len() >= 10);
+        // Pinned: a vector lost on either side fails here and in wrap.test.ts.
+        assert_eq!(cases.len(), 29);
         for case in &cases {
             let text = case.get("text").as_str();
             let font = font_of(case.get("font").as_str());

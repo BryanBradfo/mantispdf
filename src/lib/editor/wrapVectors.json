@@ -19,5 +19,13 @@
   { "text": "café crème", "font": "Helvetica", "size": 10, "maxWidth": 49.46, "lines": ["café crème"] },
   { "text": "café crème", "font": "Helvetica", "size": 10, "maxWidth": 49.45, "lines": ["café", "crème"] },
   { "text": "Bold text here", "font": "Helvetica-Bold", "size": 20, "maxWidth": 100, "lines": ["Bold text", "here"] },
-  { "text": "one two\n\nthree", "font": "Courier", "size": 10, "maxWidth": 40, "lines": ["one", "two", "", "three"] }
+  { "text": "one two\n\nthree", "font": "Courier", "size": 10, "maxWidth": 40, "lines": ["one", "two", "", "three"] },
+  { "text": "“Price” €100 – now", "font": "Helvetica", "size": 12, "maxWidth": 60, "lines": ["“Price”", "€100 –", "now"] },
+  { "text": "€€€€€€€", "font": "Times-Roman", "size": 10, "maxWidth": 15, "lines": ["€€€", "€€€", "€"] },
+  { "text": "‘single’ „low“ … • ™", "font": "Helvetica-Bold", "size": 9, "maxWidth": 30, "lines": ["‘single", "’ „low“", "… • ™"] },
+  { "text": "a😀b c日d 😀😀😀", "font": "Helvetica", "size": 10, "maxWidth": 10, "lines": ["a😀", "b", "c日", "d 😀😀😀"] },
+  { "text": "😀😀 xy", "font": "Courier", "size": 10, "maxWidth": 6, "lines": ["😀😀", "x", "y"] },
+  { "text": "The quick brown fox jumps", "font": "Helvetica", "size": 11.5, "maxWidth": 60.3, "lines": ["The quick", "brown fox", "jumps"] },
+  { "text": "aaaa bbbb", "font": "Courier", "size": 7.25, "maxWidth": 39.15, "lines": ["aaaa bbbb"] },
+  { "text": "aaaa bbbb", "font": "Courier", "size": 7.25, "maxWidth": 39.14, "lines": ["aaaa", "bbbb"] }
 ]
