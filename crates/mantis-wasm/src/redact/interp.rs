@@ -1285,9 +1285,9 @@ mod tests {
     }
 
     /// Box of a glyph advancing over x0..x1 on the baseline y at size 10:
-    /// the 0.9/-0.2 em fallback, widened 0.1 em (1 unit) on each side.
+    /// the 0.9/-0.2 em fallback, widened 0.05 em (0.5 unit) on each side.
     fn upright(x0: f64, x1: f64, y: f64) -> [(f64, f64); 4] {
-        upright_pad(x0, x1, y, 1.0)
+        upright_pad(x0, x1, y, 0.5)
     }
 
     fn upright_pad(x0: f64, x1: f64, y: f64, pad: f64) -> [(f64, f64); 4] {
@@ -1309,10 +1309,10 @@ mod tests {
         assert_eq!(g.iter().map(|g| g.byte_range.clone()).collect::<Vec<_>>(), vec![0..1, 1..2, 2..3]);
         assert!(g.iter().all(|g| g.op_index == 6 && g.elem_index == 0 && g.render_mode == 0));
         // Th = 0.5: A advances (5 + 2) * 0.5 = 3.5; space (2.5 + 2 + 3) * 0.5 = 3.75.
-        // Th 0.5 halves the 0.1 em widening too.
-        assert_quad(&g[0].box_user, upright_pad(100.0, 102.5, 200.0, 0.5));
-        assert_quad(&g[1].box_user, upright_pad(103.5, 104.75, 200.0, 0.5));
-        assert_quad(&g[2].box_user, upright_pad(107.25, 110.25, 200.0, 0.5));
+        // Th 0.5 halves the 0.05 em widening too.
+        assert_quad(&g[0].box_user, upright_pad(100.0, 102.5, 200.0, 0.25));
+        assert_quad(&g[1].box_user, upright_pad(103.5, 104.75, 200.0, 0.25));
+        assert_quad(&g[2].box_user, upright_pad(107.25, 110.25, 200.0, 0.25));
         assert_eq!((g[0].width, g[0].font_size, g[0].h_scale, g[0].char_spacing), (0.5, 10.0, 0.5, 2.0));
         assert_eq!((g[0].word_spacing, g[1].word_spacing, g[2].word_spacing), (0.0, 3.0, 0.0));
         assert_eq!((g[0].advance(), g[1].advance()), (3.5, 3.75));
@@ -1353,36 +1353,36 @@ mod tests {
     #[test]
     fn ctm_scaling_and_rotation_with_save_restore() {
         let g = glyphs("q 3 0 0 3 0 0 cm Q 2 0 0 2 0 0 cm 0 1 -1 0 100 0 cm BT /F1 10 Tf (A) Tj ET");
-        assert_quad(&g[0].box_user, [(204.0, -2.0), (204.0, 12.0), (182.0, 12.0), (182.0, -2.0)]);
+        assert_quad(&g[0].box_user, [(204.0, -1.0), (204.0, 11.0), (182.0, 11.0), (182.0, -1.0)]);
     }
 
     #[test]
     fn tm_with_shear_and_td_relative_to_line_matrix() {
         let g = glyphs("BT /F1 10 Tf 1 0 0.5 1 10 20 Tm (A) Tj 0 -10 Td (B) Tj ET");
-        assert_quad(&g[0].box_user, [(8.0, 18.0), (15.0, 18.0), (20.5, 29.0), (13.5, 29.0)]);
-        assert_quad(&g[1].box_user, [(3.0, 8.0), (11.0, 8.0), (16.5, 19.0), (8.5, 19.0)]);
+        assert_quad(&g[0].box_user, [(8.5, 18.0), (14.5, 18.0), (20.0, 29.0), (14.0, 29.0)]);
+        assert_quad(&g[1].box_user, [(3.5, 8.0), (10.5, 8.0), (16.0, 19.0), (9.0, 19.0)]);
     }
 
     #[test]
     fn negative_font_size_flips_the_box_and_the_advance() {
         let g = glyphs("BT /F1 -10 Tf (AB) Tj ET");
-        assert_quad(&g[0].box_user, [(1.0, 2.0), (-6.0, 2.0), (-6.0, -9.0), (1.0, -9.0)]);
-        assert_quad(&g[1].box_user, [(-4.0, 2.0), (-12.0, 2.0), (-12.0, -9.0), (-4.0, -9.0)]);
+        assert_quad(&g[0].box_user, [(0.5, 2.0), (-5.5, 2.0), (-5.5, -9.0), (0.5, -9.0)]);
+        assert_quad(&g[1].box_user, [(-4.5, 2.0), (-11.5, 2.0), (-11.5, -9.0), (-4.5, -9.0)]);
         assert_eq!(g[0].advance(), -5.0);
     }
 
     #[test]
     fn negative_horizontal_scaling_mirrors_the_box_and_the_advance() {
         let g = glyphs("BT /F1 10 Tf -50 Tz (AB) Tj ET");
-        assert_quad(&g[0].box_user, [(0.5, -2.0), (-3.0, -2.0), (-3.0, 9.0), (0.5, 9.0)]);
-        assert_quad(&g[1].box_user, [(-2.0, -2.0), (-6.0, -2.0), (-6.0, 9.0), (-2.0, 9.0)]);
+        assert_quad(&g[0].box_user, [(0.25, -2.0), (-2.75, -2.0), (-2.75, 9.0), (0.25, 9.0)]);
+        assert_quad(&g[1].box_user, [(-2.25, -2.0), (-5.75, -2.0), (-5.75, 9.0), (-2.25, 9.0)]);
         assert_eq!(g[0].advance(), -2.5);
     }
 
     #[test]
     fn rise_shifts_the_glyph_box() {
         let g = glyphs("BT /F1 10 Tf 3 Ts 1 0 0.5 1 10 20 Tm (A) Tj ET");
-        assert_quad(&g[0].box_user, [(9.5, 21.0), (16.5, 21.0), (22.0, 32.0), (15.0, 32.0)]);
+        assert_quad(&g[0].box_user, [(10.0, 21.0), (16.0, 21.0), (21.5, 32.0), (15.5, 32.0)]);
     }
 
     #[test]
@@ -1409,7 +1409,7 @@ mod tests {
         let xs = [0.0, 5.0, 11.0, 18.0, 28.0];
         for (glyph, x) in g.iter().zip(xs) {
             let x1 = x + glyph.width * 10.0;
-            assert_quad(&glyph.box_user, [(x - 1.0, -2.0), (x1 + 1.0, -2.0), (x1 + 1.0, 8.0), (x - 1.0, 8.0)]);
+            assert_quad(&glyph.box_user, [(x - 0.5, -2.0), (x1 + 0.5, -2.0), (x1 + 0.5, 8.0), (x - 0.5, 8.0)]);
             assert_eq!(glyph.word_spacing, 0.0);
         }
     }
@@ -1425,10 +1425,9 @@ mod tests {
         // WinAnsi: H 722, i 222, quotesingle 191.
         let widths: Vec<f64> = g.iter().map(|g| g.width).collect();
         assert!((widths[0] - 0.722).abs() < EPS && (widths[1] - 0.222).abs() < EPS && (widths[2] - 0.191).abs() < EPS);
-        // No descriptor: the AFM ascent 718 and descent -207 widened to at
-        // least 0.95 / -0.25 em (accents).
-        assert_quad(&g[1].box_user, [(6.22, -2.5), (10.44, -2.5), (10.44, 9.5), (6.22, 9.5)]);
-        assert_quad(&g[2].box_user, [(8.44, -2.5), (12.35, -2.5), (12.35, 9.5), (8.44, 9.5)]);
+        // No descriptor: the AFM ascent 718 and descent -207.
+        assert_quad(&g[1].box_user, [(6.72, -2.07), (9.94, -2.07), (9.94, 7.18), (6.72, 7.18)]);
+        assert_quad(&g[2].box_user, [(8.94, -2.07), (11.85, -2.07), (11.85, 7.18), (8.94, 7.18)]);
         // Oblique shares the upright widths.
         assert!((glyphs("BT /HO 10 Tf (H) Tj ET")[0].width - 0.722).abs() < EPS);
     }
@@ -1803,7 +1802,7 @@ mod tests {
             let g = glyphs(&format!("BT /F1 10 Tf {mode} Tr 4 w 1 j (A) Tj ET"));
             assert_quad(
                 &g[0].box_user,
-                [(-1.0 - reach, -2.0 - reach), (6.0 + reach, -2.0 - reach), (6.0 + reach, 9.0 + reach), (-1.0 - reach, 9.0 + reach)],
+                [(-0.5 - reach, -2.0 - reach), (5.5 + reach, -2.0 - reach), (5.5 + reach, 9.0 + reach), (-0.5 - reach, 9.0 + reach)],
             );
         }
         for mode in [0, 3, 4, 7] {

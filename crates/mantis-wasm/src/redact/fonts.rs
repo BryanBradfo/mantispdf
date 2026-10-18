@@ -14,8 +14,8 @@ const FALLBACK_ASCENT: f64 = 0.9;
 const FALLBACK_DESCENT: f64 = -0.2;
 /// Descriptor values are clamped into these ranges: a bogus value must not
 /// shrink a glyph box to nothing nor grow it over neighbouring lines.
-const ASCENT_RANGE: (f64, f64) = (0.75, 1.5);
-const DESCENT_RANGE: (f64, f64) = (-0.5, -0.1);
+const ASCENT_RANGE: (f64, f64) = (0.7, 1.0);
+const DESCENT_RANGE: (f64, f64) = (-0.35, -0.1);
 /// A glyph narrower than this (zero-width marks, bogus /Widths) still inks
 /// something: its box spans this far on both sides of its origin.
 const MIN_INK_WIDTH: f64 = 0.01;
@@ -34,8 +34,6 @@ pub(crate) struct Font {
     kind: Kind,
     ascent: f64,
     descent: f64,
-    /// Descriptor /FontBBox (em), when it has one.
-    bbox: Option<[f64; 4]>,
     /// Code to text, when loaded for search.
     text: Option<std::rc::Rc<super::unicode::TextMap>>,
 }
@@ -87,27 +85,14 @@ fn first_char(doc: &Document, font: &Dictionary) -> Option<i64> {
     (first.fract() == 0.0 && (0.0..=255.0).contains(&first)).then_some(first as i64)
 }
 
-/// Standard fonts without descriptor: at least this ascent and descent (em).
-const STD_MIN_ASCENT: f64 = 0.95;
-const STD_MAX_DESCENT: f64 = -0.25;
-/// Vertical extent of any glyph box (em): ink above or below this is not
-/// believed (a hostile /FontBBox must not wipe neighbouring lines).
-const INK_Y_RANGE: (f64, f64) = (-1.0, 1.5);
 /// The advance box grows this much (em) on each side.
-const INK_X_MARGIN: f64 = 0.1;
-/// How far (em) past the advance box the /FontBBox is believed.
-const BBOX_X_REACH: f64 = 0.5;
+const CORE_X_MARGIN: f64 = 0.05;
 
-/// Ascent, descent and /FontBBox (em) of a font descriptor.
-type Metrics = (f64, f64, Option<[f64; 4]>);
+/// Ascent and descent (em) of a font descriptor.
+type Metrics = (f64, f64);
 
 fn descriptor_metrics(doc: &Document, descriptor: Option<&Dictionary>) -> Metrics {
-    let (ascent, descent) = vertical_metrics(doc, descriptor);
-    let bbox = descriptor
-        .and_then(|d| numbers(doc, d.get(b"FontBBox").ok()))
-        .filter(|b| b.len() == 4)
-        .map(|b| [b[0].min(b[2]) / 1000.0, b[1].min(b[3]) / 1000.0, b[0].max(b[2]) / 1000.0, b[1].max(b[3]) / 1000.0]);
-    (ascent, descent, bbox)
+    vertical_metrics(doc, descriptor)
 }
 
 /// Ascent and descent (em) from a font descriptor, clamped, with fallbacks.
@@ -168,7 +153,7 @@ impl Font {
             return Err(err("not a font dictionary"));
         };
         let subtype = name(doc, font.get(b"Subtype").ok()).unwrap_or(b"");
-        let (kind, (ascent, descent, bbox)) = match subtype {
+        let (kind, (ascent, descent)) = match subtype {
             b"Type1" | b"MMType1" | b"TrueType" => {
                 let descriptor = dict(doc, font.get(b"FontDescriptor").ok());
                 let kind = Self::simple(doc, font, descriptor, &err)?;
@@ -176,9 +161,8 @@ impl Font {
                     // A standard font without descriptor: the AFM metrics,
                     // widened for accents and descenders the AFM line omits.
                     (Kind::Standard { font, .. }, None) => (
-                        (font.ascent() / 1000.0).max(STD_MIN_ASCENT),
-                        (font.descent() / 1000.0).min(STD_MAX_DESCENT),
-                        None,
+                        (font.ascent() / 1000.0).clamp(ASCENT_RANGE.0, ASCENT_RANGE.1),
+                        (font.descent() / 1000.0).clamp(DESCENT_RANGE.0, DESCENT_RANGE.1),
                     ),
                     _ => descriptor_metrics(doc, descriptor),
                 };
@@ -190,7 +174,7 @@ impl Font {
             other => return Err(err(&format!("unsupported font type {}", String::from_utf8_lossy(other)))),
         };
         let text = text.and_then(|cache| cache.map_for(doc, obj.as_reference().ok(), font));
-        Ok(Font { label, kind, ascent, descent, bbox, text })
+        Ok(Font { label, kind, ascent, descent, text })
     }
 
     fn simple(
@@ -384,26 +368,20 @@ impl Font {
         len == 1 && code == 32
     }
 
-    /// `[x0, y0, x1, y1]` (em, before font size, scaling and rise) that
-    /// any ink of a glyph whose width is `w0` stays inside: the advance box
-    /// widened by 0.1 em, joined with the /FontBBox (believed up to 0.5 em
-    /// past the advance), from descent to ascent, all within -1..1.5 em.
+    /// `[x0, y0, x1, y1]` (em, before font size, scaling and rise) of the
+    /// core box that decides whether a glyph of width `w0` is under an area:
+    /// the advance widened by 0.05 em on each side, from the descent to the
+    /// ascent (descriptor, or AFM for the standard fonts, within -0.35..1.0
+    /// em). The /FontBBox is left out: it reached neighbouring lines. A
+    /// glyph without width (a zero-width mark, a bogus /Widths) reaches 0.6
+    /// em each way instead.
     pub(crate) fn glyph_box(&self, w0: f64) -> [f64; 4] {
-        let (mut x0, mut x1) = if w0 >= MIN_INK_WIDTH {
-            (-INK_X_MARGIN, w0 + INK_X_MARGIN)
+        let (x0, x1) = if w0 >= MIN_INK_WIDTH {
+            (-CORE_X_MARGIN, w0 + CORE_X_MARGIN)
         } else {
-            (-NARROW_GLYPH_REACH, NARROW_GLYPH_REACH.max(w0 + INK_X_MARGIN))
+            (-NARROW_GLYPH_REACH, NARROW_GLYPH_REACH.max(w0 + CORE_X_MARGIN))
         };
-        let (mut y0, mut y1) = (self.descent, self.ascent);
-        if let Some([bx0, by0, bx1, by1]) = self.bbox {
-            let (lo, hi) = (-BBOX_X_REACH, (w0 + BBOX_X_REACH).max(-BBOX_X_REACH));
-            x0 = x0.min(bx0.clamp(lo, hi));
-            x1 = x1.max(bx1.clamp(lo, hi));
-            y0 = y0.min(by0);
-            y1 = y1.max(by1);
-        }
-        let (lo, hi) = INK_Y_RANGE;
-        [x0, y0.clamp(lo, hi), x1, y1.clamp(lo, hi)]
+        [x0, self.descent, x1, self.ascent]
     }
 }
 
@@ -429,22 +407,23 @@ mod tests {
     }
 
     #[test]
-    fn ink_box_widens_the_advance_and_takes_the_font_bbox() {
+    fn the_removal_box_is_the_advance_and_the_descriptor_heights() {
         let mut doc = Document::with_version("1.7");
         let plain = simple_with_descriptor(&mut doc, dictionary! {});
         let plain = Font::load(&doc, b"F", &plain).unwrap();
-        assert_eq!(plain.glyph_box(0.5), [-0.1, -0.2, 0.6, 0.9]);
+        assert_eq!(plain.glyph_box(0.5), [-0.05, -0.2, 0.55, 0.9]);
         let bbox = |v: [i64; 4]| Object::Array(v.iter().map(|n| Object::Integer(*n)).collect());
+        // A wide /FontBBox no longer widens it (it reached neighbouring lines).
         let wide = simple_with_descriptor(
             &mut doc,
             dictionary! { "Ascent" => 800, "Descent" => -200, "FontBBox" => bbox([-200, -300, 1200, 1100]) },
         );
         let wide = Font::load(&doc, b"F", &wide).unwrap();
-        // x: [-0.1, 0.6] with the bbox [-0.2, 1.2] clamped to [-0.5, 1.0].
-        assert_eq!(wide.glyph_box(0.5), [-0.2, -0.3, 1.0, 1.1]);
-        let huge = simple_with_descriptor(&mut doc, dictionary! { "FontBBox" => bbox([-9000, -5000, 9000, 9000]) });
-        let huge = Font::load(&doc, b"F", &huge).unwrap();
-        assert_eq!(huge.glyph_box(0.5), [-0.5, -1.0, 1.0, 1.5]);
+        assert_eq!(wide.glyph_box(0.5), [-0.05, -0.2, 0.55, 0.8]);
+        // Descriptor heights are clamped to -0.35..1.0 em.
+        let tall = simple_with_descriptor(&mut doc, dictionary! { "Ascent" => 1400, "Descent" => -600 });
+        let tall = Font::load(&doc, b"F", &tall).unwrap();
+        assert_eq!(tall.glyph_box(0.5), [-0.05, -0.35, 0.55, 1.0]);
     }
 
     #[test]

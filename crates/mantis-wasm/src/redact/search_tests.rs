@@ -512,3 +512,26 @@ fn a_real_pdftex_paper_is_searchable() {
     assert!(!found.undecodable_pages.contains(&1), "{:?}", found.undecodable_pages);
     eprintln!("undecodable pages of the paper: {:?}", found.undecodable_pages);
 }
+
+#[test]
+fn a_tall_font_bbox_does_not_take_the_next_line() {
+    // Size 10 at 11 pt leading; the descriptor's /FontBBox reaches 1.15 em.
+    let doc = one_page("BT /T 10 Tf 100 700 Td (AAAA) Tj 0 -11 Td (BBBB) Tj ET", |d| {
+        let desc = d.add_object(dictionary! {
+            "Type" => "FontDescriptor", "FontName" => "T", "Flags" => 32, "Ascent" => 900, "Descent" => -200,
+            "FontBBox" => rect_array([-100, -300, 1000, 1150]),
+        });
+        let font = d.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "T", "Encoding" => "WinAnsiEncoding",
+            "FirstChar" => 65, "LastChar" => 66, "Widths" => vec![600.into(), 600.into()], "FontDescriptor" => desc,
+        });
+        dictionary! { "Font" => dictionary! { "T" => font } }
+    });
+    let pdf = bytes(doc);
+    // The area covers line 1 from just above line 2's ascent (689 + 9 = 698).
+    let job = RedactJob { rects: vec![RedactRect { page: 1, rect: [95.0, 699.0, 40.0, 12.0] }], fill: Fill::Black, remove_metadata: true, rasters: Vec::new() };
+    let (out, _) = redact(&pdf, job).unwrap();
+    let out = load_pdf(&out).unwrap();
+    let text: String = page_glyphs(&out, out.get_pages()[&1]).unwrap().iter().map(|g| char::from_u32(g.code).unwrap()).collect();
+    assert_eq!(text, "BBBB");
+}
