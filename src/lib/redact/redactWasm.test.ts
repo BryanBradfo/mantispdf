@@ -7,7 +7,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { PageStatusWire, RedactResultWire } from "./toJob";
+import { addMarks, initialMarks } from "./model";
+import { toJob, type PageStatusWire, type RedactResultWire } from "./toJob";
 import { PLAN_KEYS, RESULT_KEYS, SEARCH_KEYS, SEARCH_PAGE_KEYS } from "./wireKeys";
 
 const PKG = fileURLToPath(new URL("../../../crates/mantis-wasm/pkg/", import.meta.url));
@@ -70,7 +71,12 @@ describe.skipIf(!built)("redact_plan / redact bindings", () => {
 
   it("redacts, completing page 2 with a raster made here", () => {
     const rgba = new Uint8Array(612 * 792 * 4).fill(255);
-    const job = { rects, fill: "black", removeMetadata: true, rasters: [{ page: 2, width: 612, height: 792, dpi: 72, rgba }] };
+    let marks = initialMarks();
+    marks = addMarks(marks, [
+      { kind: "area", page: 1, rect: [127, 700, 30, 5] },
+      { kind: "area", page: 2, rect: [90, 690, 40, 20] },
+    ]);
+    const job = toJob(marks.marks, [[612, 792], [612, 792]], { fill: "black", removeMetadata: true }, [{ page: 2, width: 612, height: 792, dpi: 72, rgba }]);
     const out = wasm.redact(PDF, job);
     expect(Object.keys(out).sort()).toEqual([...RESULT_KEYS].sort());
     expect(new TextDecoder().decode(out.bytes.subarray(0, 5))).toBe("%PDF-");

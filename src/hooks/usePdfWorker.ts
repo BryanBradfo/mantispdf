@@ -345,7 +345,10 @@ export function usePdfWorker() {
     [run],
   );
 
-  /** Redact `job`; the rasters' pixel buffers are transferred to the worker (not copied). */
+  /**
+   * Redact `job`. The rasters' pixel buffers are transferred to the worker, not copied: after the
+   * call they are detached (empty) on this side, so a retry must render the rasters again.
+   */
   const redactPdf = useCallback(
     (pdfBytes: Uint8Array, job: RedactJobWire): Promise<RedactResultWire> =>
       run(null, (id) => ({ type: "redact", id, pdfBytes, job }), asRedacted, {
