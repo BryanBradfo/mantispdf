@@ -159,10 +159,15 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
             let image: OcrPageImage | null = await renderPageImage(pdf, n);
             const imagePx: [number, number] = [image.width, image.height];
             inFlight.set(n, 0);
-            const job = eng.recognize(image.pgm, (fraction) => {
-              inFlight.set(n, fraction);
-              showPartial();
-            });
+            // The render dpi (below 300 on pages capped at the pixel limit) tells tesseract the scale.
+            const job = eng.recognize(
+              image.pgm,
+              (fraction) => {
+                inFlight.set(n, fraction);
+                showPartial();
+              },
+              image.dpi,
+            );
             // The engine copies the image: drop it now rather than hold it for the whole page.
             image = null;
             const recognised = await job;
