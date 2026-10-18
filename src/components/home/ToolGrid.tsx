@@ -149,6 +149,13 @@ const tools = [
     available: true,
   },
   {
+    title: "Edit PDF",
+    description: "Add text, images, shapes and drawings to any page.",
+    href: "/edit-pdf",
+    icon: "✏️",
+    available: true,
+  },
+  {
     title: "Images to PDF",
     description: "Turn JPG, PNG or WebP images into a PDF, one per page.",
     href: "/images-to-pdf",
