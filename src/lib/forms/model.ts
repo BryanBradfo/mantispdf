@@ -72,6 +72,11 @@ export interface FormField {
 export interface FormInfo {
   xfa: "none" | "hybrid" | "pure";
   fields: FormField[];
+  /**
+   * A signature field holds a signature, or the file carries a certification or usage rights:
+   * saving the filled form invalidates them (usage rights and certification are removed).
+   */
+  signed: boolean;
 }
 
 /** The values being edited next to the ones the file had. */

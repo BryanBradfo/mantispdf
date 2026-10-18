@@ -19,6 +19,7 @@ function field(id: number, value: FormValue, extra: Partial<FormField> = {}): Fo
 
 const info: FormInfo = {
   xfa: "none",
+  signed: false,
   fields: [field(0, { kind: "text", text: "Ada" }), field(1, { kind: "none" }), field(2, { kind: "names", names: ["a", "b"] })],
 };
 

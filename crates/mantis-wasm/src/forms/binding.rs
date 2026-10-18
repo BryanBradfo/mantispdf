@@ -176,7 +176,7 @@ fn field_to_js(f: &Field) -> Object {
     o
 }
 
-/// `{ xfa: "none" | "hybrid" | "pure", fields: Field[] }`.
+/// `{ xfa: "none" | "hybrid" | "pure", fields: Field[], signed: boolean }`.
 pub(crate) fn form_to_js(info: &FormInfo) -> JsValue {
     let o = Object::new();
     let xfa = match info.xfa {
@@ -186,5 +186,6 @@ pub(crate) fn form_to_js(info: &FormInfo) -> JsValue {
     };
     set(&o, "xfa", xfa);
     set(&o, "fields", info.fields.iter().map(|f| JsValue::from(field_to_js(f))).collect::<Array>());
+    set(&o, "signed", info.signed);
     o.into()
 }

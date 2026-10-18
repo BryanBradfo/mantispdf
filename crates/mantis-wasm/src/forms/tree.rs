@@ -721,6 +721,19 @@ pub(crate) fn generated_states(on_states: &[String], base: &str, count: usize) -
         .collect()
 }
 
+/// The catalog /Perms holds a certification (/DocMDP) or usage rights (/UR3).
+fn has_signature_permissions(doc: &Document) -> bool {
+    let perms = doc
+        .trailer
+        .get(b"Root")
+        .ok()
+        .and_then(|r| deref(doc, r))
+        .and_then(|c| c.as_dict().ok())
+        .and_then(|c| deref(doc, c.get(b"Perms").ok()?))
+        .and_then(|p| p.as_dict().ok());
+    perms.is_some_and(|p| p.has(b"DocMDP") || p.has(b"UR3"))
+}
+
 /// Read the form of a loaded document. Field ids are indices in this
 /// traversal; fields of an unknown type are skipped.
 pub(crate) fn read_form(doc: &Document) -> Result<FormTree, String> {
@@ -729,7 +742,8 @@ pub(crate) fn read_form(doc: &Document) -> Result<FormTree, String> {
 
 fn read_form_with(doc: &Document, streams: &mut StreamValues) -> Result<FormTree, String> {
     let Some(form) = acroform(doc) else {
-        return Ok(FormTree { info: FormInfo { xfa: Xfa::None, fields: Vec::new() }, refs: Vec::new() });
+        let signed = has_signature_permissions(doc);
+        return Ok(FormTree { info: FormInfo { xfa: Xfa::None, fields: Vec::new(), signed }, refs: Vec::new() });
     };
     let mut walker = Walker { doc, visited: HashSet::new(), terminals: Vec::new(), widget_count: 0, name_bytes: 0 };
     let (claimed, top): (Vec<ObjectId>, Vec<ObjectId>) =
@@ -761,7 +775,12 @@ fn read_form_with(doc: &Document, streams: &mut StreamValues) -> Result<FormTree
         (true, true) => Xfa::Pure,
         (true, false) => Xfa::Hybrid,
     };
-    Ok(FormTree { info: FormInfo { xfa, fields }, refs })
+    let signed = has_signature_permissions(doc)
+        || fields.iter().zip(&refs).any(|(f, r)| {
+            f.kind == FieldKind::Signature
+                && inherited(doc, r.obj, b"V").is_some_and(|v| matches!(v, Object::Dictionary(_) | Object::Stream(_)))
+        });
+    Ok(FormTree { info: FormInfo { xfa, fields, signed }, refs })
 }
 
 #[cfg(test)]
@@ -1290,7 +1309,7 @@ pub(crate) mod tests {
         assert_eq!(f.value, Value::None);
 
         let (doc, _) = base(0);
-        assert_eq!(tree(&doc).info, FormInfo { xfa: Xfa::None, fields: Vec::new() });
+        assert_eq!(tree(&doc).info, FormInfo { xfa: Xfa::None, fields: Vec::new(), signed: false });
     }
 
     #[test]

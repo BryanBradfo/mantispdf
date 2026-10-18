@@ -575,6 +575,40 @@ fn mark_form(doc: &mut Document, viewers_must_rebuild: bool) {
     if let Ok(catalog) = doc.get_dictionary_mut(root) {
         catalog.remove(b"NeedsRendering");
     }
+    drop_usage_rights(doc, root);
+}
+
+/// Our save rewrites the whole file, which breaks usage rights (/UR3) and a
+/// certification (/DocMDP): Reader would then report the document as changed
+/// and disable features. Both leave /Perms (dropped when it ends up empty).
+/// Signature field values stay; they no longer verify either.
+fn drop_usage_rights(doc: &mut Document, root: ObjectId) {
+    let perms_ref = doc
+        .get_dictionary(root)
+        .ok()
+        .and_then(|c| c.get(b"Perms").ok())
+        .and_then(|p| p.as_reference().ok());
+    let emptied = {
+        let perms = match perms_ref {
+            Some(id) => doc.get_dictionary_mut(id).ok(),
+            None => doc
+                .get_dictionary_mut(root)
+                .ok()
+                .and_then(|c| c.get_mut(b"Perms").ok())
+                .and_then(|p| p.as_dict_mut().ok()),
+        };
+        match perms {
+            Some(perms) => {
+                perms.remove(b"UR3");
+                perms.remove(b"DocMDP");
+                perms.is_empty()
+            }
+            None => false,
+        }
+    };
+    if emptied && let Ok(catalog) = doc.get_dictionary_mut(root) {
+        catalog.remove(b"Perms");
+    }
 }
 
 #[cfg(test)]
@@ -1220,5 +1254,41 @@ mod tests {
         let err = fill_document(&mut doc, &[(0, Value::Text("jp".into()))]).unwrap_err();
         assert_eq!(err, "Characters not supported by the standard PDF fonts: 日本 in field \"Country\"");
         fill_document(&mut doc, &[(0, Value::Text("fr".into()))]).unwrap();
+    }
+
+    #[test]
+    fn signed_forms_are_reported_and_usage_rights_dropped() {
+        let (mut doc, page) = base(0);
+        let f = text_field(&mut doc, page, "a", vec![]);
+        let sig = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![("FT", "Sig".into()), ("T", Object::string_literal("s"))]));
+        finish(&mut doc, page, &[f, sig], &[f, sig], vec![]);
+        assert!(!read_form(&doc).unwrap().info.signed);
+
+        // A signed signature field.
+        let sig_value = doc.add_object(dictionary! { "Type" => "Sig", "Contents" => Object::string_literal("x") });
+        doc.get_dictionary_mut(sig).unwrap().set("V", sig_value);
+        assert!(read_form(&doc).unwrap().info.signed);
+        doc.get_dictionary_mut(sig).unwrap().remove(b"V");
+
+        // Usage rights (and certification) in /Perms.
+        let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        let ur3 = doc.add_object(dictionary! { "Type" => "Sig", "Filter" => "Adobe.PPKLite" });
+        let mdp = doc.add_object(dictionary! { "Type" => "Sig" });
+        let perms = doc.add_object(dictionary! { "UR3" => ur3, "DocMDP" => mdp, "Other" => 1 });
+        doc.get_dictionary_mut(root).unwrap().set("Perms", perms);
+        assert!(read_form(&doc).unwrap().info.signed);
+        fill_document(&mut doc, &[(0, Value::Text("x".into()))]).unwrap();
+        let perms = dict(&doc, perms);
+        assert!(!perms.has(b"UR3") && !perms.has(b"DocMDP") && perms.has(b"Other"));
+
+        // A /Perms left empty goes, direct or not.
+        let (mut doc, page) = base(0);
+        let f = text_field(&mut doc, page, "a", vec![]);
+        finish(&mut doc, page, &[f], &[f], vec![]);
+        let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(root).unwrap().set("Perms", dictionary! { "UR3" => dictionary! {} });
+        assert!(read_form(&doc).unwrap().info.signed);
+        fill_document(&mut doc, &[]).unwrap();
+        assert!(!dict(&doc, root).has(b"Perms"));
     }
 }

@@ -120,4 +120,7 @@ pub struct Field {
 pub struct FormInfo {
     pub xfa: Xfa,
     pub fields: Vec<Field>,
+    /// A signature field holds a signature, or the catalog /Perms holds
+    /// /DocMDP or /UR3: saving the filled form invalidates them.
+    pub signed: bool,
 }

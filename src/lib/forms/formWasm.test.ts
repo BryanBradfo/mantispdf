@@ -63,6 +63,7 @@ describe.skipIf(!built)("list_form / fill_form bindings", () => {
     const info = wasm.list_form(FORM);
     expect(keys(info)).toEqual([...INFO_KEYS].sort());
     expect(info.xfa).toBe("none");
+    expect(info.signed).toBe(false);
     expect(info.fields.map((f) => [f.id, f.name, f.label, f.kind.kind])).toEqual([
       [0, "name", "Your name", "text"],
       [1, "agree", "agree", "checkbox"],

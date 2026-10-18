@@ -32,6 +32,7 @@ describe("fill-form wire shape", () => {
   it("sends only changed values, each with exactly the keys the binding reads", () => {
     const info: FormInfo = {
       xfa: "none",
+      signed: false,
       fields: [field(0, { kind: "text", text: "a" }), field(1, { kind: "none" }), field(2, { kind: "names", names: ["On"] }), field(3, { kind: "none" })],
     };
     let s = initialFormState(info);
