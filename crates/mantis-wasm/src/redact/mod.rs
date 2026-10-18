@@ -224,7 +224,20 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
             stream.dict.remove(verify::TAG_KEY.as_bytes());
         }
     }
-    Ok((save_pdf(&mut out)?, summary))
+    let delivered = save_pdf(&mut out)?;
+    check_delivered(&delivered, saved_pages.len())?;
+    Ok((delivered, summary))
+}
+
+/// The delivered bytes parse, have the verified page count, and carry no
+/// verification tag.
+fn check_delivered(bytes: &[u8], pages: usize) -> Result<(), String> {
+    let doc = load_pdf(bytes)?;
+    let tagged = doc.objects.values().any(|o| matches!(o, Object::Stream(s) if s.dict.has(verify::TAG_KEY.as_bytes())));
+    if doc.get_pages().len() != pages || tagged {
+        return Err("Redaction verification failed on the saved file".to_string());
+    }
+    Ok(())
 }
 
 /// Copy the text entries of the source's document information dictionary.

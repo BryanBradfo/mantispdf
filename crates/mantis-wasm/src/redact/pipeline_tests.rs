@@ -856,3 +856,17 @@ fn soft_mask_groups_are_read_with_the_resources_where_they_are_set() {
     assert!(raster_needed(doc.clone(), vec![a.clone()]));
     assert_eq!(planted(doc, a), Err("Redaction verification failed on page 1".to_string()));
 }
+
+#[test]
+fn the_delivered_file_is_checked_again() {
+    assert!(check_delivered(&bytes(fixture()), 3).is_ok());
+    assert!(check_delivered(&bytes(fixture()), 2).is_err(), "page count");
+    let mut doc = fixture();
+    let page = page_ids(&doc)[0];
+    let tagged = doc.add_object(Stream::new(
+        dictionary! { super::verify::TAG_KEY => Object::String(vec![1], StringFormat::Hexadecimal) },
+        vec![],
+    ));
+    doc.get_dictionary_mut(page).unwrap().set("Thumb", tagged);
+    assert!(check_delivered(&bytes(doc), 3).is_err(), "tag left");
+}
