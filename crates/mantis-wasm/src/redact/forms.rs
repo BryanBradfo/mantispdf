@@ -3,15 +3,28 @@
 
 use super::interp::{FormPlacement, Interp, Rect, decode_ops, encode_ops, page_resources_dict};
 use super::page::flate_stream;
-use super::{PageEdit, Report, Unsupported, add_xobject, redact_content};
+use super::{Budget, PageEdit, Report, Unsupported, add_xobject, redact_content};
 use crate::page_content::owned_dict;
 use crate::rebuild::{Decoded, MAX_STREAM_DECODED, UsedNames, deref, name_of, scan_content, strict_content_in};
-use std::collections::HashSet;
 use lopdf::content::Operation;
-use lopdf::{Object, Stream};
+use lopdf::{Document, Object, Stream};
+use std::collections::HashSet;
 
 /// Deepest form nesting redacted.
 pub(crate) const MAX_FORM_DEPTH: usize = 16;
+
+/// The decoded content of `form`, charged to `budget` (at most
+/// `MAX_STREAM_DECODED` bytes and what the job has left).
+pub(crate) fn form_content(doc: &Document, form: &Stream, budget: &mut Budget) -> Result<Vec<u8>, Unsupported> {
+    let mut charged = 0;
+    let decoded = strict_content_in(Some(doc), form, MAX_STREAM_DECODED.min(budget.decoded), &mut charged);
+    budget.decoded = budget.decoded.saturating_sub(charged);
+    match decoded {
+        Decoded::Content(bytes) => Ok(bytes),
+        Decoded::TooLarge => Err(Unsupported::new("form content too large")),
+        Decoded::Failed => Err(Unsupported::new("form content cannot be decoded")),
+    }
+}
 
 /// Form dictionary keys a redacted copy drops: metadata and private data
 /// may repeat the removed content, and a reference XObject points elsewhere.
@@ -36,14 +49,7 @@ pub(crate) fn redact_form(page: &mut PageEdit, placement: &FormPlacement, rects:
         return Err(Unsupported::new("form XObject not found"));
     };
     let form: Stream = form.clone();
-    let mut charged = 0;
-    let decoded = strict_content_in(Some(page.doc), &form, MAX_STREAM_DECODED.min(page.budget.decoded), &mut charged);
-    page.budget.decoded = page.budget.decoded.saturating_sub(charged);
-    let content = match decoded {
-        Decoded::Content(bytes) => bytes,
-        Decoded::TooLarge => return Err(Unsupported::new("form content too large")),
-        Decoded::Failed => return Err(Unsupported::new("form content cannot be decoded")),
-    };
+    let content = form_content(page.doc, &form, page.budget)?;
     let ops: Vec<Operation> = decode_ops(&content)?;
     // A form without /Resources draws from those of the content around it.
     let mut resources = match form.dict.get(b"Resources") {
@@ -83,12 +89,7 @@ pub(crate) fn inherited_usage(page: &mut PageEdit, used: &UsedNames) -> Result<O
         if name_of(&form.dict, b"Subtype") != Some(b"Form") || form.dict.has(b"Resources") {
             continue;
         }
-        let mut charged = 0;
-        let decoded = strict_content_in(Some(page.doc), form, MAX_STREAM_DECODED.min(page.budget.decoded), &mut charged);
-        page.budget.decoded = page.budget.decoded.saturating_sub(charged);
-        let Decoded::Content(content) = decoded else {
-            return Err(Unsupported::new("form content cannot be decoded"));
-        };
+        let content = form_content(page.doc, form, page.budget)?;
         let usage = scan_content(&content).ok_or_else(|| Unsupported::new("form content cannot be parsed"))?;
         for next in usage.by_category.get(&b"XObject"[..]).into_iter().flatten() {
             if seen.insert(next.clone()) {

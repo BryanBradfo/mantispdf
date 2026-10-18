@@ -1,12 +1,12 @@
 //! Verification: the redacted output is interpreted again and nothing that
 //! could show removed content may remain under an area.
 
-use super::forms::MAX_FORM_DEPTH;
+use super::forms::{MAX_FORM_DEPTH, form_content};
 use super::graphics::{quad_hit, shading_hit, unanalysed_paint};
 use super::interp::{Event, IDENTITY, ImagePlacement as Image, ImageSource, Interp, Matrix, Paint, Rect, content_ops, decode_ops, page_resources, page_resources_dict};
 use super::{Budget, JOB_DECODED, Unsupported};
 use crate::page_content::{original_contents, owned_dict};
-use crate::rebuild::{Decoded, MAX_STREAM_DECODED, deref, strict_content_in};
+use crate::rebuild::deref;
 use lopdf::content::Operation;
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
@@ -120,12 +120,7 @@ fn walk(
             let Some(Object::Stream(form)) = deref(doc, entry) else {
                 return Err(Unsupported::new("form XObject not found"));
             };
-            let mut charged = 0;
-            let decoded = strict_content_in(Some(doc), form, MAX_STREAM_DECODED.min(budget.decoded), &mut charged);
-            budget.decoded = budget.decoded.saturating_sub(charged);
-            let Decoded::Content(content) = decoded else {
-                return Err(Unsupported::new("form content cannot be decoded"));
-            };
+            let content = form_content(doc, form, budget)?;
             let inner = match form.dict.get(b"Resources") {
                 Ok(res) => owned_dict(doc, Some(res)),
                 Err(_) => resources.clone(),
@@ -258,10 +253,7 @@ fn group_meets_within(
     let Ok(Object::Stream(form)) = doc.get_object(group) else {
         return true;
     };
-    let mut charged = 0;
-    let decoded = strict_content_in(Some(doc), form, MAX_STREAM_DECODED.min(budget.decoded), &mut charged);
-    budget.decoded = budget.decoded.saturating_sub(charged);
-    let Decoded::Content(content) = decoded else {
+    let Ok(content) = form_content(doc, form, budget) else {
         return true;
     };
     let Ok(ops) = decode_ops(&content) else {
