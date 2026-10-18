@@ -282,11 +282,12 @@ fn a_baseline_outside_the_box_is_clamped_into_it() {
 fn rotated_page_maps_visible_boxes() {
     // Portrait MediaBox shown landscape: visible is 792 x 612.
     let pdf = doc(1, [0.0, 0.0, 612.0, 792.0], 90);
-    let out = add(&pdf, &[page(1, vec![word("MANTIS", 100.0, 500.0, 120.0, 20.0)])]);
+    let bytes = add_text_layer(&pdf, &[page(1, vec![word("MANTIS", 100.0, 500.0, 120.0, 20.0)])]).unwrap();
+    let out = load_pdf(&bytes).unwrap();
     let drawn = words_drawn(&glyphs(&out, 1));
     // Visible (x, y) is user (612 - y, x) under /Rotate 90.
     assert_rect(&drawn[0].0, [612.0 - 520.0, 100.0, 612.0 - 500.0, 220.0]);
-    let found = redact_search(&add_text_layer(&pdf, &[page(1, vec![word("MANTIS", 100.0, 500.0, 120.0, 20.0)])]).unwrap(), "mantis", &SearchOptions::default()).unwrap();
+    let found = redact_search(&bytes, "mantis", &SearchOptions::default()).unwrap();
     let r = found.matches[0].rects[0];
     assert_rect(&Rect { x0: r[0], y0: r[1], x1: r[0] + r[2], y1: r[1] + r[3] }, [100.0, 500.0, 220.0, 520.0]);
 }
@@ -547,12 +548,13 @@ fn user_rect(doc: &Document, n: u32, [x, y, w, h]: [f64; 4]) -> [f64; 4] {
 #[test]
 fn cropbox_offset_and_rotation_combine() {
     let pdf = one_page(b"", dictionary! { "CropBox" => nums(&[50.0, 60.0, 562.0, 732.0]), "Rotate" => 270 });
-    let out = add(&pdf, &[page(1, vec![word("MANTIS", 100.0, 50.0, 120.0, 20.0)])]);
+    let bytes = add_text_layer(&pdf, &[page(1, vec![word("MANTIS", 100.0, 50.0, 120.0, 20.0)])]).unwrap();
+    let out = load_pdf(&bytes).unwrap();
     let expected = user_rect(&out, 1, [100.0, 50.0, 120.0, 20.0]);
     // Rotate 270 over CropBox [50 60 562 732]: visible (x, y) is user (50 + y, 732 - x).
     assert_eq!(expected, [100.0, 512.0, 120.0, 632.0]);
     assert_rect(&words_drawn(&glyphs(&out, 1))[0].0, expected);
-    let found = redact_search(&save_pdf(&mut out.clone()).unwrap(), "mantis", &SearchOptions::default()).unwrap();
+    let found = redact_search(&bytes, "mantis", &SearchOptions::default()).unwrap();
     let r = found.matches[0].rects[0];
     assert_rect(&Rect { x0: r[0], y0: r[1], x1: r[0] + r[2], y1: r[1] + r[3] }, [100.0, 50.0, 220.0, 70.0]);
 }
