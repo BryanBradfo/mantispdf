@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import { pdfjs } from "../lib/pdf";
@@ -44,6 +45,17 @@ import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 
 /** How long a shown search match stays highlighted. */
 const FLASH_MS = 1500;
+
+/** A plan reason for a page that is a scan: OCR first makes its text searchable. */
+const SCANNED = /scanned image/i;
+const OCR_HINT = (
+  <>
+    <Link to="/ocr" className="font-medium underline">
+      Run OCR first
+    </Link>{" "}
+    to search scanned pages.
+  </>
+);
 
 const KEEP_ORIGINAL = "Redaction permanently removes the marked content. Keep your original file.";
 const ALSO_REMOVED = "Comments are removed from the whole document, and form fields are flattened.";
@@ -400,7 +412,10 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">Its text will no longer be selectable or searchable.</p>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+            Its text will no longer be selectable or searchable.
+            {confirm.pages.some((p) => SCANNED.test(p.reason ?? "")) && <> {OCR_HINT}</>}
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button ref={continueRef} type="button" onClick={goAhead} className={primaryButton}>
               Continue
@@ -496,7 +511,8 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           )}
           {coverage && coverage.undecodable.length > 0 && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              Search may miss text on {coverage.undecodable.length === 1 ? "page" : "pages"} {coverage.undecodable.join(", ")}. Mark those areas by hand.
+              Search may miss text on {coverage.undecodable.length === 1 ? "page" : "pages"} {coverage.undecodable.join(", ")}. Mark those areas by hand.{" "}
+              {OCR_HINT}
             </p>
           )}
           {coverage && coverage.unsearched.length > 0 && (
