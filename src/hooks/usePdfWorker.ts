@@ -338,6 +338,15 @@ export function usePdfWorker() {
     [run],
   );
 
+  /**
+   * The document as `redactPdf` will see it (form fields flattened, so their values show): the
+   * bytes rasters must be rendered from.
+   */
+  const redactPrepare = useCallback(
+    (pdfBytes: Uint8Array): Promise<Uint8Array> => run(null, (id) => ({ type: "redact-prepare", id, pdfBytes }), asBytes),
+    [run],
+  );
+
   /** Which pages with marks need a raster (`reason` set) before `redactPdf`. */
   const redactPlan = useCallback(
     (pdfBytes: Uint8Array, rects: RedactRectWire[]): Promise<PageStatusWire[]> =>
@@ -454,6 +463,7 @@ export function usePdfWorker() {
       listForm,
       fillForm,
       redactSearch,
+      redactPrepare,
       redactPlan,
       redactPdf,
       cropPdf,
@@ -483,6 +493,7 @@ export function usePdfWorker() {
       listForm,
       fillForm,
       redactSearch,
+      redactPrepare,
       redactPlan,
       redactPdf,
       cropPdf,

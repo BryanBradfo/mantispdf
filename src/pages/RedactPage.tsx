@@ -94,7 +94,8 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   const [repeatNote, setRepeatNote] = useState<string | null>(null);
   useEffect(() => setRepeatNote(null), [selectedId]);
 
-  // One pdf.js document for search and rasters, opened when first needed, closed with the page.
+  // One pdf.js document for the search fallback, opened when first needed, closed with the page.
+  // (Rasters are drawn from the engine-prepared bytes instead, see redactWith.)
   const openDoc = useCallback((): Promise<PdfDocument> => {
     docRef.current ??= pdfjs.getDocument({ data: input.bytes.slice() }).promise;
     return docRef.current;
@@ -242,11 +243,21 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
       async () => {
         try {
           const rasters: RasterWire[] = [];
-          for (const [i, p] of pages.entries()) {
-            setProgress(`Converting page ${p} to an image (${i + 1} of ${pages.length})…`);
-            const doc = await openDoc();
-            const pageRects: Rect[] = rects.filter((r) => r.page === p).map((r) => r.rect);
-            rasters.push(await renderRaster(doc, p, pageRects, snap.fill, dpi));
+          if (pages.length > 0) {
+            // Rasters come from the document as the engine prepares it (form fields flattened),
+            // so values typed into fields stay visible on converted pages.
+            setProgress("Preparing pages to convert…");
+            const prepared = await worker.redactPrepare(input.bytes);
+            const doc = await pdfjs.getDocument({ data: prepared }).promise;
+            try {
+              for (const [i, p] of pages.entries()) {
+                setProgress(`Converting page ${p} to an image (${i + 1} of ${pages.length})…`);
+                const pageRects: Rect[] = rects.filter((r) => r.page === p).map((r) => r.rect);
+                rasters.push(await renderRaster(doc, p, pageRects, snap.fill, dpi));
+              }
+            } finally {
+              void doc.destroy();
+            }
           }
           setProgress("Removing the marked content…");
           const job = toJob(snap.marks, sizes, { fill: snap.fill, removeMetadata: snap.removeMetadata }, rasters);

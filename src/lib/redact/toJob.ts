@@ -43,7 +43,6 @@ export interface RedactResultWire {
   glyphsRemoved: number;
   pathsRemoved: number;
   imagesRedacted: number;
-  imagesRemoved: number;
   formsRedacted: number;
   annotationsRemoved: number;
   /**

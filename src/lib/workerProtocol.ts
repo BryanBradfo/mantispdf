@@ -49,6 +49,8 @@ export type ToWorker =
   | { type: "list-form"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "fill-form"; id: ReqId; pdfBytes: Uint8Array; values: FormWireEntry[]; flatten: boolean }
   | { type: "redact-plan"; id: ReqId; pdfBytes: Uint8Array; rects: RedactRectWire[] }
+  /** The document as the redaction will see it (forms flattened): what rasters are drawn from. */
+  | { type: "redact-prepare"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "redact"; id: ReqId; pdfBytes: Uint8Array; job: RedactJobWire }
   | { type: "redact-search"; id: ReqId; pdfBytes: Uint8Array; query: string; options: SearchOptionsWire };
 
