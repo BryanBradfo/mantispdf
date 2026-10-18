@@ -56,6 +56,7 @@ firebase-debug.log
 
 # pdf.js worker copied from node_modules at build time
 public/pdf.worker.min.mjs
+public/pdf.worker.min.mjs.LICENSE
 
 # OCR runtime copied from node_modules at build time (scripts/copy-ocr-assets.mjs)
 public/ocr/

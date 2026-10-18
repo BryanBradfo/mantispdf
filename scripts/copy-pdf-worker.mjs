@@ -9,4 +9,6 @@ const src = fileURLToPath(new URL("../node_modules/pdfjs-dist/build/pdf.worker.m
 const destDir = fileURLToPath(new URL("../public", import.meta.url));
 mkdirSync(destDir, { recursive: true });
 copyFileSync(src, `${destDir}/pdf.worker.min.mjs`);
-console.log("Copied pdf.js worker to public/pdf.worker.min.mjs");
+// pdf.js is Apache-2.0: its licence is served next to the worker.
+copyFileSync(fileURLToPath(new URL("../node_modules/pdfjs-dist/LICENSE", import.meta.url)), `${destDir}/pdf.worker.min.mjs.LICENSE`);
+console.log("Copied pdf.js worker and its licence to public/");
