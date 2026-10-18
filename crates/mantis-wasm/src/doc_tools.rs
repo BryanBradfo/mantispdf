@@ -103,7 +103,7 @@ fn pdfdoc_char(b: u8) -> char {
 
 /// PDF text string: UTF-16BE with a BOM, UTF-8 with a BOM (PDF 2.0),
 /// otherwise PDFDocEncoding.
-fn decode_text(bytes: &[u8]) -> String {
+pub(crate) fn decode_text(bytes: &[u8]) -> String {
     if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
         let units: Vec<u16> = rest
             .chunks_exact(2)

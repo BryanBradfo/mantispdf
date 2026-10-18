@@ -643,7 +643,7 @@ fn numbers_array(doc: &Document, obj: &Object) -> Option<Object> {
 }
 
 /// `N` numbers from an array (elements may be indirect).
-fn parse_numbers<const N: usize>(doc: &Document, obj: &Object) -> Option<[f64; N]> {
+pub(crate) fn parse_numbers<const N: usize>(doc: &Document, obj: &Object) -> Option<[f64; N]> {
     let items = deref(doc, obj)?.as_array().ok()?;
     if items.len() != N {
         return None;

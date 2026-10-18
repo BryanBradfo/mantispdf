@@ -4,6 +4,9 @@ mod doc_tools;
 mod edit;
 mod edit_ops;
 mod encrypt;
+// Until the wasm bindings (forms task 4) use it.
+#[allow(dead_code, unused_imports)]
+mod forms;
 mod geometry_ops;
 mod images;
 #[cfg(test)]
