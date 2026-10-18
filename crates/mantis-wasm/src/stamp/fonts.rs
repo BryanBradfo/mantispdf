@@ -3,7 +3,7 @@
 
 use super::afm_widths::{VMETRICS, WIDTHS};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StdFont {
     Helvetica,
     HelveticaBold,

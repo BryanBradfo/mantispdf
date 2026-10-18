@@ -1,7 +1,10 @@
 //! Fill PDF forms (AcroForm): read the field tree, fill values, flatten.
 
+pub(crate) mod appearance;
+pub(crate) mod fill;
 pub(crate) mod tree;
 
+pub use fill::fill_form;
 pub use tree::list_form;
 
 /// Fields one form may have.
@@ -10,6 +13,8 @@ pub(crate) const MAX_FIELDS: usize = 20_000;
 pub(crate) const MAX_WIDGETS: usize = 50_000;
 /// Options (/Opt entries) one field may have.
 pub(crate) const MAX_OPTIONS: usize = 10_000;
+/// Characters in one text value.
+pub(crate) const MAX_VALUE_CHARS: usize = 20_000;
 /// Field tree depth: fields nested deeper are not listed.
 pub(crate) const MAX_DEPTH: usize = 32;
 

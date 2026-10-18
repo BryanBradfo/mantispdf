@@ -83,7 +83,7 @@ pub struct Metadata {
 
 /// PDFDocEncoding for 0x18-0x1F and 0x80-0xA0 (ISO 32000 Annex D); the rest
 /// matches Latin-1. 0x9F is undefined and maps to U+FFFD.
-fn pdfdoc_char(b: u8) -> char {
+pub(crate) fn pdfdoc_char(b: u8) -> char {
     const LOW: [char; 8] = [
         '\u{2D8}', '\u{2C7}', '\u{2C6}', '\u{2D9}', '\u{2DD}', '\u{2DB}', '\u{2DA}', '\u{2DC}',
     ];

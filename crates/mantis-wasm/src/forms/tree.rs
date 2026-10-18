@@ -16,16 +16,17 @@ use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::collections::{HashMap, HashSet};
 
 // Field flags (/Ff), ISO 32000 tables 221, 226, 228, 230.
-const FF_READ_ONLY: i64 = 1;
-const FF_REQUIRED: i64 = 1 << 1;
-const FF_MULTILINE: i64 = 1 << 12;
-const FF_PASSWORD: i64 = 1 << 13;
-const FF_RADIO: i64 = 1 << 15;
-const FF_PUSHBUTTON: i64 = 1 << 16;
-const FF_COMBO: i64 = 1 << 17;
-const FF_EDIT: i64 = 1 << 18;
-const FF_MULTISELECT: i64 = 1 << 21;
-const FF_COMB: i64 = 1 << 24;
+pub(crate) const FF_READ_ONLY: i64 = 1;
+pub(crate) const FF_REQUIRED: i64 = 1 << 1;
+pub(crate) const FF_MULTILINE: i64 = 1 << 12;
+pub(crate) const FF_PASSWORD: i64 = 1 << 13;
+pub(crate) const FF_RADIO: i64 = 1 << 15;
+pub(crate) const FF_PUSHBUTTON: i64 = 1 << 16;
+pub(crate) const FF_COMBO: i64 = 1 << 17;
+pub(crate) const FF_EDIT: i64 = 1 << 18;
+pub(crate) const FF_MULTISELECT: i64 = 1 << 21;
+pub(crate) const FF_COMB: i64 = 1 << 24;
+pub(crate) const FF_RADIOS_IN_UNISON: i64 = 1 << 25;
 
 /// Annotation flags that keep a widget off the page: Hidden and NoView.
 const INVISIBLE_FLAGS: i64 = 2 | 32;
@@ -216,7 +217,7 @@ fn inherited_entry<'a>(doc: &'a Document, id: ObjectId, key: &[u8]) -> Option<&'
     None
 }
 
-fn integer(obj: Option<&Object>) -> Option<i64> {
+pub(crate) fn integer(obj: Option<&Object>) -> Option<i64> {
     match obj? {
         Object::Integer(i) => Some(*i),
         Object::Real(f) if f.is_finite() => Some(*f as i64),
@@ -641,18 +642,18 @@ fn read_form_with(doc: &Document, streams: &mut StreamValues) -> Result<FormTree
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::pdf_util::save_pdf;
     use lopdf::{Stream, dictionary};
 
-    fn rect(v: [i64; 4]) -> Object {
+    pub(crate) fn rect(v: [i64; 4]) -> Object {
         Object::Array(v.iter().map(|&n| Object::Integer(n)).collect())
     }
 
     /// A one-page document (MediaBox 0 0 600 800, given /Rotate) without a
     /// form yet.
-    fn base(rotate: i64) -> (Document, ObjectId) {
+    pub(crate) fn base(rotate: i64) -> (Document, ObjectId) {
         let mut doc = Document::with_version("1.7");
         let pages_id = doc.new_object_id();
         let page = doc.add_object(dictionary! {
@@ -669,7 +670,7 @@ mod tests {
     }
 
     /// Attach /AcroForm (with `extra` entries) and the page /Annots.
-    fn finish(doc: &mut Document, page: ObjectId, fields: &[ObjectId], annots: &[ObjectId], extra: Vec<(&str, Object)>) {
+    pub(crate) fn finish(doc: &mut Document, page: ObjectId, fields: &[ObjectId], annots: &[ObjectId], extra: Vec<(&str, Object)>) {
         let helv = doc.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica" });
         let cour = doc.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Courier" });
         let mut form = dictionary! {
@@ -686,18 +687,18 @@ mod tests {
         doc.get_dictionary_mut(page).unwrap().set("Annots", annots);
     }
 
-    fn widget(page: ObjectId, r: [i64; 4]) -> Dictionary {
+    pub(crate) fn widget(page: ObjectId, r: [i64; 4]) -> Dictionary {
         dictionary! { "Type" => "Annot", "Subtype" => "Widget", "Rect" => rect(r), "P" => page }
     }
 
-    fn with(mut d: Dictionary, entries: Vec<(&str, Object)>) -> Dictionary {
+    pub(crate) fn with(mut d: Dictionary, entries: Vec<(&str, Object)>) -> Dictionary {
         for (k, v) in entries {
             d.set(k, v);
         }
         d
     }
 
-    fn states(doc: &mut Document, names: &[&str]) -> Object {
+    pub(crate) fn states(doc: &mut Document, names: &[&str]) -> Object {
         let mut n = Dictionary::new();
         for name in names {
             n.set(*name, doc.add_object(Stream::new(dictionary! {}, b"".to_vec())));

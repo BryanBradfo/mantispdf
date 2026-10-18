@@ -148,7 +148,7 @@ impl PageWriter {
     }
 }
 
-fn font_object(font: StdFont) -> Dictionary {
+pub(crate) fn font_object(font: StdFont) -> Dictionary {
     dictionary! {
         "Type" => "Font",
         "Subtype" => "Type1",
