@@ -573,3 +573,26 @@ fn type3_text_is_unknown_but_the_rest_of_the_page_is_searched() {
     assert_eq!(found.pages.iter().map(|p| p.page).collect::<Vec<_>>(), vec![1]);
     assert_eq!(found.undecodable_pages, vec![1]);
 }
+
+/// The glyphs left after redacting `rect` (visible = user space here).
+fn redact_left(pdf: &[u8], rect: [f64; 4]) -> String {
+    let job = RedactJob { rects: vec![RedactRect { page: 1, rect }], fill: Fill::Black, remove_metadata: true, rasters: Vec::new() };
+    let (out, _) = redact(pdf, job).unwrap();
+    let out = load_pdf(&out).unwrap();
+    page_glyphs(&out, out.get_pages()[&1]).unwrap().iter().map(|g| char::from_u32(g.code).unwrap()).collect()
+}
+
+#[test]
+fn bogus_tiny_widths_use_a_plausible_width_for_the_removal_box() {
+    // /Widths of 11/1000 while Tc spaces the glyphs 12 pt apart at 20 pt:
+    // the 'A' inks 100..113 pt whatever its declared 0.22 pt advance.
+    let doc = one_page("BT /T 20 Tf 12 Tc 100 300 Td (ABCDEFGH) Tj ET", |d| {
+        let widths: Vec<Object> = (0..256).map(|_| Object::Integer(11)).collect();
+        let font = d.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding",
+            "FirstChar" => 0, "LastChar" => 255, "Widths" => widths,
+        });
+        dictionary! { "Font" => dictionary! { "T" => font } }
+    });
+    assert_eq!(redact_left(&bytes(doc), [101.0, 295.0, 10.0, 20.0]), "BCDEFGH");
+}

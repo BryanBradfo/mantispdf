@@ -20,6 +20,15 @@ const DESCENT_RANGE: (f64, f64) = (-0.35, -0.1);
 /// something: its box spans this far on both sides of its origin.
 const MIN_INK_WIDTH: f64 = 0.01;
 const NARROW_GLYPH_REACH: f64 = 0.6;
+/// A declared width below this share of the font's plausible width (capped
+/// at `PLAUSIBLE_CAP`) is taken as bogus: the removal box then spans the
+/// plausible width instead.
+const BOGUS_WIDTH_SHARE: f64 = 0.25;
+/// Cap (em) of the plausible width the bogus test compares with, so a wide
+/// /FontBBox does not make honest narrow glyphs (i, l, punctuation) bogus.
+const PLAUSIBLE_CAP: f64 = 0.5;
+/// Plausible glyph width (em) of a font without /AvgWidth or /FontBBox.
+const FALLBACK_PLAUSIBLE: f64 = 0.5;
 /// Highest CID of a two-byte Identity encoding.
 const MAX_CID: i64 = 0xFFFF;
 /// Widths a /W array may assign in total (ranges may overlap, so this can
@@ -34,6 +43,9 @@ pub(crate) struct Font {
     kind: Kind,
     ascent: f64,
     descent: f64,
+    /// Typical glyph width (em): /AvgWidth, else the /FontBBox width, else
+    /// 0.5 em. Stands in for declared widths too small to be true.
+    plausible: f64,
     /// Code to text, when loaded for search.
     text: Option<std::rc::Rc<super::unicode::TextMap>>,
 }
@@ -95,6 +107,18 @@ fn descriptor_metrics(doc: &Document, descriptor: Option<&Dictionary>) -> Metric
     vertical_metrics(doc, descriptor)
 }
 
+/// The plausible glyph width (em) of a font descriptor: /AvgWidth, else
+/// the /FontBBox width, else 0.5 em.
+fn plausible_width(doc: &Document, descriptor: Option<&Dictionary>) -> f64 {
+    let avg = descriptor.and_then(|d| d.get(b"AvgWidth").ok()).and_then(|o| number(doc, o)).filter(|w| *w > 0.0);
+    let bbox = descriptor
+        .and_then(|d| numbers(doc, d.get(b"FontBBox").ok()))
+        .filter(|b| b.len() == 4)
+        .map(|b| (b[2] - b[0]).abs())
+        .filter(|w| *w > 0.0);
+    avg.or(bbox).map_or(FALLBACK_PLAUSIBLE, |w| w / 1000.0)
+}
+
 /// Ascent and descent (em) from a font descriptor, clamped, with fallbacks.
 fn vertical_metrics(doc: &Document, descriptor: Option<&Dictionary>) -> (f64, f64) {
     let value = |key: &[u8]| descriptor.and_then(|d| d.get(key).ok()).and_then(|o| number(doc, o));
@@ -153,7 +177,7 @@ impl Font {
             return Err(err("not a font dictionary"));
         };
         let subtype = name(doc, font.get(b"Subtype").ok()).unwrap_or(b"");
-        let (kind, (ascent, descent)) = match subtype {
+        let (kind, (ascent, descent), plausible) = match subtype {
             b"Type1" | b"MMType1" | b"TrueType" => {
                 let descriptor = dict(doc, font.get(b"FontDescriptor").ok());
                 let kind = Self::simple(doc, font, descriptor, &err)?;
@@ -166,21 +190,21 @@ impl Font {
                     ),
                     _ => descriptor_metrics(doc, descriptor),
                 };
-                (kind, metrics)
+                (kind, metrics, plausible_width(doc, descriptor))
             }
             b"Type0" => Self::type0(doc, font, &err)?,
             // Glyph procedures can paint anywhere: pages using one are
             // rasterized. Search reads past them: their glyphs only advance
             // (their text is unknown, so the page is reported).
             b"Type3" if text.is_some() => {
-                let font = Self::type3_for_search(doc, font, &err)?;
-                return Ok(Font { label, kind: font.0, ascent: font.1.0, descent: font.1.1, text: None });
+                let (kind, (ascent, descent), plausible) = Self::type3_for_search(doc, font, &err)?;
+                return Ok(Font { label, kind, ascent, descent, plausible, text: None });
             }
             b"Type3" => return Err(err("Type3 fonts are not supported")),
             other => return Err(err(&format!("unsupported font type {}", String::from_utf8_lossy(other)))),
         };
         let text = text.and_then(|cache| cache.map_for(doc, obj.as_reference().ok(), font));
-        Ok(Font { label, kind, ascent, descent, text })
+        Ok(Font { label, kind, ascent, descent, plausible, text })
     }
 
     fn simple(
@@ -253,12 +277,14 @@ impl Font {
 
     /// A Type3 font as search reads it: one-byte codes advancing by /Widths
     /// through the /FontMatrix, heights from the /FontBBox (clamped), no text.
-    fn type3_for_search(doc: &Document, font: &Dictionary, err: &dyn Fn(&str) -> Unsupported) -> Result<(Kind, Metrics), Unsupported> {
+    fn type3_for_search(doc: &Document, font: &Dictionary, err: &dyn Fn(&str) -> Unsupported) -> Result<(Kind, Metrics, f64), Unsupported> {
         let m = numbers(doc, font.get(b"FontMatrix").ok()).filter(|m| m.len() == 6).ok_or_else(|| err("malformed /FontMatrix"))?;
         let widths = numbers(doc, font.get(b"Widths").ok()).ok_or_else(|| err("malformed /Widths"))?;
         let first = first_char(doc, font).ok_or_else(|| err("malformed /FirstChar"))?;
         let widths = widths.into_iter().take(256).map(|w| w * m[0]).collect();
-        let (ascent, descent) = match numbers(doc, font.get(b"FontBBox").ok()).filter(|b| b.len() == 4) {
+        let bbox = numbers(doc, font.get(b"FontBBox").ok()).filter(|b| b.len() == 4);
+        let plausible = bbox.as_ref().map(|b| ((b[2] - b[0]) * m[0]).abs()).filter(|w| *w > 0.0).unwrap_or(FALLBACK_PLAUSIBLE);
+        let (ascent, descent) = match bbox {
             Some(b) => {
                 let ys = [b[1], b[3]].map(|y| m[1] * b[0] + m[3] * y + m[5]);
                 let (lo, hi) = (ys[0].min(ys[1]), ys[0].max(ys[1]));
@@ -266,10 +292,10 @@ impl Font {
             }
             None => (FALLBACK_ASCENT, FALLBACK_DESCENT),
         };
-        Ok((Kind::Table { first, widths, missing: 0.0 }, (ascent, descent)))
+        Ok((Kind::Table { first, widths, missing: 0.0 }, (ascent, descent), plausible))
     }
 
-    fn type0(doc: &Document, font: &Dictionary, err: &dyn Fn(&str) -> Unsupported) -> Result<(Kind, Metrics), Unsupported> {
+    fn type0(doc: &Document, font: &Dictionary, err: &dyn Fn(&str) -> Unsupported) -> Result<(Kind, Metrics, f64), Unsupported> {
         match deref(doc, font.get(b"Encoding").map_err(|_| err("no /Encoding"))?) {
             Some(Object::Name(n)) if n == b"Identity-H" => {}
             Some(Object::Name(n)) if n == b"Identity-V" => return Err(err("vertical writing (Identity-V)")),
@@ -295,7 +321,7 @@ impl Font {
             None => HashMap::new(),
         };
         let descriptor = dict(doc, descendant.get(b"FontDescriptor").ok());
-        Ok((Kind::Identity { widths, default }, descriptor_metrics(doc, descriptor)))
+        Ok((Kind::Identity { widths, default }, descriptor_metrics(doc, descriptor), plausible_width(doc, descriptor)))
     }
 
     /// /W: `c [w1 w2 ...]` and `cfirst clast w` entries (em). Later entries
@@ -395,13 +421,17 @@ impl Font {
     /// `[x0, y0, x1, y1]` (em, before font size, scaling and rise) of the
     /// box that decides whether a glyph of width `w0` is under an area: its
     /// advance, from the descent to the ascent (descriptor, or AFM for the
-    /// standard fonts, clamped). A glyph without width (a zero-width mark, a
-    /// bogus /Widths) reaches 0.6 em each way instead.
+    /// standard fonts, clamped). A glyph without width (a zero-width mark)
+    /// reaches 0.6 em each way instead; one whose declared width is too
+    /// small to be true (below a quarter of the plausible width, capped at
+    /// 0.5 em) spans the plausible width.
     pub(crate) fn glyph_box(&self, w0: f64) -> [f64; 4] {
-        if w0 >= MIN_INK_WIDTH {
-            [0.0, self.descent, w0, self.ascent]
-        } else {
+        if w0 < MIN_INK_WIDTH {
             [-NARROW_GLYPH_REACH, self.descent, NARROW_GLYPH_REACH.max(w0), self.ascent]
+        } else if w0 < BOGUS_WIDTH_SHARE * self.plausible.min(PLAUSIBLE_CAP) {
+            [0.0, self.descent, self.plausible, self.ascent]
+        } else {
+            [0.0, self.descent, w0, self.ascent]
         }
     }
 
@@ -454,6 +484,22 @@ mod tests {
         let tall = simple_with_descriptor(&mut doc, dictionary! { "Ascent" => 1400, "Descent" => -600 });
         let tall = Font::load(&doc, b"F", &tall).unwrap();
         assert_eq!(tall.glyph_box(0.5), [0.0, -0.35, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn widths_too_small_to_be_true_use_the_plausible_width() {
+        let mut doc = Document::with_version("1.7");
+        let avg = simple_with_descriptor(&mut doc, dictionary! { "AvgWidth" => 400 });
+        let avg = Font::load(&doc, b"F", &avg).unwrap();
+        // Below a quarter of 0.4 em: bogus, the box spans 0.4 em.
+        assert_eq!(avg.glyph_box(0.05)[2], 0.4);
+        assert_eq!(avg.glyph_box(0.2)[2], 0.2);
+        let bbox = |v: [i64; 4]| Object::Array(v.iter().map(|n| Object::Integer(*n)).collect());
+        let wide = simple_with_descriptor(&mut doc, dictionary! { "FontBBox" => bbox([-166, -225, 1000, 931]) });
+        let wide = Font::load(&doc, b"F", &wide).unwrap();
+        // A wide /FontBBox does not make an honest 'i' (0.222 em) bogus.
+        assert_eq!(wide.glyph_box(0.222)[2], 0.222);
+        assert!((wide.glyph_box(0.011)[2] - 1.166).abs() < 1e-9);
     }
 
     #[test]
