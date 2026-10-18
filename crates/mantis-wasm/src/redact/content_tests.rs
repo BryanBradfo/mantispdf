@@ -508,3 +508,15 @@ fn named_properties_around_removals_are_reported() {
     let names: Vec<&[u8]> = out.report.named_properties.iter().map(|n| n.as_slice()).collect();
     assert_eq!(names, vec![&b"MC0"[..], b"MC1"]);
 }
+
+#[test]
+fn dropping_a_zero_size_show_that_later_text_depends_on_is_unsupported() {
+    let rects = [rect(9.0, 9.0, 11.0, 11.0)];
+    // Tc 2 gives the dropped show an advance the following Tj relies on.
+    let err = try_redact(b"BT /F1 0 Tf 2 Tc 10 10 Td (AB) Tj /F1 10 Tf (C) Tj ET", &rects).unwrap_err();
+    assert!(err.0.contains("zero-size"), "{err:?}");
+    // Nothing depends on it, or it does not advance: dropped.
+    assert!(try_redact(b"BT /F1 0 Tf 2 Tc 10 10 Td (AB) Tj 0 30 Td /F1 10 Tf (C) Tj ET", &rects).is_ok());
+    assert!(try_redact(b"BT /F1 0 Tf 10 10 Td (AB) Tj /F1 10 Tf 20 0 Td (C) Tj ET", &rects).is_ok());
+    assert!(try_redact(b"BT /F1 0 Tf 10 10 Td (AB) Tj /F1 10 Tf (C) Tj ET", &rects).is_ok());
+}

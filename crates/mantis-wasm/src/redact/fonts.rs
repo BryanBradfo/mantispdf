@@ -85,6 +85,9 @@ fn first_char(doc: &Document, font: &Dictionary) -> Option<i64> {
     (first.fract() == 0.0 && (0.0..=255.0).contains(&first)).then_some(first as i64)
 }
 
+/// Standard fonts without descriptor: at least this ascent and descent (em).
+const STD_MIN_ASCENT: f64 = 0.95;
+const STD_MAX_DESCENT: f64 = -0.25;
 /// Vertical extent of any glyph box (em): ink above or below this is not
 /// believed (a hostile /FontBBox must not wipe neighbouring lines).
 const INK_Y_RANGE: (f64, f64) = (-1.0, 1.5);
@@ -156,8 +159,13 @@ impl Font {
                 let descriptor = dict(doc, font.get(b"FontDescriptor").ok());
                 let kind = Self::simple(doc, font, descriptor, &err)?;
                 let metrics = match (&kind, descriptor) {
-                    // A standard font without descriptor: the AFM metrics.
-                    (Kind::Standard { font, .. }, None) => (font.ascent() / 1000.0, font.descent() / 1000.0, None),
+                    // A standard font without descriptor: the AFM metrics,
+                    // widened for accents and descenders the AFM line omits.
+                    (Kind::Standard { font, .. }, None) => (
+                        (font.ascent() / 1000.0).max(STD_MIN_ASCENT),
+                        (font.descent() / 1000.0).min(STD_MAX_DESCENT),
+                        None,
+                    ),
                     _ => descriptor_metrics(doc, descriptor),
                 };
                 (kind, metrics)

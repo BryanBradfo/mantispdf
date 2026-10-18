@@ -1246,9 +1246,10 @@ mod tests {
         // WinAnsi: H 722, i 222, quotesingle 191.
         let widths: Vec<f64> = g.iter().map(|g| g.width).collect();
         assert!((widths[0] - 0.722).abs() < EPS && (widths[1] - 0.222).abs() < EPS && (widths[2] - 0.191).abs() < EPS);
-        // No descriptor: the AFM ascent 718 and descent -207.
-        assert_quad(&g[1].box_user, [(6.22, -2.07), (10.44, -2.07), (10.44, 7.18), (6.22, 7.18)]);
-        assert_quad(&g[2].box_user, [(8.44, -2.07), (12.35, -2.07), (12.35, 7.18), (8.44, 7.18)]);
+        // No descriptor: the AFM ascent 718 and descent -207 widened to at
+        // least 0.95 / -0.25 em (accents).
+        assert_quad(&g[1].box_user, [(6.22, -2.5), (10.44, -2.5), (10.44, 9.5), (6.22, 9.5)]);
+        assert_quad(&g[2].box_user, [(8.44, -2.5), (12.35, -2.5), (12.35, 9.5), (8.44, 9.5)]);
         // Oblique shares the upright widths.
         assert!((glyphs("BT /HO 10 Tf (H) Tj ET")[0].width - 0.722).abs() < EPS);
     }

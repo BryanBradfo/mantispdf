@@ -86,12 +86,16 @@ pub(crate) fn redact_content(ops: &[Operation], events: &[Event], rects: &[Rect]
     let mut replaced: HashMap<usize, Vec<Operation>> = HashMap::new();
     let mut removed_glyphs: BTreeMap<usize, Vec<&interp::Glyph>> = BTreeMap::new();
     let mut shown: HashMap<usize, usize> = HashMap::new();
+    let mut advance: HashMap<usize, f64> = HashMap::new();
     let mut parents: HashMap<usize, Option<usize>> = HashMap::new();
     // Innermost sequences around removed content.
     let mut touched: Vec<usize> = Vec::new();
     for event in events {
         match event {
-            Event::Glyph(g) => *shown.entry(g.op_index).or_default() += 1,
+            Event::Glyph(g) => {
+                *shown.entry(g.op_index).or_default() += 1;
+                *advance.entry(g.op_index).or_default() += g.advance();
+            }
             Event::Marked(m) => {
                 parents.insert(m.op_index, m.parent);
             }
@@ -129,7 +133,12 @@ pub(crate) fn redact_content(ops: &[Operation], events: &[Event], rects: &[Rect]
     }
     for (&index, glyphs) in &removed_glyphs {
         let op = ops.get(index).ok_or_else(|| Unsupported::new("glyph outside the content"))?;
-        let (rewritten, whole) = text::rewrite_show(op, glyphs, text::later_text_depends(ops, index))?;
+        let depends = text::later_text_depends(ops, index);
+        let (rewritten, whole) = text::rewrite_show(op, glyphs, depends)?;
+        if whole && depends && advance.get(&index).is_some_and(|a| *a != 0.0) {
+            // No number can stand in for it and later text relies on it.
+            return Err(Unsupported::new("zero-size text under a redaction area moves later text"));
+        }
         report.glyphs_removed += if whole { shown.get(&index).copied().unwrap_or(0) } else { glyphs.len() };
         replaced.insert(index, rewritten);
     }
