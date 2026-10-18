@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RecognizedWord } from "./engine";
-import { LOW_QUALITY, MAX_WORDS_PER_PAGE, MAX_WORDS_TOTAL, estimateRemainingMs, formatEta, summarize, toggleLanguage, wordLimitProblem, wordsToWire } from "./run";
+import { LOW_QUALITY, summaryHeadline, MAX_WORDS_PER_PAGE, MAX_WORDS_TOTAL, estimateRemainingMs, formatEta, summarize, toggleLanguage, wordLimitProblem, wordsToWire } from "./run";
 
 const word = (text: string, x0: number, y0: number, x1: number, y1: number, extra: Partial<RecognizedWord> = {}): RecognizedWord => ({
   text,
@@ -110,6 +110,26 @@ describe("word limits before download", () => {
     const pages = Array.from({ length: 11 }, (_, i) => page(i + 1, 190_000));
     expect(wordLimitProblem(pages)).toBe(
       "Too many recognised words in all (more than 2000000) to add a text layer. Split the PDF, or download the text instead.",
+    );
+  });
+});
+
+describe("summary headline", () => {
+  it("counts pages with text found and their words", () => {
+    const s = summarize([
+      { page: 1, skipped: false, confidence: 90, words: 1 },
+      { page: 2, skipped: false, confidence: 0, words: 0 },
+      { page: 3, skipped: true },
+    ]);
+    expect(summaryHeadline(s)).toBe("Text recognised on 1 page (1 word).");
+    expect(summaryHeadline(summarize([{ page: 1, skipped: false, confidence: 90, words: 3 }, { page: 2, skipped: false, confidence: 80, words: 4 }]))).toBe(
+      "Text recognised on 2 pages (7 words).",
+    );
+  });
+
+  it("says so when every page was skipped", () => {
+    expect(summaryHeadline(summarize([{ page: 1, skipped: true }, { page: 2, skipped: true }]))).toBe(
+      "All pages already contain text. Nothing to recognise.",
     );
   });
 });

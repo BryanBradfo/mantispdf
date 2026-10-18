@@ -107,3 +107,10 @@ export function wordLimitProblem(pages: readonly { page: number; words: readonly
   }
   return null;
 }
+
+/** The summary's first line. */
+export function summaryHeadline(s: OcrSummary): string {
+  if (s.processed === 0 && s.skipped.length > 0) return "All pages already contain text. Nothing to recognise.";
+  const pages = s.processed - s.noText.length;
+  return `Text recognised on ${pages} ${pages === 1 ? "page" : "pages"} (${s.words} ${s.words === 1 ? "word" : "words"}).`;
+}

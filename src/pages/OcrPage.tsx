@@ -9,7 +9,7 @@ import PageStrip from "../components/editor/PageStrip";
 import { OcrEngine, ocrWorkerCount } from "../lib/ocr/engine";
 import { OCR_LANGUAGES, defaultLanguages, type OcrLanguage } from "../lib/ocr/languages";
 import { renderPageImage, type OcrPageImage } from "../lib/ocr/render";
-import { estimateRemainingMs, formatEta, summarize, toggleLanguage, wordLimitProblem, wordsToWire, type PageOutcome } from "../lib/ocr/run";
+import { estimateRemainingMs, formatEta, summarize, summaryHeadline, toggleLanguage, wordLimitProblem, wordsToWire, type PageOutcome } from "../lib/ocr/run";
 import { exportText, hasText } from "../lib/ocr/text";
 import type { OcrPageWire } from "../lib/ocr/textLayerWire";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
@@ -69,7 +69,6 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
   const running = progress !== null;
 
   const summary = useMemo(() => (result ? summarize(result.outcomes) : null), [result]);
-  const withText = summary ? summary.processed - summary.noText.length : 0;
   const recognised = useMemo(() => new Set(result?.layer.map((p) => p.page) ?? []), [result]);
 
   // The ETA ticks while running.
@@ -325,10 +324,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
 
       {summary && result && (
         <div role="status" className="mt-6 rounded-lg border border-mantis-300 bg-mantis-50 p-3 text-sm text-mantis-900 dark:border-mantis-800 dark:bg-[#0f1a0f] dark:text-mantis-200">
-          <p className="font-medium">
-            Text recognised on {withText} {withText === 1 ? "page" : "pages"} ({summary.words}{" "}
-            {summary.words === 1 ? "word" : "words"}).
-          </p>
+          <p className="font-medium">{summaryHeadline(summary)}</p>
           <ul className="mt-1 list-disc pl-5">
             {summary.averageConfidence !== null && <li>Average confidence: {Math.round(summary.averageConfidence)}%.</li>}
             {summary.skipped.length > 0 && (
