@@ -1,6 +1,7 @@
 //! Redaction: remove the content under marked areas (text, images, vector
 //! graphics) instead of only covering it.
 
+mod codec;
 mod content;
 #[cfg(test)]
 mod content_tests;
