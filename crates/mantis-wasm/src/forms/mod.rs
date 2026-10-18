@@ -1,8 +1,10 @@
 //! Fill PDF forms (AcroForm): read the field tree, fill values, flatten.
 
 pub(crate) mod appearance;
+pub(crate) mod binding;
 pub(crate) mod fill;
 pub(crate) mod flatten;
+pub(crate) mod job;
 pub(crate) mod tree;
 
 pub use fill::fill_form;

@@ -4,8 +4,6 @@ mod doc_tools;
 mod edit;
 mod edit_ops;
 mod encrypt;
-// Until the wasm bindings (forms task 4) use it.
-#[allow(dead_code, unused_imports)]
 mod forms;
 mod geometry_ops;
 mod images;
@@ -157,6 +155,23 @@ pub fn edit_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<Vec<u8>, JsValue> {
     let raw = edit_ops::binding::read_job(&job).map_err(|e| JsValue::from_str(&e))?;
     let job = edit_ops::job::validate_job(raw).map_err(|e| JsValue::from_str(&e))?;
     edit_ops::edit_pdf(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))
+}
+
+/// The fields of a PDF form as a plain object: `{ xfa, fields }`. See
+/// `src/lib/forms/model.ts` for the shape.
+#[wasm_bindgen]
+pub fn list_form(pdf_bytes: &[u8]) -> Result<JsValue, JsValue> {
+    let info = forms::list_form(pdf_bytes).map_err(|e| JsValue::from_str(&e))?;
+    Ok(forms::binding::form_to_js(&info))
+}
+
+/// Fill form fields (`values` from `src/lib/forms/toWire.ts`), optionally
+/// flattening every field into the pages.
+#[wasm_bindgen]
+pub fn fill_form(pdf_bytes: &[u8], values: JsValue, flatten: bool) -> Result<Vec<u8>, JsValue> {
+    let raw = forms::binding::read_values(&values).map_err(|e| JsValue::from_str(&e))?;
+    let values = forms::job::validate_values(raw).map_err(|e| JsValue::from_str(&e))?;
+    forms::fill_form(pdf_bytes, &values, flatten).map_err(|e| JsValue::from_str(&e))
 }
 
 #[wasm_bindgen]

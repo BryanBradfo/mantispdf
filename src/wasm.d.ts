@@ -46,6 +46,9 @@ declare module "mantis-wasm" {
   }
   export function stamp_pdf(pdf_bytes: Uint8Array, job: object): StampOutput;
   export function edit_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
+  /** The form fields; shape built by `forms::binding::form_to_js`. */
+  export function list_form(pdf_bytes: Uint8Array): import("./lib/forms/model").FormInfo;
+  export function fill_form(pdf_bytes: Uint8Array, values: object, flatten: boolean): Uint8Array;
   export function crop_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
   export function resize_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
   export class NupOutput {

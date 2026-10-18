@@ -6,6 +6,8 @@ import type { ExtractResultSpec, ImageInputSpec, ImageLayoutSpec } from "../lib/
 import { editJobTransferables, type EditJobSpec } from "../lib/editor/toJob";
 import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob";
 import type { StampJobSpec } from "../lib/stampJob";
+import type { FormInfo } from "../lib/forms/model";
+import type { FormWireEntry } from "../lib/forms/toWire";
 import { PdfWorkerClient } from "../lib/workerClient";
 
 export interface SanitizeReport {
@@ -111,6 +113,10 @@ const asSanitized = (p: SuccessPayload): { bytes: Uint8Array; report: SanitizeRe
     bytes: p.bytes,
     report: { linksKept, linksDropped, commentsKept, commentsDropped, fieldsFlattened, warnings, deepContentDropped, imagesCleaned },
   };
+};
+const asForm = (p: SuccessPayload): FormInfo => {
+  if (p.kind !== "form") throw new Error("Unexpected worker payload");
+  return p.info;
 };
 const asMetadata = (p: SuccessPayload): PdfMetadata => {
   if (p.kind !== "metadata") throw new Error("Unexpected worker payload");
@@ -299,6 +305,19 @@ export function usePdfWorker() {
     [run],
   );
 
+  /** The form fields of a PDF (engine traversal order; ids are what `fillForm` takes). */
+  const listForm = useCallback(
+    (pdfBytes: Uint8Array): Promise<FormInfo> => run(null, (id) => ({ type: "list-form", id, pdfBytes }), asForm),
+    [run],
+  );
+
+  /** The PDF with `values` filled in (only changed fields), flattened when asked. */
+  const fillForm = useCallback(
+    (pdfBytes: Uint8Array, values: FormWireEntry[], flatten: boolean): Promise<Uint8Array> =>
+      run(null, (id) => ({ type: "fill-form", id, pdfBytes, values, flatten }), asBytes),
+    [run],
+  );
+
   const cropPdf = useCallback(
     (pdfBytes: Uint8Array, job: CropJobSpec): Promise<Uint8Array> =>
       run(null, (id) => ({ type: "crop", id, pdfBytes, job }), asBytes),
@@ -393,6 +412,8 @@ export function usePdfWorker() {
       sanitizePdf,
       stampPdf,
       editPdf,
+      listForm,
+      fillForm,
       cropPdf,
       resizePdf,
       nupPdf,
@@ -417,6 +438,8 @@ export function usePdfWorker() {
       sanitizePdf,
       stampPdf,
       editPdf,
+      listForm,
+      fillForm,
       cropPdf,
       resizePdf,
       nupPdf,

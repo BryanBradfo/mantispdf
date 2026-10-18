@@ -3,6 +3,8 @@ import type { ImageInputSpec, ImageLayoutSpec, ExtractResultSpec } from "./image
 import type { EditJobSpec } from "./editor/toJob";
 import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "./geometryJob";
 import type { StampJobSpec } from "./stampJob";
+import type { FormInfo } from "./forms/model";
+import type { FormWireEntry } from "./forms/toWire";
 
 /** Correlates a request with its response/progress/failure messages. */
 export type ReqId = number;
@@ -42,7 +44,9 @@ export type ToWorker =
   | { type: "remove-metadata"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "read-metadata"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "set-metadata"; id: ReqId; pdfBytes: Uint8Array; title: string; author: string; subject: string; keywords: string }
-  | { type: "unlock"; id: ReqId; pdfBytes: Uint8Array; password: string };
+  | { type: "unlock"; id: ReqId; pdfBytes: Uint8Array; password: string }
+  | { type: "list-form"; id: ReqId; pdfBytes: Uint8Array }
+  | { type: "fill-form"; id: ReqId; pdfBytes: Uint8Array; values: FormWireEntry[]; flatten: boolean };
 
 // The successful result of an operation, tagged by `kind` so the requesting side
 // can extract the right field with a runtime check (no unsafe casts).
@@ -56,7 +60,8 @@ export type SuccessPayload =
   | { kind: "nup"; bytes: Uint8Array; sheets: number; undecodable: number[] }
   | { kind: "extracted"; result: ExtractResultSpec }
   | { kind: "sizes"; sizes: [number, number][] }
-  | { kind: "metadata"; values: string[] };
+  | { kind: "metadata"; values: string[] }
+  | { kind: "form"; info: FormInfo };
 
 // Worker → Main messages. `init-done`/`init-error` are the one-time handshake;
 // all operation responses carry the originating `id`.
