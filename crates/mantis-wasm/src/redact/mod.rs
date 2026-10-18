@@ -85,7 +85,7 @@ pub(crate) fn redact_content(ops: &[Operation], events: &[Event], rects: &[Rect]
             Event::Glyph(g) if graphics::quad_hit(&g.box_user, rects) => {
                 removed_glyphs.entry(g.op_index).or_default().push(g);
             }
-            Event::Path(p) => match graphics::path_edit(p, rects) {
+            Event::Path(p) => match graphics::path_edit(p, rects)? {
                 Some(graphics::PathEdit::Remove(range)) => {
                     dropped.extend(range);
                     report.paths_removed += 1;

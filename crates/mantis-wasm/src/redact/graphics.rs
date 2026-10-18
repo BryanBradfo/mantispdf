@@ -1,6 +1,7 @@
 //! Vector graphics removal: painted paths, shadings and inline images under
 //! a redaction area.
 
+use super::Unsupported;
 use super::interp::{PathPaint, Quad, Rect, ShadingPaint};
 use std::ops::Range;
 
@@ -13,14 +14,25 @@ pub(crate) enum PathEdit {
     Unpaint(usize),
 }
 
-/// The edit for a painted path whose bounds meet a rect; None for paths
-/// that paint nothing or stay clear of every rect.
-pub(crate) fn path_edit(path: &PathPaint, rects: &[Rect]) -> Option<PathEdit> {
-    let bbox = path.bbox_user?;
-    if !path.painted || !rects.iter().any(|r| bbox.overlaps(r)) {
-        return None;
+/// The edit for a path whose bounds meet a rect: a painted path goes, a
+/// rectangle clip keeps its clip and loses its paint. Any other clip there
+/// is Unsupported: a clip shaped like letter outlines carries the text.
+/// None for paths that stay clear of every rect or only clip with rects.
+pub(crate) fn path_edit(path: &PathPaint, rects: &[Rect]) -> Result<Option<PathEdit>, Unsupported> {
+    let Some(bbox) = path.bbox_user else {
+        return Ok(None);
+    };
+    if !rects.iter().any(|r| bbox.overlaps(r)) {
+        return Ok(None);
     }
-    Some(if path.clip { PathEdit::Unpaint(path.op_range.end - 1) } else { PathEdit::Remove(path.op_range.clone()) })
+    if path.clip && !path.rects_only {
+        return Err(Unsupported::new("shaped clip path under a redaction area"));
+    }
+    Ok(match (path.painted, path.clip) {
+        (false, _) => None,
+        (true, true) => Some(PathEdit::Unpaint(path.op_range.end - 1)),
+        (true, false) => Some(PathEdit::Remove(path.op_range.clone())),
+    })
 }
 
 /// A shading without /BBox fills its whole clip region: it meets any rect.

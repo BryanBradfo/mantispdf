@@ -205,6 +205,8 @@ pub(crate) struct PathPaint {
     pub(crate) painted: bool,
     /// `W` or `W*` came before the painting operator.
     pub(crate) clip: bool,
+    /// Built from `re` (and `h`) only: as a clip it carries no glyph shape.
+    pub(crate) rects_only: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -476,6 +478,7 @@ struct PathBuild {
     start: usize,
     bbox: Option<Rect>,
     clip: bool,
+    rects_only: bool,
 }
 
 /// Text position: Tm and Tlm.
@@ -596,9 +599,12 @@ impl Run<'_> {
         Ok(())
     }
 
-    fn add_points(&mut self, op_index: usize, points: &[(f64, f64)]) {
+    /// Add the points of construction operator `op_index`; `rect` tells
+    /// whether it is `re`.
+    fn add_points(&mut self, op_index: usize, points: &[(f64, f64)], rect: bool) {
         let ctm = self.gs.ctm;
-        let path = self.path.get_or_insert(PathBuild { start: op_index, bbox: None, clip: false });
+        let path = self.path.get_or_insert(PathBuild { start: op_index, bbox: None, clip: false, rects_only: true });
+        path.rects_only &= rect;
         for &(x, y) in points {
             let p = apply(&ctm, x, y);
             path.bbox = Some(path.bbox.map_or(Rect::point(p.0, p.1), |r| r.including(p)));
@@ -611,7 +617,13 @@ impl Run<'_> {
         };
         let reach = self.gs.stroke_reach();
         let bbox_user = path.bbox.map(|r| if stroked { r.expanded(reach) } else { r });
-        self.emit(Event::Path(PathPaint { op_range: path.start..op_index + 1, bbox_user, painted, clip: path.clip }))
+        self.emit(Event::Path(PathPaint {
+            op_range: path.start..op_index + 1,
+            bbox_user,
+            painted,
+            clip: path.clip,
+            rects_only: path.rects_only,
+        }))
     }
 
     /// Show `bytes` (string `elem_index` of op `op_index`), moving Tm.
@@ -799,19 +811,19 @@ impl<'d> Interp<'d> {
             "gs" => self.ext_gstate(one_name(o, args)?, &mut run.gs)?,
             "m" | "l" => {
                 let [x, y] = nums::<2>(o, args)?;
-                run.add_points(i, &[(x, y)]);
+                run.add_points(i, &[(x, y)], false);
             }
             "c" => {
                 let [x1, y1, x2, y2, x3, y3] = nums::<6>(o, args)?;
-                run.add_points(i, &[(x1, y1), (x2, y2), (x3, y3)]);
+                run.add_points(i, &[(x1, y1), (x2, y2), (x3, y3)], false);
             }
             "v" | "y" => {
                 let [x1, y1, x2, y2] = nums::<4>(o, args)?;
-                run.add_points(i, &[(x1, y1), (x2, y2)]);
+                run.add_points(i, &[(x1, y1), (x2, y2)], false);
             }
             "re" => {
                 let [x, y, w, h] = nums::<4>(o, args)?;
-                run.add_points(i, &[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]);
+                run.add_points(i, &[(x, y), (x + w, y), (x + w, y + h), (x, y + h)], true);
             }
             "h" => {}
             "W" | "W*" => {
@@ -1437,9 +1449,10 @@ mod tests {
     #[test]
     fn clip_paths_are_marked() {
         let p = path("0 0 m 10 0 l 10 10 l W n");
-        assert_eq!((p.op_range.clone(), p.painted, p.clip), (0..5, false, true));
+        assert_eq!((p.op_range.clone(), p.painted, p.clip, p.rects_only), (0..5, false, true, false));
         let p = path("0 0 10 10 re W* f");
-        assert_eq!((p.op_range.clone(), p.painted, p.clip), (0..3, true, true));
+        assert_eq!((p.op_range.clone(), p.painted, p.clip, p.rects_only), (0..3, true, true, true));
+        assert!(path("0 0 10 10 re h 20 20 5 5 re W n").rects_only);
     }
 
     #[test]

@@ -74,6 +74,13 @@ struct Out {
     after_events: Vec<Event>,
 }
 
+fn try_redact(content: &[u8], rects: &[Rect]) -> Result<(Vec<lopdf::content::Operation>, Report), Unsupported> {
+    let (doc, resources) = fixture();
+    let ops = decode_ops(content).unwrap();
+    let events = Interp::new(&doc, resources).run(&ops, IDENTITY, &mut Budget::page(1 << 20)).unwrap();
+    redact_content(&ops, &events, rects)
+}
+
 fn redact(content: &[u8], rects: &[Rect]) -> Out {
     let (doc, resources) = fixture();
     let ops = decode_ops(content).unwrap();
@@ -256,6 +263,32 @@ fn clip_paths_are_kept_and_painting_clips_lose_only_their_paint() {
     assert_eq!(out.report.paths_removed, 1);
     let kept = paths(&out.after_events);
     assert_eq!(kept.iter().map(|p| (p.painted, p.clip)).collect::<Vec<_>>(), vec![(false, true), (false, true), (true, false)]);
+}
+
+#[test]
+fn rectangle_clips_under_a_rect_are_kept() {
+    let rects = [rect(40.0, 40.0, 55.0, 55.0)];
+    let out = redact(b"q 0 0 100 100 re W n 10 10 80 80 re h W f Q", &rects);
+    let kept = paths(&out.after_events);
+    assert_eq!(kept.iter().map(|p| (p.painted, p.clip)).collect::<Vec<_>>(), vec![(false, true), (false, true)]);
+    assert_eq!(kept[1].bbox_user, Some(rect(10.0, 10.0, 90.0, 90.0)));
+}
+
+#[test]
+fn shaped_clips_under_a_rect_make_the_page_unsupported() {
+    let rects = [rect(40.0, 40.0, 55.0, 55.0)];
+    for content in [
+        &b"q 0 0 m 50 100 100 0 0 0 c h W n Q"[..],
+        b"q 0 0 m 100 0 l 50 100 l h W n Q",
+        b"q 0 0 m 100 0 l 50 100 l h W* f Q",
+        b"q 0 0 100 100 re 30 30 m 60 60 l 30 60 l h W n Q",
+    ] {
+        let err = try_redact(content, &rects).unwrap_err();
+        assert!(err.0.contains("clip"), "{}: {err:?}", String::from_utf8_lossy(content));
+    }
+    // The same clip away from every rect stays.
+    let out = redact(b"q 200 200 m 250 300 300 200 200 200 c h W n Q", &rects);
+    assert_eq!(paths(&out.after_events).len(), 1);
 }
 
 #[test]
