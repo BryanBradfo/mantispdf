@@ -523,7 +523,13 @@ struct Context<'a> {
     form: &'a Dictionary,
     dr: Option<&'a Dictionary>,
     pages: Pages,
+    /// Parsed /DA per source string (by address: fields inheriting one /DA
+    /// share it).
+    das: std::cell::RefCell<HashMap<usize, DefaultAppearance>>,
 }
+
+/// A /DA longer than this is not parsed: the default appearance is used.
+pub(crate) const MAX_DA_BYTES: usize = 4096;
 
 impl<'a> Context<'a> {
     /// `key` on the widget itself, else inherited by the field, else the
@@ -558,7 +564,10 @@ impl<'a> Context<'a> {
         let rotation = add_rotation(mk_rotation, -page_box.map_or(0, |vb| vb.rotate));
         let flags = integer(dict.get(b"F").ok().and_then(|f| deref(doc, f))).unwrap_or(0);
         let da = match self.widget_attr(dict, field, b"DA") {
-            Some(Object::String(bytes, _)) => parse_da(doc, bytes, self.dr),
+            Some(Object::String(bytes, _)) if bytes.len() <= MAX_DA_BYTES => {
+                let key = bytes.as_ptr() as usize;
+                *self.das.borrow_mut().entry(key).or_insert_with(|| parse_da(doc, bytes, self.dr))
+            }
             _ => DefaultAppearance::default(),
         };
         let align = match integer(self.widget_attr(dict, field, b"Q")) {
@@ -676,6 +685,7 @@ fn read_form_with(doc: &Document, streams: &mut StreamValues) -> Result<FormTree
         form,
         dr: form.get(b"DR").ok().and_then(|d| deref(doc, d)?.as_dict().ok()),
         pages: Pages::new(doc),
+        das: std::cell::RefCell::new(HashMap::new()),
     };
     let mut fields = Vec::new();
     let mut refs = Vec::new();
@@ -1437,5 +1447,30 @@ pub(crate) mod tests {
         assert_eq!(t.refs[0].widgets[2].generated_state.as_deref(), Some("Yes2"));
         assert_eq!(t.info.fields[1].on_states, vec!["Yes"]);
         assert_eq!(t.info.fields[1].widgets[0].on_state.as_deref(), Some("Yes"));
+    }
+
+    #[test]
+    fn hostile_default_appearance_is_cheap() {
+        let (mut doc, page) = base(0);
+        // 256 KiB of operators shared by 2000 fields through the AcroForm /DA.
+        let mut huge = "/Cour 9 Tf ".to_string();
+        huge.push_str(&"0 g ".repeat(64 * 1024));
+        let ids: Vec<ObjectId> = (0..2000)
+            .map(|i| doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+                ("FT", "Tx".into()), ("T", Object::string_literal(format!("f{i}"))),
+            ])))
+            .collect();
+        let own = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("FT", "Tx".into()), ("T", Object::string_literal("own")), ("DA", Object::string_literal("/Cour 9 Tf")),
+        ]));
+        let mut all = ids.clone();
+        all.push(own);
+        finish(&mut doc, page, &all, &[], vec![("DA", Object::string_literal(huge))]);
+        let start = std::time::Instant::now();
+        let t = tree(&doc);
+        assert!(start.elapsed() < std::time::Duration::from_secs(2), "{:?}", start.elapsed());
+        // Longer than MAX_DA_BYTES: the default appearance.
+        assert_eq!(t.refs[0].widgets[0].da, DefaultAppearance::default());
+        assert_eq!(t.refs[2000].widgets[0].da.font, StdFont::Courier);
     }
 }
