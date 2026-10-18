@@ -376,3 +376,50 @@ fn inline_abbreviations_expand() {
     assert!(x.dict.has(b"Decode") && x.dict.has(b"DecodeParms") && !x.dict.has(b"W"));
     assert_eq!(x.content, b"xx");
 }
+
+/// Object ids reachable from `obj` (references followed, bounded).
+fn reachable(doc: &Document, obj: &Object, seen: &mut std::collections::HashSet<ObjectId>) {
+    match obj {
+        Object::Reference(id) => {
+            if seen.insert(*id)
+                && let Ok(target) = doc.get_object(*id)
+            {
+                reachable(doc, target, seen);
+            }
+        }
+        Object::Array(items) => items.iter().for_each(|o| reachable(doc, o, seen)),
+        Object::Dictionary(d) => d.iter().for_each(|(_, o)| reachable(doc, o, seen)),
+        Object::Stream(s) => s.dict.iter().for_each(|(_, o)| reachable(doc, o, seen)),
+        _ => {}
+    }
+}
+
+#[test]
+fn the_original_image_is_unreachable_from_the_redacted_page() {
+    let page = page_with(rgb_image(4, 4, gradient));
+    let original = page.image;
+    // Another page shares the /XObject dictionary (and so the image).
+    let other_page = page.resources.clone();
+    let out = redact(page, DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)]);
+    let mut seen = std::collections::HashSet::new();
+    reachable(&out.doc, &Object::Dictionary(out.resources.clone()), &mut seen);
+    assert!(!seen.contains(&original), "redacted page still reaches the original image");
+    let mut seen = std::collections::HashSet::new();
+    reachable(&out.doc, &Object::Dictionary(other_page), &mut seen);
+    assert!(seen.contains(&original), "the other page keeps it");
+}
+
+#[test]
+fn names_only_removed_ops_used_are_pruned_others_kept() {
+    let mut page = page_with(rgb_image(4, 4, gradient));
+    let far = page.doc.add_object(rgb_image(1, 1, |_, _| [1, 2, 3]));
+    let unused = page.doc.add_object(rgb_image(1, 1, |_, _| [4, 5, 6]));
+    page.resources.set(
+        "XObject",
+        dictionary! { "Im1" => page.image, "Far" => far, "Unused" => unused },
+    );
+    let out = redact(page, b"q 40 0 0 40 0 0 cm /Im1 Do Q q 1 0 0 1 100 100 cm /Far Do Q", &[rect(0.0, 0.0, 20.0, 40.0)]);
+    let xobjects = super::interp::page_resources_dict(&out.doc, &out.resources, b"XObject");
+    assert!(!xobjects.has(b"Im1"));
+    assert!(xobjects.has(b"Far") && xobjects.has(b"Unused"), "names the content never used stay (forms may)");
+}

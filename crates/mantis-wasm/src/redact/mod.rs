@@ -238,5 +238,39 @@ pub(crate) fn redact_content(
             None => out.push(op.clone()),
         }
     }
+    prune_resources(page, ops, &out)?;
     Ok((out, report))
+}
+
+/// Resource categories whose names removed operators may have used.
+const PRUNED: [&[u8]; 4] = [b"XObject", b"Font", b"Shading", b"Pattern"];
+
+/// Remove from the page's resources every name the original content used
+/// and the redacted content no longer does: a replaced image must not stay
+/// reachable under its old name. Names the content never used stay (a form
+/// without /Resources may draw from them). Shared dictionaries are copied,
+/// never changed.
+fn prune_resources(page: &mut PageEdit, before: &[Operation], after: &[Operation]) -> Result<(), Unsupported> {
+    let scan = |ops: &[Operation]| {
+        rebuild::scan_content(&interp::encode_ops(ops)).ok_or_else(|| Unsupported::new("redacted content cannot be scanned"))
+    };
+    let (old, new) = (scan(before)?, scan(after)?);
+    for category in PRUNED {
+        let gone: Vec<&Vec<u8>> = old
+            .by_category
+            .get(category)
+            .into_iter()
+            .flatten()
+            .filter(|name| !new.contains(category, name))
+            .collect();
+        if gone.is_empty() || !page.resources.has(category) {
+            continue;
+        }
+        let mut entries = interp::page_resources_dict(page.doc, page.resources, category);
+        for name in gone {
+            entries.remove(name);
+        }
+        page.resources.set(category.to_vec(), entries);
+    }
+    Ok(())
 }
