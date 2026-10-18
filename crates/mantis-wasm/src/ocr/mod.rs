@@ -25,6 +25,8 @@ use std::collections::HashMap;
 pub(crate) const MAX_PAGES: usize = 2000;
 /// Words per page entry.
 pub(crate) const MAX_WORDS: usize = 200_000;
+/// Words per job, all pages together.
+pub(crate) const MAX_JOB_WORDS: usize = 2_000_000;
 /// UTF-16 units of one word's text.
 pub(crate) const MAX_WORD_UNITS: usize = 200;
 
@@ -39,6 +41,10 @@ pub struct OcrWord {
     pub w: f64,
     pub h: f64,
     pub baseline: Option<f64>,
+    /// A space follows on the same line: a space glyph is drawn from the
+    /// word's end to the next word's start (0.25 em when that gap is not
+    /// known), so extractors and search read the words apart.
+    pub space_after: bool,
 }
 
 /// The words of one page (1-based).
@@ -69,11 +75,14 @@ pub fn add_text_layer(pdf: &[u8], pages: &[OcrPage]) -> Result<Vec<u8>, String> 
     for entry in pages {
         let page_id = page_ids[entry.page as usize - 1];
         let matrix = VisibleBox::of_page(&doc, page_id).matrix();
-        let mut placed: Vec<layer::Placed> = entry
-            .words
+        let words: Vec<&OcrWord> = entry.words.iter().filter(|w| !w.text.trim().is_empty()).collect();
+        if words.iter().any(|w| w.space_after) {
+            cids.encode(" ");
+        }
+        let mut placed: Vec<layer::Placed> = words
             .iter()
-            .filter(|w| !w.text.trim().is_empty())
-            .map(|w| layer::place(w, cids.encode(&w.text), &matrix))
+            .enumerate()
+            .map(|(i, w)| layer::place(w, cids.encode(&w.text), words.get(i + 1).copied(), &matrix))
             .collect();
         if placed.is_empty() {
             continue;
@@ -104,7 +113,7 @@ fn validate_shape(pages: &[OcrPage]) -> Result<(), String> {
     if pages.len() > MAX_PAGES {
         return Err(invalid("pages"));
     }
-    if pages.iter().any(|p| p.words.len() > MAX_WORDS) {
+    if pages.iter().any(|p| p.words.len() > MAX_WORDS) || pages.iter().map(|p| p.words.len()).sum::<usize>() > MAX_JOB_WORDS {
         return Err(invalid("words"));
     }
     Ok(())

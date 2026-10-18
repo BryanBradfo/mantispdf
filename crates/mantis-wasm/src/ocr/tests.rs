@@ -54,7 +54,7 @@ fn letter() -> Vec<u8> {
 }
 
 fn word(text: &str, x: f64, y: f64, w: f64, h: f64) -> OcrWord {
-    OcrWord { text: text.into(), x, y, w, h, baseline: None }
+    OcrWord { text: text.into(), x, y, w, h, baseline: None, space_after: false }
 }
 
 fn page(page: u32, words: Vec<OcrWord>) -> OcrPage {
@@ -110,7 +110,7 @@ fn glyphs(doc: &Document, n: u32) -> Vec<Glyph> {
 /// space and its text.
 fn words_drawn(glyphs: &[Glyph]) -> Vec<(Rect, String)> {
     let mut by_op: BTreeMap<usize, (Rect, String)> = BTreeMap::new();
-    for g in glyphs.iter().filter(|g| g.render_mode == 3) {
+    for g in glyphs.iter().filter(|g| g.render_mode == 3 && g.text.as_deref() != Some(" ")) {
         let b = g.box_user.bbox();
         let text = g.text.as_deref().unwrap_or("\u{FFFD}");
         by_op
@@ -377,6 +377,11 @@ fn limits() {
     let ok = word("a", 1.0, 1.0, 1.0, 1.0);
     assert_eq!(err(&vec![page(1, vec![]); MAX_PAGES + 1]), "Invalid OCR settings: pages");
     assert_eq!(err(&[page(1, vec![ok.clone(); MAX_WORDS + 1])]), "Invalid OCR settings: words");
+    // Over the job total, with every page within its own limit.
+    let mut many = vec![page(1, vec![word("", 1.0, 1.0, 1.0, 1.0); MAX_WORDS]); MAX_JOB_WORDS / MAX_WORDS];
+    many.push(page(2, vec![word("", 1.0, 1.0, 1.0, 1.0)]));
+    assert_eq!(err(&many), "Invalid OCR settings: words");
+    drop(many);
     assert_eq!(err(&[page(0, vec![])]), "Invalid OCR settings: page");
     assert_eq!(err(&[page(3, vec![])]), "Invalid OCR settings: page");
     assert_eq!(err(&[page(1, vec![]), page(1, vec![])]), "Invalid OCR settings: page");
@@ -408,4 +413,55 @@ fn no_words_at_all_still_saves() {
     let pdf = letter();
     let out = add(&pdf, &[]);
     assert!(out.objects.values().all(|o| o.as_dict().map_or(true, |d| !d.has(b"ToUnicode"))));
+}
+
+fn spaced(text: &str, x: f64, y: f64, w: f64, h: f64) -> OcrWord {
+    OcrWord { space_after: true, ..word(text, x, y, w, h) }
+}
+
+/// The space glyphs of page 1: (origin x, end x) in user space.
+fn spaces(doc: &Document) -> Vec<(f64, f64)> {
+    glyphs(doc, 1).iter().filter(|g| g.text.as_deref() == Some(" ")).map(|g| (g.origin.0, g.end.0)).collect()
+}
+
+#[test]
+fn space_after_spans_the_gap_to_the_next_word() {
+    let words = vec![spaced("MANTIS", 72.0, 700.0, 120.0, 20.0), word("OCR", 194.0, 700.0, 60.0, 20.0)];
+    let out = add_text_layer(&letter(), &[page(1, words)]).unwrap();
+    let doc = load_pdf(&out).unwrap();
+    let s = spaces(&doc);
+    assert_eq!(s.len(), 1);
+    assert!((s[0].0 - 192.0).abs() < 1e-3 && (s[0].1 - 194.0).abs() < 1e-3, "{s:?}");
+    // The 2 pt gap is 0.1 em: without the space glyph search reads "MANTISOCR".
+    let found = redact_search(&out, "mantis ocr", &SearchOptions::default()).unwrap();
+    assert_eq!(found.matches.len(), 1);
+    let r = found.matches[0].rects[0];
+    assert_rect(&Rect { x0: r[0], y0: r[1], x1: r[0] + r[2], y1: r[1] + r[3] }, [72.0, 700.0, 254.0, 720.0]);
+    // Each word keeps its own box.
+    let drawn = words_drawn(&glyphs(&doc, 1));
+    assert_rect(&drawn[0].0, [72.0, 700.0, 192.0, 720.0]);
+    assert_rect(&drawn[1].0, [194.0, 700.0, 254.0, 720.0]);
+}
+
+#[test]
+fn space_after_with_an_unknown_gap_is_a_quarter_em() {
+    // Last word, and a next word that overlaps: 0.25 em = 5 pt at 20 pt.
+    let words = vec![
+        spaced("one", 100.0, 700.0, 50.0, 20.0),
+        spaced("two", 140.0, 700.0, 50.0, 20.0),
+        spaced("three", 300.0, 650.0, 80.0, 20.0),
+    ];
+    let out = add(&letter(), &[page(1, words)]);
+    let s = spaces(&out);
+    assert_eq!(s.len(), 3);
+    assert!((s[0].0 - 150.0).abs() < 1e-3 && (s[0].1 - 155.0).abs() < 1e-3, "{s:?}");
+    assert!((s[2].0 - 380.0).abs() < 1e-3 && (s[2].1 - 385.0).abs() < 1e-3, "{s:?}");
+}
+
+#[test]
+fn space_after_skips_blank_next_words() {
+    let words = vec![spaced("a", 100.0, 700.0, 10.0, 20.0), word(" ", 112.0, 700.0, 2.0, 20.0), word("b", 120.0, 700.0, 10.0, 20.0)];
+    let out = add(&letter(), &[page(1, words)]);
+    let s = spaces(&out);
+    assert!((s[0].1 - 120.0).abs() < 1e-3, "{s:?}");
 }

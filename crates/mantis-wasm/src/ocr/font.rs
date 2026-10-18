@@ -38,6 +38,8 @@ use std::fmt::Write;
 /// Tesseract's glyphless font (572 bytes).
 pub(crate) const GLYPHLESS_TTF: &[u8] = include_bytes!("../../assets/pdf.ttf");
 
+/// The CID of a space (U+0020), drawn after words followed by one.
+pub(crate) const SPACE_CID: u16 = 0x20;
 /// Advance of every CID, in thousandths of an em.
 pub(crate) const GLYPH_WIDTH: f64 = 500.0;
 /// First CID given to characters past the BMP, and how many there are.
@@ -110,6 +112,8 @@ pub(crate) fn add_font(doc: &mut Document, cids: &Cids) -> ObjectId {
         "Type" => "FontDescriptor",
         "FontName" => "GlyphLessFont",
         "Flags" => 5,
+        // Not Tesseract's 1000 / -1 (see the module comment): with these the
+        // glyph boxes of a word drawn at size h, baseline 0.2 h up, are its box.
         "FontBBox" => vec![0.into(), (-200).into(), 500.into(), 800.into()],
         "ItalicAngle" => 0,
         "Ascent" => 800,
