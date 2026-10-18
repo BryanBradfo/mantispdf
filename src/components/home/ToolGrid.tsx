@@ -170,6 +170,13 @@ const tools = [
     available: true,
   },
   {
+    title: "OCR PDF",
+    description: "Make scanned PDFs searchable and copyable.",
+    href: "/ocr",
+    icon: "🔍",
+    available: true,
+  },
+  {
     title: "Images to PDF",
     description: "Turn JPG, PNG or WebP images into a PDF, one per page.",
     href: "/images-to-pdf",
