@@ -20,10 +20,22 @@ interface Props {
   fields: readonly FormField[];
   state: FormState;
   onChange: (id: number, value: FormValue) => void;
+  /**
+   * Tab past the last control (1) or Shift+Tab before the first (-1): the page moves focus to
+   * the next or previous page that has fields. Returns false when there is none (normal Tab).
+   */
+  onTabOut?: (direction: 1 | -1) => boolean;
+}
+
+/** The enabled field controls of a canvas, in DOM (tab) order. */
+export function canvasControls(root: ParentNode): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>("[data-field-control]")).filter(
+    (el) => !(el as HTMLInputElement).disabled,
+  );
 }
 
 /** The page with an HTML control over each of its visible widgets. */
-export default function FormCanvas({ source, page, pageSize, fields, state, onChange }: Props) {
+export default function FormCanvas({ source, page, pageSize, fields, state, onChange, onTabOut }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState(PREVIEW_WIDTH);
 
@@ -52,6 +64,13 @@ export default function FormCanvas({ source, page, pageSize, fields, state, onCh
         role="group"
         aria-label={`Page ${page} form fields`}
         data-testid="form-canvas"
+        onKeyDown={(e) => {
+          if (e.key !== "Tab" || !onTabOut) return;
+          const controls = canvasControls(e.currentTarget);
+          const edge = e.shiftKey ? controls[0] : controls[controls.length - 1];
+          if (edge === undefined || e.target !== edge) return;
+          if (onTabOut(e.shiftKey ? -1 : 1)) e.preventDefault();
+        }}
         className="relative mx-auto overflow-hidden rounded-lg border border-gray-300 shadow-sm dark:border-[#333]"
         style={{ width: pw, height: ph }}
       >

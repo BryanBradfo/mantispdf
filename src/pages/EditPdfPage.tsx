@@ -352,7 +352,7 @@ export default function EditPdfPage() {
 
       {!input && (
         <div className="mx-auto mt-8 max-w-2xl">
-          <DropZone onFile={(f) => void pick(f)} error={error} />
+          <DropZone onFile={(f) => void pick(f)} error={error} engineReady={worker.ready} />
         </div>
       )}
 

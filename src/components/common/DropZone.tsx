@@ -10,9 +10,14 @@ interface DropZoneProps {
   /** Prompt noun (default "PDF") and hint line (default "PDF files"). */
   noun?: string;
   hint?: string;
+  /**
+   * The PDF engine can take the file now. Exposed as `data-engine-ready="true"` on the file input
+   * (tests wait for it instead of retrying the upload); undefined when the page does not say.
+   */
+  engineReady?: boolean;
 }
 
-export default function DropZone({ onFile, onFiles, multiple, error, accept = ".pdf,application/pdf", noun = "PDF", hint = "PDF files" }: DropZoneProps) {
+export default function DropZone({ onFile, onFiles, multiple, error, accept = ".pdf,application/pdf", noun = "PDF", hint = "PDF files", engineReady }: DropZoneProps) {
   const [dragging, setDragging] = useState(false);
 
   const handleDrop = useCallback(
@@ -78,6 +83,7 @@ export default function DropZone({ onFile, onFiles, multiple, error, accept = ".
         </p>
         <p className="mt-1 text-sm text-gray-500 dark:text-[#555]">{hint}</p>
         <input
+          data-engine-ready={engineReady ? "true" : undefined}
           type="file"
           accept={accept}
           multiple={multiple}

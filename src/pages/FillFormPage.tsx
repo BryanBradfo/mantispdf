@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
@@ -6,11 +6,10 @@ import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import PageStrip from "../components/editor/PageStrip";
 import FieldList, { listedFields } from "../components/forms/FieldList";
-import FormCanvas from "../components/forms/FormCanvas";
-import { unsupportedMessage } from "../lib/editor/afm";
-import { dirtyIds, initialFormState, isDrawn, resetForm, setValue, valueOf, type FormInfo, type FormState, type FormValue } from "../lib/forms/model";
+import FormCanvas, { canvasControls } from "../components/forms/FormCanvas";
+import { dirtyIds, initialFormState, isDrawn, resetForm, setValue, type FormField, type FormInfo, type FormState, type FormValue } from "../lib/forms/model";
 import { tabOrder } from "../lib/forms/tabOrder";
-import { unsupportedIn } from "../lib/forms/values";
+import { blockingProblem, hasFilledSignature, missingRequired } from "../lib/forms/values";
 import { toWire } from "../lib/forms/toWire";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
@@ -21,6 +20,15 @@ interface Prepared {
 }
 
 const linkClass = "font-medium text-mantis-700 underline dark:text-mantis-400";
+
+/** Field names listed in the required-fields dialog before "and N more". */
+const LISTED_MISSING = 5;
+
+/** Engine limit errors of `list_form`, as the page explains them. */
+const TOO_LARGE = /^Invalid form settings: (options|widgets|fields|names)\b/;
+
+/** Where to put focus once the page shows: a field's control, or the first/last control. */
+type FocusRequest = { field: number } | { edge: "first" | "last" };
 
 interface WorkspaceProps {
   input: PdfInput<Prepared>;
@@ -39,6 +47,10 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
   const [state, setState] = useState<FormState>(() => initialFormState(form));
   const [page, setPage] = useState(() => ordered[0]?.widgets.find(isDrawn)?.page ?? 1);
   const [flatten, setFlatten] = useState(false);
+  const [missing, setMissing] = useState<FormField[] | null>(null);
+  const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const signed = useMemo(() => hasFilledSignature(form.fields), [form.fields]);
 
   const pageSize = sizes[page - 1] ?? null;
   const pagesWithFields = useMemo(
@@ -60,21 +72,61 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
 
   const change = (id: number, value: FormValue) => setState((s) => setValue(s, id, value));
 
-  const download = () => {
-    if (busy) return;
-    for (const f of ordered) {
-      const bad = unsupportedIn(f, valueOf(state, f.id));
-      if (bad !== "") {
-        setError(`${unsupportedMessage(bad)} (field "${f.label || f.name}").`);
-        return;
-      }
-    }
+  // Focus after the page (and so its controls) has rendered.
+  useEffect(() => {
+    if (!focusRequest || !canvasRef.current) return;
+    const controls = canvasControls(canvasRef.current);
+    const target =
+      "field" in focusRequest
+        ? controls.find((el) => el.dataset.fieldControl === String(focusRequest.field))
+        : focusRequest.edge === "first"
+          ? controls[0]
+          : controls[controls.length - 1];
+    target?.focus();
+    setFocusRequest(null);
+  }, [focusRequest, page]);
+
+  const pagesInOrder = useMemo(() => [...pagesWithFields].sort((a, b) => a - b), [pagesWithFields]);
+  const tabOut = (direction: 1 | -1): boolean => {
+    const next = direction === 1 ? pagesInOrder.find((p) => p > page) : [...pagesInOrder].reverse().find((p) => p < page);
+    if (next === undefined) return false;
+    setPage(next);
+    setFocusRequest({ edge: direction === 1 ? "first" : "last" });
+    return true;
+  };
+
+  const goTo = (f: FormField) => {
+    const p = f.widgets.find(isDrawn)?.page;
+    if (p !== undefined) setPage(p);
+    setFocusRequest({ field: f.id });
+  };
+
+  const save = () => {
+    setMissing(null);
     const values = toWire(state);
     const name = `${baseName(input.file)}_${flatten ? "flattened" : "filled"}.pdf`;
     void run(
       () => fillForm(input.bytes, values, flatten),
       (out) => downloadBlob(out, name),
     );
+  };
+
+  const download = () => {
+    if (busy) return;
+    // Values the engine would refuse block the download; empty required fields only warn.
+    const problem = blockingProblem(ordered, state);
+    if (problem) {
+      setMissing(null);
+      setError(problem);
+      return;
+    }
+    setError(null);
+    const empty = missingRequired(ordered, state);
+    if (empty.length > 0) {
+      setMissing(empty);
+      return;
+    }
+    save();
   };
 
   const startOver = () => {
@@ -113,6 +165,44 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
 
       <ErrorAlert error={error} onDismiss={() => setError(null)} />
 
+      {missing && (
+        <div role="alertdialog" aria-labelledby="missing-required" className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-[#1f1a0a]">
+          <p id="missing-required" className="text-sm text-amber-900 dark:text-amber-200">
+            {missing.length} required {missing.length === 1 ? "field is" : "fields are"} empty:{" "}
+            {missing
+              .slice(0, LISTED_MISSING)
+              .map((f) => f.label || f.name)
+              .join(", ")}
+            {missing.length > LISTED_MISSING && ` and ${missing.length - LISTED_MISSING} more`}. Download anyway?
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={save} className={primaryButton}>
+              Download anyway
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const first = missing[0];
+                setMissing(null);
+                goTo(first);
+              }}
+              className={secondaryButton}
+            >
+              Go to first
+            </button>
+            <button type="button" onClick={() => setMissing(null)} className={secondaryButton}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {signed && (
+        <p role="note" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-[#1f1a0a] dark:text-amber-200">
+          Filling this form removes its digital signatures.
+        </p>
+      )}
+
       <p className="text-xs text-gray-500 dark:text-[#777]">
         Form scripts are not run: formatting, calculations and checks built into the form do not happen here, and
         calculated fields keep their value unless you change them.
@@ -124,8 +214,10 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
       )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="min-w-0">
-          {pageSize && <FormCanvas source={input.file} page={page} pageSize={pageSize} fields={ordered} state={state} onChange={change} />}
+        <div className="min-w-0" ref={canvasRef}>
+          {pageSize && (
+            <FormCanvas source={input.file} page={page} pageSize={pageSize} fields={ordered} state={state} onChange={change} onTabOut={tabOut} />
+          )}
         </div>
         <aside className="max-h-[900px] overflow-y-auto pr-1">
           <FieldList fields={ordered} state={state} onChange={change} page={page} onPage={setPage} />
@@ -139,7 +231,16 @@ export default function FillFormPage() {
   const worker = usePdfWorker();
   const { pageSizes, listForm, fillForm } = worker;
   const prepare = useCallback(
-    async (bytes: Uint8Array): Promise<Prepared> => ({ sizes: await pageSizes(bytes), form: await listForm(bytes) }),
+    async (bytes: Uint8Array): Promise<Prepared> => {
+      const sizes = await pageSizes(bytes);
+      try {
+        return { sizes, form: await listForm(bytes) };
+      } catch (err) {
+        // The engine's size limits read as a malformed request; say what it means for the file.
+        if (err instanceof Error && TOO_LARGE.test(err.message)) throw new Error("This form is too large or malformed to fill.");
+        throw err;
+      }
+    },
     [pageSizes, listForm],
   );
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker, prepare);
@@ -160,7 +261,7 @@ export default function FillFormPage() {
 
       {!input && (
         <div className="mx-auto mt-8 max-w-2xl">
-          <DropZone onFile={(f) => void pick(f)} error={error} />
+          <DropZone onFile={(f) => void pick(f)} error={error} engineReady={worker.ready} />
         </div>
       )}
 

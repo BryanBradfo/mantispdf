@@ -1,6 +1,6 @@
 /** Reading and changing field values for the form controls (page overlay and side list). */
-import { unsupportedChars } from "../editor/afm";
-import { NO_VALUE, type FormField, type FormOption, type FormValue } from "./model";
+import { unsupportedChars, unsupportedMessage } from "../editor/afm";
+import { NO_VALUE, valueOf, type FormField, type FormOption, type FormState, type FormValue } from "./model";
 
 /** Engine limits the UI enforces (`MAX_VALUE_CHARS` in crates/mantis-wasm/src/forms/mod.rs). */
 export const FORM_LIMITS = { valueChars: 20000 } as const;
@@ -52,3 +52,63 @@ export function choiceOptions(field: FormField, value: FormValue): FormOption[] 
   }
   return extra.length === 0 ? field.options : [...field.options, ...extra];
 }
+
+/** No value, an empty text or an empty selection (as the engine counts them). */
+export const isEmpty = (v: FormValue): boolean =>
+  v.kind === "none" || (v.kind === "text" && v.text === "") || (v.kind === "names" && v.names.length === 0);
+
+/** What a text-like control shows: an editable combo shows its option's display text. */
+export function shownText(field: FormField, value: FormValue): string {
+  const t = textOf(value);
+  if (field.kind.kind !== "combo") return t;
+  return field.options.find((o) => o.exportValue === t)?.display ?? t;
+}
+
+/** The value of an editable combo for `typed`: the option's export value when it names one. */
+export function comboValueFor(field: FormField, typed: string): FormValue {
+  if (typed === "") return NO_VALUE;
+  const option = field.options.find((o) => o.display === typed);
+  return { kind: "text", text: option ? option.exportValue : typed };
+}
+
+/**
+ * How a radio state is named for people: the /Opt display text when the file has one (by export
+ * value, or by index for index-named states), "Option N" for engine-generated or index names
+ * ("On", "On2", "0"...), else the state name itself.
+ */
+export function radioLabel(field: FormField, state: string): string {
+  const byValue = field.options.find((o) => o.exportValue === state);
+  if (byValue) return byValue.display;
+  const position = field.onStates.indexOf(state);
+  if (/^\d+$/.test(state)) {
+    const option = field.options[Number(state)];
+    if (option) return option.display;
+    return `Option ${(position >= 0 ? position : Number(state)) + 1}`;
+  }
+  if (/^On\d*$/.test(state)) return `Option ${position + 1}`;
+  return state;
+}
+
+/** Fields a person must fill (required, fillable here) that are still empty, in `fields` order. */
+export function missingRequired(fields: readonly FormField[], state: FormState): FormField[] {
+  return fields.filter(
+    (f) => f.required && !f.readOnly && f.kind.kind !== "signature" && f.kind.kind !== "button" && isEmpty(valueOf(state, f.id)),
+  );
+}
+
+/** The first value the engine would refuse, as a message naming its field, or null. */
+export function blockingProblem(fields: readonly FormField[], state: FormState): string | null {
+  for (const f of fields) {
+    const value = valueOf(state, f.id);
+    const name = f.label || f.name;
+    const bad = unsupportedIn(f, value);
+    if (bad !== "") return `${unsupportedMessage(bad)} (field "${name}").`;
+    const long = lengthWarning(f, value);
+    if (long) return `${long} (field "${name}")`;
+  }
+  return null;
+}
+
+/** A signature field already signed: filling the form invalidates digital signatures. */
+export const hasFilledSignature = (fields: readonly FormField[]): boolean =>
+  fields.some((f) => f.kind.kind === "signature" && !isEmpty(f.value));

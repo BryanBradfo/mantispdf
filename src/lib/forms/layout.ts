@@ -66,3 +66,27 @@ export function textFontSize(kind: FieldKind, widget: FormWidget, text: string):
   const { width, height } = widgetFrame(widget);
   return autoFontSize(kind, text, width, height, widget.font);
 }
+
+/** Rounding slack, in points: a text exactly as wide as the box fits. */
+const EPSILON = 1e-9;
+
+/**
+ * Whether the engine's appearance for `text` would be cut off by the widget box: a single line
+ * wider than the box minus its padding (an automatic size only shrinks down to 4 pt), or more
+ * wrapped lines than a multiline box is tall. Comb fields hold one character per cell and their
+ * length is capped, so they never overflow here.
+ */
+export function overflows(kind: FieldKind, widget: FormWidget, text: string): boolean {
+  if (kind.kind !== "text" && kind.kind !== "combo") return false;
+  if (kind.kind === "text" && kind.comb && kind.maxLen !== null) return false;
+  if (text === "") return false;
+  const { width, height } = widgetFrame(widget);
+  const size = textFontSize(kind, widget, text);
+  const font = widget.font;
+  if (kind.kind === "text" && kind.multiline) {
+    const lines = wrapLines(text, font, size, width - 2 * PADDING).length;
+    const needed = 2 * PADDING + ((ascent(font) - descent(font)) * size) / 1000 + Math.max(0, lines - 1) * size * LEADING;
+    return needed > height + EPSILON;
+  }
+  return unitWidth(text, font) * size > width - 2 * PADDING + EPSILON;
+}

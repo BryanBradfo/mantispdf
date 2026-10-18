@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { FormField, FormValue } from "./model";
 import {
   FORM_LIMITS,
+  blockingProblem,
   choiceOptions,
+  comboValueFor,
+  hasFilledSignature,
+  isEmpty,
+  missingRequired,
+  radioLabel,
+  shownText,
   lengthLimit,
   lengthWarning,
   namesOf,
@@ -106,3 +113,98 @@ describe("choiceOptions", () => {
     expect(choiceOptions(list, names("fr", "xx", "xx"))).toEqual([...combo.options, { exportValue: "xx", display: "xx" }]);
   });
 });
+
+describe("isEmpty", () => {
+  it("treats no value, empty text and an empty selection alike", () => {
+    expect(isEmpty({ kind: "none" })).toBe(true);
+    expect(isEmpty(text(""))).toBe(true);
+    expect(isEmpty(names())).toBe(true);
+    expect(isEmpty(text(" "))).toBe(false);
+    expect(isEmpty(names("a"))).toBe(false);
+  });
+});
+
+describe("editable combo text", () => {
+  const combo = field({
+    kind: { kind: "combo", editable: true },
+    options: [
+      { exportValue: "fr", display: "France" },
+      { exportValue: "de", display: "Germany" },
+    ],
+  });
+
+  it("shows the display text of the chosen option, else the typed text", () => {
+    expect(shownText(combo, text("de"))).toBe("Germany");
+    expect(shownText(combo, text("Narnia"))).toBe("Narnia");
+    expect(shownText(field(), text("de"))).toBe("de");
+  });
+
+  it("stores the export value when the typed text is an option's display text", () => {
+    expect(comboValueFor(combo, "Germany")).toEqual(text("de"));
+    expect(comboValueFor(combo, "Narnia")).toEqual(text("Narnia"));
+    expect(comboValueFor(combo, "")).toEqual({ kind: "none" });
+  });
+});
+
+describe("radioLabel", () => {
+  const radio = (onStates: string[], options: FormField["options"] = []) =>
+    field({ kind: { kind: "radio" }, onStates, options });
+
+  it("uses the /Opt display of the state when there is one", () => {
+    const r = radio(["0", "1"], [
+      { exportValue: "Yes", display: "Yes, please" },
+      { exportValue: "No", display: "No thanks" },
+    ]);
+    expect(radioLabel(r, "1")).toBe("No thanks");
+    expect(radioLabel(radio(["a"], [{ exportValue: "a", display: "Apple" }]), "a")).toBe("Apple");
+  });
+
+  it("numbers engine-generated and index names, keeps meaningful ones", () => {
+    const gen = radio(["On", "On2", "On3"]);
+    expect(radioLabel(gen, "On")).toBe("Option 1");
+    expect(radioLabel(gen, "On2")).toBe("Option 2");
+    expect(radioLabel(radio(["0", "1"]), "1")).toBe("Option 2");
+    expect(radioLabel(radio(["red", "green"]), "green")).toBe("green");
+  });
+});
+
+describe("download checks", () => {
+  const state = (entries: [number, FormValue][]) => {
+    const values = new Map(entries);
+    return { original: values, values };
+  };
+  const named = (id: number, label: string, extra: Partial<FormField> = {}) => field({ id, label, name: label, ...extra });
+
+  it("lists the required fields left empty, in the given order (fillable ones only)", () => {
+    const fields = [
+      named(0, "A", { required: true }),
+      named(1, "B", { required: true }),
+      named(2, "C"),
+      named(3, "D", { required: true, readOnly: true }),
+      named(4, "E", { required: true, kind: { kind: "signature" } }),
+    ];
+    const s = state([[0, text("")], [1, text("x")], [2, text("")], [3, text("")], [4, { kind: "none" }]]);
+    expect(missingRequired(fields, s).map((f) => f.label)).toEqual(["A"]);
+  });
+
+  it("names the first field the engine would refuse", () => {
+    const fields = [
+      named(0, "Name"),
+      named(1, "Code", { kind: { kind: "text", multiline: false, comb: false, maxLen: 2, password: false } }),
+    ];
+    expect(blockingProblem(fields, state([[0, text("ok")], [1, text("ok")]]))).toBeNull();
+    expect(blockingProblem(fields, state([[0, text("日")], [1, text("long")]]))).toBe(
+      'Characters not supported by the standard PDF fonts: 日 (field "Name").',
+    );
+    expect(blockingProblem(fields, state([[0, text("ok")], [1, text("long")]]))).toBe(
+      'This value is longer than the field allows (2 characters). (field "Code")',
+    );
+  });
+
+  it("spots a signed signature field", () => {
+    const sig = (value: FormValue) => named(0, "Sig", { kind: { kind: "signature" }, value });
+    expect(hasFilledSignature([sig({ kind: "none" })])).toBe(false);
+    expect(hasFilledSignature([sig(text("signed"))])).toBe(true);
+  });
+});
+

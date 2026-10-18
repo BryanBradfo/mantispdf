@@ -2,7 +2,21 @@ import { useId } from "react";
 import { Link } from "react-router-dom";
 import { unsupportedMessage } from "../../lib/editor/afm";
 import { NO_VALUE, isDirty, isDrawn, valueOf, type FormField, type FormState, type FormValue } from "../../lib/forms/model";
-import { choiceOptions, lengthLimit, lengthWarning, namesOf, selection, textOf, toggled, unsupportedIn } from "../../lib/forms/values";
+import { overflows } from "../../lib/forms/layout";
+import {
+  choiceOptions,
+  comboValueFor,
+  lengthLimit,
+  lengthWarning,
+  namesOf,
+  radioLabel,
+  selection,
+  shownText,
+  textOf,
+  toggled,
+  unsupportedIn,
+} from "../../lib/forms/values";
+import { OVERFLOW_NOTE } from "./FieldControl";
 
 const KIND_LABEL: Record<FormField["kind"]["kind"], string> = {
   text: "Text",
@@ -83,14 +97,14 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
             <label key={state} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-[#bbb]">
               <input
                 type="radio"
-                aria-label={`${label}: ${state}`}
+                aria-label={`${label}: ${radioLabel(field, state)}`}
                 name={`list-field-${field.id}`}
                 disabled={disabled}
                 checked={namesOf(value).includes(state)}
                 onChange={() => onChange({ kind: "names", names: [state] })}
                 className="h-4 w-4 border-gray-300 text-mantis-600 focus:ring-mantis-500"
               />
-              {state}
+              {radioLabel(field, state)}
             </label>
           ))}
           {!disabled && namesOf(value).length > 0 && (
@@ -109,13 +123,13 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
             list={`list-field-${field.id}-options`}
             disabled={disabled}
             maxLength={lengthLimit(field)}
-            value={textOf(value)}
-            onChange={(e) => onChange({ kind: "text", text: e.target.value })}
+            value={shownText(field, value)}
+            onChange={(e) => onChange(comboValueFor(field, e.target.value))}
             className={fieldClass}
           />
           <datalist id={`list-field-${field.id}-options`}>
             {field.options.map((o, i) => (
-              <option key={i} value={o.exportValue}>{o.display}</option>
+              <option key={i} value={o.display} />
             ))}
           </datalist>
         </>
@@ -188,6 +202,10 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
         const fieldPage = pageOf(field);
         const bad = unsupportedIn(field, value);
         const tooLong = lengthWarning(field, value);
+        const kind = field.kind;
+        const over =
+          (kind.kind === "combo" || (kind.kind === "text" && !kind.password)) &&
+          field.widgets.some((w) => isDrawn(w) && overflows(kind, w, shownText(field, value)));
         return (
           <li
             key={field.id}
@@ -230,6 +248,10 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
               </p>
             )}
             {tooLong && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{tooLong}</p>}
+            {!tooLong && over && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{OVERFLOW_NOTE}.</p>}
+            {kind.kind === "text" && kind.password && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-[#888]">Password fields are not saved in the file, as in Acrobat.</p>
+            )}
           </li>
         );
       })}

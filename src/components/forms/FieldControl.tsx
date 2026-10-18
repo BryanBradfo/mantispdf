@@ -1,9 +1,25 @@
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { cssFont } from "../editor/svgStyle";
-import { PADDING, textFontSize, widgetFrame } from "../../lib/forms/layout";
+import { PADDING, overflows, textFontSize, widgetFrame } from "../../lib/forms/layout";
 import { NO_VALUE, type FormField, type FormValue, type FormWidget } from "../../lib/forms/model";
-import { choiceOptions, lengthLimit, lengthWarning, namesOf, selection, textOf, toggled, unsupportedIn } from "../../lib/forms/values";
+import {
+  choiceOptions,
+  comboValueFor,
+  isEmpty,
+  lengthLimit,
+  lengthWarning,
+  namesOf,
+  radioLabel,
+  selection,
+  shownText,
+  textOf,
+  toggled,
+  unsupportedIn,
+} from "../../lib/forms/values";
+
+/** Tooltip of a value the engine's appearance would cut off. */
+export const OVERFLOW_NOTE = "Too long for this field: the PDF will cut it off";
 
 /** Courier New's advance width, in em. */
 const MONO_ADVANCE = 0.6;
@@ -49,11 +65,33 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
   };
   const disabled = field.readOnly;
   const label = field.label || field.name;
+  const kind = field.kind;
   const bad = unsupportedIn(field, value) !== "";
   const tooLong = lengthWarning(field, value);
-  const invalid = bad ? " !border-red-600 !ring-2 !ring-red-500" : tooLong ? " !border-amber-500 !ring-2 !ring-amber-400" : "";
-  const title = bad ? `${label}: characters the PDF fonts cannot save` : tooLong ? `${label}: ${tooLong}` : label;
-  const kind = field.kind;
+  // A password's text is not drawn in the file (Acrobat behaviour), so it cannot overflow.
+  const over =
+    (kind.kind === "combo" || (kind.kind === "text" && !kind.password)) && overflows(kind, widget, shownText(field, value));
+  const missing = field.required && !disabled && isEmpty(value);
+  // Most serious first: unsavable characters, then a value that is too long or cut off, then an
+  // empty required field.
+  const invalid = bad
+    ? " !border-red-600 !ring-2 !ring-red-500"
+    : tooLong || over
+      ? " !border-amber-500 !ring-2 !ring-amber-400"
+      : missing
+        ? " !border-red-500"
+        : "";
+  const title = bad
+    ? `${label}: characters the PDF fonts cannot save`
+    : tooLong
+      ? `${label}: ${tooLong}`
+      : over
+        ? `${label}: ${OVERFLOW_NOTE}`
+        : missing
+          ? `${label} (required)`
+          : label;
+  // Lets the page move focus to a field (required-field check, Tab across pages).
+  const focusTarget = { "data-field-control": field.id };
 
   // pdf.js still paints read-only text fields into the widget-less preview (their appearance
   // gets its own canvas), and the value cannot change: frame it, draw nothing over it. Read-only
@@ -109,6 +147,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
         combClip = true;
       }
       const common = {
+        ...focusTarget,
         "aria-label": label,
         "aria-required": field.required || undefined,
         "aria-invalid": bad || tooLong !== null || undefined,
@@ -157,24 +196,30 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
       const state = widget.onState;
       if (state === null) return null;
       const checked = namesOf(value).includes(state);
+      const radio = kind.kind === "radio";
       return (
-        <div style={frame} className={`flex items-center justify-center ${frameClass}`}>
+        <div style={frame} className={`flex items-center justify-center ${frameClass}${missing ? " !border-red-500" : ""}`} title={title}>
           {/* No shared `name`: a radio is checked by the value alone, so widgets sharing one
               state (RadiosInUnison) all show checked. */}
           <input
+            {...focusTarget}
             type={kind.kind}
-            aria-label={kind.kind === "radio" ? `${label}: ${state}` : label}
+            aria-label={radio ? `${label}: ${radioLabel(field, state)}` : label}
             aria-required={field.required || undefined}
             checked={checked}
             disabled={disabled}
-            onChange={() => onChange(kind.kind === "radio" ? { kind: "names", names: [state] } : toggled(value, state))}
+            onChange={() => onChange(radio ? { kind: "names", names: [state] } : toggled(value, state))}
+            // A checked radio clicked again clears the choice, unless the field is required.
+            onClick={() => {
+              if (radio && checked && !field.required) onChange(NO_VALUE);
+            }}
             className="m-0 h-[80%] w-[80%] cursor-pointer accent-mantis-600 disabled:cursor-not-allowed"
           />
         </div>
       );
     }
     case "combo": {
-      const text = textOf(value);
+      const text = shownText(field, value);
       const fontPx = textFontSize({ kind: "text", multiline: false, comb: false, maxLen: null, password: false }, widget, text) * scale;
       const { family, weight } = cssFont(widget.font);
       const style: CSSProperties = {
@@ -188,7 +233,9 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
         const listId = `field-${field.id}-${index}-options`;
         return (
           <div style={frame}>
+            {/* Shows and suggests display texts; a picked display text stores its export value. */}
             <input
+              {...focusTarget}
               list={listId}
               aria-label={label}
               aria-required={field.required || undefined}
@@ -197,13 +244,13 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
               disabled={disabled}
               value={text}
               maxLength={lengthLimit(field)}
-              onChange={(e) => onChange({ kind: "text", text: e.target.value })}
+              onChange={(e) => onChange(comboValueFor(field, e.target.value))}
               className={controlClass + invalid}
               style={style}
             />
             <datalist id={listId}>
               {field.options.map((o, i) => (
-                <option key={i} value={o.exportValue}>{o.display}</option>
+                <option key={i} value={o.display} />
               ))}
             </datalist>
           </div>
@@ -212,12 +259,14 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
       return (
         <div style={frame}>
           <select
+            {...focusTarget}
             aria-label={label}
             aria-required={field.required || undefined}
+            title={title}
             disabled={disabled}
-            value={text}
+            value={textOf(value)}
             onChange={(e) => onChange(e.target.value === "" ? NO_VALUE : { kind: "text", text: e.target.value })}
-            className={controlClass}
+            className={controlClass + invalid}
             style={{ ...style, padding: 0 }}
           >
             <option value="">{"\u00a0"}</option>
@@ -234,14 +283,16 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
       return (
         <div style={frame}>
           <select
+            {...focusTarget}
             multiple={kind.multi}
             size={Math.max(2, field.options.length)}
             aria-label={label}
             aria-required={field.required || undefined}
+            title={title}
             disabled={disabled}
             value={kind.multi ? names : (names[0] ?? "")}
             onChange={(e) => onChange(selection(Array.from(e.target.selectedOptions, (o) => o.value)))}
-            className={controlClass}
+            className={controlClass + invalid}
             style={{ fontSize: fontPx, fontFamily: cssFont(widget.font).family, padding: 0 }}
           >
             {choiceOptions(field, value).map((o, i) => (
