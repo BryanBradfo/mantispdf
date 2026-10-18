@@ -36,6 +36,8 @@ pub(crate) struct Font {
     descent: f64,
     /// Descriptor /FontBBox (em), when it has one.
     bbox: Option<[f64; 4]>,
+    /// Code to text, when loaded for search.
+    text: Option<super::unicode::TextMap>,
 }
 
 #[derive(Debug, Clone)]
@@ -147,7 +149,13 @@ fn standard_metrics(base: &[u8]) -> Option<StdFont> {
 impl Font {
     /// Load the font dictionary `obj` (direct or by reference); `name` only
     /// labels errors.
+    #[cfg(test)]
     pub(crate) fn load(doc: &Document, name_bytes: &[u8], obj: &Object) -> Result<Font, Unsupported> {
+        Self::load_with(doc, name_bytes, obj, false)
+    }
+
+    /// `load`, reading what the codes mean as text too when `text` is set.
+    pub(crate) fn load_with(doc: &Document, name_bytes: &[u8], obj: &Object, text: bool) -> Result<Font, Unsupported> {
         let label = String::from_utf8_lossy(name_bytes).into_owned();
         let err = |what: &str| Unsupported(format!("font {label}: {what}"));
         let Some(font) = deref(doc, obj).and_then(|o| o.as_dict().ok()) else {
@@ -175,7 +183,8 @@ impl Font {
             b"Type3" => return Err(err("Type3 fonts are not supported")),
             other => return Err(err(&format!("unsupported font type {}", String::from_utf8_lossy(other)))),
         };
-        Ok(Font { label, kind, ascent, descent, bbox })
+        let text = text.then(|| super::unicode::text_map(doc, font));
+        Ok(Font { label, kind, ascent, descent, bbox, text })
     }
 
     fn simple(
@@ -356,6 +365,11 @@ impl Font {
                 Ok(text_width(*font, &[winansi], 1.0))
             }
         }
+    }
+
+    /// The text of `code`, when the font was loaded with text and knows it.
+    pub(crate) fn text(&self, code: u32) -> Option<&str> {
+        self.text.as_ref()?.get(&code).map(String::as_str)
     }
 
     /// True when word spacing (Tw) applies to `code` spanning `len` bytes:

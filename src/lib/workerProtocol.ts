@@ -5,7 +5,7 @@ import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "./geometryJob";
 import type { StampJobSpec } from "./stampJob";
 import type { FormInfo } from "./forms/model";
 import type { FormWireEntry } from "./forms/toWire";
-import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire } from "./redact/toJob";
+import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, RedactSearchWire, SearchOptionsWire } from "./redact/toJob";
 
 /** Correlates a request with its response/progress/failure messages. */
 export type ReqId = number;
@@ -49,7 +49,8 @@ export type ToWorker =
   | { type: "list-form"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "fill-form"; id: ReqId; pdfBytes: Uint8Array; values: FormWireEntry[]; flatten: boolean }
   | { type: "redact-plan"; id: ReqId; pdfBytes: Uint8Array; rects: RedactRectWire[] }
-  | { type: "redact"; id: ReqId; pdfBytes: Uint8Array; job: RedactJobWire };
+  | { type: "redact"; id: ReqId; pdfBytes: Uint8Array; job: RedactJobWire }
+  | { type: "redact-search"; id: ReqId; pdfBytes: Uint8Array; query: string; options: SearchOptionsWire };
 
 // The successful result of an operation, tagged by `kind` so the requesting side
 // can extract the right field with a runtime check (no unsafe casts).
@@ -66,7 +67,8 @@ export type SuccessPayload =
   | { kind: "metadata"; values: string[] }
   | { kind: "form"; info: FormInfo }
   | { kind: "redact-plan"; pages: PageStatusWire[] }
-  | { kind: "redacted"; result: RedactResultWire };
+  | { kind: "redacted"; result: RedactResultWire }
+  | { kind: "redact-search"; result: RedactSearchWire };
 
 // Worker → Main messages. `init-done`/`init-error` are the one-time handshake;
 // all operation responses carry the originating `id`.

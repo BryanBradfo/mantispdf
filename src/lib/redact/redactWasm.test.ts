@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { PageStatusWire, RedactResultWire } from "./toJob";
-import { PLAN_KEYS, RESULT_KEYS } from "./wireKeys";
+import { PLAN_KEYS, RESULT_KEYS, SEARCH_KEYS, SEARCH_PAGE_KEYS } from "./wireKeys";
 
 const PKG = fileURLToPath(new URL("../../../crates/mantis-wasm/pkg/", import.meta.url));
 const built = existsSync(`${PKG}mantis_wasm_bg.wasm`);
@@ -86,5 +86,23 @@ describe.skipIf(!built)("redact_plan / redact bindings", () => {
     expect(() => wasm.redact_plan(PDF, [{ page: 1, rect: [0, 0, 1] }])).toThrow("Invalid redact settings: rects[0].rect");
     const short = { page: 2, width: 612, height: 792, dpi: 72, rgba: new Uint8Array(4) };
     expect(() => wasm.redact(PDF, { ...job, rasters: [short] })).toThrow("Invalid redact settings: raster");
+  });
+});
+
+describe.skipIf(!built)("redact_search binding", () => {
+  type Search = (pdf: Uint8Array, query: string, options: unknown) => { pages: { page: number; quads: number[][] }[]; undecodablePages: number[] };
+  it("finds text as the exact glyph boxes, and reports pages it cannot read", () => {
+    const search = (wasm as unknown as { redact_search: Search }).redact_search;
+    const found = search(PDF, "world", { wholeWord: false, caseSensitive: false });
+    expect(Object.keys(found).sort()).toEqual([...SEARCH_KEYS].sort());
+    expect(found.pages.map((p) => p.page)).toEqual([1]);
+    for (const p of found.pages) expect(Object.keys(p).sort()).toEqual([...SEARCH_PAGE_KEYS].sort());
+    const [x, y, w, h] = found.pages[0].quads[0];
+    expect(x).toBeLessThan(127);
+    expect(x + w).toBeGreaterThan(150);
+    expect(y).toBeLessThan(700);
+    expect(y + h).toBeGreaterThan(705);
+    expect(found.undecodablePages).toEqual([2]);
+    expect(() => search(PDF, "x", { wholeWord: false })).toThrow("Invalid redact settings: options.caseSensitive");
   });
 });

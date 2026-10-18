@@ -8,7 +8,7 @@ import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob"
 import type { StampJobSpec } from "../lib/stampJob";
 import type { FormInfo } from "../lib/forms/model";
 import type { FormWireEntry } from "../lib/forms/toWire";
-import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire } from "../lib/redact/toJob";
+import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, RedactSearchWire, SearchOptionsWire } from "../lib/redact/toJob";
 import { PdfWorkerClient } from "../lib/workerClient";
 
 export interface SanitizeReport {
@@ -125,6 +125,10 @@ const asRedactPlan = (p: SuccessPayload): PageStatusWire[] => {
 };
 const asRedacted = (p: SuccessPayload): RedactResultWire => {
   if (p.kind !== "redacted") throw new Error("Unexpected worker payload");
+  return p.result;
+};
+const asRedactSearch = (p: SuccessPayload): RedactSearchWire => {
+  if (p.kind !== "redact-search") throw new Error("Unexpected worker payload");
   return p.result;
 };
 const asMetadata = (p: SuccessPayload): PdfMetadata => {
@@ -327,6 +331,13 @@ export function usePdfWorker() {
     [run],
   );
 
+  /** Every match of `query` as visible-space rects (the exact glyph boxes the engine removes). */
+  const redactSearch = useCallback(
+    (pdfBytes: Uint8Array, query: string, options: SearchOptionsWire): Promise<RedactSearchWire> =>
+      run(null, (id) => ({ type: "redact-search", id, pdfBytes, query, options }), asRedactSearch),
+    [run],
+  );
+
   /** Which pages with marks need a raster (`reason` set) before `redactPdf`. */
   const redactPlan = useCallback(
     (pdfBytes: Uint8Array, rects: RedactRectWire[]): Promise<PageStatusWire[]> =>
@@ -439,6 +450,7 @@ export function usePdfWorker() {
       editPdf,
       listForm,
       fillForm,
+      redactSearch,
       redactPlan,
       redactPdf,
       cropPdf,
@@ -467,6 +479,7 @@ export function usePdfWorker() {
       editPdf,
       listForm,
       fillForm,
+      redactSearch,
       redactPlan,
       redactPdf,
       cropPdf,

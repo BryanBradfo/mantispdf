@@ -209,6 +209,14 @@ pub(crate) struct Glyph {
     pub(crate) char_spacing: f64,
     /// Tw when it applies to this code (single-byte 32), else 0.
     pub(crate) word_spacing: f64,
+    /// The glyph's text, when the interpreter reports text and the font
+    /// tells it.
+    pub(crate) text: Option<String>,
+    /// Where the glyph starts and where its advance ends on the baseline,
+    /// and the font size, all in user space.
+    pub(crate) origin: (f64, f64),
+    pub(crate) end: (f64, f64),
+    pub(crate) em: f64,
     /// Painted with a Pattern colour (fill or stroke): its look comes from
     /// content we do not analyse.
     pub(crate) pattern: bool,
@@ -651,6 +659,8 @@ pub(crate) struct Interp<'d> {
     doc: &'d Document,
     resources: Dictionary,
     fonts: HashMap<Vec<u8>, Rc<Font>>,
+    /// Report each glyph's text (for search).
+    text: bool,
 }
 
 /// Per-run state.
@@ -730,7 +740,9 @@ impl Run<'_> {
                 let b = box_user.bbox().expanded(self.gs.stroke_reach());
                 box_user = Quad::of_box(&IDENTITY, [b.x0, b.y0, b.x1, b.y1]);
             }
-            let glyph = Glyph {
+            let origin = apply(&trm, 0.0, 0.0);
+            let top = apply(&trm, 0.0, 1.0);
+            let mut glyph = Glyph {
                 op_index,
                 elem_index,
                 byte_range,
@@ -742,10 +754,15 @@ impl Run<'_> {
                 h_scale: self.gs.h_scale,
                 char_spacing: self.gs.char_spacing,
                 word_spacing,
+                text: font.text(code).map(String::from),
+                origin,
+                end: origin,
+                em: (top.0 - origin.0).hypot(top.1 - origin.1),
                 pattern: self.gs.paint.pattern(),
                 marked: self.marked(),
             };
             self.text.tm = concat(&translate(glyph.advance(), 0.0), &self.text.tm);
+            glyph.end = apply(&concat(&size, &concat(&self.text.tm, &self.gs.ctm)), 0.0, 0.0);
             self.emit(Event::Glyph(glyph))?;
         }
         Ok(())
@@ -758,7 +775,13 @@ impl Run<'_> {
 
 impl<'d> Interp<'d> {
     pub(crate) fn new(doc: &'d Document, resources: Dictionary) -> Interp<'d> {
-        Interp { doc, resources, fonts: HashMap::new() }
+        Interp { doc, resources, fonts: HashMap::new(), text: false }
+    }
+
+    /// Also report what each glyph means as text (`Glyph::text`).
+    pub(crate) fn with_text(mut self) -> Self {
+        self.text = true;
+        self
     }
 
     /// The resource `name` of `category`, references followed.
@@ -774,7 +797,7 @@ impl<'d> Interp<'d> {
         let obj = self
             .resource(b"Font", name)
             .ok_or_else(|| Unsupported(format!("font {} not found", String::from_utf8_lossy(name))))?;
-        let font = Rc::new(Font::load(self.doc, name, obj)?);
+        let font = Rc::new(Font::load_with(self.doc, name, obj, self.text)?);
         self.fonts.insert(name.to_vec(), font.clone());
         Ok(font)
     }

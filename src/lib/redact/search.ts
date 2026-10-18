@@ -1,12 +1,11 @@
 /**
- * Text search for redaction: pdf.js text content items to match rects in visible page space.
- *
- * Geometry ruling: a match's position along its item is the item width split by character
- * count (pdf.js gives no per-glyph advances), padded by 1 pt on both sides; its height is the
- * font size (from the item transform) from 0.25 em below the baseline to 1 em above. The
- * engine removes every glyph that touches a rect, so slight over-coverage is safe; when the
- * split is too rough (proportional fonts, long items), `wholeItem` marks every item a match
- * touches entirely.
+ * Fallback text search for pages the engine cannot read (`redact_search` reports them as
+ * `undecodablePages`; it searches every other page itself with the exact glyph boxes). This one
+ * works from pdf.js text content items, which carry no per-glyph advances, so by default it
+ * marks every item a match touches entirely (`wholeItem`). With `wholeItem: false` a match's
+ * position is the item width split by character count, padded by 1 pt, which can leave part of
+ * a word uncovered with proportional fonts. Heights run from 0.25 em below the baseline to 1 em
+ * above (em from the item transform).
  */
 import type { Rect } from "./model";
 
@@ -28,6 +27,7 @@ export interface PageGeometry {
 
 export interface SearchOptions {
   wholeWord?: boolean;
+  /** Mark whole items (default true); false splits items by character count. */
   wholeItem?: boolean;
 }
 
@@ -127,7 +127,7 @@ export function findMatches(runs: TextRun[], geometry: PageGeometry, query: stri
     }
     const rects = [...spans].map(([item, [from, to]]) => {
       const run = runs[item];
-      return options.wholeItem ? runRect(run, 0, run.str.length, geometry) : runRect(run, from, to, geometry);
+      return (options.wholeItem ?? true) ? runRect(run, 0, run.str.length, geometry) : runRect(run, from, to, geometry);
     });
     if (rects.length > 0) matches.push({ rects, rect: union(rects) });
   }

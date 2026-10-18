@@ -14,9 +14,13 @@ pub(crate) mod marked;
 pub(crate) mod binding;
 pub(crate) mod page;
 pub(crate) mod raster;
+pub(crate) mod search;
+#[cfg(test)]
+mod search_tests;
 #[cfg(test)]
 mod pipeline_tests;
 pub(crate) mod text;
+pub(crate) mod unicode;
 pub(crate) mod verify;
 
 pub(crate) use page::{page_rects_user, plan_page, redact_page};

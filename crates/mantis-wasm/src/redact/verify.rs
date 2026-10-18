@@ -41,8 +41,24 @@ fn page_seen(doc: &Document, page: ObjectId, tag: &[u8]) -> Result<(Vec<Seen>, V
     let ops = content_ops(doc, &original_contents(doc, contents), &mut budget)?;
     let mut seen = Vec::new();
     let resources = page_resources(doc, page);
-    walk(doc, &ops, resources, IDENTITY, Paint::default(), &mut Vec::new(), &mut budget, tag, &mut seen)?;
+    walk(doc, &ops, resources, IDENTITY, Paint::default(), &mut Vec::new(), &mut budget, tag, false, &mut seen)?;
     Ok((seen, ops))
+}
+
+/// Every glyph `page` draws (forms included, in drawing order), with its
+/// text when the font tells it.
+pub(crate) fn page_text_glyphs(doc: &Document, page: ObjectId, budget: &mut Budget) -> Result<Vec<super::interp::Glyph>, Unsupported> {
+    let contents = doc.get_dictionary(page).ok().and_then(|d| d.get(b"Contents").ok());
+    let ops = content_ops(doc, &original_contents(doc, contents), budget)?;
+    let mut seen = Vec::new();
+    walk(doc, &ops, page_resources(doc, page), IDENTITY, Paint::default(), &mut Vec::new(), budget, &[], true, &mut seen)?;
+    Ok(seen
+        .into_iter()
+        .filter_map(|s| match s.event {
+            Event::Glyph(g) => Some(g),
+            _ => None,
+        })
+        .collect())
 }
 
 /// Every event of `page`, its forms included (form events in user space).
@@ -73,9 +89,14 @@ fn walk(
     forms: &mut Vec<ObjectId>,
     budget: &mut Budget,
     tag: &[u8],
+    text: bool,
     out: &mut Vec<Seen>,
 ) -> Result<(), Unsupported> {
-    let events = Interp::new(doc, resources.clone()).run_inherited(ops, ctm, paint, budget)?;
+    let mut interp = Interp::new(doc, resources.clone());
+    if text {
+        interp = interp.with_text();
+    }
+    let events = interp.run_inherited(ops, ctm, paint, budget)?;
     let xobjects = page_resources_dict(doc, &resources, b"XObject");
     let top = forms.is_empty();
     for event in events {
@@ -108,7 +129,7 @@ fn walk(
             };
             // A direct form still counts as a level.
             forms.push(id.unwrap_or((0, 0)));
-            walk(doc, &decode_ops(&content)?, inner, f.matrix, f.paint, forms, budget, tag, out)?;
+            walk(doc, &decode_ops(&content)?, inner, f.matrix, f.paint, forms, budget, tag, text, out)?;
             forms.pop();
         }
         let context = matches!(event, Event::SoftMask(_)).then(|| std::rc::Rc::new(resources.clone()));
@@ -237,7 +258,7 @@ fn group_meets_within(
     groups.push(group);
     let mut seen = Vec::new();
     let mut forms = groups.clone();
-    let mut meets = walk(doc, &ops, inner, matrix, Paint::default(), &mut forms, budget, &[], &mut seen).is_err();
+    let mut meets = walk(doc, &ops, inner, matrix, Paint::default(), &mut forms, budget, &[], false, &mut seen).is_err();
     if !meets {
         let events: Vec<Event> = seen.iter().map(|s| s.event.clone()).collect();
         meets = unanalysed_paint(&events, rects).is_some() || events.iter().any(|e| left_under(e, rects));

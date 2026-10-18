@@ -77,3 +77,16 @@ export function toJob(
 ): RedactJobWire {
   return { rects: marksToRects(marks, pageSizes), fill: options.fill, removeMetadata: options.removeMetadata, rasters };
 }
+
+/** `redact_search` options. */
+export interface SearchOptionsWire {
+  wholeWord: boolean;
+  caseSensitive: boolean;
+}
+
+/** What `redact_search` returns: per page, one visible rect `[x, y, w, h]` per line of each match. */
+export interface RedactSearchWire {
+  pages: { page: number; quads: Rect[] }[];
+  /** Pages with text the engine cannot read: search may miss text there (see `search.ts`). */
+  undecodablePages: number[];
+}

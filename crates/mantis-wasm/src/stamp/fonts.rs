@@ -43,7 +43,7 @@ impl StdFont {
 
 /// WinAnsi 0x80..=0x9F: the characters that differ from Latin-1 (the five
 /// undefined codes 0x81, 0x8D, 0x8F, 0x90, 0x9D are absent).
-const CP1252_HIGH: [(char, u8); 27] = [
+pub(crate) const CP1252_HIGH: [(char, u8); 27] = [
     ('\u{20AC}', 0x80), ('\u{201A}', 0x82), ('\u{0192}', 0x83), ('\u{201E}', 0x84),
     ('\u{2026}', 0x85), ('\u{2020}', 0x86), ('\u{2021}', 0x87), ('\u{02C6}', 0x88),
     ('\u{2030}', 0x89), ('\u{0160}', 0x8A), ('\u{2039}', 0x8B), ('\u{0152}', 0x8C),

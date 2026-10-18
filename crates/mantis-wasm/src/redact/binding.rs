@@ -4,6 +4,7 @@
 //! `Invalid redact settings: <path>`.
 
 use super::raster::MAX_RASTER_PIXELS;
+use super::search::{SearchOptions, SearchResult};
 use super::{Fill, MAX_RECTS, PageRaster, PageStatus, RedactJob, RedactRect, RedactSummary, invalid};
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue};
@@ -137,5 +138,34 @@ pub(crate) fn result_to_js(bytes: &[u8], summary: &RedactSummary) -> JsValue {
     set(&obj, "imagesRemoved", &count(summary.images_removed));
     set(&obj, "formsRedacted", &count(summary.forms_redacted));
     set(&obj, "annotationsRemoved", &count(summary.annotations_removed));
+    obj.into()
+}
+
+/// `options`: `{ wholeWord, caseSensitive }` (both booleans).
+pub(crate) fn read_search_options(options: &JsValue) -> Result<SearchOptions, String> {
+    let flag = |key: &str| get(options, key, "options")?.as_bool().ok_or_else(|| invalid(&format!("options.{key}")));
+    Ok(SearchOptions { whole_word: flag("wholeWord")?, case_sensitive: flag("caseSensitive")? })
+}
+
+/// `{ pages: [{ page, quads: [[x, y, w, h]] }], undecodablePages }`.
+pub(crate) fn search_to_js(result: &SearchResult) -> JsValue {
+    let pages: Array = result
+        .pages
+        .iter()
+        .map(|hits| {
+            let obj = Object::new();
+            set(&obj, "page", &JsValue::from_f64(f64::from(hits.page)));
+            let quads: Array = hits
+                .rects
+                .iter()
+                .map(|r| JsValue::from(r.iter().map(|v| JsValue::from_f64(*v)).collect::<Array>()))
+                .collect();
+            set(&obj, "quads", &quads.into());
+            JsValue::from(obj)
+        })
+        .collect();
+    let obj = Object::new();
+    set(&obj, "pages", &pages.into());
+    set(&obj, "undecodablePages", &numbers(&result.undecodable_pages));
     obj.into()
 }

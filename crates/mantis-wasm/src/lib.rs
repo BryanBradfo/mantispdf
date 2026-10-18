@@ -168,6 +168,16 @@ pub fn redact_plan(pdf_bytes: &[u8], rects: JsValue) -> Result<JsValue, JsValue>
     Ok(redact::binding::plan_to_js(&plan))
 }
 
+/// Every match of `query` as areas to redact: `{ pages: [{ page, quads }],
+/// undecodablePages }` (rects in visible space; see
+/// `src/lib/redact/toJob.ts`).
+#[wasm_bindgen]
+pub fn redact_search(pdf_bytes: &[u8], query: &str, options: JsValue) -> Result<JsValue, JsValue> {
+    let options = redact::binding::read_search_options(&options).map_err(|e| JsValue::from_str(&e))?;
+    let result = redact::search::redact_search(pdf_bytes, query, &options).map_err(|e| JsValue::from_str(&e))?;
+    Ok(redact::binding::search_to_js(&result))
+}
+
 /// Redact the job's areas: `{ bytes, pagesRedacted, ... }`.
 #[wasm_bindgen]
 pub fn redact(pdf_bytes: &[u8], job: JsValue) -> Result<JsValue, JsValue> {
