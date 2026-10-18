@@ -596,3 +596,24 @@ fn bogus_tiny_widths_use_a_plausible_width_for_the_removal_box() {
     });
     assert_eq!(redact_left(&bytes(doc), [101.0, 295.0, 10.0, 20.0]), "BCDEFGH");
 }
+
+/// Search `query` in a page drawing `content` (Helvetica as /H), redact
+/// the matches: the text left.
+fn search_redact_content(content: &str, query: &str) -> String {
+    let pdf = bytes(one_page(content, with_helvetica));
+    let found = redact_search(&pdf, query, &opts()).unwrap();
+    assert!(!found.pages.is_empty(), "{query} not found");
+    let rects = found.pages.iter().flat_map(|p| p.rects.iter().map(|r| RedactRect { page: p.page, rect: *r })).collect();
+    let job = RedactJob { rects, fill: Fill::Black, remove_metadata: true, rasters: Vec::new() };
+    let (out, _) = redact(&pdf, job).unwrap();
+    let out = load_pdf(&out).unwrap();
+    page_glyphs(&out, out.get_pages()[&1]).unwrap().iter().map(|g| char::from_u32(g.code).unwrap()).collect()
+}
+
+#[test]
+fn kerned_neighbours_overlapping_a_match_are_kept() {
+    // Each glyph pulled 0.15 em into the one before it.
+    let were = "BT /H 20 Tf 100 700 Td [(W) 150 (e) 150 (r) 150 (e)] TJ ET";
+    assert_eq!(search_redact_content(were, "We"), "re");
+    assert_eq!(search_redact_content(were, "re"), "We");
+}

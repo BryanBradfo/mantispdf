@@ -5,8 +5,8 @@
 //! order; a space is assumed where a glyph starts more than 0.25 em after the
 //! previous one ends, and a line break (also a space) where the baseline
 //! moves. A match is marked by the union of its glyphs' boxes, one rect per
-//! line: the very boxes the redaction removes, so a marked match never
-//! leaves part of itself behind.
+//! line (the very boxes the redaction removes, so a marked match never
+//! leaves part of itself behind), clipped at kerned neighbours' boxes.
 
 use super::interp::{Glyph, Quad, Rect};
 use super::unicode::TextCache;
@@ -168,6 +168,43 @@ fn union(quads: impl Iterator<Item = Quad>) -> Option<Rect> {
     quads.map(|q| q.bbox()).reduce(|a, b| Rect { x0: a.x0.min(b.x0), y0: a.y0.min(b.y0), x1: a.x1.max(b.x1), y1: a.y1.max(b.y1) })
 }
 
+/// The rect marking the matched glyphs `list` (one line, drawing order):
+/// the union of their boxes, clipped along the line at the boxes of the
+/// glyphs drawn just before and after on that line, so kerning that pulls
+/// a neighbour into the match does not mark it too. Unclipped when clipping
+/// would leave a matched glyph outside the rect.
+fn line_rect(glyphs: &[Glyph], lines: &[usize], list: &[usize]) -> Option<Rect> {
+    let full = union(list.iter().map(|&g| glyphs[g].box_user))?;
+    let (first, last) = (*list.first()?, *list.last()?);
+    let line = lines[first];
+    let neighbour = |i: Option<usize>| i.filter(|&i| i < glyphs.len() && lines[i] == line && !list.contains(&i)).map(|i| glyphs[i].box_user.bbox());
+    let before = neighbour(first.checked_sub(1));
+    let after = neighbour(last.checked_add(1));
+    let g = &glyphs[first];
+    let (dx, dy) = (g.end.0 - g.origin.0, g.end.1 - g.origin.1);
+    let mut r = full;
+    if dx.abs() >= dy.abs() {
+        // Along x: the glyph before is on the left when the text runs right.
+        let (left, right) = if dx >= 0.0 { (before, after) } else { (after, before) };
+        if let Some(b) = left {
+            r.x0 = r.x0.max(b.x1);
+        }
+        if let Some(b) = right {
+            r.x1 = r.x1.min(b.x0);
+        }
+    } else {
+        let (low, high) = if dy >= 0.0 { (before, after) } else { (after, before) };
+        if let Some(b) = low {
+            r.y0 = r.y0.max(b.y1);
+        }
+        if let Some(b) = high {
+            r.y1 = r.y1.min(b.y0);
+        }
+    }
+    let keeps_all = r.x0 < r.x1 && r.y0 < r.y1 && list.iter().all(|&i| glyphs[i].box_user.intersects(&r));
+    Some(if keeps_all { r } else { full })
+}
+
 /// Every match of `query` in `pdf`, page by page. A match that would take
 /// the rects past `MAX_RECTS` is dropped whole and the search stops there,
 /// saying so (`truncated`; that page and every later one in
@@ -283,7 +320,7 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
             }
             let found: Vec<[f64; 4]> = by_line
                 .into_iter()
-                .filter_map(|(_, list)| union(list.iter().map(|&g| glyphs[g].box_user)))
+                .filter_map(|(_, list)| line_rect(&glyphs, &lines, &list))
                 .map(|r| to_visible(&vb, &r))
                 .collect();
             // A match is marked whole or not at all.
