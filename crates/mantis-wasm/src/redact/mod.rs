@@ -21,7 +21,7 @@ mod pipeline_tests;
 pub(crate) mod text;
 pub(crate) mod verify;
 
-pub(crate) use page::{page_rects_user, redact_page};
+pub(crate) use page::{page_rects_user, plan_page, redact_page};
 #[cfg(test)]
 pub(crate) use page::plant_leak_for_tests;
 
@@ -106,7 +106,13 @@ fn areas_by_page(rects: &[RedactRect], page_count: usize) -> Result<BTreeMap<u32
 
 /// Redact every page with areas in `doc` (sharing one job budget); one
 /// result per page, in page order.
-fn redact_pages(doc: &mut Document, by_page: &BTreeMap<u32, Vec<RedactRect>>, fill: Fill) -> Vec<(u32, Vec<Rect>, Result<Report, Unsupported>)> {
+/// `plan`: only find out whether each page can be redacted (no pixel work).
+fn redact_pages(
+    doc: &mut Document,
+    by_page: &BTreeMap<u32, Vec<RedactRect>>,
+    fill: Fill,
+    plan: bool,
+) -> Vec<(u32, Vec<Rect>, Result<Report, Unsupported>)> {
     let pages = doc.get_pages();
     let mut decoded = JOB_DECODED;
     let mut out = Vec::new();
@@ -116,7 +122,11 @@ fn redact_pages(doc: &mut Document, by_page: &BTreeMap<u32, Vec<RedactRect>>, fi
         };
         let rects = page_rects_user(doc, page, areas);
         let mut budget = Budget::page(decoded);
-        let result = redact_page(doc, page, &rects, fill, &mut budget);
+        let result = if plan {
+            plan_page(doc, page, &rects, &mut budget).map(|()| Report::default())
+        } else {
+            redact_page(doc, page, &rects, fill, &mut budget)
+        };
         decoded = budget.decoded;
         out.push((number, rects, result));
     }
@@ -127,7 +137,7 @@ fn redact_pages(doc: &mut Document, by_page: &BTreeMap<u32, Vec<RedactRect>>, fi
 pub(crate) fn redact_plan(pdf: &[u8], rects: &[RedactRect]) -> Result<Vec<PageStatus>, String> {
     let mut doc = load_pdf(pdf)?;
     let by_page = areas_by_page(rects, doc.get_pages().len())?;
-    Ok(redact_pages(&mut doc, &by_page, Fill::Black)
+    Ok(redact_pages(&mut doc, &by_page, Fill::Black, true)
         .into_iter()
         .map(|(page, _, result)| PageStatus { page, reason: result.err().map(|u| u.0) })
         .collect())
@@ -140,7 +150,7 @@ pub(crate) fn redact(pdf: &[u8], job: &RedactJob) -> Result<(Vec<u8>, RedactSumm
     let by_page = areas_by_page(&job.rects, doc.get_pages().len())?;
     let mut summary = RedactSummary::default();
     let mut checks = Vec::new();
-    for (number, rects, result) in redact_pages(&mut doc, &by_page, job.fill) {
+    for (number, rects, result) in redact_pages(&mut doc, &by_page, job.fill, false) {
         // Pages that need a raster arrive with one (Task 5); none yet.
         let report = result.map_err(|Unsupported(reason)| invalid(&format!("raster (page {number}: {reason})")))?;
         summary.pages_redacted.push(number);
@@ -268,11 +278,13 @@ pub(crate) struct PageEdit<'a> {
     /// Form XObjects being redacted around this content (cycle and depth
     /// guard).
     pub(crate) forms: Vec<lopdf::ObjectId>,
+    /// Redraw images under an area (false when only planning).
+    pub(crate) pixels: bool,
 }
 
 impl<'a> PageEdit<'a> {
     pub(crate) fn new(doc: &'a mut lopdf::Document, resources: &'a mut lopdf::Dictionary, fill: Fill, budget: &'a mut Budget) -> Self {
-        PageEdit { doc, resources, fill, budget, forms: Vec::new() }
+        PageEdit { doc, resources, fill, budget, forms: Vec::new(), pixels: true }
     }
 }
 
@@ -418,7 +430,9 @@ pub(crate) fn redact_content(
                 report.shadings_removed += 1;
                 touched.extend(s.marked);
             }
-            Event::Image(img) if graphics::quad_hit(&img.quad_user, rects) => {
+            // Planning: images never make a page unsupported (one that cannot
+            // be redrawn is removed), so their pixels are left alone.
+            Event::Image(img) if page.pixels && graphics::quad_hit(&img.quad_user, rects) => {
                 let inline = img.source == interp::ImageSource::Inline;
                 match redact_placed_image(page, ops, img, rects) {
                     images::ImageEdit::Untouched => continue,

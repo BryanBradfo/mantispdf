@@ -53,7 +53,7 @@ pub(crate) fn redact_form(page: &mut PageEdit, placement: &FormPlacement, rects:
     let events = Interp::new(page.doc, resources.clone()).run_inherited(&ops, placement.matrix, placement.paint, page.budget)?;
     let mut forms = page.forms.clone();
     forms.extend(id);
-    let mut inner = PageEdit { doc: &mut *page.doc, resources: &mut resources, fill: page.fill, budget: &mut *page.budget, forms };
+    let mut inner = PageEdit { doc: &mut *page.doc, resources: &mut resources, fill: page.fill, budget: &mut *page.budget, forms, pixels: page.pixels };
     let (new_ops, report) = redact_content(&mut inner, &ops, &events, rects)?;
     if report == Report::default() {
         return Ok((None, report));

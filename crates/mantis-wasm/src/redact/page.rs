@@ -48,12 +48,24 @@ pub(crate) fn flate_stream(mut dict: Dictionary, content: &[u8]) -> Stream {
 /// object another page may share: the page gets a new content stream and
 /// its own resources; forms and images it changes are private copies.
 pub(crate) fn redact_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, budget: &mut Budget) -> Result<Report, Unsupported> {
+    edit_page(doc, page, rects, fill, budget, true)
+}
+
+/// Whether `page` can be redacted in place: the same analysis as
+/// `redact_page` without redrawing images (it still changes `doc`).
+pub(crate) fn plan_page(doc: &mut Document, page: ObjectId, rects: &[Rect], budget: &mut Budget) -> Result<(), Unsupported> {
+    edit_page(doc, page, rects, Fill::Black, budget, false).map(|_| ())
+}
+
+fn edit_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, budget: &mut Budget, pixels: bool) -> Result<Report, Unsupported> {
     let page_dict = doc.get_dictionary(page).map_err(|_| Unsupported::new("page not found"))?.clone();
     let mut resources = page_resources(doc, page);
     let items = original_contents(doc, page_dict.get(b"Contents").ok());
     let ops = content_ops(doc, &items, budget)?;
     let events = Interp::new(doc, resources.clone()).run(&ops, IDENTITY, budget)?;
-    let (new_ops, mut report) = redact_content(&mut PageEdit::new(doc, &mut resources, fill, budget), &ops, &events, rects)?;
+    let mut edit = PageEdit::new(doc, &mut resources, fill, budget);
+    edit.pixels = pixels;
+    let (new_ops, mut report) = redact_content(&mut edit, &ops, &events, rects)?;
     report.annotations_removed = drop_annotations(doc, page, rects);
     let content = doc.add_object(flate_stream(Dictionary::new(), &encode_ops(&new_ops)));
     let dict = doc.get_dictionary_mut(page).map_err(|_| Unsupported::new("page not found"))?;

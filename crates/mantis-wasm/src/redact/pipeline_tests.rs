@@ -537,3 +537,31 @@ fn verification_fails_on_paths_shadings_and_images_left_under_an_area() {
         assert_eq!(result.unwrap_err(), "Redaction verification failed on page 1");
     }
 }
+
+#[test]
+fn planning_skips_the_pixel_work() {
+    let page_doc = || {
+        one_page("q 200 0 0 200 100 100 cm /Im Do Q", |doc, page| {
+            let image = doc.add_object(Stream::new(
+                dictionary! {
+                    "Type" => "XObject", "Subtype" => "Image", "Width" => 100, "Height" => 100,
+                    "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+                },
+                vec![100; 10_000],
+            ));
+            doc.get_dictionary_mut(page).unwrap().set("Resources", dictionary! { "XObject" => dictionary! { "Im" => image } });
+        })
+    };
+    let a = [area(1, 150.0, 150.0, 10.0, 10.0)];
+    let mut doc = page_doc();
+    let page = page_ids(&doc)[0];
+    let rects = page_rects_user(&doc, page, &a);
+    let mut budget = Budget::page(64 << 20);
+    plan_page(&mut doc, page, &rects, &mut budget).unwrap();
+    assert!(budget.decoded > (64 << 20) - 1000, "planning decoded the image");
+    let mut budget = Budget::page(64 << 20);
+    redact_page(&mut page_doc(), page, &rects, Fill::Black, &mut budget).unwrap();
+    assert!(budget.decoded <= (64 << 20) - 80_000, "redacting charges the pixels");
+    let plan = redact_plan(&bytes(page_doc()), &a).unwrap();
+    assert_eq!(plan, vec![PageStatus { page: 1, reason: None }]);
+}
