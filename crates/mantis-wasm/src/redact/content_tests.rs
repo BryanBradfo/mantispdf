@@ -3,7 +3,7 @@
 
 use super::interp::{Event, Glyph, IDENTITY, Interp, decode_ops, encode_ops};
 use super::*;
-use lopdf::{Dictionary, Document, Object, Stream, dictionary};
+use lopdf::{Dictionary, Document, Object, dictionary};
 
 const TOLERANCE: f64 = 1e-6;
 /// lopdf keeps reals as f32, so the one number standing in for a removed
@@ -316,25 +316,18 @@ fn shadings_over_a_rect_or_unbounded_are_removed() {
 }
 
 #[test]
-fn covered_undecodable_inline_images_are_removed_others_written_back_unchanged() {
+fn covered_inline_images_that_cannot_be_decoded_need_a_raster() {
     let rects = [rect(40.0, 40.0, 55.0, 55.0)];
-    // ASCIIHex cannot be decoded here: the covered image goes entirely.
+    // ASCIIHex cannot be decoded here: the page needs a raster.
+    let content: &[u8] = b"q 10 0 0 10 42 42 cm BI /W 2 /H 1 /CS /G /BPC 8 /F /AHx ID 00FF> EI Q";
+    let err = try_redact(content, &rects).unwrap_err();
+    assert!(err.0.contains("image that cannot be edited"), "{err:?}");
+    // Uncovered, it is written back as it was.
     let content: &[u8] = b"q 10 0 0 10 42 42 cm BI /W 2 /H 1 /CS /G /BPC 8 /F /AHx ID 00FF> EI Q \
         q 10 0 0 10 0 0 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x00 EI Q";
-    let out = redact(content, &rects);
-    assert_eq!(out.report.inline_images_removed, 1);
-    assert_eq!(out.report.images_removed, vec!["corrupt"]);
+    let out = redact(content, &[rect(100.0, 100.0, 110.0, 110.0)]);
     let ops = decode_ops(&out.content).unwrap();
-    let images: Vec<&Stream> = ops
-        .iter()
-        .filter_map(|o| match (o.operator.as_str(), o.operands.as_slice()) {
-            ("BI", [Object::Stream(s), ..]) => Some(s),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(images.len(), 1);
-    assert_eq!(images[0].content, b"\x00");
-    assert_eq!(images[0].dict.get(b"W").unwrap(), &Object::Integer(1));
+    assert_eq!(ops.iter().filter(|o| o.operator == "BI").count(), 2);
 }
 
 #[test]

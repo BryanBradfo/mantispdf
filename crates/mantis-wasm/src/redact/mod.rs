@@ -383,21 +383,26 @@ pub(crate) struct Report {
 }
 
 /// The edit for an image placement under a rect.
-fn redact_placed_image(page: &mut PageEdit, ops: &[Operation], img: &interp::ImagePlacement, rects: &[Rect]) -> images::ImageEdit {
-    let stream = match &img.source {
+/// The image stream an image placement draws (an inline image as an
+/// XObject); Err names why there is none.
+fn placed_image(page: &PageEdit, ops: &[Operation], img: &interp::ImagePlacement) -> Result<lopdf::Stream, &'static str> {
+    match &img.source {
         interp::ImageSource::XObject(name) => {
             let xobjects = interp::page_resources_dict(page.doc, page.resources, b"XObject");
             match xobjects.get(name).ok().and_then(|o| rebuild::deref(page.doc, o)) {
-                Some(Object::Stream(s)) => s.clone(),
-                _ => return images::ImageEdit::Removed("missing"),
+                Some(Object::Stream(s)) => Ok(s.clone()),
+                _ => Err("missing"),
             }
         }
         interp::ImageSource::Inline => match ops.get(img.op_index).and_then(|op| op.operands.first()) {
-            Some(Object::Stream(s)) => images::inline_as_xobject(s),
-            _ => return images::ImageEdit::Removed("corrupt"),
+            Some(Object::Stream(s)) => Ok(images::inline_as_xobject(s)),
+            _ => Err("corrupt"),
         },
-    };
-    images::redact_image(page.doc, &stream, page.resources, &img.quad_user, rects, page.fill, page.budget)
+    }
+}
+
+fn cannot_edit(detail: &str) -> Unsupported {
+    Unsupported(format!("scanned image that cannot be edited ({detail})"))
 }
 
 /// Add a redacted image (and its soft mask) as new objects under a fresh
@@ -512,11 +517,18 @@ pub(crate) fn redact_content(
                 report.shadings_removed += 1;
                 touched.extend(s.marked);
             }
-            // Planning: images never make a page unsupported (one that cannot
-            // be redrawn is removed), so their pixels are left alone.
-            Event::Image(img) if page.pixels && graphics::quad_hit(&img.quad_user, rects) => {
+            Event::Image(img) if graphics::quad_hit(&img.quad_user, rects) => {
+                // An image that cannot be edited pixel by pixel makes the page
+                // need a raster (never removed whole). Planning stops there.
+                let stream = placed_image(page, ops, img).map_err(cannot_edit)?;
+                if let Some(reason) = images::not_editable(page.doc, &stream, page.resources, page.budget.decoded) {
+                    return Err(cannot_edit(reason));
+                }
+                if !page.pixels {
+                    continue;
+                }
                 let inline = img.source == interp::ImageSource::Inline;
-                match redact_placed_image(page, ops, img, rects) {
+                match images::redact_image(page.doc, &stream, page.resources, &img.quad_user, rects, page.fill, page.budget) {
                     images::ImageEdit::Untouched => continue,
                     images::ImageEdit::Replaced { image, smask } => {
                         let (name, id) = add_image(page, image, smask);
@@ -524,12 +536,11 @@ pub(crate) fn redact_content(
                         replaced.insert(img.op_index, vec![Operation::new("Do", vec![Object::Name(name)])]);
                         report.images_redacted += 1;
                     }
+                    // Seen only in its data (corrupt, a mask that does not
+                    // decode): a raster still.
                     images::ImageEdit::Removed(reason) => {
-                        dropped.insert(img.op_index);
-                        report.images_removed.push(reason);
-                        if inline {
-                            report.inline_images_removed += 1;
-                        }
+                        let _ = inline;
+                        return Err(cannot_edit(reason));
                     }
                 }
                 touched.extend(img.marked);

@@ -65,3 +65,15 @@ fn the_fixture_redacts_end_to_end() {
     assert!(text(&out, 3).contains("CONFIDENTIAL"), "the shared form is untouched elsewhere");
     assert_eq!(text(&out, 4), "");
 }
+
+#[test]
+fn a_real_scan_with_a_ccitt_mask_needs_a_raster() {
+    let path = "/home/wingleet/Téléchargements/form_337.pdf";
+    let Ok(pdf) = std::fs::read(path) else {
+        eprintln!("skipped: {path} not found");
+        return;
+    };
+    let plan = redact_plan(&pdf, &[area(1, 100.0, 400.0, 200.0, 12.0)]).unwrap();
+    let reason = plan[0].reason.clone().unwrap_or_default();
+    assert!(reason.contains("image that cannot be edited"), "{reason:?}");
+}

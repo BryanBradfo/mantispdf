@@ -80,6 +80,27 @@ fn redact(page: Page, content: &[u8], rects: &[Rect]) -> Out {
     redact_page(page, content, rects, Fill::Black, &mut Budget::page(64 << 20))
 }
 
+/// `redact_page` that may need a raster: Err(reason) then.
+fn try_redact(mut page: Page, content: &[u8], rects: &[Rect], budget: &mut Budget, pixels: bool) -> Result<Out, Unsupported> {
+    let ops = decode_ops(content).unwrap();
+    let events = Interp::new(&page.doc, page.resources.clone()).run(&ops, IDENTITY, &mut Budget::page(1 << 20)).unwrap();
+    let mut resources = page.resources.clone();
+    let mut edit = PageEdit::new(&mut page.doc, &mut resources, Fill::Black, budget);
+    edit.pixels = pixels;
+    let (ops, report) = redact_content(&mut edit, &ops, &events, rects)?;
+    Ok(Out { content: encode_ops(&ops), report, doc: page.doc, resources })
+}
+
+/// The page needs a raster for this image (when planning too, unless the
+/// cause only shows in its data), never a silent removal.
+fn needs_raster(page: impl Fn() -> Page, content: &[u8], rects: &[Rect], budget: usize, also_planned: bool) {
+    let err = try_redact(page(), content, rects, &mut Budget::page(budget), true).map(|_| ()).unwrap_err();
+    assert!(err.0.contains("image that cannot be edited"), "{err:?}");
+    if also_planned {
+        assert!(try_redact(page(), content, rects, &mut Budget::page(budget), false).is_err(), "the plan sees it");
+    }
+}
+
 fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Rect {
     Rect { x0, y0, x1, y1 }
 }
@@ -243,28 +264,58 @@ fn stencil_masks_stop_painting_where_covered() {
 }
 
 #[test]
-fn undecodable_or_over_budget_images_are_removed() {
-    let mut jpx = rgb_image(4, 4, gradient);
-    jpx.dict.set("Filter", "JPXDecode");
-    let out = redact(page_with(jpx), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)]);
-    assert!(drawn(&out.content).is_empty());
-    assert_eq!(out.report.images_removed, vec!["jpeg2000"]);
-    let mut budget = Budget::page(10);
-    let out = redact_page(page_with(rgb_image(4, 4, gradient)), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)], Fill::Black, &mut budget);
-    assert!(drawn(&out.content).is_empty());
-    assert_eq!(out.report.images_removed.len(), 1);
+fn images_that_cannot_be_edited_need_a_raster() {
+    let area = [rect(0.0, 0.0, 20.0, 40.0)];
+    let jpx = || {
+        let mut image = rgb_image(4, 4, gradient);
+        image.dict.set("Filter", "JPXDecode");
+        page_with(image)
+    };
+    needs_raster(jpx, DRAW_4X4, &area, 64 << 20, true);
+    // Over what the job has left.
+    needs_raster(|| page_with(rgb_image(4, 4, gradient)), DRAW_4X4, &area, 10, true);
     // A colour-key /Mask cannot be carried over.
-    let mut keyed = rgb_image(4, 4, gradient);
-    keyed.dict.set("Mask", vec![0.into(), 10.into(), 0.into(), 10.into(), 0.into(), 10.into()]);
-    let out = redact(page_with(keyed), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)]);
-    assert!(drawn(&out.content).is_empty());
+    let keyed = || {
+        let mut image = rgb_image(4, 4, gradient);
+        image.dict.set("Mask", vec![0.into(), 10.into(), 0.into(), 10.into(), 0.into(), 10.into()]);
+        page_with(image)
+    };
+    needs_raster(keyed, DRAW_4X4, &area, 64 << 20, true);
+    // A colour space we do not convert.
+    let lab = || {
+        let mut image = rgb_image(4, 4, gradient);
+        image.dict.set("ColorSpace", vec![Object::Name(b"Lab".to_vec()), Object::Dictionary(dictionary! {})]);
+        page_with(image)
+    };
+    needs_raster(lab, DRAW_4X4, &area, 64 << 20, true);
 }
 
 #[test]
-fn degenerate_placement_under_a_rect_is_removed() {
-    let out = redact(page_with(rgb_image(4, 4, gradient)), b"q 40 0 0 0 0 10 cm /Im1 Do Q", &[rect(0.0, 0.0, 20.0, 20.0)]);
-    assert!(drawn(&out.content).is_empty());
-    assert_eq!(out.report.images_removed.len(), 1);
+fn a_scan_with_a_ccitt_soft_mask_needs_a_raster() {
+    // form_337.pdf: a Flate ICC image whose /SMask is CCITT. Marking one line
+    // must never delete the whole scan.
+    let scan = || {
+        let mut page = page_with(rgb_image(4, 4, gradient));
+        let icc = page.doc.add_object(Stream::new(dictionary! { "N" => 3 }, vec![]));
+        let mask = page.doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => 4, "Height" => 4,
+                "ColorSpace" => "DeviceGray", "BitsPerComponent" => 1, "Filter" => "CCITTFaxDecode",
+            },
+            vec![0; 4],
+        ));
+        let mut image = page.doc.get_object(page.image).unwrap().as_stream().unwrap().clone();
+        image.dict.set("ColorSpace", vec![Object::Name(b"ICCBased".to_vec()), icc.into()]);
+        image.dict.set("SMask", mask);
+        page.doc.objects.insert(page.image, Object::Stream(image));
+        page
+    };
+    needs_raster(scan, DRAW_4X4, &[rect(0.0, 0.0, 40.0, 5.0)], 64 << 20, true);
+}
+
+#[test]
+fn degenerate_placement_under_a_rect_needs_a_raster() {
+    needs_raster(|| page_with(rgb_image(4, 4, gradient)), b"q 40 0 0 0 0 10 cm /Im1 Do Q", &[rect(0.0, 0.0, 20.0, 20.0)], 64 << 20, false);
 }
 
 fn decode_jpeg(bytes: &[u8]) -> (usize, Vec<u8>) {
@@ -306,16 +357,19 @@ fn gray_jpeg_stays_gray() {
 }
 
 #[test]
-fn cmyk_inverted_or_broken_jpegs_are_removed() {
-    let cmyk = jpeg_image(jpeg(8, 8, &[10, 20, 30, 40], jpeg_encoder::ColorType::Cmyk), 8, 8, "DeviceCMYK");
-    let mut inverted = jpeg_image(jpeg(8, 8, &[90], jpeg_encoder::ColorType::Luma), 8, 8, "DeviceGray");
-    inverted.dict.set("Decode", vec![1.into(), 0.into()]);
-    let broken = jpeg_image(b"\xFF\xD8 not a jpeg".to_vec(), 8, 8, "DeviceRGB");
-    for image in [cmyk, inverted, broken] {
-        let out = redact(page_with(image), b"q 8 0 0 8 0 0 cm /Im1 Do Q", &[rect(0.0, 0.0, 4.0, 8.0)]);
-        assert!(drawn(&out.content).is_empty());
-        assert_eq!(out.report.images_removed.len(), 1);
-    }
+fn cmyk_inverted_or_broken_jpegs_need_a_raster() {
+    let cmyk = || page_with(jpeg_image(jpeg(8, 8, &[10, 20, 30, 40], jpeg_encoder::ColorType::Cmyk), 8, 8, "DeviceCMYK"));
+    let inverted = || {
+        let mut image = jpeg_image(jpeg(8, 8, &[90], jpeg_encoder::ColorType::Luma), 8, 8, "DeviceGray");
+        image.dict.set("Decode", vec![1.into(), 0.into()]);
+        page_with(image)
+    };
+    let broken = || page_with(jpeg_image(b"\xFF\xD8 not a jpeg".to_vec(), 8, 8, "DeviceRGB"));
+    let draw: &[u8] = b"q 8 0 0 8 0 0 cm /Im1 Do Q";
+    let area = [rect(0.0, 0.0, 4.0, 8.0)];
+    needs_raster(cmyk, draw, &area, 64 << 20, true);
+    needs_raster(inverted, draw, &area, 64 << 20, true);
+    needs_raster(broken, draw, &area, 64 << 20, true);
 }
 
 fn inline_rgb() -> Vec<u8> {
@@ -432,23 +486,21 @@ fn flate(bytes: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn huge_images_are_removed_before_any_large_allocation() {
+fn huge_images_need_a_raster_before_any_large_allocation() {
     // 10000 x 10000 1-bit stencil: a few KB encoded, 800 MB once expanded.
     let (w, h) = (10_000usize, 10_000usize);
-    let mask = Stream::new(
-        dictionary! {
-            "Type" => "XObject", "Subtype" => "Image", "Width" => w as i64, "Height" => h as i64,
-            "ImageMask" => true, "BitsPerComponent" => 1, "Filter" => "FlateDecode",
-        },
-        flate(&vec![0u8; w / 8 * h]),
-    );
-    let out = redact(page_with(mask), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)]);
-    assert!(drawn(&out.content).is_empty());
-    assert_eq!(out.report.images_removed, vec!["budget"]);
-    // Within the per-image cap but over what the job has left: removed too.
-    let mut budget = Budget::page(4 * 4 * 8 - 1);
-    let out = redact_page(page_with(rgb_image(4, 4, gradient)), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)], Fill::Black, &mut budget);
-    assert_eq!(out.report.images_removed, vec!["budget"]);
+    let huge = || {
+        page_with(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => w as i64, "Height" => h as i64,
+                "ImageMask" => true, "BitsPerComponent" => 1, "Filter" => "FlateDecode",
+            },
+            flate(&vec![0u8; w / 8 * h]),
+        ))
+    };
+    needs_raster(huge, DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)], 64 << 20, true);
+    // Within the per-image cap but over what the job has left.
+    needs_raster(|| page_with(rgb_image(4, 4, gradient)), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)], 4 * 4 * 8 - 1, true);
     // Enough budget: the image is charged about 8 bytes per pixel up front.
     let mut budget = Budget::page(1 << 20);
     let out = redact_page(page_with(rgb_image(4, 4, gradient)), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)], Fill::Black, &mut budget);
@@ -457,13 +509,14 @@ fn huge_images_are_removed_before_any_large_allocation() {
 }
 
 #[test]
-fn jpeg_image_masks_are_removed() {
-    let mut mask = jpeg_image(jpeg(8, 8, &[90], jpeg_encoder::ColorType::Luma), 8, 8, "DeviceGray");
-    mask.dict.remove(b"ColorSpace");
-    mask.dict.set("ImageMask", true);
-    let out = redact(page_with(mask), b"q 8 0 0 8 0 0 cm /Im1 Do Q", &[rect(0.0, 0.0, 4.0, 8.0)]);
-    assert!(drawn(&out.content).is_empty());
-    assert_eq!(out.report.images_removed, vec!["jpeg mask"]);
+fn jpeg_image_masks_need_a_raster() {
+    let mask = || {
+        let mut image = jpeg_image(jpeg(8, 8, &[90], jpeg_encoder::ColorType::Luma), 8, 8, "DeviceGray");
+        image.dict.remove(b"ColorSpace");
+        image.dict.set("ImageMask", true);
+        page_with(image)
+    };
+    needs_raster(mask, b"q 8 0 0 8 0 0 cm /Im1 Do Q", &[rect(0.0, 0.0, 4.0, 8.0)], 64 << 20, true);
 }
 
 #[test]

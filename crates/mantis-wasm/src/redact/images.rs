@@ -368,3 +368,105 @@ pub(crate) fn inline_as_xobject(inline: &Stream) -> Stream {
     }
     Stream::new(dict, inline.content.clone()).with_compression(false)
 }
+
+/// Filters whose data the engine decodes for pixel editing (besides a JPEG
+/// on its own).
+const EDITABLE_FILTERS: [&[u8]; 3] = [b"FlateDecode", b"LZWDecode", b"ASCII85Decode"];
+
+/// The filters of `stream`, or None when they cannot be read.
+fn filters_of(stream: &Stream) -> Option<Vec<&[u8]>> {
+    match stream.dict.get(b"Filter") {
+        Err(_) => Some(Vec::new()),
+        Ok(_) => stream.filters().ok(),
+    }
+}
+
+/// True when colour space `cs` (resources `res`) is one the engine converts.
+fn editable_space(doc: &Document, cs: &Object, res: &Dictionary, depth: usize) -> bool {
+    if depth > 8 {
+        return false;
+    }
+    match deref(doc, cs) {
+        Some(Object::Name(n)) => match n.as_slice() {
+            b"DeviceGray" | b"G" | b"CalGray" | b"DeviceRGB" | b"RGB" | b"CalRGB" | b"DeviceCMYK" | b"CMYK" | b"CalCMYK" => true,
+            other => res
+                .get(b"ColorSpace")
+                .ok()
+                .and_then(|o| deref(doc, o))
+                .and_then(|o| o.as_dict().ok())
+                .and_then(|d| d.get(other).ok())
+                .is_some_and(|named| editable_space(doc, named, res, depth + 1)),
+        },
+        Some(Object::Array(items)) => match items.first().and_then(|o| deref(doc, o)).and_then(|o| o.as_name().ok()) {
+            Some(b"ICCBased") => match items.get(1).and_then(|o| deref(doc, o)) {
+                Some(Object::Stream(icc)) => {
+                    matches!(icc.dict.get(b"N").ok().and_then(|o| deref(doc, o)), Some(Object::Integer(1 | 3 | 4)))
+                        || icc.dict.get(b"Alternate").is_ok_and(|alt| editable_space(doc, alt, res, depth + 1))
+                }
+                _ => false,
+            },
+            Some(b"Indexed" | b"I") => items.len() == 4 && editable_space(doc, &items[1], res, depth + 1),
+            Some(b"CalGray" | b"CalRGB" | b"CalCMYK" | b"DeviceGray" | b"DeviceRGB" | b"DeviceCMYK") => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// Why image `stream` (resources `res`) cannot be redacted pixel by pixel,
+/// from its dictionary and filters alone (cheap enough for planning); None
+/// when it can. `budget_left` is what the job may still decode.
+pub(crate) fn not_editable(doc: &Document, stream: &Stream, res: &Dictionary, budget_left: usize) -> Option<&'static str> {
+    let dict = &stream.dict;
+    let (Some(width), Some(height)) = (positive_int(doc, dict, b"Width"), positive_int(doc, dict, b"Height")) else {
+        return Some("corrupt");
+    };
+    let pixels = width.saturating_mul(height);
+    if pixels > MAX_IMAGE_PIXELS || pixels.saturating_mul(BYTES_PER_PIXEL) > budget_left {
+        return Some("too large");
+    }
+    let Some(filters) = filters_of(stream) else {
+        return Some("corrupt");
+    };
+    let flag = |key: &[u8]| matches!(dict.get(key).ok().and_then(|o| deref(doc, o)), Some(Object::Boolean(true)));
+    if filters.contains(&&b"DCTDecode"[..]) {
+        if filters != [b"DCTDecode"] {
+            return Some("jpeg");
+        }
+        if dict.has(b"Decode") {
+            return Some("inverted jpeg");
+        }
+        if flag(b"ImageMask") {
+            return Some("jpeg mask");
+        }
+        match jpeg_info(&stream.content) {
+            Ok(info) if info.components == 4 => return Some("cmyk jpeg"),
+            Ok(info) if (info.width as usize, info.height as usize) != (width, height) => return Some("corrupt"),
+            Ok(_) => {}
+            Err(_) => return Some("corrupt"),
+        }
+    } else if !filters.iter().all(|f| EDITABLE_FILTERS.contains(f)) {
+        return Some("unsupported compression");
+    }
+    if !flag(b"ImageMask") {
+        if !dict.get(b"ColorSpace").is_ok_and(|cs| editable_space(doc, cs, res, 0)) {
+            return Some("unsupported colour space");
+        }
+        // A soft or stencil mask must decode at the image's size.
+        for key in [&b"SMask"[..], b"Mask"] {
+            match dict.get(key).ok().and_then(|o| deref(doc, o)) {
+                None | Some(Object::Null) => {}
+                Some(Object::Stream(mask)) => {
+                    let same_size = positive_int(doc, &mask.dict, b"Width") == Some(width)
+                        && positive_int(doc, &mask.dict, b"Height") == Some(height);
+                    let decodable = filters_of(mask).is_some_and(|f| f.iter().all(|f| EDITABLE_FILTERS.contains(f)));
+                    if !same_size || !decodable {
+                        return Some("mask");
+                    }
+                }
+                Some(_) => return Some("colour-key mask"),
+            }
+        }
+    }
+    None
+}
