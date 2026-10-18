@@ -369,19 +369,23 @@ impl Font {
     }
 
     /// `[x0, y0, x1, y1]` (em, before font size, scaling and rise) of the
-    /// core box that decides whether a glyph of width `w0` is under an area:
-    /// the advance widened by 0.05 em on each side, from the descent to the
-    /// ascent (descriptor, or AFM for the standard fonts, within -0.35..1.0
-    /// em). The /FontBBox is left out: it reached neighbouring lines. A
-    /// glyph without width (a zero-width mark, a bogus /Widths) reaches 0.6
-    /// em each way instead.
+    /// box that decides whether a glyph of width `w0` is under an area: its
+    /// advance, from the descent to the ascent (descriptor, or AFM for the
+    /// standard fonts, clamped). A glyph without width (a zero-width mark, a
+    /// bogus /Widths) reaches 0.6 em each way instead.
     pub(crate) fn glyph_box(&self, w0: f64) -> [f64; 4] {
-        let (x0, x1) = if w0 >= MIN_INK_WIDTH {
-            (-CORE_X_MARGIN, w0 + CORE_X_MARGIN)
+        if w0 >= MIN_INK_WIDTH {
+            [0.0, self.descent, w0, self.ascent]
         } else {
-            (-NARROW_GLYPH_REACH, NARROW_GLYPH_REACH.max(w0 + CORE_X_MARGIN))
-        };
-        [x0, self.descent, x1, self.ascent]
+            [-NARROW_GLYPH_REACH, self.descent, NARROW_GLYPH_REACH.max(w0), self.ascent]
+        }
+    }
+
+    /// `glyph_box` widened 0.05 em on each side: what a removed glyph's
+    /// fill must cover.
+    pub(crate) fn ink_box(&self, w0: f64) -> [f64; 4] {
+        let [x0, y0, x1, y1] = self.glyph_box(w0);
+        [x0 - CORE_X_MARGIN, y0, x1 + CORE_X_MARGIN, y1]
     }
 }
 
@@ -411,7 +415,9 @@ mod tests {
         let mut doc = Document::with_version("1.7");
         let plain = simple_with_descriptor(&mut doc, dictionary! {});
         let plain = Font::load(&doc, b"F", &plain).unwrap();
-        assert_eq!(plain.glyph_box(0.5), [-0.05, -0.2, 0.55, 0.9]);
+        // The removal box is the advance; the ink box adds 0.05 em each side.
+        assert_eq!(plain.glyph_box(0.5), [0.0, -0.2, 0.5, 0.9]);
+        assert_eq!(plain.ink_box(0.5), [-0.05, -0.2, 0.55, 0.9]);
         let bbox = |v: [i64; 4]| Object::Array(v.iter().map(|n| Object::Integer(*n)).collect());
         // A wide /FontBBox no longer widens it (it reached neighbouring lines).
         let wide = simple_with_descriptor(
@@ -419,11 +425,11 @@ mod tests {
             dictionary! { "Ascent" => 800, "Descent" => -200, "FontBBox" => bbox([-200, -300, 1200, 1100]) },
         );
         let wide = Font::load(&doc, b"F", &wide).unwrap();
-        assert_eq!(wide.glyph_box(0.5), [-0.05, -0.2, 0.55, 0.8]);
+        assert_eq!(wide.glyph_box(0.5), [0.0, -0.2, 0.5, 0.8]);
         // Descriptor heights are clamped to -0.35..1.0 em.
         let tall = simple_with_descriptor(&mut doc, dictionary! { "Ascent" => 1400, "Descent" => -600 });
         let tall = Font::load(&doc, b"F", &tall).unwrap();
-        assert_eq!(tall.glyph_box(0.5), [-0.05, -0.35, 0.55, 1.0]);
+        assert_eq!(tall.glyph_box(0.5), [0.0, -0.35, 0.5, 1.0]);
     }
 
     #[test]

@@ -176,12 +176,12 @@ fn rect_over_the_middle_of_a_word_removes_only_covered_glyphs() {
 
 #[test]
 fn word_spacing_still_applies_to_kept_spaces() {
-    // A 0..5, space +7.5, B 12.5..18.5, space +7.5, C at 26 (box from 25.5).
+    // A 0..5, space +7.5, B 12.5..18.5, space +7.5, C at 26.
     let rects = [rect(14.0, 0.0, 17.0, 5.0)];
     let out = redact(b"BT /F1 10 Tf 5 Tw 0 0 Td (A B C) Tj ET", &rects);
     assert_eq!(text(&out.after), "A  C");
     assert_eq!((out.after[1].word_spacing, out.after[2].word_spacing), (5.0, 5.0));
-    assert!((out.after[3].box_user.0[0].0 - 25.5).abs() < TOLERANCE);
+    assert!((out.after[3].box_user.0[0].0 - 26.0).abs() < TOLERANCE);
     assert_kept_in_place(&out, &rects);
 }
 
@@ -238,7 +238,7 @@ fn identity_h_codes_are_cut_on_two_byte_boundaries() {
     let rects = [rect(6.0, 0.0, 10.0, 5.0)];
     let out = redact(b"BT /F2 10 Tf <000100020001> Tj ET", &rects);
     assert_eq!(out.after.iter().map(|g| g.code).collect::<Vec<_>>(), vec![1, 1]);
-    assert!((out.after[1].box_user.0[0].0 - 10.5).abs() < TOLERANCE);
+    assert!((out.after[1].box_user.0[0].0 - 11.0).abs() < TOLERANCE);
     assert_kept_in_place(&out, &rects);
 }
 

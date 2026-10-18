@@ -180,8 +180,21 @@ pub(crate) fn verify_page(doc: &Document, page: ObjectId, rects: &[Rect], boxes:
         (Event::Path(p), Some(range)) => s.top && range.contains(&p.op_range.start) && p.op_range.end <= range.end && p.op_range.len() == 2,
         _ => false,
     };
-    !seen.iter().any(|s| !is_box(s) && !s.tagged && left_under(&s.event, rects))
+    // Kept text next to an area may have moved by single-precision rounding
+    // (the numbers standing in for removed text): a sliver under 0.001 pt is
+    // not content under the area.
+    let inner: Vec<Rect> = rects
+        .iter()
+        .map(|r| {
+            let t = VERIFY_TOLERANCE.min((r.x1 - r.x0) / 4.0).min((r.y1 - r.y0) / 4.0);
+            Rect { x0: r.x0 + t, y0: r.y0 + t, x1: r.x1 - t, y1: r.y1 - t }
+        })
+        .collect();
+    !seen.iter().any(|s| !is_box(s) && !s.tagged && left_under(&s.event, &inner))
 }
+
+/// How far (points) verification lets kept content reach into an area.
+const VERIFY_TOLERANCE: f64 = 1e-3;
 
 /// True when `event` draws content under a rect: a glyph, a painted path,
 /// a shading or an image.

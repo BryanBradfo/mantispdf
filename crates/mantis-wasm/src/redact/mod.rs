@@ -570,7 +570,11 @@ pub(crate) fn redact_content(
     let edits = text::rewrite_text(ops, &glyphs)?;
     report.glyphs_removed += edits.removed;
     // Removed text must never be left without a box over it.
-    report.uncovered.extend(edits.removed_boxes.iter().copied().filter(|b| !rects.iter().any(|r| contains(r, b))));
+    // (A glyph whose deciding box sticks out of every area gets its ink box
+    // filled too.)
+    report
+        .uncovered
+        .extend(edits.removed_boxes.iter().filter(|(b, _)| !rects.iter().any(|r| contains(r, b))).map(|(_, ink)| *ink));
     replaced.extend(edits.replaced);
     // Every glyph of a cut show counts as touched (a whole show may go).
     touched.extend(glyphs.iter().filter(|(g, _)| cut_shows.contains(&g.op_index)).filter_map(|(g, _)| g.marked));

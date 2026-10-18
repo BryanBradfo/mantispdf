@@ -67,13 +67,12 @@ fn searched_words_are_removed_entirely() {
     // Splitting items by character count left part of these behind.
     for (text, query, left) in [
         ("MAXIMUM limit", "maximum", "limit"),
-        ("WWWWiiiii", "WWWW", "iiii"),
+        ("WWWWiiiii", "WWWW", "iiiii"),
         ("JOHN SMITH, a tall man", "smith", "JOHN a tall man"),
     ] {
         let pdf = bytes(one_page(&format!("BT /H 10 Tf 100 700 Td ({text}) Tj ET"), with_helvetica));
         let remaining = search_and_redact(&pdf, query);
-        // Only the match and the boxes touching it (a space, a comma, one
-        // neighbouring letter at most) go.
+        // Only the match goes (and a space between words at most).
         let words: Vec<&str> = remaining.split([' ', ',']).filter(|w| !w.is_empty()).collect();
         assert_eq!(words.join(" "), left, "{text}: searching {query} left {remaining:?}");
     }
@@ -534,4 +533,23 @@ fn a_tall_font_bbox_does_not_take_the_next_line() {
     let out = load_pdf(&out).unwrap();
     let text: String = page_glyphs(&out, out.get_pages()[&1]).unwrap().iter().map(|g| char::from_u32(g.code).unwrap()).collect();
     assert_eq!(text, "BBBB");
+}
+
+/// Search `query` in `text` (Helvetica 20), redact the matches: the text
+/// left and the pages widened.
+fn search_redact_widen(text: &str, query: &str) -> (String, Vec<u32>) {
+    let pdf = bytes(one_page(&format!("BT /H 20 Tf 100 700 Td ({text}) Tj ET"), with_helvetica));
+    let found = redact_search(&pdf, query, &opts()).unwrap();
+    let rects = found.pages.iter().flat_map(|p| p.rects.iter().map(|r| RedactRect { page: p.page, rect: *r })).collect();
+    let job = RedactJob { rects, fill: Fill::Black, remove_metadata: true, rasters: Vec::new() };
+    let (out, summary) = redact(&pdf, job).unwrap();
+    let out = load_pdf(&out).unwrap();
+    let left = page_glyphs(&out, out.get_pages()[&1]).unwrap().iter().map(|g| char::from_u32(g.code).unwrap()).collect();
+    (left, summary.pages_widened)
+}
+
+#[test]
+fn search_takes_exactly_the_matched_glyphs() {
+    assert_eq!(search_redact_widen("\\(World\\),", "World"), ("(),".to_string(), vec![]));
+    assert_eq!(search_redact_widen("concatenate", "cat"), ("conenate".to_string(), vec![]));
 }

@@ -24,8 +24,8 @@ pub(crate) struct TextEdits {
     pub(crate) replaced: BTreeMap<usize, Vec<Operation>>,
     /// Glyphs no longer drawn.
     pub(crate) removed: usize,
-    /// Their boxes (user space).
-    pub(crate) removed_boxes: Vec<super::interp::Rect>,
+    /// Their boxes (user space): the deciding box and the ink box.
+    pub(crate) removed_boxes: Vec<(super::interp::Rect, super::interp::Rect)>,
 }
 
 /// True for operators that set the text position afresh.
@@ -66,10 +66,10 @@ pub(crate) fn rewrite_text(ops: &[Operation], glyphs: &[(&Glyph, bool)]) -> Resu
                 return Err(Unsupported::new("zero-size text under a redaction area moves later text"));
             }
             edits.removed += shown.len();
-            edits.removed_boxes.extend(shown.iter().map(|(g, _)| g.box_user.bbox()));
+            edits.removed_boxes.extend(shown.iter().map(|(g, _)| (g.box_user.bbox(), g.ink_user.bbox())));
         } else {
             edits.removed += shown.iter().filter(|(_, removed)| *removed).count();
-            edits.removed_boxes.extend(shown.iter().filter(|(_, removed)| *removed).map(|(g, _)| g.box_user.bbox()));
+            edits.removed_boxes.extend(shown.iter().filter(|(_, removed)| *removed).map(|(g, _)| (g.box_user.bbox(), g.ink_user.bbox())));
         }
         carry = rewrite.carry;
         edits.replaced.insert(index, rewrite.ops);
