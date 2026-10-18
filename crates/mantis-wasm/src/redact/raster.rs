@@ -13,7 +13,7 @@ pub(crate) struct PageRaster {
 }
 
 use super::interp::{concat, encode_ops};
-use super::page::flate_stream;
+use crate::page_content::flate_stream;
 use super::{Fill, RedactRect};
 use crate::stamp::geometry::{VisibleBox, read_box};
 use lopdf::content::Operation;

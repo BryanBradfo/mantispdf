@@ -4,7 +4,9 @@
 
 use crate::rebuild::{MAX_STREAM_DECODED, bounded_content, deref, save_balance};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
+use flate2::{Compression, write::ZlibEncoder};
 use std::collections::HashMap;
+use std::io::Write;
 
 /// An owned copy of a dictionary held directly or by reference (empty when
 /// absent or not a dictionary). Callers only ever write such copies, so
@@ -105,6 +107,20 @@ impl BalanceScanner {
 /// An uncompressed stream with an empty dictionary.
 pub(crate) fn plain_stream(content: Vec<u8>) -> Stream {
     Stream::new(Dictionary::new(), content).with_compression(false)
+}
+
+/// A Flate-compressed stream of `content` with `dict`.
+pub(crate) fn flate_stream(mut dict: Dictionary, content: &[u8]) -> Stream {
+    let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+    // Writing to a Vec cannot fail.
+    let compressed = enc.write_all(content).and_then(|()| enc.finish());
+    match compressed {
+        Ok(bytes) => {
+            dict.set("Filter", "FlateDecode");
+            Stream::new(dict, bytes).with_compression(false)
+        }
+        Err(_) => Stream::new(dict, content.to_vec()).with_compression(false),
+    }
 }
 
 /// Content-stream number: rounded to 6 decimals, no exponent, no `-0`.

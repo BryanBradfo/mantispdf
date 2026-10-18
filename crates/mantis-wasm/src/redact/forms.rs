@@ -2,7 +2,7 @@
 //! users keep the original), recursively.
 
 use super::interp::{FormPlacement, Interp, Rect, decode_ops, encode_ops, page_resources_dict};
-use super::page::flate_stream;
+use crate::page_content::flate_stream;
 use super::{Budget, PageEdit, Report, Unsupported, add_xobject, redact_content};
 use crate::page_content::owned_dict;
 use crate::rebuild::{Decoded, MAX_STREAM_DECODED, UsedNames, deref, name_of, scan_content, strict_content_in};

@@ -918,7 +918,7 @@ fn bytes_doc(doc: Document) -> Document {
 fn scans(pages: usize, w: i64, h: i64) -> Vec<u8> {
     let mut doc = Document::with_version("1.7");
     let pages_id = doc.new_object_id();
-    let image = super::page::flate_stream(
+    let image = crate::page_content::flate_stream(
         dictionary! {
             "Type" => "XObject", "Subtype" => "Image", "Width" => w, "Height" => h,
             "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,

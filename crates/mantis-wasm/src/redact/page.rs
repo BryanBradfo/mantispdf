@@ -5,13 +5,11 @@
 use super::graphics::quad_hit;
 use super::interp::{IDENTITY, Interp, Quad, Rect, apply, content_ops, encode_ops, page_resources};
 use super::{Budget, Fill, PageEdit, RedactRect, Report, Unsupported, redact_content};
-use crate::page_content::original_contents;
+use crate::page_content::{flate_stream, original_contents};
 use crate::rebuild::{deref, save_balance};
 use lopdf::content::Operation;
 use crate::stamp::geometry::VisibleBox;
-use flate2::{Compression, write::ZlibEncoder};
-use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
-use std::io::Write;
+use lopdf::{Dictionary, Document, Object, ObjectId};
 
 /// Page keys that may carry a picture or data of the original page.
 const PAGE_HIDDEN_DATA: [&[u8]; 3] = [b"Thumb", b"PieceInfo", b"Metadata"];
@@ -29,20 +27,6 @@ pub(crate) fn page_rects_user(doc: &Document, page: ObjectId, areas: &[RedactRec
             Rect { x0: ax.min(bx), y0: ay.min(by), x1: ax.max(bx), y1: ay.max(by) }
         })
         .collect()
-}
-
-/// A Flate-compressed stream of `content` with `dict`.
-pub(crate) fn flate_stream(mut dict: Dictionary, content: &[u8]) -> Stream {
-    let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
-    // Writing to a Vec cannot fail.
-    let compressed = enc.write_all(content).and_then(|()| enc.finish());
-    match compressed {
-        Ok(bytes) => {
-            dict.set("Filter", "FlateDecode");
-            Stream::new(dict, bytes).with_compression(false)
-        }
-        Err(_) => Stream::new(dict, content.to_vec()).with_compression(false),
-    }
 }
 
 /// Redact `rects` (user space) from `page` in `doc`, never changing an
@@ -266,7 +250,7 @@ mod tests {
     #[test]
     fn the_new_content_stream_stays_charged_to_the_budget() {
         let mut doc = Document::with_version("1.7");
-        let content = doc.add_object(Stream::new(Dictionary::new(), b"0 0 10 10 re f 100 100 10 10 re f".to_vec()));
+        let content = doc.add_object(lopdf::Stream::new(Dictionary::new(), b"0 0 10 10 re f 100 100 10 10 re f".to_vec()));
         let page = doc.add_object(lopdf::dictionary! { "Type" => "Page", "Contents" => content, "Resources" => Dictionary::new() });
         let start = 1 << 20;
         let mut budget = Budget::page(start);

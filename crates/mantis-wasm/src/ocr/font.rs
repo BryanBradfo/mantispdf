@@ -29,8 +29,7 @@
 //! units. Past 2048 such characters in a document the rest show U+FFFD.
 //! The ToUnicode lists only the CIDs used, in bfchar blocks of at most 100.
 
-use crate::page_content::plain_stream;
-use crate::redact::page::flate_stream;
+use crate::page_content::{flate_stream, plain_stream};
 use lopdf::{Document, Object, ObjectId, Stream, StringFormat, dictionary};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;

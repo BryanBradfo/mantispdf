@@ -9,9 +9,8 @@
 //! none of them pre-exists, so sharing mutates nothing of the original.
 
 use super::fonts::StdFont;
-use crate::page_content::{BalanceScanner, original_contents, owned_dict, plain_stream};
+use crate::page_content::{BalanceScanner, flate_stream, original_contents, owned_dict, plain_stream};
 use crate::pdf_util::get_inherited_attr;
-use crate::redact::page::flate_stream;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 use std::collections::HashMap;
 
