@@ -754,6 +754,25 @@ mod tests {
     }
 
     #[test]
+    fn isolation_from_stray_q_in_original() {
+        // Two `Q` popping past the page's state, a 3x scale, a `q` left open.
+        let original = "Q Q 3 0 0 3 0 0 cm BT /F1 12 Tf 10 10 Td (X) Tj ET q 2 0 0 2 0 0 cm";
+        let mut f = Fixture::new();
+        f.page(Dictionary::new(), original);
+        let out = apply_stamps(&f.finish(), &job(PageSelection::List(vec![]), vec![absolute("x", [100.0, 50.0], 1)])).unwrap();
+        let doc = load(&out.bytes);
+        let page = page_ids(&doc)[0];
+        let s = streams(&doc, page);
+        assert_eq!(s[0], b"q\nq\nq\n");
+        assert_eq!(s[1], original.as_bytes());
+        // The stamp's glyph sits where it was placed, unscaled.
+        let glyphs = crate::redact::verify::page_glyphs(&doc, page).unwrap();
+        let stamp = glyphs.last().unwrap();
+        assert_eq!(stamp.origin, (100.0, 50.0));
+        assert_eq!(stamp.em, 10.0);
+    }
+
+    #[test]
     fn name_collision() {
         let mut f = Fixture::new();
         let font = f.font_id;

@@ -465,3 +465,45 @@ fn space_after_skips_blank_next_words() {
     let s = spaces(&out);
     assert!((s[0].1 - 120.0).abs() < 1e-3, "{s:?}");
 }
+
+/// One page, MediaBox [0 0 612 792], drawing `content`, with `extra` entries.
+fn one_page(content: &[u8], extra: Dictionary) -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let c = doc.add_object(Stream::new(dictionary! {}, content.to_vec()));
+    let mut page = dictionary! {
+        "Type" => "Page", "Parent" => pages_id, "Contents" => c, "Resources" => dictionary! {},
+        "MediaBox" => nums(&[0.0, 0.0, 612.0, 792.0]),
+    };
+    for (k, v) in extra {
+        page.set(k, v);
+    }
+    let page = doc.add_object(page);
+    doc.objects.insert(pages_id, Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 }));
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    save_pdf(&mut doc).unwrap()
+}
+
+/// Two stray `Q` (popping past the page's state), a 3x scale, and a `q` left open.
+const EXCESS_Q: &[u8] = b"Q Q 3 0 0 3 0 0 cm 1 0 0 rg 0 0 50 50 re f q 2 0 0 2 0 0 cm";
+
+#[test]
+fn stray_q_in_the_original_cannot_move_the_layer() {
+    let out = add(&one_page(EXCESS_Q, dictionary! {}), &[page(1, vec![word("MANTIS", 72.0, 700.0, 120.0, 20.0)])]);
+    let drawn = words_drawn(&glyphs(&out, 1));
+    assert_rect(&drawn[0].0, [72.0, 700.0, 192.0, 720.0]);
+    let contents = out.get_dictionary(page_id(&out, 1)).unwrap().get(b"Contents").unwrap().as_array().unwrap().clone();
+    // As many extra `q` before the original as it has stray `Q`.
+    assert_eq!(stream_bytes(&out, &contents[0]), b"q\nq\nq\n");
+    assert_eq!(stream_bytes(&out, &contents[1]), EXCESS_Q);
+}
+
+#[test]
+fn balanced_original_keeps_the_single_q_head() {
+    let out = add(&one_page(ORIGINAL, dictionary! {}), &[page(1, vec![word("w", 10.0, 10.0, 10.0, 10.0)])]);
+    let contents = out.get_dictionary(page_id(&out, 1)).unwrap().get(b"Contents").unwrap().as_array().unwrap().clone();
+    assert_eq!(stream_bytes(&out, &contents[0]), b"q\n");
+    assert_eq!(stream_bytes(&out, &contents[1]), ORIGINAL);
+    assert!(String::from_utf8(stream_bytes(&out, &contents[2])).unwrap().starts_with("\nQ\nq BT 3 Tr"));
+}

@@ -2,8 +2,9 @@
 //! top of a page without mutating anything other pages may share.
 //!
 //! The page gets owned copies of its resource dictionaries, page-unique
-//! resource names, and a content list `q`, original..., `Q` + one `Q` per
-//! `q` the original leaves open, then the new operators. New objects (fonts,
+//! resource names, and a content list `q` (+ one more `q` per stray `Q` of
+//! the original, so it cannot pop the wrapper), original..., `Q` + one `Q`
+//! per `q` the original leaves open, then the new operators. New objects (fonts,
 //! graphics states, the `q` stream) are shared between pages of one job:
 //! none of them pre-exists, so sharing mutates nothing of the original.
 
@@ -25,7 +26,8 @@ pub(crate) enum Blend {
 pub(crate) struct DocWriter {
     fonts: HashMap<&'static str, ObjectId>,
     states: HashMap<(u64, Blend), ObjectId>,
-    open_q: Option<ObjectId>,
+    /// The head stream per count of stray `Q` in the original: `q` that many + 1 times.
+    open_q: HashMap<usize, ObjectId>,
     scanner: BalanceScanner,
 }
 
@@ -38,6 +40,8 @@ pub(crate) struct PageWriter {
     xobject_dict: Dictionary,
     properties_dict: Dictionary,
     original: Vec<Object>,
+    /// Stray `Q` in the original.
+    excess: usize,
     font_names: HashMap<&'static str, Vec<u8>>,
     gs_names: HashMap<(u64, Blend), Vec<u8>>,
     /// New operators; they may contain raw (WinAnsi) bytes.
@@ -46,7 +50,7 @@ pub(crate) struct PageWriter {
 
 impl DocWriter {
     pub(crate) fn new() -> Self {
-        DocWriter { fonts: HashMap::new(), states: HashMap::new(), open_q: None, scanner: BalanceScanner::new() }
+        DocWriter { fonts: HashMap::new(), states: HashMap::new(), open_q: HashMap::new(), scanner: BalanceScanner::new() }
     }
 
     /// Starts drawing on `page_id`: `ops` already closes the original
@@ -59,7 +63,7 @@ impl DocWriter {
         let xobject_dict = owned_dict(doc, resources.get(b"XObject").ok());
         let properties_dict = owned_dict(doc, resources.get(b"Properties").ok());
         let original = original_contents(doc, page.get(b"Contents").ok());
-        let open = self.scanner.unbalanced(doc, &original);
+        let (open, excess) = self.scanner.balance(doc, &original);
         let mut ops = Vec::new();
         if !original.is_empty() {
             ops.extend_from_slice(b"\nQ\n");
@@ -73,6 +77,7 @@ impl DocWriter {
             xobject_dict,
             properties_dict,
             original,
+            excess,
             font_names: HashMap::new(),
             gs_names: HashMap::new(),
             ops,
@@ -158,7 +163,7 @@ impl PageWriter {
     }
 
     fn finish_with(self, doc: &mut Document, w: &mut DocWriter, tail: impl FnOnce(Vec<u8>) -> Stream) -> Result<(), String> {
-        let PageWriter { page_id, mut resources, font_dict, gs_dict, xobject_dict, properties_dict, original, ops, .. } = self;
+        let PageWriter { page_id, mut resources, font_dict, gs_dict, xobject_dict, properties_dict, original, excess, ops, .. } = self;
         if !properties_dict.is_empty() || resources.has(b"Properties") {
             resources.set("Properties", properties_dict);
         }
@@ -173,7 +178,7 @@ impl PageWriter {
         }
         let mut contents = Vec::with_capacity(original.len() + 2);
         if !original.is_empty() {
-            let q = *w.open_q.get_or_insert_with(|| doc.add_object(plain_stream(b"q\n".to_vec())));
+            let q = *w.open_q.entry(excess).or_insert_with(|| doc.add_object(plain_stream(b"q\n".repeat(excess + 1))));
             contents.push(Object::Reference(q));
         }
         contents.extend(original);
