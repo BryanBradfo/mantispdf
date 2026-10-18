@@ -15,14 +15,12 @@ pub(crate) struct PageRaster {
 use super::interp::{concat, encode_ops};
 use super::page::flate_stream;
 use super::{Fill, RedactRect};
-use crate::stamp::engine::ImageData;
 use crate::stamp::geometry::{VisibleBox, read_box};
-use crate::stamp::image::build_image;
 use lopdf::content::Operation;
 use lopdf::{Dictionary, Document, Object, ObjectId, dictionary};
 
 /// Most pixels a raster may have (A4 at 200 dpi is about 3.9 M).
-pub(crate) const MAX_RASTER_PIXELS: u64 = 40_000_000;
+pub(crate) const MAX_RASTER_PIXELS: u64 = 32_000_000;
 /// Highest rendering resolution accepted.
 const MAX_DPI: f64 = 2400.0;
 /// How far (pixels) a raster may differ from the expected size.
@@ -35,7 +33,7 @@ fn invalid() -> String {
 }
 
 /// The raster must show the page's visible box at its dpi (within 2 px),
-/// with exactly `width * height` RGBA pixels, at most 40 M of them.
+/// with exactly `width * height` RGBA pixels, at most 32 M of them.
 fn check(raster: &PageRaster, vb: &VisibleBox) -> Result<(), String> {
     let (w, h) = (u64::from(raster.width), u64::from(raster.height));
     if !(raster.dpi.is_finite() && raster.dpi > 0.0 && raster.dpi <= MAX_DPI) || w == 0 || h == 0 || w * h > MAX_RASTER_PIXELS {
@@ -88,15 +86,23 @@ pub(crate) fn rasterize_page(doc: &mut Document, page: ObjectId, raster: PageRas
     let (w, h) = (raster.width as usize, raster.height as usize);
     let mut rgba = raster.rgba;
     paint_areas(&mut rgba, (w, h), &vb, areas, fill);
-    // Flatten over white: the page is opaque.
-    for px in rgba.chunks_exact_mut(4) {
-        let a = u32::from(px[3]);
-        for c in &mut px[..3] {
-            *c = ((u32::from(*c) * a + 255 * (255 - a) + 127) / 255) as u8;
+    // Flatten over white into RGB, in place (the page is opaque): pixel i
+    // moves from 4i to 3i, never past pixels still to be read.
+    let pixels = w * h;
+    for i in 0..pixels {
+        let a = u32::from(rgba[4 * i + 3]);
+        for c in 0..3 {
+            let v = u32::from(rgba[4 * i + c]);
+            rgba[3 * i + c] = ((v * a + 255 * (255 - a) + 127) / 255) as u8;
         }
-        px[3] = 255;
     }
-    let image = build_image(&ImageData::Rgba { width: raster.width, height: raster.height, pixels: rgba }).map_err(|_| invalid())?.image;
+    rgba.truncate(3 * pixels);
+    let dict = dictionary! {
+        "Type" => "XObject", "Subtype" => "Image", "Width" => i64::from(raster.width), "Height" => i64::from(raster.height),
+        "ColorSpace" => "DeviceRGB", "BitsPerComponent" => 8,
+    };
+    let image = flate_stream(dict, &rgba);
+    drop(rgba);
     let image = doc.add_object(image);
     let old = doc.get_dictionary(page).map_err(|_| invalid())?.clone();
     // The picture fills the visible box, upright as the page is viewed.
@@ -135,15 +141,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rasters_over_40_million_pixels_are_refused_before_reading_them() {
-        // 8000 x 5001 at 72 dpi: the right size for an 8000 x 5001 pt page.
-        let vb = VisibleBox { x0: 0.0, y0: 0.0, x1: 8000.0, y1: 5001.0, rotate: 0 };
-        let raster = PageRaster { page: 1, width: 8000, height: 5001, dpi: 72.0, rgba: Vec::new() };
+    fn rasters_over_32_million_pixels_are_refused() {
+        // 8000 x 4001 at 72 dpi: the right size and data for an 8000 x 4001 pt
+        // page, one row over the cap.
+        let vb = VisibleBox { x0: 0.0, y0: 0.0, x1: 8000.0, y1: 4001.0, rotate: 0 };
+        let raster = PageRaster { page: 1, width: 8000, height: 4001, dpi: 72.0, rgba: vec![0; 8000 * 4001 * 4] };
         assert_eq!(check(&raster, &vb), Err(invalid()));
-        let vb = VisibleBox { x0: 0.0, y0: 0.0, x1: 8000.0, y1: 5000.0, rotate: 0 };
-        let raster = PageRaster { page: 1, width: 8000, height: 5000, dpi: 72.0, rgba: vec![0; 4] };
-        // At the cap the size passes; only the (short) data is refused.
-        assert_eq!(check(&raster, &vb), Err(invalid()));
-        assert!(8000 * 5000 <= MAX_RASTER_PIXELS);
+        let vb = VisibleBox { x0: 0.0, y0: 0.0, x1: 8000.0, y1: 4000.0, rotate: 0 };
+        let raster = PageRaster { page: 1, width: 8000, height: 4000, dpi: 72.0, rgba: vec![0; 8000 * 4000 * 4] };
+        assert_eq!(check(&raster, &vb), Ok(()));
     }
+
 }
