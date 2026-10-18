@@ -535,3 +535,56 @@ fn extreme_boxes_write_finite_nonzero_operands() {
     }
     assert_eq!(ops.iter().filter(|op| op.operator == "Tf").count(), 3);
 }
+
+/// The user-space rect of visible box `[x, y, w, h]` on page `n`.
+fn user_rect(doc: &Document, n: u32, [x, y, w, h]: [f64; 4]) -> [f64; 4] {
+    let vb = crate::stamp::geometry::VisibleBox::of_page(doc, page_id(doc, n));
+    let (ax, ay) = vb.to_user(x, y);
+    let (bx, by) = vb.to_user(x + w, y + h);
+    [ax.min(bx), ay.min(by), ax.max(bx), ay.max(by)]
+}
+
+#[test]
+fn cropbox_offset_and_rotation_combine() {
+    let pdf = one_page(b"", dictionary! { "CropBox" => nums(&[50.0, 60.0, 562.0, 732.0]), "Rotate" => 270 });
+    let out = add(&pdf, &[page(1, vec![word("MANTIS", 100.0, 50.0, 120.0, 20.0)])]);
+    let expected = user_rect(&out, 1, [100.0, 50.0, 120.0, 20.0]);
+    // Rotate 270 over CropBox [50 60 562 732]: visible (x, y) is user (50 + y, 732 - x).
+    assert_eq!(expected, [100.0, 512.0, 120.0, 632.0]);
+    assert_rect(&words_drawn(&glyphs(&out, 1))[0].0, expected);
+    let found = redact_search(&save_pdf(&mut out.clone()).unwrap(), "mantis", &SearchOptions::default()).unwrap();
+    let r = found.matches[0].rects[0];
+    assert_rect(&Rect { x0: r[0], y0: r[1], x1: r[0] + r[2], y1: r[1] + r[3] }, [100.0, 50.0, 220.0, 70.0]);
+}
+
+#[test]
+fn page_inheriting_mediabox_and_rotate_from_pages() {
+    let mut src = load_pdf(&crate::pdf_util::make_inherited_test_pdf_sized(2, 300, 400)).unwrap();
+    let pages_id = src.catalog().unwrap().get(b"Pages").unwrap().as_reference().unwrap();
+    src.get_dictionary_mut(pages_id).unwrap().set("Rotate", 90);
+    let pdf = save_pdf(&mut src).unwrap();
+    let out = add(&pdf, &[page(2, vec![word("MANTIS", 30.0, 200.0, 120.0, 20.0)])]);
+    let leaf = out.get_dictionary(page_id(&out, 2)).unwrap();
+    assert!(!leaf.has(b"MediaBox") && !leaf.has(b"Rotate"));
+    let expected = user_rect(&out, 2, [30.0, 200.0, 120.0, 20.0]);
+    // Rotate 90 over [0 0 300 400]: visible (x, y) is user (300 - y, x).
+    assert_eq!(expected, [80.0, 30.0, 100.0, 150.0]);
+    assert_rect(&words_drawn(&glyphs(&out, 2))[0].0, expected);
+}
+
+#[test]
+fn page_listed_twice_gets_one_layer_with_both_entries_words() {
+    let mut src = load_pdf(&letter()).unwrap();
+    let pages_id = src.catalog().unwrap().get(b"Pages").unwrap().as_reference().unwrap();
+    let p = page_id(&src, 1);
+    let pages = src.get_dictionary_mut(pages_id).unwrap();
+    pages.set("Kids", vec![p.into(), p.into()]);
+    pages.set("Count", 2);
+    let pdf = save_pdf(&mut src).unwrap();
+    assert_eq!(load_pdf(&pdf).unwrap().get_pages().len(), 2);
+    let out = add(&pdf, &[page(1, vec![word("one", 10.0, 700.0, 30.0, 10.0)]), page(2, vec![word("two", 10.0, 650.0, 30.0, 10.0)])]);
+    let contents = out.get_dictionary(p).unwrap().get(b"Contents").unwrap().as_array().unwrap().clone();
+    assert_eq!(contents.len(), 3);
+    let drawn: Vec<String> = words_drawn(&glyphs(&out, 1)).into_iter().map(|(_, t)| t).collect();
+    assert_eq!(drawn, ["one", "two"]);
+}
