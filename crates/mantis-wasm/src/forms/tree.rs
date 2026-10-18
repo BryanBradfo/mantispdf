@@ -55,7 +55,10 @@ impl Default for DefaultAppearance {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct WidgetRef {
     pub obj: ObjectId,
+    /// /DA with the size clamped (0 = auto, else 0 < size <= 1000).
     pub da: DefaultAppearance,
+    /// Raw /AP /N key of the "on" state (checkbox and radio widgets).
+    pub on_state: Option<Vec<u8>>,
 }
 
 /// Document objects behind one listed field; `widgets[i]` is
@@ -64,6 +67,8 @@ pub(crate) struct WidgetRef {
 pub(crate) struct FieldRef {
     pub obj: ObjectId,
     pub widgets: Vec<WidgetRef>,
+    /// Raw name bytes of a /V name (checkbox and radio state).
+    pub value_name: Option<Vec<u8>>,
 }
 
 /// `info.fields[i]` is backed by `refs[i]`.
@@ -114,38 +119,58 @@ impl Walker<'_> {
             (false, true) => parent_name.to_string(),
             (false, false) => format!("{parent_name}.{partial}"),
         };
-        let kids = references(self.doc, node.get(b"Kids").ok());
-        let titled: Vec<ObjectId> = kids
-            .iter()
-            .copied()
-            .filter(|&k| self.doc.get_dictionary(k).is_ok_and(|d| d.has(b"T")))
-            .collect();
-        if !titled.is_empty() {
-            for kid in titled {
-                self.visit(kid, &name, depth + 1)?;
+        let mut field_kids = Vec::new();
+        let mut widget_kids = Vec::new();
+        for kid in references(self.doc, node.get(b"Kids").ok()) {
+            match self.doc.get_dictionary(kid) {
+                Ok(d) if is_field_node(d) => field_kids.push(kid),
+                Ok(d) if is_widget(d) => widget_kids.push(kid),
+                _ => {}
             }
-            return Ok(());
         }
 
+        // Widgets of this node: itself (merged field and widget) and its
+        // widget kids, also those next to field kids (malformed but seen).
         let mut widgets = Vec::new();
         if is_widget(node) {
             widgets.push(id);
         }
-        for kid in kids {
-            if self.doc.get_dictionary(kid).is_ok_and(is_widget) && self.visited.insert(kid) {
+        for kid in widget_kids {
+            if self.visited.insert(kid) {
                 widgets.push(kid);
             }
         }
-        self.widget_count += widgets.len();
-        if self.widget_count > MAX_WIDGETS {
-            return Err(invalid("widgets"));
+        // A node with field kids is a field itself only when it has widgets.
+        if field_kids.is_empty() || !widgets.is_empty() {
+            self.widget_count += widgets.len();
+            if self.widget_count > MAX_WIDGETS {
+                return Err(invalid("widgets"));
+            }
+            self.terminals.push(Terminal { obj: id, name: name.clone(), partial, widgets });
+            if self.terminals.len() > MAX_FIELDS {
+                return Err(invalid("fields"));
+            }
         }
-        self.terminals.push(Terminal { obj: id, name, partial, widgets });
-        if self.terminals.len() > MAX_FIELDS {
-            return Err(invalid("fields"));
+        for kid in field_kids {
+            self.visit(kid, &name, depth + 1)?;
         }
         Ok(())
     }
+}
+
+/// A field (not only a widget): titled, or an untitled node with kids that
+/// is not a widget itself (an intermediate node).
+fn is_field_node(dict: &Dictionary) -> bool {
+    dict.has(b"T") || (dict.has(b"Kids") && !is_widget(dict))
+}
+
+/// An untitled node whose /Parent is a dictionary: its parent claims it, so
+/// a /Fields entry like that is only visited after all others.
+fn claimed_by_parent(doc: &Document, id: ObjectId) -> bool {
+    doc.get_dictionary(id).is_ok_and(|d| {
+        !d.has(b"T")
+            && d.get(b"Parent").ok().and_then(|p| deref(doc, p)).is_some_and(|p| p.as_dict().is_ok())
+    })
 }
 
 fn is_widget(dict: &Dictionary) -> bool {
@@ -220,10 +245,18 @@ fn non_empty_text(s: String) -> Value {
     if s.is_empty() { Value::None } else { Value::Text(s) }
 }
 
+/// Text values held in a stream (allowed for text fields) are read up to
+/// this many decoded bytes; a longer one reads as no value.
+const MAX_STREAM_VALUE: usize = 64 * 1024;
+
 fn read_value(doc: &Document, value: Option<&Object>, kind: &FieldKind) -> Value {
     let Some(value) = value else {
         return Value::None;
     };
+    if let (Object::Stream(stream), FieldKind::Text { .. } | FieldKind::Combo { .. }) = (value, kind) {
+        let text = crate::rebuild::bounded_content(stream, MAX_STREAM_VALUE, &mut 0).map(|b| decode_text(&b));
+        return non_empty_text(text.unwrap_or_default());
+    }
     let strings = |o: &Object| -> Vec<String> {
         match o {
             Object::Array(items) => items
@@ -276,15 +309,11 @@ fn read_options(doc: &Document, opt: Option<&Object>) -> Result<Vec<(String, Str
         .collect())
 }
 
-/// The first /AP /N state other than /Off.
-fn on_state(doc: &Document, widget: &Dictionary) -> Option<String> {
+/// The first /AP /N state other than /Off, as raw name bytes.
+fn on_state(doc: &Document, widget: &Dictionary) -> Option<Vec<u8>> {
     let ap = deref(doc, widget.get(b"AP").ok()?)?.as_dict().ok()?;
     let states = deref(doc, ap.get(b"N").ok()?)?.as_dict().ok()?;
-    states
-        .iter()
-        .map(|(k, _)| k)
-        .find(|k| k.as_slice() != b"Off")
-        .map(|k| String::from_utf8_lossy(k).into_owned())
+    states.iter().map(|(k, _)| k).find(|k| k.as_slice() != b"Off").cloned()
 }
 
 fn std_font_named(name: &[u8]) -> Option<StdFont> {
@@ -302,25 +331,55 @@ fn std_font_named(name: &[u8]) -> Option<StdFont> {
     }
 }
 
+/// Largest /DA font size taken as is; larger (or non-positive, non-finite)
+/// sizes mean auto size.
+pub(crate) const MAX_DA_SIZE: f64 = 1000.0;
+
+fn da_size(size: Option<f64>) -> f64 {
+    size.filter(|s| s.is_finite() && *s > 0.0 && *s <= MAX_DA_SIZE).unwrap_or(0.0)
+}
+
+fn da_font(doc: &Document, name: &[u8], dr: Option<&Dictionary>) -> StdFont {
+    let base = dr
+        .and_then(|dr| deref(doc, dr.get(b"Font").ok()?)?.as_dict().ok())
+        .and_then(|fonts| deref(doc, fonts.get(name).ok()?)?.as_dict().ok())
+        .and_then(|font| name_of(font, b"BaseFont"));
+    base.or(Some(name)).and_then(std_font_named).unwrap_or(StdFont::Helvetica)
+}
+
+/// `/Name size Tf` found by splitting on whitespace, for a /DA lopdf cannot
+/// tokenize (it stops silently at the first bad token). The last one wins.
+fn scan_tf(da: &[u8]) -> Option<(Vec<u8>, Option<f64>)> {
+    let tokens: Vec<&[u8]> = da.split(|b| b.is_ascii_whitespace()).filter(|t| !t.is_empty()).collect();
+    tokens.windows(3).rev().find_map(|w| {
+        let name = w[0].strip_prefix(b"/")?;
+        (w[2] == b"Tf").then(|| (name.to_vec(), std::str::from_utf8(w[1]).ok().and_then(|s| s.parse().ok())))
+    })
+}
+
 /// Parse a /DA string. The font resource name is looked up in /DR /Font for
 /// its /BaseFont; anything but the four supported standard fonts becomes
-/// Helvetica. A missing or invalid size is 0 (auto).
+/// Helvetica. Sizes are clamped (`MAX_DA_SIZE`, 0 = auto); colour
+/// components to 0..1.
 pub(crate) fn parse_da(doc: &Document, da: &[u8], dr: Option<&Dictionary>) -> DefaultAppearance {
     let mut out = DefaultAppearance::default();
-    let Ok(content) = lopdf::content::Content::decode(da) else {
-        return out;
-    };
+    let operations = lopdf::content::Content::decode(da).map(|c| c.operations).unwrap_or_default();
+    let has_tf = operations
+        .iter()
+        .any(|op| op.operator == "Tf" && matches!(op.operands.as_slice(), [Object::Name(_), _]));
+    if !has_tf && let Some((name, size)) = scan_tf(da) {
+        out.font = da_font(doc, &name, dr);
+        out.size = da_size(size);
+    }
     let number = |o: &Object| o.as_float().ok().map(f64::from).filter(|n| n.is_finite());
-    let numbers = |ops: &[Object]| -> Option<Vec<f64>> { ops.iter().map(number).collect() };
-    for op in content.operations {
+    let numbers = |ops: &[Object]| -> Option<Vec<f64>> {
+        ops.iter().map(|o| number(o).map(|n| n.clamp(0.0, 1.0))).collect()
+    };
+    for op in operations {
         match (op.operator.as_str(), op.operands.as_slice()) {
             ("Tf", [Object::Name(name), size]) => {
-                let base = dr
-                    .and_then(|dr| deref(doc, dr.get(b"Font").ok()?)?.as_dict().ok())
-                    .and_then(|fonts| deref(doc, fonts.get(name).ok()?)?.as_dict().ok())
-                    .and_then(|font| name_of(font, b"BaseFont"));
-                out.font = base.or(Some(name.as_slice())).and_then(std_font_named).unwrap_or(StdFont::Helvetica);
-                out.size = number(size).filter(|s| *s >= 0.0).unwrap_or(0.0);
+                out.font = da_font(doc, name, dr);
+                out.size = da_size(number(size));
             }
             ("g", ops) => {
                 if let Some([g]) = numbers(ops).as_deref() {
@@ -442,16 +501,17 @@ impl<'a> Context<'a> {
             FieldKind::Checkbox | FieldKind::Radio => on_state(doc, dict),
             _ => None,
         };
+        let on_state_text = on_state.as_ref().map(|s| String::from_utf8_lossy(s).into_owned());
         let widget = Widget {
             page,
             rect: page_box.map_or(rect, |vb| to_visible(vb, rect)),
             rotation: rotation as u16,
-            on_state,
+            on_state: on_state_text,
             hidden: flags & INVISIBLE_FLAGS != 0,
             font_size: da.size,
             align,
         };
-        Some((widget, WidgetRef { obj: id, da }))
+        Some((widget, WidgetRef { obj: id, da, on_state }))
     }
 
     fn field(&self, index: usize, t: &Terminal) -> Result<Option<(Field, FieldRef)>, String> {
@@ -468,24 +528,30 @@ impl<'a> Context<'a> {
         let (widgets, widget_refs): (Vec<Widget>, Vec<WidgetRef>) =
             t.widgets.iter().filter_map(|&w| self.widget(w, t.obj, &kind)).unzip();
         let mut on_states: Vec<String> = Vec::new();
-        for state in widgets.iter().filter_map(|w| w.on_state.as_ref()) {
-            if !on_states.contains(state) {
-                on_states.push(state.clone());
+        let mut seen: HashSet<&str> = HashSet::new();
+        for state in widgets.iter().filter_map(|w| w.on_state.as_deref()) {
+            if seen.insert(state) {
+                on_states.push(state.to_string());
             }
         }
+        let value = inherited(doc, t.obj, b"V");
+        let value_name = match (&kind, value) {
+            (FieldKind::Checkbox | FieldKind::Radio, Some(Object::Name(n))) => Some(n.clone()),
+            _ => None,
+        };
         let field = Field {
             id: index as u32,
             name: t.name.clone(),
             label,
             read_only: flags & FF_READ_ONLY != 0,
             required: flags & FF_REQUIRED != 0,
-            value: read_value(doc, inherited(doc, t.obj, b"V"), &kind),
+            value: read_value(doc, value, &kind),
             options: read_options(doc, inherited(doc, t.obj, b"Opt"))?,
             kind,
             on_states,
             widgets,
         };
-        Ok(Some((field, FieldRef { obj: t.obj, widgets: widget_refs })))
+        Ok(Some((field, FieldRef { obj: t.obj, widgets: widget_refs, value_name })))
     }
 }
 
@@ -496,7 +562,10 @@ pub(crate) fn read_form(doc: &Document) -> Result<FormTree, String> {
         return Ok(FormTree { info: FormInfo { xfa: Xfa::None, fields: Vec::new() }, refs: Vec::new() });
     };
     let mut walker = Walker { doc, visited: HashSet::new(), terminals: Vec::new(), widget_count: 0 };
-    for id in references(doc, form.get(b"Fields").ok()) {
+    let (claimed, top): (Vec<ObjectId>, Vec<ObjectId>) =
+        references(doc, form.get(b"Fields").ok()).into_iter().partition(|&id| claimed_by_parent(doc, id));
+    // Nodes their parent claims go last: the visited set skips those taken.
+    for id in top.into_iter().chain(claimed) {
         walker.visit(id, "", 1)?;
     }
     let ctx = Context {
@@ -988,6 +1057,15 @@ mod tests {
         });
         assert_eq!(da("/Arial 11 Tf").font, StdFont::Helvetica);
         assert_eq!(da("/Courier -3 Tf").size, 0.0);
+        assert_eq!(da("/Courier 1001 Tf").size, 0.0);
+        assert_eq!(da("/Courier 1000 Tf").size, 1000.0);
+        assert_eq!(da("/Helv 9 Tf 2 -1 0.5 rg").color, DaColor::Rgb([1.0, 0.0, 0.5]));
+        assert_eq!(da("/Helv 9 Tf 7 g").color, DaColor::Gray(1.0));
+        // lopdf stops at the bad token before the Tf; the scan still finds it.
+        assert!(lopdf::content::Content::decode(b"<zz> /Cour 9 Tf").unwrap().operations.is_empty());
+        let broken = da("<zz> /Cour 9 Tf");
+        assert_eq!((broken.font, broken.size), (StdFont::Courier, 9.0));
+        assert_eq!(da("{ /Cour 5000 Tf").size, 0.0);
         assert_eq!(da("((( garbage"), DefaultAppearance::default());
         assert_eq!(da("/Helv 9 Tf 1 g"), DefaultAppearance {
             font: StdFont::Helvetica, size: 9.0, color: DaColor::Gray(1.0),
@@ -1024,5 +1102,121 @@ mod tests {
 
         let (doc, _) = base(0);
         assert_eq!(tree(&doc).info, FormInfo { xfa: Xfa::None, fields: Vec::new() });
+    }
+
+    #[test]
+    fn widget_listed_before_its_parent_is_claimed_by_the_parent() {
+        let (mut doc, page) = base(0);
+        let parent = doc.new_object_id();
+        let w = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![("Parent", parent.into())]));
+        doc.objects.insert(parent, Object::Dictionary(dictionary! {
+            "FT" => "Tx", "T" => Object::string_literal("f"), "Kids" => vec![w.into()],
+        }));
+        finish(&mut doc, page, &[w, parent], &[w], vec![]);
+        let t = tree(&doc);
+        assert_eq!(t.info.fields.len(), 1);
+        assert_eq!(t.info.fields[0].name, "f");
+        assert_eq!(t.refs[0].widgets.iter().map(|w| w.obj).collect::<Vec<_>>(), vec![w]);
+    }
+
+    #[test]
+    fn untitled_intermediate_node_keeps_descendants() {
+        let (mut doc, page) = base(0);
+        let a = doc.new_object_id();
+        let m = doc.new_object_id();
+        let c = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("FT", "Tx".into()), ("T", Object::string_literal("c")), ("Parent", m.into()),
+        ]));
+        doc.objects.insert(m, Object::Dictionary(dictionary! { "Parent" => a, "Kids" => vec![c.into()] }));
+        doc.objects.insert(a, Object::Dictionary(dictionary! {
+            "T" => Object::string_literal("a"), "Kids" => vec![m.into()],
+        }));
+        finish(&mut doc, page, &[a], &[c], vec![]);
+        let names: Vec<String> = tree(&doc).info.fields.into_iter().map(|f| f.name).collect();
+        assert_eq!(names, vec!["a.c"]);
+    }
+
+    #[test]
+    fn untitled_widget_next_to_titled_kids_belongs_to_the_parent() {
+        let (mut doc, page) = base(0);
+        let f = doc.new_object_id();
+        let w = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![("Parent", f.into())]));
+        let g = doc.add_object(with(widget(page, [0, 20, 10, 30]), vec![
+            ("T", Object::string_literal("g")), ("Parent", f.into()),
+        ]));
+        doc.objects.insert(f, Object::Dictionary(dictionary! {
+            "FT" => "Tx", "T" => Object::string_literal("f"), "Kids" => vec![w.into(), g.into()],
+        }));
+        finish(&mut doc, page, &[f], &[w, g], vec![]);
+        let info = tree(&doc).info;
+        let got: Vec<(&str, usize)> = info.fields.iter().map(|f| (f.name.as_str(), f.widgets.len())).collect();
+        assert_eq!(got, vec![("f", 1), ("f.g", 1)]);
+    }
+
+    #[test]
+    fn raw_on_state_and_value_names_kept() {
+        let (mut doc, page) = base(0);
+        let raw = vec![b'J', 0xE9]; // not UTF-8
+        let mut n = Dictionary::new();
+        n.set(raw.clone(), doc.add_object(Stream::new(dictionary! {}, vec![])));
+        n.set("Off", doc.add_object(Stream::new(dictionary! {}, vec![])));
+        let n_ref = doc.add_object(n); // indirect /AP /N
+        let field = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("FT", "Btn".into()), ("T", Object::string_literal("x")), ("V", Object::Name(raw.clone())),
+            ("AP", dictionary! { "N" => n_ref }.into()),
+        ]));
+        finish(&mut doc, page, &[field], &[field], vec![]);
+        let t = tree(&doc);
+        assert_eq!(t.refs[0].widgets[0].on_state.as_deref(), Some(raw.as_slice()));
+        assert_eq!(t.refs[0].value_name.as_deref(), Some(raw.as_slice()));
+        assert_eq!(t.info.fields[0].on_states, vec!["J\u{FFFD}"]);
+    }
+
+    #[test]
+    fn widget_on_two_pages_takes_the_first() {
+        let (mut doc, page) = base(0);
+        let field = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("FT", "Tx".into()), ("T", Object::string_literal("x")),
+        ]));
+        finish(&mut doc, page, &[field], &[field], vec![]);
+        let pages_id = doc.get_dictionary(page).unwrap().get(b"Parent").unwrap().as_reference().unwrap();
+        let second = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages_id, "MediaBox" => rect([0, 0, 600, 800]),
+            "Annots" => vec![field.into()],
+        });
+        let pages = doc.get_dictionary_mut(pages_id).unwrap();
+        pages.set("Kids", vec![second.into(), page.into()]);
+        pages.set("Count", 2);
+        assert_eq!(tree(&doc).info.fields[0].widgets[0].page, 1);
+        // Page 1 is now `second`; the field's /P (old page) is page 2.
+        let pages = doc.get_pages();
+        assert_eq!(pages[&1], second);
+    }
+
+    #[test]
+    fn cropbox_offsets_the_visible_rect() {
+        let (mut doc, page) = base(0);
+        doc.get_dictionary_mut(page).unwrap().set("CropBox", rect([50, 60, 550, 760]));
+        let field = doc.add_object(with(widget(page, [100, 200, 150, 220]), vec![
+            ("FT", "Tx".into()), ("T", Object::string_literal("x")),
+        ]));
+        finish(&mut doc, page, &[field], &[field], vec![]);
+        assert_eq!(tree(&doc).info.fields[0].widgets[0].rect, [50.0, 140.0, 100.0, 160.0]);
+    }
+
+    #[test]
+    fn text_value_in_a_stream_is_bounded() {
+        let (mut doc, page) = base(0);
+        let small = doc.add_object(Stream::new(dictionary! {}, b"hello".to_vec()));
+        let big = doc.add_object(Stream::new(dictionary! {}, vec![b'x'; MAX_STREAM_VALUE + 1]));
+        let a = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("FT", "Tx".into()), ("T", Object::string_literal("a")), ("V", small.into()),
+        ]));
+        let b = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("FT", "Tx".into()), ("T", Object::string_literal("b")), ("V", big.into()),
+        ]));
+        finish(&mut doc, page, &[a, b], &[a, b], vec![]);
+        let values: Vec<Value> = tree(&doc).info.fields.into_iter().map(|f| f.value).collect();
+        assert_eq!(values, vec![Value::Text("hello".into()), Value::None]);
     }
 }
