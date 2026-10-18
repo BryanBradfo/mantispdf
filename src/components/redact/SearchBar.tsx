@@ -14,7 +14,7 @@ interface Props {
   result: SearchResult | null;
   onFind: (query: string, wholeWord: boolean) => void;
   onMarkAll: () => void;
-  /** Marks cannot change while a redaction runs: "Mark all" waits. */
+  /** A redaction runs or waits for its go-ahead: "Find" and "Mark all" wait. */
   locked: boolean;
 }
 
@@ -53,7 +53,7 @@ export default function SearchBar({ searching, result, onFind, onMarkAll, locked
             placeholder="Name, number, word..."
             className={fieldClass}
           />
-          <button type="submit" disabled={searching || query.trim() === ""} className={buttonClass}>
+          <button type="submit" disabled={searching || locked || query.trim() === ""} className={buttonClass}>
             {searching ? "Finding…" : "Find"}
           </button>
         </div>
@@ -74,7 +74,7 @@ export default function SearchBar({ searching, result, onFind, onMarkAll, locked
           ) : (
             <>
               <p className="text-sm text-gray-800 dark:text-[#ccc]">
-                {result.count} {result.count === 1 ? "match" : "matches"} for "{result.query}" on{" "}
+                {result.count} {result.count === 1 ? "area" : "areas"} (one per line of each match) for "{result.query}" on{" "}
                 {result.pages.length === 1 ? "page" : "pages"} {pagesLabel(result.pages)}.
               </p>
               <button type="button" onClick={onMarkAll} disabled={locked} className={`mt-2 ${buttonClass}`}>

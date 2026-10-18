@@ -33,10 +33,11 @@ const HANDLE_CURSOR: Record<BoxHandle, string> = {
   w: "ew-resize",
 };
 
+/** A pointer gesture; `rect` is the live result (null until the pointer has moved enough). */
 type Gesture =
-  | { kind: "create"; start: [number, number]; startPx: [number, number]; current: [number, number]; dragged: boolean }
-  | { kind: "move"; id: string; start: [number, number]; base: Rect }
-  | { kind: "resize"; id: string; handle: BoxHandle; base: Rect };
+  | { kind: "create"; start: [number, number]; startPx: [number, number]; dragged: boolean; rect: Rect | null }
+  | { kind: "move"; id: string; start: [number, number]; base: Rect; rect: Rect | null }
+  | { kind: "resize"; id: string; handle: BoxHandle; base: Rect; rect: Rect | null };
 
 interface Props {
   source: Blob;
@@ -126,18 +127,18 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
     const px = pointerPx(e);
     const p = toVisible(px);
     onSelect(null);
-    begin(e, { kind: "create", start: p, startPx: px, current: p, dragged: false });
+    begin(e, { kind: "create", start: p, startPx: px, dragged: false, rect: null });
   };
 
   const onMarkDown = (m: Extract<Mark, { rect: Rect }>) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     onSelect(m.id);
-    begin(e, { kind: "move", id: m.id, start: toVisible(pointerPx(e)), base: m.rect });
+    begin(e, { kind: "move", id: m.id, start: toVisible(pointerPx(e)), base: m.rect, rect: null });
   };
 
   const onHandleDown = (m: Extract<Mark, { rect: Rect }>, handle: BoxHandle) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    begin(e, { kind: "resize", id: m.id, handle, base: m.rect });
+    begin(e, { kind: "resize", id: m.id, handle, base: m.rect, rect: null });
   };
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -145,34 +146,34 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
     if (!g) return;
     const px = pointerPx(e);
     const p = toVisible(px);
+    // The live rect lives in the gesture (the release reads it there, not from a render).
     switch (g.kind) {
       case "create":
-        g.current = p;
         if (Math.hypot(px[0] - g.startPx[0], px[1] - g.startPx[1]) >= CLICK_PX) g.dragged = true;
-        if (g.dragged) setDraft({ id: null, rect: rectFromPoints(g.start, p) });
-        return;
+        if (g.dragged) g.rect = rectFromPoints(g.start, p);
+        break;
       case "move": {
         const [x, y, w, h] = g.base;
-        setDraft({ id: g.id, rect: [x + p[0] - g.start[0], y + p[1] - g.start[1], w, h] });
-        return;
+        g.rect = [x + p[0] - g.start[0], y + p[1] - g.start[1], w, h];
+        break;
       }
       case "resize":
-        setDraft({ id: g.id, rect: resizeRect(g.base, g.handle, p, e.shiftKey) });
-        return;
+        g.rect = resizeRect(g.base, g.handle, p, e.shiftKey);
+        break;
     }
+    if (g.rect) setDraft({ id: g.kind === "create" ? null : g.id, rect: g.rect });
   };
 
   const onPointerUp = () => {
     const g = gesture.current;
-    const d = draft;
     gesture.current = null;
     setDraft(null);
-    if (!g || !d) return;
+    if (!g || !g.rect) return;
     if (g.kind === "create") {
-      if (g.dragged && d.rect[2] > 0 && d.rect[3] > 0) onAdd(d.rect);
+      if (g.dragged && g.rect[2] > 0 && g.rect[3] > 0) onAdd(g.rect);
       return;
     }
-    onUpdate(g.id, d.rect);
+    onUpdate(g.id, g.rect);
   };
 
   const cancel = () => {
@@ -195,14 +196,21 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
         tabIndex={0}
         data-testid="redact-canvas"
         onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            // Cancels a gesture (a mark being drawn, too), else deselects.
+            if (gesture.current) {
+              e.preventDefault();
+              cancel();
+            } else if (selected) {
+              e.preventDefault();
+              onSelect(null);
+            }
+            return;
+          }
           if (!selected || locked) return;
           if (e.key === "Delete" || e.key === "Backspace") {
             e.preventDefault();
             onDelete(selected.id);
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            if (gesture.current) cancel();
-            else onSelect(null);
           }
         }}
         className="relative mx-auto select-none overflow-hidden rounded-lg border border-gray-300 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 dark:border-[#333]"

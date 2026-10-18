@@ -107,8 +107,9 @@ export default function MarksPanel(props: Props) {
                         >
                           {describe(m)}
                         </button>
-                        <button type="button" aria-label={`Remove ${describe(m).toLowerCase()} on page ${m.page}`} disabled={locked} onClick={() => props.onRemove(m.id)} className={smallButton}>
+                        <button type="button" aria-label={`Delete ${describe(m).toLowerCase()} on page ${m.page}`} disabled={locked} onClick={() => props.onRemove(m.id)} className={smallButton}>
                           <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                          Delete
                         </button>
                       </li>
                     ))}

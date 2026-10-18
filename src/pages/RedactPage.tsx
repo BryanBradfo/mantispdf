@@ -24,6 +24,7 @@ import {
   type Rect,
 } from "../lib/redact/model";
 import { chooseDpi, renderRaster } from "../lib/redact/raster";
+import { REPORT_TITLE, reportLines, uncoveredNote } from "../lib/redact/report";
 import { findMatches, type TextRun } from "../lib/redact/search";
 import {
   marksToRects,
@@ -46,22 +47,6 @@ type PdfDocument = Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]>;
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
-}
-
-/** One line of the success report, or null when there is nothing to say. */
-function reportLines(r: RedactResultWire): string[] {
-  const lines: string[] = [];
-  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  lines.push(`${count(r.pagesRedacted.length, "page", "pages")} redacted.`);
-  if (r.glyphsRemoved > 0) lines.push(`${count(r.glyphsRemoved, "character", "characters")} of text removed.`);
-  if (r.imagesRedacted > 0) lines.push(`${count(r.imagesRedacted, "image", "images")} blacked out where marked.`);
-  if (r.imagesRemoved > 0) lines.push(`${count(r.imagesRemoved, "image", "images")} removed entirely (could not be edited safely).`);
-  if (r.pathsRemoved > 0) lines.push(`${count(r.pathsRemoved, "drawing", "drawings")} removed.`);
-  if (r.annotationsRemoved > 0) lines.push(`${count(r.annotationsRemoved, "annotation or link", "annotations or links")} removed.`);
-  if (r.pagesRasterized.length > 0) {
-    lines.push(`Converted to images: ${r.pagesRasterized.length === 1 ? "page" : "pages"} ${r.pagesRasterized.join(", ")}.`);
-  }
-  return lines;
 }
 
 interface WorkspaceProps {
@@ -89,6 +74,12 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   const [confirm, setConfirm] = useState<{ run: RedactRun; pages: PageStatusWire[] } | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [report, setReport] = useState<RedactResultWire | null>(null);
+  // Pages the last search could not fully cover: kept (next to the marks and in the report)
+  // after "Mark all", until the next search or Start over.
+  const [coverage, setCoverage] = useState<{ undecodable: number[]; unsearched: number[] } | null>(null);
+  const uncovered = coverage ? [...new Set([...coverage.undecodable, ...coverage.unsearched])].sort((a, b) => a - b) : [];
+  const continueRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const docRef = useRef<Promise<PdfDocument> | null>(null);
 
   const { marks } = state;
@@ -138,6 +129,8 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
       if (key === "z" && !e.shiftKey) setState(undo);
       else if ((key === "z" && e.shiftKey) || key === "y") setState(redo);
       else return;
+      // Like the buttons: the report was for the marks as they were.
+      setReport(null);
       e.preventDefault();
     };
     document.addEventListener("keydown", onKey);
@@ -150,9 +143,15 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     setState(next);
   };
 
+  // The confirmation takes focus when it opens.
+  useEffect(() => {
+    if (confirm) continueRef.current?.focus();
+  }, [confirm]);
+
   const find = async (query: string, wholeWord: boolean) => {
+    // A search never clears a redaction's error; it only adds its own on failure.
+    if (lockedRef.current) return;
     setSearching(true);
-    setError(null);
     try {
       // The engine finds the exact glyph boxes, one rect per line of each match.
       const result = await worker.redactSearch(input.bytes, query, { wholeWord, caseSensitive: false });
@@ -181,6 +180,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           }
         }
       }
+      setCoverage({ undecodable: result.undecodablePages, unsearched: result.unsearchedPages });
       setSearch({
         query,
         count: found.length,
@@ -305,7 +305,22 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
       )}
 
       {confirm && (
-        <div role="alertdialog" aria-labelledby="redact-raster-title" className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-[#1f1a0a]">
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="redact-raster-title"
+          onKeyDown={(e) => {
+            // Escape is Cancel; Tab stays between the two buttons.
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setConfirm(null);
+            } else if (e.key === "Tab") {
+              e.preventDefault();
+              (document.activeElement === continueRef.current ? cancelRef.current : continueRef.current)?.focus();
+            }
+          }}
+          className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-[#1f1a0a]"
+        >
           <p id="redact-raster-title" className="text-sm font-medium text-amber-900 dark:text-amber-200">
             Some pages cannot be redacted in place:
           </p>
@@ -318,10 +333,10 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           </ul>
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">Its text will no longer be selectable or searchable.</p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" onClick={goAhead} className={primaryButton}>
+            <button ref={continueRef} type="button" onClick={goAhead} className={primaryButton}>
               Continue
             </button>
-            <button type="button" onClick={() => setConfirm(null)} className={secondaryButton}>
+            <button ref={cancelRef} type="button" onClick={() => setConfirm(null)} className={secondaryButton}>
               Cancel
             </button>
           </div>
@@ -330,9 +345,9 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
 
       {report && (
         <div role="status" className="rounded-lg border border-mantis-300 bg-mantis-50 p-3 text-sm text-mantis-900 dark:border-mantis-800 dark:bg-[#0f1a0f] dark:text-mantis-200">
-          <p className="font-medium">Redacted and downloaded. The content under the marks has been checked and is gone.</p>
+          <p className="font-medium">Redacted and downloaded. {REPORT_TITLE}</p>
           <ul className="mt-1 list-disc pl-5">
-            {reportLines(report).map((line) => (
+            {reportLines(report, uncovered).map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
@@ -369,13 +384,16 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           {search && search.truncated && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
               Too many matches; showing the first {search.count}. Refine the search.
-              {search.unsearchedPages.length > 0 &&
-                ` Not searched: ${search.unsearchedPages.length === 1 ? "page" : "pages"} ${search.unsearchedPages.join(", ")}.`}
             </p>
           )}
-          {search && search.undecodablePages.length > 0 && (
+          {coverage && coverage.undecodable.length > 0 && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              Search may miss text on {search.undecodablePages.length === 1 ? "page" : "pages"} {search.undecodablePages.join(", ")}. Mark those areas by hand.
+              Search may miss text on {coverage.undecodable.length === 1 ? "page" : "pages"} {coverage.undecodable.join(", ")}. Mark those areas by hand.
+            </p>
+          )}
+          {coverage && coverage.unsearched.length > 0 && (
+            <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
+              Not searched: {coverage.unsearched.length === 1 ? "page" : "pages"} {coverage.unsearched.join(", ")}. {uncoveredNote([], coverage.unsearched)}
             </p>
           )}
           <MarksPanel
