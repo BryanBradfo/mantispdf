@@ -169,7 +169,13 @@ impl Font {
                 (kind, metrics)
             }
             b"Type0" => Self::type0(doc, font, &err)?,
-            // Glyph procedures can paint anywhere: such pages are rasterized.
+            // Glyph procedures can paint anywhere: pages using one are
+            // rasterized. Search reads past them: their glyphs only advance
+            // (their text is unknown, so the page is reported).
+            b"Type3" if text.is_some() => {
+                let font = Self::type3_for_search(doc, font, &err)?;
+                return Ok(Font { label, kind: font.0, ascent: font.1.0, descent: font.1.1, text: None });
+            }
             b"Type3" => return Err(err("Type3 fonts are not supported")),
             other => return Err(err(&format!("unsupported font type {}", String::from_utf8_lossy(other)))),
         };
@@ -243,6 +249,24 @@ impl Font {
             }
             _ => Err(err("malformed /Encoding")),
         }
+    }
+
+    /// A Type3 font as search reads it: one-byte codes advancing by /Widths
+    /// through the /FontMatrix, heights from the /FontBBox (clamped), no text.
+    fn type3_for_search(doc: &Document, font: &Dictionary, err: &dyn Fn(&str) -> Unsupported) -> Result<(Kind, Metrics), Unsupported> {
+        let m = numbers(doc, font.get(b"FontMatrix").ok()).filter(|m| m.len() == 6).ok_or_else(|| err("malformed /FontMatrix"))?;
+        let widths = numbers(doc, font.get(b"Widths").ok()).ok_or_else(|| err("malformed /Widths"))?;
+        let first = first_char(doc, font).ok_or_else(|| err("malformed /FirstChar"))?;
+        let widths = widths.into_iter().take(256).map(|w| w * m[0]).collect();
+        let (ascent, descent) = match numbers(doc, font.get(b"FontBBox").ok()).filter(|b| b.len() == 4) {
+            Some(b) => {
+                let ys = [b[1], b[3]].map(|y| m[1] * b[0] + m[3] * y + m[5]);
+                let (lo, hi) = (ys[0].min(ys[1]), ys[0].max(ys[1]));
+                (hi.clamp(ASCENT_RANGE.0, ASCENT_RANGE.1), lo.clamp(DESCENT_RANGE.0, DESCENT_RANGE.1))
+            }
+            None => (FALLBACK_ASCENT, FALLBACK_DESCENT),
+        };
+        Ok((Kind::Table { first, widths, missing: 0.0 }, (ascent, descent)))
     }
 
     fn type0(doc: &Document, font: &Dictionary, err: &dyn Fn(&str) -> Unsupported) -> Result<(Kind, Metrics), Unsupported> {

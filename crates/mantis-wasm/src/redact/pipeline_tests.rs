@@ -459,7 +459,7 @@ fn soft_mask_groups_under_an_area_need_a_raster() {
 
 #[test]
 fn pattern_painting_under_an_area_needs_a_raster() {
-    assert!(raster_needed(pattern_page("/Pattern cs /P1 scn 0 0 612 792 re f"), vec![area(1, 0.0, 0.0, 612.0, 792.0)]));
+    assert!(raster_needed(pattern_page("/Pattern cs /P1 scn 0 0 612 792 re f"), vec![area(1, 10.0, 10.0, 200.0, 200.0)]));
     let text = "BT /Pattern cs /P1 scn /H 30 Tf 100 700 Td (BIG) Tj ET";
     assert!(raster_needed(pattern_page(text), vec![area(1, 95.0, 690.0, 100.0, 40.0)]));
     // Painting with it away from the areas is fine; so is painting after
@@ -1008,4 +1008,23 @@ fn prepared_bytes_show_field_values_and_keep_only_links() {
         .collect();
     assert_eq!(subtypes, vec![b"Link".to_vec(), b"Link".to_vec()]);
     assert_eq!(page_ids(&prepared).len(), 3);
+}
+
+#[test]
+fn a_whole_page_mark_blanks_the_page_without_a_raster() {
+    // Page 3 uses a Type3 font: a whole-page mark needs no raster.
+    let pdf = bytes(fixture_with_type3());
+    let whole = area(3, 0.0, 0.0, 612.0, 792.0);
+    let plan = redact_plan(&pdf, std::slice::from_ref(&whole)).unwrap();
+    assert_eq!(plan, vec![PageStatus { page: 3, reason: None }]);
+    let (out, summary) = redact(&pdf, job(vec![whole])).unwrap();
+    assert_eq!(summary.pages_redacted, vec![3]);
+    let out = load_pdf(&out).unwrap();
+    let page = page_ids(&out)[2];
+    assert_eq!(text_of(&out, page), "");
+    let vb = crate::stamp::geometry::VisibleBox::of_page(&out, page);
+    assert_eq!((vb.x1 - vb.x0, vb.y1 - vb.y0), (612.0, 792.0));
+    assert_eq!(painted_boxes(&out, page), vec![Rect { x0: 0.0, y0: 0.0, x1: 612.0, y1: 792.0 }]);
+    // Other pages are still redacted as usual.
+    assert_eq!(text_of(&out, page_ids(&out)[0]), "Hello World");
 }

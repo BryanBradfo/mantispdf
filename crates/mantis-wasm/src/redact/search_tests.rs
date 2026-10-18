@@ -553,3 +553,23 @@ fn search_takes_exactly_the_matched_glyphs() {
     assert_eq!(search_redact_widen("\\(World\\),", "World"), ("(),".to_string(), vec![]));
     assert_eq!(search_redact_widen("concatenate", "cat"), ("conenate".to_string(), vec![]));
 }
+
+#[test]
+fn type3_text_is_unknown_but_the_rest_of_the_page_is_searched() {
+    let doc = one_page("BT /H 10 Tf 100 700 Td (Visible words) Tj ET BT /T 24 Tf 100 600 Td (abc) Tj ET", |d| {
+        let fonts = with_helvetica(d);
+        let square = d.add_object(Stream::new(dictionary! {}, b"750 0 0 0 750 750 d1 0 0 750 750 re f".to_vec()));
+        let t3 = d.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type3", "FontMatrix" => vec![Object::Real(0.001), 0.into(), 0.into(), Object::Real(0.001), 0.into(), 0.into()],
+            "FontBBox" => rect_array([0, 0, 750, 750]), "FirstChar" => 97, "LastChar" => 99, "Widths" => vec![750.into(), 750.into(), 750.into()],
+            "Encoding" => dictionary! { "Differences" => vec![97.into(), "a".into(), "b".into(), "c".into()] },
+            "CharProcs" => dictionary! { "a" => square, "b" => square, "c" => square },
+        });
+        let mut fonts = fonts;
+        fonts.get_mut(b"Font").unwrap().as_dict_mut().unwrap().set("T", t3);
+        fonts
+    });
+    let found = redact_search(&bytes(doc), "visible", &opts()).unwrap();
+    assert_eq!(found.pages.iter().map(|p| p.page).collect::<Vec<_>>(), vec![1]);
+    assert_eq!(found.undecodable_pages, vec![1]);
+}

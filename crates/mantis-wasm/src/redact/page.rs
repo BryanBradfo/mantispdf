@@ -59,6 +59,9 @@ pub(crate) fn plan_page(doc: &mut Document, page: ObjectId, rects: &[Rect], budg
 }
 
 fn edit_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, budget: &mut Budget, pixels: bool) -> Result<Report, Unsupported> {
+    if covers_page(doc, page, rects) {
+        return blank_page(doc, page, rects, fill);
+    }
     let page_dict = doc.get_dictionary(page).map_err(|_| Unsupported::new("page not found"))?.clone();
     let mut resources = page_resources(doc, page);
     let items = original_contents(doc, page_dict.get(b"Contents").ok());
@@ -80,6 +83,57 @@ fn edit_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, bud
         dict.remove(key);
     }
     Ok(report)
+}
+
+/// How far (points) an area may fall short of the visible box and still
+/// count as covering it: rounding in the UI's page geometry.
+const WHOLE_PAGE_SLACK: f64 = 1e-3;
+
+/// Whether one of `rects` (user space) covers the whole visible box.
+fn covers_page(doc: &Document, page: ObjectId, rects: &[Rect]) -> bool {
+    let vb = VisibleBox::of_page(doc, page);
+    rects.iter().any(|r| {
+        r.x0 <= vb.x0 + WHOLE_PAGE_SLACK
+            && r.y0 <= vb.y0 + WHOLE_PAGE_SLACK
+            && r.x1 >= vb.x1 - WHOLE_PAGE_SLACK
+            && r.y1 >= vb.y1 - WHOLE_PAGE_SLACK
+    })
+}
+
+/// Page keys that set geometry, kept (resolved through inheritance) on a
+/// blanked page.
+const GEOMETRY: [&[u8]; 7] = [b"MediaBox", b"CropBox", b"BleedBox", b"TrimBox", b"ArtBox", b"Rotate", b"UserUnit"];
+
+/// `page` replaced by a blank page of the same geometry with the fill boxes
+/// over `rects`: nothing of the original content, resources or annotations
+/// is kept, whatever they hold (no analysis, so no raster is ever needed).
+fn blank_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill) -> Result<Report, Unsupported> {
+    let old = doc.get_dictionary(page).map_err(|_| Unsupported::new("page not found"))?;
+    let annotations_removed = old
+        .get(b"Annots")
+        .ok()
+        .and_then(|a| deref(doc, a))
+        .and_then(|a| a.as_array().ok())
+        .map_or(0, Vec::len);
+    let mut dict = Dictionary::new();
+    dict.set("Type", Object::Name(b"Page".to_vec()));
+    if let Ok(parent) = old.get(b"Parent") {
+        dict.set("Parent", parent.clone());
+    }
+    for key in GEOMETRY {
+        if let Some(value) = crate::pdf_util::get_inherited_attr(doc, page, key).and_then(|v| deref(doc, &v).cloned()) {
+            dict.set(key, value);
+        }
+    }
+    if !dict.has(b"MediaBox") {
+        let vb = VisibleBox::of_page(doc, page);
+        dict.set("MediaBox", [vb.x0, vb.y0, vb.x1, vb.y1].map(|v| Object::Real(v as f32)).to_vec());
+    }
+    let content = doc.add_object(flate_stream(Dictionary::new(), &with_boxes(Vec::new(), rects, fill)));
+    dict.set("Contents", content);
+    dict.set("Resources", Dictionary::new());
+    doc.objects.insert(page, Object::Dictionary(dict));
+    Ok(Report { annotations_removed, ..Report::default() })
 }
 
 /// `boxes` with every two that overlap or touch joined into their union,
