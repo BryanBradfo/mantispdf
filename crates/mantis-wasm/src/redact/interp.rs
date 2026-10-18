@@ -1041,13 +1041,9 @@ mod tests {
     }
 
     #[test]
-    fn type3_widths_through_font_matrix_and_box_from_font_bbox() {
-        let g = glyphs("BT /T3 10 Tf (AB) Tj ET");
-        // Widths 1 and 2 in glyph space, FontMatrix 0.5: 0.5 and 1.0 em.
-        assert_eq!((g[0].width, g[1].width), (0.5, 1.0));
-        // FontBBox [0 -1 2 3] at 0.5 em per unit, size 10.
-        assert_quad(&g[0].box_user, [(0.0, -5.0), (10.0, -5.0), (10.0, 15.0), (0.0, 15.0)]);
-        assert_quad(&g[1].box_user, [(5.0, -5.0), (15.0, -5.0), (15.0, 15.0), (5.0, 15.0)]);
+    fn type3_fonts_are_unsupported() {
+        // Glyph procedures can paint anywhere; such pages are rasterized.
+        assert!(unsupported("BT /T3 10 Tf (AB) Tj ET").contains("Type3"));
     }
 
     #[test]

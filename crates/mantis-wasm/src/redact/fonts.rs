@@ -44,9 +44,6 @@ enum Kind {
     Standard { font: StdFont, encoding: StdEncoding, remapped: HashSet<u8> },
     /// Type0 with Identity-H: two-byte codes are CIDs.
     Identity { widths: HashMap<u32, f64>, default: f64 },
-    /// Type3: /Widths in glyph space scaled by the /FontMatrix; every glyph
-    /// inks inside the /FontBBox.
-    Type3 { first: i64, widths: Vec<f64>, bbox: [f64; 4] },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -138,7 +135,8 @@ impl Font {
                 (Self::simple(doc, font, descriptor, &err)?, vertical_metrics(doc, descriptor))
             }
             b"Type0" => Self::type0(doc, font, &err)?,
-            b"Type3" => Self::type3(doc, font, &err)?,
+            // Glyph procedures can paint anywhere: such pages are rasterized.
+            b"Type3" => return Err(err("Type3 fonts are not supported")),
             other => return Err(err(&format!("unsupported font type {}", String::from_utf8_lossy(other)))),
         };
         Ok(Font { label, kind, ascent, descent })
@@ -280,33 +278,6 @@ impl Font {
         Some(out)
     }
 
-    fn type3(doc: &Document, font: &Dictionary, err: &dyn Fn(&str) -> Unsupported) -> Result<(Kind, (f64, f64)), Unsupported> {
-        let m = numbers(doc, font.get(b"FontMatrix").ok())
-            .filter(|m| m.len() == 6)
-            .ok_or_else(|| err("malformed /FontMatrix"))?;
-        if m[1] != 0.0 {
-            return Err(err("Type3 glyphs displaced vertically"));
-        }
-        let b = numbers(doc, font.get(b"FontBBox").ok())
-            .filter(|b| b.len() == 4)
-            .ok_or_else(|| err("malformed /FontBBox"))?;
-        let corners = [(b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3])]
-            .map(|(x, y)| (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]));
-        let bbox = [
-            corners.iter().map(|c| c.0).fold(f64::INFINITY, f64::min),
-            corners.iter().map(|c| c.1).fold(f64::INFINITY, f64::min),
-            corners.iter().map(|c| c.0).fold(f64::NEG_INFINITY, f64::max),
-            corners.iter().map(|c| c.1).fold(f64::NEG_INFINITY, f64::max),
-        ];
-        if !(bbox[0] < bbox[2] && bbox[1] < bbox[3]) || bbox.iter().any(|v| !v.is_finite()) {
-            return Err(err("Type3 font without a glyph bounding box"));
-        }
-        let widths = numbers(doc, font.get(b"Widths").ok()).ok_or_else(|| err("malformed /Widths"))?;
-        let first = first_char(doc, font).ok_or_else(|| err("malformed /FirstChar"))?;
-        let widths = widths.into_iter().take(256).map(|w| w * m[0]).collect();
-        Ok((Kind::Type3 { first, widths, bbox }, (bbox[3], bbox[1])))
-    }
-
     /// The codes of `bytes` with the byte range each occupies.
     pub(crate) fn codes(&self, bytes: &[u8]) -> Result<Vec<(Range<usize>, u32)>, Unsupported> {
         match self.kind {
@@ -331,7 +302,6 @@ impl Font {
         };
         match &self.kind {
             Kind::Table { first, widths, missing } => Ok(table(*first, widths).unwrap_or(*missing)),
-            Kind::Type3 { first, widths, .. } => Ok(table(*first, widths).unwrap_or(0.0)),
             Kind::Identity { widths, default } => Ok(widths.get(&code).copied().unwrap_or(*default)),
             Kind::Standard { font, encoding, remapped } => {
                 let unknown = || Unsupported(format!("font {}: no width for code {code}", self.label));
@@ -361,9 +331,6 @@ impl Font {
     /// `[x0, y0, x1, y1]` (em, before font size, scaling and rise) of a
     /// glyph whose width is `w0`.
     pub(crate) fn glyph_box(&self, w0: f64) -> [f64; 4] {
-        if let Kind::Type3 { bbox, .. } = self.kind {
-            return bbox;
-        }
         let (x0, x1) = if w0 >= MIN_INK_WIDTH {
             (0.0, w0)
         } else {
