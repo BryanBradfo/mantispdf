@@ -10,6 +10,7 @@ mod images;
 #[cfg(test)]
 mod leak_probes;
 mod merge;
+mod ocr;
 mod page_content;
 mod page_plan;
 mod pdf_util;
@@ -23,6 +24,7 @@ mod watermark;
 pub use compress::compress_pdf;
 pub use edit::reorder_pages;
 pub use encrypt::encrypt_pdf;
+pub use ocr::{OcrPage, OcrWord, add_text_layer};
 pub use rotate::rotate_pdf;
 pub use watermark::add_watermark;
 use lopdf::Document;

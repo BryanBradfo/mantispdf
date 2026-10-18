@@ -10,7 +10,8 @@
 use super::fonts::StdFont;
 use crate::page_content::{BalanceScanner, original_contents, owned_dict, plain_stream};
 use crate::pdf_util::get_inherited_attr;
-use lopdf::{Dictionary, Document, Object, ObjectId, dictionary};
+use crate::redact::page::flate_stream;
+use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 use std::collections::HashMap;
 
 /// Blend mode of a graphics state.
@@ -117,6 +118,14 @@ impl PageWriter {
         name
     }
 
+    /// Page-local name `<prefix><k>` of the font object `id` (one the job
+    /// created: it is shared between pages as is).
+    pub(crate) fn font_object(&mut self, id: ObjectId, prefix: &str) -> Vec<u8> {
+        let name = free_name(&self.font_dict, prefix);
+        self.font_dict.set(name.clone(), Object::Reference(id));
+        name
+    }
+
     /// A fresh page-local name for the XObject `id`.
     pub(crate) fn xobject(&mut self, id: ObjectId) -> Vec<u8> {
         self.xobject_with_prefix(id, "MStIm")
@@ -140,6 +149,15 @@ impl PageWriter {
 
     /// Writes the page's new resources and content list.
     pub(crate) fn finish(self, doc: &mut Document, w: &mut DocWriter) -> Result<(), String> {
+        self.finish_with(doc, w, plain_stream)
+    }
+
+    /// `finish` with the new operators Flate-compressed (for large layers).
+    pub(crate) fn finish_compressed(self, doc: &mut Document, w: &mut DocWriter) -> Result<(), String> {
+        self.finish_with(doc, w, |ops| flate_stream(Dictionary::new(), &ops))
+    }
+
+    fn finish_with(self, doc: &mut Document, w: &mut DocWriter, tail: impl FnOnce(Vec<u8>) -> Stream) -> Result<(), String> {
         let PageWriter { page_id, mut resources, font_dict, gs_dict, xobject_dict, properties_dict, original, ops, .. } = self;
         if !properties_dict.is_empty() || resources.has(b"Properties") {
             resources.set("Properties", properties_dict);
@@ -159,7 +177,7 @@ impl PageWriter {
             contents.push(Object::Reference(q));
         }
         contents.extend(original);
-        let tail = doc.add_object(plain_stream(ops));
+        let tail = doc.add_object(tail(ops));
         contents.push(Object::Reference(tail));
         let page = doc.get_dictionary_mut(page_id).map_err(|e| format!("Page {page_id:?} not found: {e}"))?;
         page.set("Resources", resources);
