@@ -52,6 +52,16 @@ pub(crate) fn place(word: &OcrWord, cids: Vec<u16>, next: Option<&OcrWord>, page
     Placed { size, tz, tm, cids, space_tz }
 }
 
+/// A `Tz` operand: `fmt_num`, unless that rounds a positive scale to 0 (a
+/// long word in a very narrow, tall box): then every digit (Display never
+/// writes an exponent), so the operand stays positive.
+fn fmt_scale(v: f64) -> String {
+    match fmt_num(v) {
+        z if z == "0" && v > 0.0 => format!("{v}"),
+        s => s,
+    }
+}
+
 /// Appends the layer for `words` in font `font` (a page resource name).
 pub(crate) fn write_ops(font: &[u8], words: &[Placed], out: &mut Vec<u8>) {
     let mut ops = String::from("q BT 3 Tr\n");
@@ -61,13 +71,13 @@ pub(crate) fn write_ops(font: &[u8], words: &[Placed], out: &mut Vec<u8>) {
             let _ = write!(ops, "/{} {} Tf ", lossy(font), fmt_num(w.size));
             size = Some(w.size);
         }
-        let _ = write!(ops, "{} Tz {} Tm <", fmt_num(w.tz), w.tm.map(fmt_num).join(" "));
+        let _ = write!(ops, "{} Tz {} Tm <", fmt_scale(w.tz), w.tm.map(fmt_num).join(" "));
         for cid in &w.cids {
             let _ = write!(ops, "{cid:04X}");
         }
         ops.push_str("> Tj");
         if let Some(tz) = w.space_tz {
-            let _ = write!(ops, " {} Tz <{SPACE_CID:04X}> Tj", fmt_num(tz));
+            let _ = write!(ops, " {} Tz <{SPACE_CID:04X}> Tj", fmt_scale(tz));
         }
         ops.push('\n');
     }

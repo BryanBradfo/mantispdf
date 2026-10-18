@@ -27,6 +27,9 @@ pub(crate) const MAX_PAGES: usize = 2000;
 pub(crate) const MAX_WORDS: usize = 200_000;
 /// Words per job, all pages together.
 pub(crate) const MAX_JOB_WORDS: usize = 2_000_000;
+/// Smallest box width and height (points): a word's font size and `Tz`
+/// stay positive numbers.
+pub(crate) const MIN_BOX: f64 = 0.01;
 /// UTF-16 units of one word's text.
 pub(crate) const MAX_WORD_UNITS: usize = 200;
 
@@ -121,7 +124,7 @@ fn validate_shape(pages: &[OcrPage]) -> Result<(), String> {
 
 fn validate(pages: &[OcrPage], total: usize) -> Result<(), String> {
     let coord = |v: f64| v.is_finite() && v.abs() <= MAX_COORD;
-    let size = |v: f64| v.is_finite() && v > 0.0 && v <= 2.0 * MAX_COORD;
+    let size = |v: f64| v.is_finite() && (MIN_BOX..=2.0 * MAX_COORD).contains(&v);
     let mut seen = std::collections::HashSet::new();
     for p in pages {
         if !(1..=total).contains(&(p.page as usize)) || !seen.insert(p.page) {

@@ -507,3 +507,31 @@ fn balanced_original_keeps_the_single_q_head() {
     assert_eq!(stream_bytes(&out, &contents[1]), ORIGINAL);
     assert!(String::from_utf8(stream_bytes(&out, &contents[2])).unwrap().starts_with("\nQ\nq BT 3 Tr"));
 }
+
+#[test]
+fn boxes_under_a_hundredth_of_a_point_are_refused() {
+    for bad in [word("a", 1.0, 1.0, 0.009, 10.0), word("a", 1.0, 1.0, 10.0, 0.009), word("a", 1.0, 1.0, 1e-300, 1e-300)] {
+        assert_eq!(add_text_layer(&letter(), &[page(1, vec![bad])]).unwrap_err(), "Invalid OCR settings: box");
+    }
+}
+
+#[test]
+fn extreme_boxes_write_finite_nonzero_operands() {
+    let long = "x".repeat(MAX_WORD_UNITS);
+    let words = vec![
+        spaced("a", -1e6, -1e6, 2e6, 0.01),
+        spaced(&long, 1e6, 1e6, 0.01, 2e6),
+        spaced("b", 0.0, 0.0, 0.01, 0.01),
+        word("c", 1e6, 0.0, 0.01, 0.01),
+    ];
+    let out = add(&letter(), &[page(1, words)]);
+    let contents = out.get_dictionary(page_id(&out, 1)).unwrap().get(b"Contents").unwrap().as_array().unwrap().clone();
+    let tail = String::from_utf8(stream_bytes(&out, contents.last().unwrap())).unwrap();
+    assert!(!tail.contains("inf") && !tail.contains("NaN") && !tail.contains('e'), "{tail}");
+    let ops = lopdf::content::Content::decode(tail.as_bytes()).unwrap().operations;
+    for op in ops.iter().filter(|op| op.operator == "Tf" || op.operator == "Tz") {
+        let v = op.operands.last().unwrap().as_float().unwrap();
+        assert!(v.is_finite() && v > 0.0, "{op:?}");
+    }
+    assert_eq!(ops.iter().filter(|op| op.operator == "Tf").count(), 3);
+}
