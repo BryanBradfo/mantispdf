@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REPORT_TITLE, plainReason, reportLines, uncoveredNote } from "./report";
+import { REPORT_TITLE, TOO_LARGE_REASON, neededRasters, plainReason, reportLines, uncoveredNote } from "./report";
 import type { RedactResultWire } from "./toJob";
 
 const result = (extra: Partial<RedactResultWire> = {}): RedactResultWire => ({
@@ -81,6 +81,23 @@ describe("plainReason", () => {
   it("matches without regard to case", () => {
     expect(plainReason("TYPE3 font")).toBe("uses a special font");
     expect(plainReason("Image Too Large")).toBe("contains a very large image");
+  });
+});
+
+describe("neededRasters", () => {
+  it("reads the pages of the engine's late raster request", () => {
+    expect(neededRasters("Invalid redact settings: needs raster [2]")).toEqual([2]);
+    expect(neededRasters("Error: Invalid redact settings: needs raster [3, 1,7]")).toEqual([1, 3, 7]);
+  });
+
+  it("is null for any other message", () => {
+    expect(neededRasters("Invalid redact settings: rects")).toBeNull();
+    expect(neededRasters("Invalid redact settings: needs raster []")).toBeNull();
+    expect(neededRasters("needs raster [x]")).toBeNull();
+  });
+
+  it("explains it in plain words", () => {
+    expect(plainReason(TOO_LARGE_REASON)).toBe("contains a very large image");
   });
 });
 

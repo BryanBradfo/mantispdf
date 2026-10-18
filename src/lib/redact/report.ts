@@ -45,3 +45,17 @@ const REASONS: [RegExp, string][] = [
 export function plainReason(reason: string): string {
   return REASONS.find(([re]) => re.test(reason))?.[1] ?? "uses content that cannot be edited safely";
 }
+
+/** The reason given for pages the engine asks to rasterize only while redacting. */
+export const TOO_LARGE_REASON = "image too large to edit in memory";
+
+/**
+ * The pages of the engine's late raster request ("Invalid redact settings: needs raster [2, 5]",
+ * found while redacting, after the plan), ascending; null for any other message.
+ */
+export function neededRasters(message: string): number[] | null {
+  const m = /Invalid redact settings: needs raster \[([\d,\s]+)\]/.exec(message);
+  if (!m) return null;
+  const pages = m[1].split(",").map((t) => Number(t.trim())).filter((n) => Number.isInteger(n) && n > 0);
+  return pages.length > 0 ? [...new Set(pages)].sort((a, b) => a - b) : null;
+}

@@ -26,7 +26,7 @@ import {
 import { formatPageRanges, parsePageRanges } from "../lib/pagePlan";
 import { numberEntries, repeatTargets } from "../lib/redact/marking";
 import { chooseDpi, renderRaster } from "../lib/redact/raster";
-import { REPORT_TITLE, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
+import { REPORT_TITLE, TOO_LARGE_REASON, neededRasters, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
 import { findMatches, type TextRun } from "../lib/redact/search";
 import {
   marksToRects,
@@ -228,8 +228,9 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
    * For `snap`: rasters of `pages` (rendered again on every attempt: they are handed over to the
    * worker), then the redaction, then the download.
    */
-  const redactWith = (snap: RedactRun, pages: number[]) => {
+  const redactWith = (snap: RedactRun, planned: PageStatusWire[]) => {
     setConfirm(null);
+    const pages = planned.map((p) => p.page);
     const dpi = chooseDpi(pages.map((p) => sizes[p - 1] ?? [0, 0]));
     if (dpi === null) {
       setError("Too many pages need to be converted to images at once. Split the PDF first.");
@@ -248,14 +249,29 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
             rasters.push(await renderRaster(doc, p, pageRects, snap.fill, dpi));
           }
           setProgress("Removing the marked content…");
-          return await worker.redactPdf(input.bytes, toJob(snap.marks, sizes, { fill: snap.fill, removeMetadata: snap.removeMetadata }, rasters));
+          const job = toJob(snap.marks, sizes, { fill: snap.fill, removeMetadata: snap.removeMetadata }, rasters);
+          try {
+            return { kind: "done", result: await worker.redactPdf(input.bytes, job) } as const;
+          } catch (err) {
+            // The engine found, while redacting, pages it can only handle as images (very large
+            // images): ask again, never show its raw message.
+            const late = neededRasters(err instanceof Error ? err.message : String(err));
+            if (late) return { kind: "late", pages: late } as const;
+            throw err;
+          }
         } finally {
           setProgress(null);
         }
       },
-      (result) => {
-        downloadBlob(result.bytes, name);
-        setReport(result);
+      (outcome) => {
+        if (outcome.kind === "late") {
+          const known = new Set(pages);
+          const more = outcome.pages.filter((p) => !known.has(p)).map((page) => ({ page, reason: TOO_LARGE_REASON }));
+          setConfirm({ run: snap, pages: [...planned, ...more].sort((a, b) => a.page - b.page) });
+          return;
+        }
+        downloadBlob(outcome.result.bytes, name);
+        setReport(outcome.result);
       },
     );
   };
@@ -288,7 +304,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
       plan(currentRun.current);
       return;
     }
-    redactWith(confirm.run, confirm.pages.map((p) => p.page));
+    redactWith(confirm.run, confirm.pages);
   };
 
   const startOver = () => {
