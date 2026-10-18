@@ -42,6 +42,10 @@ export interface FormWidget {
   fontSize: number;
   /** 0 left, 1 centre, 2 right. */
   align: 0 | 1 | 2;
+  /** Position in the page's /Annots (null when on no page or found only through /P). */
+  annotIndex: number | null;
+  /** The page's /Tabs: rows, columns, structure, or null (absent or another value). */
+  tabs: "R" | "C" | "S" | null;
 }
 
 export interface FormOption {

@@ -8,7 +8,7 @@ export const VALUE_KEYS = { text: ["kind", "text"], names: ["kind", "names"], no
 /** What `list_form` returns. */
 export const INFO_KEYS = ["xfa", "fields"] as const;
 export const FIELD_KEYS = ["id", "name", "label", "kind", "readOnly", "required", "value", "options", "onStates", "widgets"] as const;
-export const WIDGET_KEYS = ["page", "rect", "rotation", "onState", "hidden", "font", "fontSize", "align"] as const;
+export const WIDGET_KEYS = ["page", "rect", "rotation", "onState", "hidden", "font", "fontSize", "align", "annotIndex", "tabs"] as const;
 export const OPTION_KEYS = ["exportValue", "display"] as const;
 export const KIND_KEYS = {
   text: ["kind", "multiline", "comb", "maxLen", "password"],

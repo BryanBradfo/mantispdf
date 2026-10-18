@@ -89,6 +89,12 @@ pub struct Widget {
     pub font_size: f64,
     /// /Q quadding: 0 left, 1 centre, 2 right.
     pub align: u8,
+    /// Position of the widget in its page's /Annots (None when found only
+    /// through /P or on no page).
+    pub annot_index: Option<u32>,
+    /// The page's /Tabs: "R" (rows), "C" (columns), "S" (structure), or
+    /// None (absent or another value).
+    pub tabs: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

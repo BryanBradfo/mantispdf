@@ -76,7 +76,7 @@ describe.skipIf(!built)("list_form / fill_form bindings", () => {
       for (const o of f.options) expect(keys(o)).toEqual([...OPTION_KEYS].sort());
     }
     expect(info.fields[0].kind).toEqual({ kind: "text", multiline: false, comb: false, maxLen: null, password: false });
-    expect(info.fields[0].widgets).toEqual([{ page: 1, rect: [100, 700, 300, 720], rotation: 0, onState: null, hidden: false, font: "Helvetica", fontSize: 12, align: 0 }]);
+    expect(info.fields[0].widgets).toEqual([{ page: 1, rect: [100, 700, 300, 720], rotation: 0, onState: null, hidden: false, font: "Helvetica", fontSize: 12, align: 0, annotIndex: 0, tabs: null }]);
     // Bare button widgets get engine-generated state names: one shared by the checkbox
     // widgets, one each for radio widgets.
     expect(info.fields[1].onStates).toEqual(["Yes"]);

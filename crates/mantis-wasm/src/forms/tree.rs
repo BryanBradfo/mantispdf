@@ -508,9 +508,11 @@ pub(crate) fn to_visible(vb: &VisibleBox, [x0, y0, x1, y1]: [f64; 4]) -> [f64; 4
 /// Where widgets sit: page number per annotation (from page /Annots, first
 /// page wins) and per page object.
 struct Pages {
-    by_annot: HashMap<ObjectId, u32>,
+    /// Annotation -> (page number, index in that page's /Annots).
+    by_annot: HashMap<ObjectId, (u32, u32)>,
     by_page: HashMap<ObjectId, u32>,
     boxes: HashMap<u32, VisibleBox>,
+    tabs: HashMap<u32, String>,
 }
 
 impl Pages {
@@ -518,25 +520,33 @@ impl Pages {
         let mut by_annot = HashMap::new();
         let mut by_page = HashMap::new();
         let mut boxes = HashMap::new();
+        let mut tabs = HashMap::new();
         for (number, page) in doc.get_pages() {
             by_page.insert(page, number);
             boxes.insert(number, VisibleBox::of_page(doc, page));
             let Ok(dict) = doc.get_dictionary(page) else {
                 continue;
             };
-            for annot in references(doc, dict.get(b"Annots").ok()) {
-                by_annot.entry(annot).or_insert(number);
+            if let Some(t @ (b"R" | b"C" | b"S")) = dict.get(b"Tabs").ok().and_then(|t| deref(doc, t)).and_then(|t| t.as_name().ok()) {
+                tabs.insert(number, String::from_utf8_lossy(t).into_owned());
+            }
+            let annots = dict.get(b"Annots").ok().and_then(|a| deref(doc, a)).and_then(|a| a.as_array().ok());
+            for (i, entry) in annots.into_iter().flatten().enumerate() {
+                if let Ok(annot) = entry.as_reference() {
+                    by_annot.entry(annot).or_insert((number, i as u32));
+                }
             }
         }
-        Pages { by_annot, by_page, boxes }
+        Pages { by_annot, by_page, boxes, tabs }
     }
 
-    fn page_of(&self, id: ObjectId, widget: &Dictionary) -> u32 {
-        self.by_annot
-            .get(&id)
-            .or_else(|| widget.get(b"P").ok()?.as_reference().ok().and_then(|p| self.by_page.get(&p)))
-            .copied()
-            .unwrap_or(0)
+    /// Page number (0: none) and /Annots index of a widget.
+    fn place_of(&self, id: ObjectId, widget: &Dictionary) -> (u32, Option<u32>) {
+        if let Some(&(page, index)) = self.by_annot.get(&id) {
+            return (page, Some(index));
+        }
+        let by_p = widget.get(b"P").ok().and_then(|p| p.as_reference().ok()).and_then(|p| self.by_page.get(&p));
+        (by_p.copied().unwrap_or(0), None)
     }
 }
 
@@ -584,7 +594,7 @@ impl<'a> Context<'a> {
     fn widget(&self, id: ObjectId, field: ObjectId, kind: &FieldKind) -> Option<(Widget, WidgetRef)> {
         let doc = self.doc;
         let dict = doc.get_dictionary(id).ok()?;
-        let page = self.pages.page_of(id, dict);
+        let (page, annot_index) = self.pages.place_of(id, dict);
         let rect = dict
             .get(b"Rect")
             .ok()
@@ -622,6 +632,8 @@ impl<'a> Context<'a> {
             rotation: rotation as u16,
             on_state: on_state_text,
             hidden: flags & INVISIBLE_FLAGS != 0,
+            annot_index,
+            tabs: self.pages.tabs.get(&page).cloned(),
             font: da.font,
             font_size: da.size,
             align,
@@ -842,7 +854,7 @@ pub(crate) mod tests {
         assert!(!f.read_only && !f.required);
         assert_eq!(f.widgets, vec![Widget {
             page: 1, rect: [100.0, 700.0, 300.0, 720.0], rotation: 0, on_state: None,
-            hidden: false, font: StdFont::Helvetica, font_size: 12.0, align: 1,
+            hidden: false, font: StdFont::Helvetica, font_size: 12.0, align: 1, annot_index: Some(0), tabs: None,
         }]);
     }
 
@@ -1574,5 +1586,28 @@ pub(crate) mod tests {
         };
         assert_eq!(tree(&nested(100)).info.fields.len(), 100);
         assert_eq!(read_form(&nested(500)).unwrap_err(), "Invalid form settings: names");
+    }
+
+    #[test]
+    fn widgets_report_annotation_index_and_page_tabs() {
+        let (mut doc, page) = base(0);
+        let a = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![("FT", "Tx".into()), ("T", Object::string_literal("a"))]));
+        let b = doc.add_object(with(widget(page, [0, 20, 10, 30]), vec![("FT", "Tx".into()), ("T", Object::string_literal("b"))]));
+        let mut orphan = widget(page, [0, 0, 10, 10]);
+        orphan.remove(b"P");
+        let orphan = doc.add_object(with(orphan, vec![("FT", "Tx".into()), ("T", Object::string_literal("o"))]));
+        let link = doc.add_object(dictionary! { "Type" => "Annot", "Subtype" => "Link", "Rect" => rect([0, 0, 1, 1]) });
+        finish(&mut doc, page, &[a, b, orphan], &[link, b, a], vec![]);
+        doc.get_dictionary_mut(page).unwrap().set("Tabs", "C");
+        let info = tree(&doc).info;
+        let got: Vec<(Option<u32>, Option<&str>)> =
+            info.fields.iter().map(|f| (f.widgets[0].annot_index, f.widgets[0].tabs.as_deref())).collect();
+        assert_eq!(got, vec![(Some(2), Some("C")), (Some(1), Some("C")), (None, None)]);
+
+        // Other /Tabs values (PDF 2.0 /A, /W, junk) read as none.
+        for (value, expected) in [("R", Some("R")), ("S", Some("S")), ("W", None)] {
+            doc.get_dictionary_mut(page).unwrap().set("Tabs", Object::Name(value.as_bytes().to_vec()));
+            assert_eq!(tree(&doc).info.fields[0].widgets[0].tabs.as_deref(), expected, "{value}");
+        }
     }
 }

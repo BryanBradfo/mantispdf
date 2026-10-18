@@ -10,6 +10,8 @@ const widget = (rect: [number, number, number, number], extra: Partial<FormWidge
   hidden: false,
   font: "Helvetica",
   fontSize: 12,
+  annotIndex: null,
+  tabs: null,
   align: 0,
   ...extra,
 });

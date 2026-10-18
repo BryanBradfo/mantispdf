@@ -134,6 +134,8 @@ fn widget_to_js(w: &Widget) -> Object {
     set(&o, "font", w.font.base_font());
     set(&o, "fontSize", w.font_size);
     set(&o, "align", w.align);
+    set(&o, "annotIndex", w.annot_index.map_or(JsValue::NULL, |i| JsValue::from_f64(f64::from(i))));
+    set(&o, "tabs", w.tabs.as_deref().map_or(JsValue::NULL, JsValue::from_str));
     o
 }
 
