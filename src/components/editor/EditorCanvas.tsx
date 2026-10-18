@@ -7,16 +7,15 @@ import {
   hitTestItems,
   itemBounds,
   previewToVisiblePoint,
-  rectFromPoints,
   visibleToPreviewPoint,
   visibleToPreviewRect,
   type Handle,
   type Size,
 } from "../../lib/editor/geometry";
-import type { ImageSource, Item, NewItem, Point, Rect, Rgb } from "../../lib/editor/model";
+import type { ImageSource, Item, NewItem, Point } from "../../lib/editor/model";
 import type { EditorAction } from "../../lib/editor/reducer";
 import { simplifyStroke } from "../../lib/editor/simplify";
-import { textBoxHeight } from "../../lib/editor/textFit";
+import { BLACK, createItem } from "../../lib/editor/create";
 import { layoutText } from "../../lib/editor/wrap";
 import { placementPreviewSize } from "../../lib/signPlacement";
 import { cssColor, cssFont } from "./svgStyle";
@@ -33,20 +32,6 @@ const CLICK_PX = 4;
 const HANDLE_HIT = 24;
 const HANDLE_SIZE = 10;
 
-const BLACK: Rgb = [0, 0, 0];
-const HIGHLIGHT_YELLOW: Rgb = [1, 0.92, 0.23];
-const TEXT_DEFAULTS = { font: "Helvetica", size: 16, lineHeight: 1.2 } as const;
-
-/** Size of an item created by a click (no drag), in points. */
-const CLICK_SIZE: Record<"text" | "rect" | "ellipse" | "highlight" | "whiteout" | "image", [number, number]> = {
-  text: [200, textBoxHeight(1, TEXT_DEFAULTS.font, TEXT_DEFAULTS.size, TEXT_DEFAULTS.lineHeight)],
-  rect: [120, 80],
-  ellipse: [120, 80],
-  highlight: [150, 18],
-  whiteout: [120, 30],
-  image: [150, 150],
-};
-const CLICK_LINE_LENGTH = 120;
 
 /** Consecutive arrow-key nudges of one item closer together than this are one undo step. */
 const NUDGE_IDLE_MS = 500;
@@ -199,54 +184,11 @@ export default function EditorCanvas(props: Props) {
     };
   }, []);
 
-  /** Build the new item of a creation gesture (drag rect or a click default). */
-  const buildItem = (g: Extract<Gesture, { kind: "create" }>): NewItem | null => {
-    const [px, py] = g.start;
-    const sized = (kind: keyof typeof CLICK_SIZE): Rect => {
-      if (g.dragged) return rectFromPoints(g.start, g.current);
-      const [w, h] = CLICK_SIZE[kind];
-      return [px, py - h, w, h];
-    };
-    switch (g.tool) {
-      case "text":
-        return {
-          kind: "text",
-          page,
-          rect: sized("text"),
-          text: "",
-          font: TEXT_DEFAULTS.font,
-          size: TEXT_DEFAULTS.size,
-          color: BLACK,
-          opacity: 1,
-          align: "left",
-          lineHeight: TEXT_DEFAULTS.lineHeight,
-        };
-      case "rect":
-      case "ellipse":
-        return { kind: g.tool, page, rect: sized(g.tool), stroke: { kind: "rgb", color: BLACK }, width: 2, fill: { kind: "none" }, opacity: 1 };
-      case "highlight":
-        return { kind: "highlight", page, rect: sized("highlight"), color: HIGHLIGHT_YELLOW, opacity: 0.4 };
-      case "whiteout":
-        return { kind: "whiteout", page, rect: sized("whiteout") };
-      case "line":
-      case "arrow": {
-        const to: Point = g.dragged ? g.current : [px + CLICK_LINE_LENGTH, py];
-        return { kind: "line", page, from: g.start, to, color: BLACK, width: 2, opacity: 1, arrowStart: false, arrowEnd: g.tool === "arrow" };
-      }
-      case "image": {
-        if (!pendingImage) return null;
-        // Keeps the image aspect: the drag sets the width, the press point is a fixed corner.
-        const aspect = pendingImage.width / pendingImage.height;
-        const w = g.dragged ? Math.max(Math.abs(g.current[0] - px), 4) : Math.min(CLICK_SIZE.image[0], pageSize[0]);
-        const h = w / aspect;
-        const x = g.dragged && g.current[0] < px ? px - w : px;
-        const y = g.dragged && g.current[1] > py ? py : py - h;
-        return { kind: "image", page, rect: [x, y, w, h], image: pendingImage, opacity: 1, rotation: 0 };
-      }
-      default:
-        return null;
-    }
-  };
+  /** The new item of a creation gesture (drag rect or a click default). */
+  const buildItem = (g: Extract<Gesture, { kind: "create" }>): NewItem | null =>
+    g.tool === "select" || g.tool === "draw"
+      ? null
+      : createItem({ tool: g.tool, page, start: g.start, current: g.current, dragged: g.dragged, pageSize, image: pendingImage });
 
   const finishCreate = (item: NewItem | null, from: Tool) => {
     if (!item) return;

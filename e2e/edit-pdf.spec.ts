@@ -332,6 +332,20 @@ test("edit pdf: text on a rotated page is upright at the placed position", async
   expect(foreign, "no request outside the app origin").toEqual([]);
 });
 
+test("edit pdf: a perfectly horizontal highlight drag still saves", async ({ page }) => {
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  await canvas.tool("Highlight (H)");
+  await canvas.drag([100, 200], [300, 200]);
+  const bytes = await download(page);
+  // The default 18 pt highlight height, centred on the drag line.
+  const { samples } = await render(page, bytes, 1, [[200, 200], [200, 206], [200, 214]]);
+  expect(isYellow(samples[0]), `on the drag line (got ${samples[0]})`).toBe(true);
+  expect(isYellow(samples[1]), `inside the default height (got ${samples[1]})`).toBe(true);
+  expect(isWhite(samples[2]), "outside the default height").toBe(true);
+  await expect(page.getByText(/Invalid edit settings/)).toHaveCount(0);
+});
+
 test("edit pdf: /edit still redirects to /organize and the home page lists the tool", async ({ page }) => {
   await page.goto("/edit");
   await expect(page).toHaveURL(/\/organize$/);

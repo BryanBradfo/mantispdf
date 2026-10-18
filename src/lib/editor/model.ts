@@ -195,10 +195,12 @@ export function imagePayloadBytes(fileBytes: number, width: number, height: numb
 
 /**
  * Why `item` (a new item or a duplicate of an existing one) cannot be added to `items`: the item
- * limit, or for an image the image budget. Null when it fits.
+ * limit, a box without area, or for an image the image budget. Null when it fits.
  */
 export function addError(items: readonly Item[], item: NewItem | Item): string | null {
   if (items.length >= LIMITS.items) return `A document can hold at most ${LIMITS.items} edits.`;
+  // Safety net: the engine rejects the whole job for one box without area.
+  if ("rect" in item && !(item.rect[2] > 0 && item.rect[3] > 0)) return "This item has no area, so it was not added.";
   return item.kind === "image" ? imageBudgetError(items, item.image) : null;
 }
 
