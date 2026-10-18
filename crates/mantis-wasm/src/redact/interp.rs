@@ -13,6 +13,7 @@ use crate::rebuild::{
     Decoded, MAX_STREAM_DECODED, decode_complete, decode_inline_dict, deref, inline_image_extent, is_pdf_regular,
     name_of, skip_literal_string, strict_content_in,
 };
+use crate::pdf_util::get_inherited_attr;
 use lopdf::content::{Content, Operation};
 use lopdf::{Dictionary, Document, Object, Stream};
 use std::collections::HashMap;
@@ -564,6 +565,12 @@ fn one_name<'a>(op: &str, args: &'a [Object]) -> Result<&'a [u8], Unsupported> {
     }
 }
 
+/// The page's /Resources (inherited through /Parent, references followed),
+/// as an owned copy; empty when it has none.
+pub(crate) fn page_resources(doc: &Document, page: lopdf::ObjectId) -> Dictionary {
+    crate::page_content::owned_dict(doc, get_inherited_attr(doc, page, b"Resources").as_ref())
+}
+
 /// Walks operations against one resource dictionary.
 pub(crate) struct Interp<'d> {
     doc: &'d Document,
@@ -709,8 +716,10 @@ impl<'d> Interp<'d> {
     }
 
     fn xobject(&self, run: &mut Run, op_index: usize, name: &[u8]) -> Result<(), Unsupported> {
+        // Viewers skip a missing XObject, but a name we cannot resolve may
+        // be one they can (different inheritance rules): never guess.
         let Some(Object::Stream(stream)) = self.resource(b"XObject", name) else {
-            return Ok(());
+            return Err(Unsupported(format!("XObject {} not found", String::from_utf8_lossy(name))));
         };
         let ctm = run.gs.ctm;
         match name_of(&stream.dict, b"Subtype") {
@@ -1274,8 +1283,38 @@ mod tests {
     }
 
     #[test]
+    fn missing_xobjects_are_unsupported() {
+        assert!(unsupported("/Missing Do").contains("Missing"));
+    }
+
+    #[test]
+    fn page_resources_are_inherited_and_resolved() {
+        let mut doc = Document::with_version("1.7");
+        let fonts = doc.add_object(dictionary! { "F1" => simple_font() });
+        let inherited = doc.add_object(dictionary! { "Font" => fonts });
+        let pages_id = doc.new_object_id();
+        let plain = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages_id });
+        let own = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages_id, "Resources" => dictionary! { "XObject" => dictionary! {} },
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![plain.into(), own.into()], "Count" => 2, "Resources" => inherited,
+            }),
+        );
+        let resources = page_resources(&doc, plain);
+        assert_eq!(resources.get(b"Font").unwrap(), &Object::Reference(fonts));
+        let ops = decode_ops(b"BT /F1 10 Tf (A) Tj ET").unwrap();
+        assert_eq!(Interp::new(&doc, resources).run(&ops, IDENTITY, &mut Budget::page(1 << 20)).unwrap().len(), 1);
+        assert!(page_resources(&doc, own).has(b"XObject"));
+        assert!(!page_resources(&doc, own).has(b"Font"));
+        assert!(page_resources(&doc, (999, 0)).is_empty());
+    }
+
+    #[test]
     fn harmless_oddities_are_tolerated() {
-        for content in ["Q Q Q", "/Missing Do", "/Missing sh", "f", "foo bar 1 2 baz", "BT ET ET", "/Missing gs"] {
+        for content in ["Q Q Q", "/Missing sh", "f", "foo bar 1 2 baz", "BT ET ET", "/Missing gs"] {
             assert_eq!(events(content).unwrap(), vec![], "{content}");
         }
     }
