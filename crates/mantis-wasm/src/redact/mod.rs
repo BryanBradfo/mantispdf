@@ -324,7 +324,7 @@ fn add_image(page: &mut PageEdit, mut image: lopdf::Stream, smask: Option<lopdf:
         let id = page.doc.add_object(smask);
         image.dict.set("SMask", id);
     }
-    add_xobject(page, image, "RedactedIm")
+    add_xobject(page, image, verify::REDACTED_IMAGE_PREFIX)
 }
 
 /// Add `stream` as a new object under a fresh name (`prefix` + number) in

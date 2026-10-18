@@ -504,3 +504,36 @@ fn optional_content_groups_carrying_replacement_text_need_a_raster() {
     });
     assert!(raster_needed(doc, vec![area(1, 127.0, 700.0, 30.0, 5.0)]));
 }
+
+#[test]
+fn verification_fails_on_paths_shadings_and_images_left_under_an_area() {
+    let image_page = || {
+        one_page("q 20 0 0 20 300 300 cm /Im Do Q", |doc, page| {
+            let image = doc.add_object(Stream::new(
+                dictionary! {
+                    "Type" => "XObject", "Subtype" => "Image", "Width" => 1, "Height" => 1,
+                    "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+                },
+                vec![100],
+            ));
+            doc.get_dictionary_mut(page).unwrap().set("Resources", dictionary! { "XObject" => dictionary! { "Im" => image } });
+        })
+    };
+    let shading_page = || {
+        one_page("/Sh sh", |doc, page| {
+            doc.get_dictionary_mut(page).unwrap().set(
+                "Resources",
+                dictionary! { "Shading" => dictionary! { "Sh" => dictionary! { "ShadingType" => 2, "ColorSpace" => "DeviceGray" } } },
+            );
+        })
+    };
+    let a = area(1, 300.0, 300.0, 10.0, 10.0);
+    for doc in [one_page("300 300 20 20 re f", |_, _| {}), shading_page(), image_page()] {
+        // Without the planted leak each is redacted and verified.
+        assert!(redact(&bytes(doc.clone()), &job(vec![a.clone()])).is_ok());
+        plant_leak_for_tests(true);
+        let result = redact(&bytes(doc), &job(vec![a.clone()]));
+        plant_leak_for_tests(false);
+        assert_eq!(result.unwrap_err(), "Redaction verification failed on page 1");
+    }
+}

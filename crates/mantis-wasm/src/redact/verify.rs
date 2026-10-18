@@ -2,8 +2,8 @@
 //! could show removed content may remain under an area.
 
 use super::forms::MAX_FORM_DEPTH;
-use super::graphics::{quad_hit, unanalysed_paint};
-use super::interp::{Event, Glyph, IDENTITY, Interp, Matrix, Paint, Rect, content_ops, decode_ops, page_resources, page_resources_dict};
+use super::graphics::{quad_hit, shading_hit, unanalysed_paint};
+use super::interp::{Event, Glyph, IDENTITY, ImageSource, Interp, Matrix, Paint, Rect, content_ops, decode_ops, page_resources, page_resources_dict};
 use super::{Budget, JOB_DECODED, Unsupported};
 use crate::page_content::{original_contents, owned_dict};
 use crate::rebuild::{Decoded, MAX_STREAM_DECODED, deref, strict_content_in};
@@ -77,8 +77,8 @@ fn walk(
 }
 
 /// True when nothing on `page` (forms included) that could show removed
-/// content lies under any of `rects`: no glyph, no Pattern painting, no
-/// soft mask group. Content that cannot be interpreted fails.
+/// content lies under any of `rects`: no glyph, painted path, shading or
+/// unredacted image, no Pattern painting, no soft mask group. Content that cannot be interpreted fails.
 pub(crate) fn verify_page(doc: &Document, page: ObjectId, rects: &[Rect]) -> bool {
     let Ok(events) = page_events(doc, page) else {
         return false;
@@ -86,5 +86,24 @@ pub(crate) fn verify_page(doc: &Document, page: ObjectId, rects: &[Rect]) -> boo
     if unanalysed_paint(&events, rects).is_some() {
         return false;
     }
-    !events.iter().any(|e| matches!(e, Event::Glyph(g) if quad_hit(&g.box_user, rects)))
+    !events.iter().any(|e| left_under(e, rects))
+}
+
+/// Prefix of the names redacted images are drawn under.
+pub(crate) const REDACTED_IMAGE_PREFIX: &str = "RedactedIm";
+const REDACTED_IMAGE: &[u8] = REDACTED_IMAGE_PREFIX.as_bytes();
+
+/// True when `event` still draws original content under a rect: a glyph, a
+/// painted path, a shading, or an image other than a redacted copy.
+fn left_under(event: &Event, rects: &[Rect]) -> bool {
+    match event {
+        Event::Glyph(g) => quad_hit(&g.box_user, rects),
+        Event::Path(p) => p.painted && p.bbox_user.is_some_and(|b| rects.iter().any(|r| b.overlaps(r))),
+        Event::Shading(s) => shading_hit(s, rects),
+        Event::Image(i) => {
+            let redacted = matches!(&i.source, ImageSource::XObject(name) if name.starts_with(REDACTED_IMAGE));
+            !redacted && quad_hit(&i.quad_user, rects)
+        }
+        _ => false,
+    }
 }
