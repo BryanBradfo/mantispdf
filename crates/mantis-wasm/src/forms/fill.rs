@@ -154,7 +154,7 @@ fn has_normal_appearance(doc: &Document, widget: ObjectId) -> bool {
 fn current_shown(field: &Field) -> Option<Shown> {
     match (&field.kind, &field.value) {
         (FieldKind::Text { password, .. }, Value::Text(t)) => {
-            Some(Shown::Text(if *password { "*".repeat(t.chars().count()) } else { t.clone() }))
+            Some(Shown::Text(if *password { "*".repeat(t.chars().count()) } else { drawn_text(t) }))
         }
         (FieldKind::Combo { .. }, Value::Text(t)) => Some(Shown::Text(
             field.options.iter().find(|(e, _)| e == t).map_or_else(|| t.clone(), |(_, d)| d.clone()),
@@ -196,14 +196,24 @@ fn same_value(a: &Value, b: &Value) -> bool {
 }
 
 /// Text the standard fonts can show (line breaks allowed in multiline).
-fn check_text(text: &str, multiline: bool) -> Result<(), String> {
+/// Text the standard fonts can show (line breaks allowed in multiline; a
+/// tab is drawn as a space). The unsupported-characters error names the
+/// field.
+fn check_text(text: &str, multiline: bool, label: &str) -> Result<(), String> {
     if text.chars().count() > MAX_VALUE_CHARS {
         return Err(invalid("value"));
     }
     if !multiline && text.contains(['\r', '\n']) {
         return Err(invalid("value"));
     }
-    encode_winansi(&text.replace(['\r', '\n'], " ")).map(|_| ())
+    encode_winansi(&text.replace(['\r', '\n', '\t'], " "))
+        .map(|_| ())
+        .map_err(|e| format!("{e} in field \"{label}\""))
+}
+
+/// What a widget draws for `text`: tabs become spaces (as in Edit PDF).
+fn drawn_text(text: &str) -> String {
+    text.replace('\t', " ")
 }
 
 fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option<Change>, String> {
@@ -214,11 +224,11 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option
         FieldKind::Signature | FieldKind::Button => return Err(invalid("value")),
         FieldKind::Text { multiline, max_len, password, .. } => {
             let text = text_of(value)?;
-            check_text(&text, *multiline)?;
+            check_text(&text, *multiline, &field.label)?;
             if max_len.is_some_and(|m| text.chars().count() > m as usize) {
                 return Err(invalid("max-length"));
             }
-            let shown = if *password { "*".repeat(text.chars().count()) } else { text.clone() };
+            let shown = if *password { "*".repeat(text.chars().count()) } else { drawn_text(&text) };
             Change::Text { value: text, shown, combo: false }
         }
         FieldKind::Combo { editable } => {
@@ -229,8 +239,8 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option
             let shown = match field.options.iter().find(|(export, _)| *export == text) {
                 Some((_, display)) => display.clone(),
                 None if text.is_empty() || *editable => {
-                    check_text(&text, false)?;
-                    text.clone()
+                    check_text(&text, false, &field.label)?;
+                    drawn_text(&text)
                 }
                 None => return Err(invalid("value")),
             };
@@ -940,7 +950,7 @@ mod tests {
         assert_eq!(err(&[(3, Value::Names(vec!["x".into()]))], &mut doc), "Invalid form settings: value");
         assert_eq!(err(&[(9, t("x"))], &mut doc), "Invalid form settings: field");
         assert_eq!(err(&[(4, t("x")), (4, t("y"))], &mut doc), "Invalid form settings: field");
-        assert_eq!(err(&[(4, t("日本"))], &mut doc), "Characters not supported by the standard PDF fonts: 日本");
+        assert_eq!(err(&[(4, t("日本"))], &mut doc), "Characters not supported by the standard PDF fonts: 日本 in field \"plain\"");
         assert_eq!(err(&[(4, t("a\nb"))], &mut doc), "Invalid form settings: value");
         assert_eq!(err(&[(4, t(&"x".repeat(MAX_VALUE_CHARS + 1)))], &mut doc), "Invalid form settings: value");
         assert_eq!(err(&[(4, Value::Names(vec![]))], &mut doc), "Invalid form settings: value");
@@ -1044,5 +1054,28 @@ mod tests {
             assert!(!dict(&doc, w).has(b"AP"));
             assert_eq!(dict(&doc, w).get(b"AS").unwrap(), &Object::Name(b"Off".to_vec()));
         }
+    }
+
+    #[test]
+    fn tabs_are_drawn_as_spaces_and_kept_in_the_value() {
+        let (mut doc, page) = base(0);
+        let single = text_field(&mut doc, page, "single", vec![]);
+        let multi = text_field(&mut doc, page, "multi", vec![("Ff", (1i64 << 12).into())]);
+        let combo = choice(&mut doc, page, "combo", FF_COMBO | FF_EDIT);
+        let kept = text_field(&mut doc, page, "kept", vec![("V", Object::string_literal("x\ty"))]);
+        finish(&mut doc, page, &[single, multi, combo, kept], &[single, multi, combo, kept], vec![]);
+        fill_document(&mut doc, &[
+            (0, Value::Text("a\tb".into())),
+            (1, Value::Text("c\td\ne".into())),
+            (2, Value::Text("f\tg".into())),
+        ])
+        .unwrap();
+        assert_eq!(dict(&doc, single).get(b"V").unwrap(), &Object::string_literal("a\tb"));
+        assert!(String::from_utf8_lossy(&normal_ap(&doc, single).1.content).contains("(a b) Tj"));
+        assert!(String::from_utf8_lossy(&normal_ap(&doc, multi).1.content).contains("(c d) Tj"));
+        assert_eq!(dict(&doc, combo).get(b"V").unwrap(), &Object::string_literal("f\tg"));
+        assert!(String::from_utf8_lossy(&normal_ap(&doc, combo).1.content).contains("(f g) Tj"));
+        // An unchanged value with a tab gets an appearance too.
+        assert!(String::from_utf8_lossy(&normal_ap(&doc, kept).1.content).contains("(x y) Tj"));
     }
 }
