@@ -109,7 +109,7 @@ fn assert_kept_in_place(out: &Out, rects: &[Rect]) {
 
 #[test]
 fn hello_world_loses_world_and_keeps_hello_in_place() {
-    let rects = [rect(126.0, 700.0, 170.0, 705.0)];
+    let rects = [rect(127.0, 700.0, 170.0, 705.0)];
     let out = redact(b"BT /H 10 Tf 100 700 Td (Hello World) Tj ET", &rects);
     assert_eq!(text(&out.before), "Hello World");
     assert_eq!(text(&out.after), "Hello ");
@@ -119,8 +119,9 @@ fn hello_world_loses_world_and_keeps_hello_in_place() {
 
 #[test]
 fn rect_over_the_middle_of_a_word_removes_only_covered_glyphs() {
-    // e ends at 112.78, the l's span 112.78..117.22.
-    let rects = [rect(113.0, 700.0, 117.0, 705.0)];
+    // Boxes reach 1 unit past the advance: e ends at 113.78, the l's span
+    // 111.78..118.22, o starts at 116.22.
+    let rects = [rect(114.0, 700.0, 116.0, 705.0)];
     let out = redact(b"BT /H 10 Tf 100 700 Td (Hello World) Tj ET", &rects);
     assert_eq!(text(&out.after), "Heo World");
     assert_kept_in_place(&out, &rects);
@@ -128,12 +129,12 @@ fn rect_over_the_middle_of_a_word_removes_only_covered_glyphs() {
 
 #[test]
 fn word_spacing_still_applies_to_kept_spaces() {
-    // A 0..5, space +7.5, B 12.5..18.5, space +7.5, C at 26.
-    let rects = [rect(13.0, 0.0, 18.0, 5.0)];
+    // A 0..5, space +7.5, B 12.5..18.5, space +7.5, C at 26 (box from 25).
+    let rects = [rect(14.0, 0.0, 17.0, 5.0)];
     let out = redact(b"BT /F1 10 Tf 5 Tw 0 0 Td (A B C) Tj ET", &rects);
     assert_eq!(text(&out.after), "A  C");
     assert_eq!((out.after[1].word_spacing, out.after[2].word_spacing), (5.0, 5.0));
-    assert!((out.after[3].box_user.0[0].0 - 26.0).abs() < TOLERANCE);
+    assert!((out.after[3].box_user.0[0].0 - 25.0).abs() < TOLERANCE);
     assert_kept_in_place(&out, &rects);
 }
 
@@ -170,7 +171,7 @@ fn quote_operators_keep_their_line_moves_and_spacing() {
 
 #[test]
 fn fully_removed_show_keeps_its_advance() {
-    let rects = [rect(0.0, 0.0, 10.5, 5.0)];
+    let rects = [rect(0.0, 0.0, 9.5, 5.0)];
     let out = redact(b"BT /F1 10 Tf (AB) Tj (C) Tj [(A) -300 (B)] TJ ET", &rects);
     assert_eq!(text(&out.after), "CAB");
     assert_kept_in_place(&out, &rects);
@@ -179,7 +180,7 @@ fn fully_removed_show_keeps_its_advance() {
 #[test]
 fn tj_numbers_are_kept_and_removed_glyphs_become_numbers() {
     // A 0..5, B 5..11, -250.5 moves 2.505, C 13.505..20.505, A after it.
-    let rects = [rect(14.0, 0.0, 20.0, 5.0)];
+    let rects = [rect(14.0, 0.0, 19.0, 5.0)];
     let out = redact(b"BT /F1 10 Tf [(AB) -250.5 (CA)] TJ ET", &rects);
     assert_eq!(text(&out.after), "ABA");
     assert_kept_in_place(&out, &rects);
@@ -190,7 +191,7 @@ fn identity_h_codes_are_cut_on_two_byte_boundaries() {
     let rects = [rect(6.0, 0.0, 10.0, 5.0)];
     let out = redact(b"BT /F2 10 Tf <000100020001> Tj ET", &rects);
     assert_eq!(out.after.iter().map(|g| g.code).collect::<Vec<_>>(), vec![1, 1]);
-    assert!((out.after[1].box_user.0[0].0 - 11.0).abs() < TOLERANCE);
+    assert!((out.after[1].box_user.0[0].0 - 10.0).abs() < TOLERANCE);
     assert_kept_in_place(&out, &rects);
 }
 
@@ -321,4 +322,19 @@ fn kept_glyphs_never_move_under_random_rects() {
         }
     }
     assert!(removed > 1000 && kept > 1000, "removed {removed}, kept {kept}");
+}
+
+#[test]
+fn zero_size_text_under_a_rect_is_removed() {
+    for (content, area) in [
+        (&b"BT /F1 0 Tf 10 10 Td (SECRET) Tj ET"[..], rect(5.0, 5.0, 15.0, 15.0)),
+        (b"BT /F1 10 Tf 0 Tz 10 10 Td (SECRET) Tj ET", rect(5.0, 5.0, 15.0, 15.0)),
+        (b"0 0 0 0 0 0 cm BT /F1 10 Tf 10 10 Td (SECRET) Tj ET", rect(-5.0, -5.0, 5.0, 5.0)),
+        (b"1 0 0 0 0 0 cm BT /F1 10 Tf 10 10 Td (SECRET) Tj ET", rect(5.0, -5.0, 40.0, 5.0)),
+    ] {
+        let out = redact(content, &[area]);
+        assert_eq!(out.report.glyphs_removed, 6, "{}", String::from_utf8_lossy(content));
+        assert!(out.after.is_empty(), "{}", String::from_utf8_lossy(&out.content));
+        assert!(!String::from_utf8_lossy(&out.content).contains("SECRET"));
+    }
 }

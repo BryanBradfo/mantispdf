@@ -109,7 +109,15 @@ impl Quad {
     pub(crate) fn intersects(&self, r: &Rect) -> bool {
         let p = &self.0;
         let twice_area: f64 = (0..4).map(|i| p[i].0 * p[(i + 1) % 4].1 - p[(i + 1) % 4].0 * p[i].1).sum();
-        if twice_area.abs() < 1e-12 || !self.bbox().overlaps(r) {
+        let b = self.bbox();
+        let scale = (b.x1 - b.x0).powi(2) + (b.y1 - b.y0).powi(2);
+        if twice_area.abs() <= 1e-9 * scale {
+            // A segment or a point (zero font size, zero scaling, singular
+            // matrix): it still marks where the content is, so touching the
+            // closed rect counts.
+            return b.x0 <= r.x1 && r.x0 <= b.x1 && b.y0 <= r.y1 && r.y0 <= b.y1;
+        }
+        if !b.overlaps(r) {
             return false;
         }
         let corners = [(r.x0, r.y0), (r.x1, r.y0), (r.x1, r.y1), (r.x0, r.y1)];
@@ -525,12 +533,18 @@ impl Run<'_> {
             let width = font.width(code)?;
             let word_spacing = if font.word_space_applies(code, byte_range.len()) { self.gs.word_spacing } else { 0.0 };
             let trm = concat(&size, &concat(&self.text.tm, &self.gs.ctm));
+            let mut box_user = Quad::of_box(&trm, font.glyph_box(width));
+            if matches!(self.gs.render_mode, 1 | 2 | 5 | 6) {
+                // Stroked outlines reach past the glyph box like a path's.
+                let b = box_user.bbox().expanded(self.gs.stroke_reach());
+                box_user = Quad::of_box(&IDENTITY, [b.x0, b.y0, b.x1, b.y1]);
+            }
             let glyph = Glyph {
                 op_index,
                 elem_index,
                 byte_range,
                 code,
-                box_user: Quad::of_box(&trm, font.glyph_box(width)),
+                box_user,
                 render_mode: self.gs.render_mode,
                 width,
                 font_size: self.gs.font_size,
@@ -934,10 +948,14 @@ mod tests {
         }
     }
 
-    /// Box of a glyph from x0..x1 on the baseline y with the 0.9/-0.2 em
-    /// fallback at size 10.
+    /// Box of a glyph advancing over x0..x1 on the baseline y at size 10:
+    /// the 0.9/-0.2 em fallback, widened 0.1 em (1 unit) on each side.
     fn upright(x0: f64, x1: f64, y: f64) -> [(f64, f64); 4] {
-        [(x0, y - 2.0), (x1, y - 2.0), (x1, y + 9.0), (x0, y + 9.0)]
+        upright_pad(x0, x1, y, 1.0)
+    }
+
+    fn upright_pad(x0: f64, x1: f64, y: f64, pad: f64) -> [(f64, f64); 4] {
+        [(x0 - pad, y - 2.0), (x1 + pad, y - 2.0), (x1 + pad, y + 9.0), (x0 - pad, y + 9.0)]
     }
 
     fn unsupported(content: &str) -> String {
@@ -955,9 +973,10 @@ mod tests {
         assert_eq!(g.iter().map(|g| g.byte_range.clone()).collect::<Vec<_>>(), vec![0..1, 1..2, 2..3]);
         assert!(g.iter().all(|g| g.op_index == 6 && g.elem_index == 0 && g.render_mode == 0));
         // Th = 0.5: A advances (5 + 2) * 0.5 = 3.5; space (2.5 + 2 + 3) * 0.5 = 3.75.
-        assert_quad(&g[0].box_user, upright(100.0, 102.5, 200.0));
-        assert_quad(&g[1].box_user, upright(103.5, 104.75, 200.0));
-        assert_quad(&g[2].box_user, upright(107.25, 110.25, 200.0));
+        // Th 0.5 halves the 0.1 em widening too.
+        assert_quad(&g[0].box_user, upright_pad(100.0, 102.5, 200.0, 0.5));
+        assert_quad(&g[1].box_user, upright_pad(103.5, 104.75, 200.0, 0.5));
+        assert_quad(&g[2].box_user, upright_pad(107.25, 110.25, 200.0, 0.5));
         assert_eq!((g[0].width, g[0].font_size, g[0].h_scale, g[0].char_spacing), (0.5, 10.0, 0.5, 2.0));
         assert_eq!((g[0].word_spacing, g[1].word_spacing, g[2].word_spacing), (0.0, 3.0, 0.0));
         assert_eq!((g[0].advance(), g[1].advance()), (3.5, 3.75));
@@ -998,20 +1017,20 @@ mod tests {
     #[test]
     fn ctm_scaling_and_rotation_with_save_restore() {
         let g = glyphs("q 3 0 0 3 0 0 cm Q 2 0 0 2 0 0 cm 0 1 -1 0 100 0 cm BT /F1 10 Tf (A) Tj ET");
-        assert_quad(&g[0].box_user, [(204.0, 0.0), (204.0, 10.0), (182.0, 10.0), (182.0, 0.0)]);
+        assert_quad(&g[0].box_user, [(204.0, -2.0), (204.0, 12.0), (182.0, 12.0), (182.0, -2.0)]);
     }
 
     #[test]
     fn tm_with_shear_and_td_relative_to_line_matrix() {
         let g = glyphs("BT /F1 10 Tf 1 0 0.5 1 10 20 Tm (A) Tj 0 -10 Td (B) Tj ET");
-        assert_quad(&g[0].box_user, [(9.0, 18.0), (14.0, 18.0), (19.5, 29.0), (14.5, 29.0)]);
-        assert_quad(&g[1].box_user, [(4.0, 8.0), (10.0, 8.0), (15.5, 19.0), (9.5, 19.0)]);
+        assert_quad(&g[0].box_user, [(8.0, 18.0), (15.0, 18.0), (20.5, 29.0), (13.5, 29.0)]);
+        assert_quad(&g[1].box_user, [(3.0, 8.0), (11.0, 8.0), (16.5, 19.0), (8.5, 19.0)]);
     }
 
     #[test]
     fn rise_shifts_the_glyph_box() {
         let g = glyphs("BT /F1 10 Tf 3 Ts 1 0 0.5 1 10 20 Tm (A) Tj ET");
-        assert_quad(&g[0].box_user, [(10.5, 21.0), (15.5, 21.0), (21.0, 32.0), (16.0, 32.0)]);
+        assert_quad(&g[0].box_user, [(9.5, 21.0), (16.5, 21.0), (22.0, 32.0), (15.0, 32.0)]);
     }
 
     #[test]
@@ -1038,7 +1057,7 @@ mod tests {
         let xs = [0.0, 5.0, 11.0, 18.0, 28.0];
         for (glyph, x) in g.iter().zip(xs) {
             let x1 = x + glyph.width * 10.0;
-            assert_quad(&glyph.box_user, [(x, -2.0), (x1, -2.0), (x1, 8.0), (x, 8.0)]);
+            assert_quad(&glyph.box_user, [(x - 1.0, -2.0), (x1 + 1.0, -2.0), (x1 + 1.0, 8.0), (x - 1.0, 8.0)]);
             assert_eq!(glyph.word_spacing, 0.0);
         }
     }
@@ -1054,8 +1073,9 @@ mod tests {
         // WinAnsi: H 722, i 222, quotesingle 191.
         let widths: Vec<f64> = g.iter().map(|g| g.width).collect();
         assert!((widths[0] - 0.722).abs() < EPS && (widths[1] - 0.222).abs() < EPS && (widths[2] - 0.191).abs() < EPS);
-        assert_quad(&g[1].box_user, upright(7.22, 9.44, 0.0));
-        assert_quad(&g[2].box_user, upright(9.44, 11.35, 0.0));
+        // No descriptor: the AFM ascent 718 and descent -207.
+        assert_quad(&g[1].box_user, [(6.22, -2.07), (10.44, -2.07), (10.44, 7.18), (6.22, 7.18)]);
+        assert_quad(&g[2].box_user, [(8.44, -2.07), (12.35, -2.07), (12.35, 7.18), (8.44, 7.18)]);
         // Oblique shares the upright widths.
         assert!((glyphs("BT /HO 10 Tf (H) Tj ET")[0].width - 0.722).abs() < EPS);
     }
@@ -1281,7 +1301,42 @@ mod tests {
         assert_eq!(diamond.bbox(), Rect { x0: 9.0, y0: 9.0, x1: 21.0, y1: 21.0 });
         let diamond = Quad([(10.0, 4.0), (16.0, 10.0), (10.0, 16.0), (4.0, 10.0)]);
         assert!(diamond.intersects(&r));
-        // A degenerate quad covers no area.
-        assert!(!square(5.0, 5.0, 5.0, 8.0).intersects(&r));
+        // Degenerate quads (a segment, a point) count when they touch the
+        // rect at all: zero-size text and singular images still leak.
+        assert!(square(5.0, 5.0, 5.0, 8.0).intersects(&r));
+        assert!(square(5.0, 5.0, 5.0, 5.0).intersects(&r));
+        assert!(square(10.0, 10.0, 10.0, 10.0).intersects(&r), "point on the edge");
+        assert!(!square(10.5, 5.0, 10.5, 5.0).intersects(&r));
+        // No absolute epsilon: a tiny but real quad is tested as a quad.
+        let tiny = Quad([(5.0, 5.0), (5.0 + 1e-7, 5.0), (5.0 + 1e-7, 5.0 + 1e-7), (5.0, 5.0 + 1e-7)]);
+        assert!(tiny.intersects(&r));
+        let tiny_diamond = Quad([(10.0 + 3e-7, 0.0), (10.0 + 6e-7, 3e-7), (10.0 + 3e-7, 6e-7), (10.0, 3e-7)]);
+        assert!(!tiny_diamond.intersects(&r), "tiny quad touching the edge only");
+    }
+
+    #[test]
+    fn zero_size_text_and_singular_images_still_hit() {
+        let ev = events("BT /F1 0 Tf (A) Tj ET 0 0 0 0 5 5 cm /Im1 Do").unwrap();
+        let r = Rect { x0: 0.0, y0: 0.0, x1: 10.0, y1: 10.0 };
+        let [Event::Glyph(g), Event::Image(img)] = ev.as_slice() else { panic!("{ev:?}") };
+        assert!(g.box_user.intersects(&r));
+        assert!(img.quad_user.intersects(&r));
+    }
+
+    #[test]
+    fn stroked_text_box_grows_by_the_stroke_reach() {
+        // Line width 4, round joins: half width 2 times sqrt(2).
+        let reach = 2.0 * std::f64::consts::SQRT_2;
+        for mode in [1, 2, 5, 6] {
+            let g = glyphs(&format!("BT /F1 10 Tf {mode} Tr 4 w 1 j (A) Tj ET"));
+            assert_quad(
+                &g[0].box_user,
+                [(-1.0 - reach, -2.0 - reach), (6.0 + reach, -2.0 - reach), (6.0 + reach, 9.0 + reach), (-1.0 - reach, 9.0 + reach)],
+            );
+        }
+        for mode in [0, 3, 4, 7] {
+            let g = glyphs(&format!("BT /F1 10 Tf {mode} Tr 4 w 1 j (A) Tj ET"));
+            assert_quad(&g[0].box_user, upright(0.0, 5.0, 0.0));
+        }
     }
 }
