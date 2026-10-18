@@ -772,3 +772,20 @@ fn soft_mask_group_content_under_an_area_needs_a_raster_whatever_its_box() {
     // Areas missing both its box and its content: fine.
     assert!(!raster_needed(doc, vec![area(1, 300.0, 300.0, 10.0, 10.0)]));
 }
+
+#[test]
+fn rasters_of_pages_with_a_user_unit_may_be_sized_either_way() {
+    let mut doc = fixture_with_type3();
+    let page3 = page_ids(&doc)[2];
+    doc.get_dictionary_mut(page3).unwrap().set("UserUnit", 2);
+    let pdf = bytes(doc);
+    let with = |w: u32, h: u32| {
+        let mut j = job(vec![area(3, 0.0, 0.0, 10.0, 10.0)]);
+        j.rasters = vec![white_raster(3, w, h, 72.0)];
+        redact(&pdf, j).map(|_| ())
+    };
+    // In points (as pdf.js 4 renders it), or in UserUnit-scaled points.
+    assert_eq!(with(612, 792), Ok(()));
+    assert_eq!(with(1224, 1584), Ok(()));
+    assert_eq!(with(900, 1100), Err("Invalid redact settings: raster".to_string()));
+}

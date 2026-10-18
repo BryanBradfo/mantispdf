@@ -32,15 +32,21 @@ fn invalid() -> String {
     super::invalid("raster")
 }
 
-/// The raster must show the page's visible box at its dpi (within 2 px),
+/// The raster must show the page's visible box at its dpi (within 2 px; in
+/// points or in /UserUnit-scaled points),
 /// with exactly `width * height` RGBA pixels, at most 32 M of them.
-fn check(raster: &PageRaster, vb: &VisibleBox) -> Result<(), String> {
+fn check(raster: &PageRaster, vb: &VisibleBox, user_unit: f64) -> Result<(), String> {
     let (w, h) = (u64::from(raster.width), u64::from(raster.height));
     if !(raster.dpi.is_finite() && raster.dpi > 0.0 && raster.dpi <= MAX_DPI) || w == 0 || h == 0 || w * h > MAX_RASTER_PIXELS {
         return Err(invalid());
     }
-    let expected = |points: f64| points * raster.dpi / 72.0;
-    if (expected(vb.width()) - w as f64).abs() > SIZE_SLACK || (expected(vb.height()) - h as f64).abs() > SIZE_SLACK {
+    // pdf.js 4 (what the app renders with) ignores /UserUnit; a renderer
+    // that applies it gives a picture `user_unit` times larger. Either fits.
+    let fits = |scale: f64| {
+        let expected = |points: f64| points * scale * raster.dpi / 72.0;
+        (expected(vb.width()) - w as f64).abs() <= SIZE_SLACK && (expected(vb.height()) - h as f64).abs() <= SIZE_SLACK
+    };
+    if !fits(1.0) && !fits(user_unit) {
         return Err(invalid());
     }
     if raster.rgba.len() as u64 != w * h * 4 {
@@ -82,7 +88,13 @@ fn box_array(b: [f64; 4]) -> Object {
 /// Nothing else of the original page is kept. Returns the image's id.
 pub(crate) fn rasterize_page(doc: &mut Document, page: ObjectId, raster: PageRaster, areas: &[RedactRect], fill: Fill) -> Result<ObjectId, String> {
     let vb = VisibleBox::of_page(doc, page);
-    check(&raster, &vb)?;
+    let user_unit = match doc.get_dictionary(page).ok().and_then(|d| d.get(b"UserUnit").ok()) {
+        Some(Object::Integer(u)) => *u as f64,
+        Some(Object::Real(u)) => f64::from(*u),
+        _ => 1.0,
+    };
+    let user_unit = if user_unit.is_finite() && user_unit > 0.0 { user_unit } else { 1.0 };
+    check(&raster, &vb, user_unit)?;
     let (w, h) = (raster.width as usize, raster.height as usize);
     let mut rgba = raster.rgba;
     paint_areas(&mut rgba, (w, h), &vb, areas, fill);
@@ -146,10 +158,10 @@ mod tests {
         // page, one row over the cap.
         let vb = VisibleBox { x0: 0.0, y0: 0.0, x1: 8000.0, y1: 4001.0, rotate: 0 };
         let raster = PageRaster { page: 1, width: 8000, height: 4001, dpi: 72.0, rgba: vec![0; 8000 * 4001 * 4] };
-        assert_eq!(check(&raster, &vb), Err(invalid()));
+        assert_eq!(check(&raster, &vb, 1.0), Err(invalid()));
         let vb = VisibleBox { x0: 0.0, y0: 0.0, x1: 8000.0, y1: 4000.0, rotate: 0 };
         let raster = PageRaster { page: 1, width: 8000, height: 4000, dpi: 72.0, rgba: vec![0; 8000 * 4000 * 4] };
-        assert_eq!(check(&raster, &vb), Ok(()));
+        assert_eq!(check(&raster, &vb, 1.0), Ok(()));
     }
 
 }

@@ -2,6 +2,8 @@
  * Raster fallback for pages the engine cannot redact in place: pdf.js renders the page's
  * visible box at 200 dpi (annotations off, so nothing extra is baked in), the areas are painted
  * on the canvas (the engine paints them again), and the RGBA pixels go to the engine.
+ * Sizes are in points: pdf.js 4 ignores a page's /UserUnit, and the engine accepts a raster
+ * sized either in points or in UserUnit-scaled points.
  */
 import { pdfjs } from "../pdf";
 import type { Rect } from "./model";
