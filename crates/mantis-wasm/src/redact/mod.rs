@@ -109,7 +109,7 @@ pub(crate) fn redact_content(ops: &[Operation], events: &[Event], rects: &[Rect]
     }
     for (index, glyphs) in removed_glyphs {
         let op = ops.get(index).ok_or_else(|| Unsupported::new("glyph outside the content"))?;
-        let (rewritten, whole) = text::rewrite_show(op, &glyphs)?;
+        let (rewritten, whole) = text::rewrite_show(op, &glyphs, text::later_text_depends(ops, index))?;
         report.glyphs_removed += if whole { shown.get(&index).copied().unwrap_or(0) } else { glyphs.len() };
         replaced.insert(index, rewritten);
     }

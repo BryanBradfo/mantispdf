@@ -6,6 +6,11 @@ use super::*;
 use lopdf::{Dictionary, Document, Object, Stream, dictionary};
 
 const TOLERANCE: f64 = 1e-6;
+/// lopdf keeps reals as f32, so the one number standing in for a removed
+/// run is exact only to 2^-24 of its size; kept glyphs after it may move by
+/// that much relative to their distance from the origin (1e-4 pt on a
+/// 1000 pt line). Positions are compared within TOLERANCE plus this.
+const F32_RELATIVE: f64 = 1.0 / (1u64 << 23) as f64;
 
 fn fixture() -> (Document, Dictionary) {
     let mut doc = Document::with_version("1.7");
@@ -75,8 +80,36 @@ fn redact(content: &[u8], rects: &[Rect]) -> Out {
     let events = Interp::new(&doc, resources.clone()).run(&ops, IDENTITY, &mut Budget::page(1 << 20)).unwrap();
     let (new_ops, report) = redact_content(&ops, &events, rects).unwrap();
     let content = encode_ops(&new_ops);
+    assert_no_number_runs(&content);
     let after_events = interpret(&doc, &resources, &content);
     Out { content, report, before: glyphs_of(&events), after: glyphs_of(&after_events), after_events }
+}
+
+/// The TJ arrays of `content`, as written.
+fn tj_arrays(content: &[u8]) -> Vec<Vec<Object>> {
+    decode_ops(content)
+        .unwrap()
+        .into_iter()
+        .filter_map(|op| match (op.operator.as_str(), op.operands.as_slice()) {
+            ("TJ", [Object::Array(items)]) => Some(items.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn is_number(o: &Object) -> bool {
+    matches!(o, Object::Integer(_) | Object::Real(_))
+}
+
+/// Removed text never leaves per-glyph widths: no two numbers in a row.
+fn assert_no_number_runs(content: &[u8]) {
+    for items in tj_arrays(content) {
+        assert!(
+            !items.windows(2).any(|w| is_number(&w[0]) && is_number(&w[1])),
+            "{}",
+            String::from_utf8_lossy(content)
+        );
+    }
 }
 
 fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Rect {
@@ -97,8 +130,9 @@ fn assert_kept_in_place(out: &Out, rects: &[Rect]) {
     for (want, got) in kept.iter().zip(&out.after) {
         assert_eq!((want.code, want.render_mode), (got.code, got.render_mode));
         for (a, b) in want.box_user.0.iter().zip(got.box_user.0) {
+            let tolerance = TOLERANCE + F32_RELATIVE * (a.0.abs() + a.1.abs());
             assert!(
-                (a.0 - b.0).abs() < TOLERANCE && (a.1 - b.1).abs() < TOLERANCE,
+                (a.0 - b.0).abs() < tolerance && (a.1 - b.1).abs() < tolerance,
                 "{want:?} moved to {got:?}\n{}",
                 String::from_utf8_lossy(&out.content)
             );
@@ -366,4 +400,37 @@ fn zero_size_show_operations_are_dropped_whole() {
     assert_eq!(text(&out.after), "C");
     assert!((out.after[0].box_user.0[0].1 - 8.0).abs() < TOLERANCE, "C stays on the line at y 10");
     assert_eq!(out.report.glyphs_removed, 2);
+}
+
+/// Helvetica 10 at (100, 700): "AB " ends at 116.12, SECRET spans
+/// 116.12..156.68 (boxes 1 unit wider); this rect covers exactly SECRET.
+const SECRET: Rect = Rect { x0: 117.5, y0: 700.0, x1: 155.5, y1: 705.0 };
+
+#[test]
+fn a_removed_run_becomes_one_number() {
+    let out = redact(b"BT /H 10 Tf 100 700 Td (AB SECRET CD) Tj ET", &[SECRET]);
+    assert_eq!(text(&out.after), "AB  CD");
+    let arrays = tj_arrays(&out.content);
+    assert_eq!(arrays.len(), 1);
+    assert_eq!(arrays[0].iter().filter(|o| is_number(o)).count(), 1, "{:?}", arrays[0]);
+    assert_kept_in_place(&out, &[SECRET]);
+}
+
+#[test]
+fn trailing_removals_leave_no_number_unless_later_text_depends_on_it() {
+    let numbers = |content: &[u8]| -> Vec<usize> {
+        let out = redact(content, &[SECRET]);
+        assert_kept_in_place(&out, &[SECRET]);
+        tj_arrays(&out.content).iter().map(|a| a.iter().filter(|o| is_number(o)).count()).collect()
+    };
+    assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB SECRET) Tj ET"), vec![0]);
+    assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB SECRET) Tj 0 -20 Td (X) Tj ET"), vec![0]);
+    assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB SECRET) Tj 12 TL (X) ' ET"), vec![0]);
+    assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB SECRET) Tj /H 9 Tf (X) Tj ET"), vec![1]);
+    // A show removed entirely: one number when later text depends on it,
+    // nothing otherwise.
+    assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB ) Tj (SECRET) Tj (X) Tj ET"), vec![1]);
+    assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB ) Tj (SECRET) Tj ET"), Vec::<usize>::new());
+    // Original numbers next to a removed run merge into it.
+    assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td [(AB ) -10 (SECRET) 20 ( CD)] TJ ET"), vec![1]);
 }
