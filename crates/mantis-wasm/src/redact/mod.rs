@@ -75,7 +75,6 @@ pub(crate) struct RedactSummary {
     pub(crate) glyphs_removed: usize,
     pub(crate) paths_removed: usize,
     pub(crate) images_redacted: usize,
-    pub(crate) images_removed: usize,
     pub(crate) forms_redacted: usize,
     pub(crate) annotations_removed: usize,
 }
@@ -232,7 +231,6 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
         summary.glyphs_removed += report.glyphs_removed;
         summary.paths_removed += report.paths_removed + report.shadings_removed;
         summary.images_redacted += report.images_redacted;
-        summary.images_removed += report.images_removed.len();
         summary.forms_redacted += report.forms_redacted;
         summary.annotations_removed += report.annotations_removed;
         created.extend(report.created_images);
@@ -410,11 +408,8 @@ pub(crate) struct Report {
     pub(crate) glyphs_removed: usize,
     pub(crate) paths_removed: usize,
     pub(crate) shadings_removed: usize,
-    pub(crate) inline_images_removed: usize,
     /// Images (XObject or inline) redrawn with painted pixels.
     pub(crate) images_redacted: usize,
-    /// Why each image under a rect was removed entirely instead.
-    pub(crate) images_removed: Vec<&'static str>,
     /// Form XObjects drawn from redacted private copies.
     pub(crate) forms_redacted: usize,
     /// Annotations removed from the page.
@@ -437,7 +432,6 @@ fn contains(outer: &Rect, inner: &Rect) -> bool {
     inner.x0 >= outer.x0 - EPS && inner.y0 >= outer.y0 - EPS && inner.x1 <= outer.x1 + EPS && inner.y1 <= outer.y1 + EPS
 }
 
-/// The edit for an image placement under a rect.
 /// The image stream an image placement draws (an inline image as an
 /// XObject); Err names why there is none.
 fn placed_image(page: &PageEdit, ops: &[Operation], img: &interp::ImagePlacement) -> Result<lopdf::Stream, &'static str> {
@@ -491,9 +485,7 @@ impl Report {
         self.glyphs_removed += other.glyphs_removed;
         self.paths_removed += other.paths_removed;
         self.shadings_removed += other.shadings_removed;
-        self.inline_images_removed += other.inline_images_removed;
         self.images_redacted += other.images_redacted;
-        self.images_removed.extend(other.images_removed);
         self.forms_redacted += other.forms_redacted;
         self.annotations_removed += other.annotations_removed;
         self.created_images.extend(other.created_images);
@@ -535,9 +527,6 @@ pub(crate) fn redact_content(
     // Innermost sequences around removed content.
     let mut touched: Vec<usize> = Vec::new();
     for event in events {
-        match event {
-            _ => {}
-        }
         match event {
             Event::Glyph(g) => {
                 let removed = graphics::quad_hit(&g.box_user, rects);
@@ -583,7 +572,6 @@ pub(crate) fn redact_content(
                 if !page.pixels {
                     continue;
                 }
-                let inline = img.source == interp::ImageSource::Inline;
                 match images::redact_image(page.doc, &stream, page.resources, &img.quad_user, rects, page.fill, page.budget) {
                     images::ImageEdit::Untouched => continue,
                     images::ImageEdit::Replaced { image, smask } => {
@@ -594,10 +582,7 @@ pub(crate) fn redact_content(
                     }
                     // Seen only in its data (corrupt, a mask that does not
                     // decode): a raster still.
-                    images::ImageEdit::Removed(reason) => {
-                        let _ = inline;
-                        return Err(cannot_edit(reason));
-                    }
+                    images::ImageEdit::NeedsRaster(reason) => return Err(cannot_edit(reason)),
                 }
                 touched.extend(img.marked);
             }

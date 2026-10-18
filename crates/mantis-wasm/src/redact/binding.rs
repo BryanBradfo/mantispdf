@@ -150,7 +150,6 @@ pub(crate) fn result_to_js(bytes: &[u8], summary: &RedactSummary) -> JsValue {
     set(&obj, "glyphsRemoved", &count(summary.glyphs_removed));
     set(&obj, "pathsRemoved", &count(summary.paths_removed));
     set(&obj, "imagesRedacted", &count(summary.images_redacted));
-    set(&obj, "imagesRemoved", &count(summary.images_removed));
     set(&obj, "formsRedacted", &count(summary.forms_redacted));
     set(&obj, "annotationsRemoved", &count(summary.annotations_removed));
     obj.into()

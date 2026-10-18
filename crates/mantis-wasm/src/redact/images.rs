@@ -1,6 +1,7 @@
 //! Image redaction: the pixels of an image under a redaction area are
 //! painted with the fill colour in a new image object (other users of the
-//! original keep it); an image that cannot be decoded is removed entirely.
+//! original keep it); an image that cannot be edited makes its page need a
+//! raster.
 
 use super::interp::{Quad, Rect};
 use super::{Budget, Fill};
@@ -31,8 +32,9 @@ pub(crate) enum ImageEdit {
     Untouched,
     /// A new image (and soft mask) to draw instead.
     Replaced { image: Stream, smask: Option<Stream> },
-    /// The image must not be drawn at all; the reason is reported.
-    Removed(&'static str),
+    /// The image cannot be edited (the reason says why): the page needs a
+    /// raster.
+    NeedsRaster(&'static str),
 }
 
 /// Which pixels of a `width` x `height` image whose unit square lands on
@@ -102,13 +104,13 @@ pub(crate) fn redact_image(
     budget: &mut Budget,
 ) -> ImageEdit {
     let (Some(width), Some(height)) = (positive_int(doc, &stream.dict, b"Width"), positive_int(doc, &stream.dict, b"Height")) else {
-        return ImageEdit::Removed("corrupt");
+        return ImageEdit::NeedsRaster("corrupt");
     };
     // Hold the memory editing takes (RGBA, coverage, encoder input) and the
     // decoding while this image is edited; it is given back once the new
     // image is encoded, so the budget bounds the peak, not the total.
     let Some(cost) = image_cost(width, height, budget.decoded) else {
-        return ImageEdit::Removed("budget");
+        return ImageEdit::NeedsRaster("budget");
     };
     let held = budget.decoded;
     budget.decoded -= cost;
@@ -138,13 +140,13 @@ fn edit_image(
     left: usize,
 ) -> ImageEdit {
     let Some(covered) = covered_pixels(width, height, quad, rects) else {
-        return ImageEdit::Removed("degenerate placement");
+        return ImageEdit::NeedsRaster("degenerate placement");
     };
     if !covered.contains(&true) {
         return ImageEdit::Untouched;
     }
     let Some(filters) = filters_of(stream) else {
-        return ImageEdit::Removed("corrupt");
+        return ImageEdit::NeedsRaster("corrupt");
     };
     let mut decoder = ImageDecoder::new(doc, left);
     let edit = if filters.contains(&&b"DCTDecode"[..]) {
@@ -152,7 +154,7 @@ fn edit_image(
     } else {
         redact_samples(doc, stream, res, (width, height), &covered, fill, &mut decoder)
     };
-    edit.unwrap_or_else(ImageEdit::Removed)
+    edit.unwrap_or_else(ImageEdit::NeedsRaster)
 }
 
 /// Alpha of the image's mask with covered pixels made opaque: the box
@@ -221,7 +223,8 @@ fn redact_samples(
 
 /// A JPEG: decoded, painted and re-encoded as a JPEG in its own (Gray or
 /// RGB) colour space. CMYK, inverted (/Decode), stencil (/ImageMask) or
-/// filtered-twice JPEGs are removed. Its pixels are already charged to the budget.
+/// filtered-twice JPEGs need a raster (`not_editable` reports them first).
+/// Its pixels are already charged to the budget.
 fn redact_jpeg(
     doc: &Document,
     stream: &Stream,

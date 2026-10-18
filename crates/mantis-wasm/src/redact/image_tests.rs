@@ -1,5 +1,5 @@
 //! Image redaction through `redact_content`: pixels painted in new objects,
-//! originals untouched, undecodable images removed.
+//! originals untouched, images that cannot be edited need a raster.
 
 use super::images::{covered_pixels, inline_as_xobject};
 use super::interp::{IDENTITY, Interp, Quad, decode_ops, encode_ops};
@@ -387,7 +387,7 @@ fn inline_rgb() -> Vec<u8> {
 fn covered_inline_image_becomes_a_redacted_xobject() {
     let page = page_with(rgb_image(1, 1, |_, _| [0, 0, 0]));
     let out = redact(page, &inline_rgb(), &[rect(0.0, 0.0, 20.0, 40.0)]);
-    assert_eq!((out.report.images_redacted, out.report.inline_images_removed), (1, 0));
+    assert_eq!(out.report.images_redacted, 1);
     let ops = decode_ops(&out.content).unwrap();
     assert!(!ops.iter().any(|op| op.operator == "BI"));
     let names = drawn(&out.content);

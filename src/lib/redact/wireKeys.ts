@@ -17,7 +17,6 @@ export const RESULT_KEYS = [
   "glyphsRemoved",
   "pathsRemoved",
   "imagesRedacted",
-  "imagesRemoved",
   "formsRedacted",
   "annotationsRemoved",
 ] as const;
