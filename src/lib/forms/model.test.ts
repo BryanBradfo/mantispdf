@@ -54,7 +54,7 @@ describe("form state", () => {
   });
 
   it("knows which widgets are drawn and which fields are editable", () => {
-    const w = { page: 1, rect: [0, 0, 1, 1] as [number, number, number, number], rotation: 0 as const, onState: null, hidden: false, fontSize: 0, align: 0 as const };
+    const w = { page: 1, rect: [0, 0, 1, 1] as [number, number, number, number], rotation: 0 as const, onState: null, hidden: false, font: "Helvetica" as const, fontSize: 0, align: 0 as const };
     expect(isDrawn(w)).toBe(true);
     expect(isDrawn({ ...w, page: 0 })).toBe(false);
     expect(isDrawn({ ...w, hidden: true })).toBe(false);

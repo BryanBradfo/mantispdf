@@ -554,7 +554,8 @@ impl<'a> Context<'a> {
             .ok()
             .and_then(|mk| deref(doc, mk)?.as_dict().ok())
             .and_then(|mk| deref(doc, mk.get(b"R").ok()?));
-        let rotation = add_rotation(mk_rotation, page_box.map_or(0, |vb| vb.rotate));
+        // /R turns the content counterclockwise, /Rotate turns the page clockwise.
+        let rotation = add_rotation(mk_rotation, -page_box.map_or(0, |vb| vb.rotate));
         let flags = integer(dict.get(b"F").ok().and_then(|f| deref(doc, f))).unwrap_or(0);
         let da = match self.widget_attr(dict, field, b"DA") {
             Some(Object::String(bytes, _)) => parse_da(doc, bytes, self.dr),
@@ -575,6 +576,7 @@ impl<'a> Context<'a> {
             rotation: rotation as u16,
             on_state: on_state_text,
             hidden: flags & INVISIBLE_FLAGS != 0,
+            font: da.font,
             font_size: da.size,
             align,
         };
@@ -782,7 +784,7 @@ pub(crate) mod tests {
         assert!(!f.read_only && !f.required);
         assert_eq!(f.widgets, vec![Widget {
             page: 1, rect: [100.0, 700.0, 300.0, 720.0], rotation: 0, on_state: None,
-            hidden: false, font_size: 12.0, align: 1,
+            hidden: false, font: StdFont::Helvetica, font_size: 12.0, align: 1,
         }]);
     }
 
@@ -1085,11 +1087,27 @@ pub(crate) mod tests {
         finish(&mut doc, page, &[field], &[field], vec![]);
         let w = &tree(&doc).info.fields[0].widgets[0];
         assert_eq!(w.rect, [200.0, 450.0, 220.0, 500.0]);
-        assert_eq!(w.rotation, 180);
+        // Turned a quarter counterclockwise on a page turned a quarter clockwise: upright.
+        assert_eq!(w.rotation, 0);
         // Mapping back with the page matrix lands on the original corners.
         let vb = VisibleBox::of_page(&doc, page);
         let corners = [vb.to_user(w.rect[0], w.rect[1]), vb.to_user(w.rect[2], w.rect[3])];
         assert!(corners.contains(&(150.0, 200.0)) && corners.contains(&(100.0, 220.0)), "{corners:?}");
+    }
+
+    #[test]
+    fn on_screen_rotation_is_r_minus_page_rotate() {
+        for (page_rotate, r, expected) in [(0, 0, 0), (0, 90, 90), (90, 0, 270), (90, 90, 0), (270, 0, 90), (270, 90, 180)] {
+            let (mut doc, page) = base(page_rotate);
+            let field = doc.add_object(with(widget(page, [100, 200, 150, 220]), vec![
+                ("FT", "Tx".into()), ("T", Object::string_literal("x")), ("MK", dictionary! { "R" => r }.into()),
+                ("DA", Object::string_literal("/F2 9 Tf")),
+            ]));
+            finish(&mut doc, page, &[field], &[field], vec![]);
+            let w = &tree(&doc).info.fields[0].widgets[0];
+            assert_eq!(w.rotation, expected, "Rotate {page_rotate}, R {r}");
+            assert_eq!(w.font, StdFont::Courier);
+        }
     }
 
     #[test]

@@ -9,6 +9,8 @@ pub(crate) mod flatten;
 pub(crate) mod job;
 pub(crate) mod tree;
 
+use crate::stamp::fonts::StdFont;
+
 pub use fill::fill_form;
 pub use tree::list_form;
 
@@ -66,12 +68,16 @@ pub struct Widget {
     /// `[x0 y0 x1 y1]` in visible page space (bottom-left origin, page
     /// /Rotate applied); user space when `page` is 0.
     pub rect: [f64; 4],
-    /// /MK /R plus page /Rotate, in {0, 90, 180, 270}. For display only.
+    /// Counterclockwise rotation of the widget's content as seen on screen:
+    /// (/MK /R - page /Rotate) mod 360, in {0, 90, 180, 270} (/R turns
+    /// counterclockwise, /Rotate clockwise). For display only.
     pub rotation: u16,
     /// The widget's "on" appearance state (buttons only).
     pub on_state: Option<String>,
     /// Hidden or NoView annotation flag set.
     pub hidden: bool,
+    /// The standard font generated appearances use (from /DA).
+    pub font: StdFont,
     /// /DA font size; 0 means auto size.
     pub font_size: f64,
     /// /Q quadding: 0 left, 1 centre, 2 right.

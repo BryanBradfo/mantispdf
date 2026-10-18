@@ -131,6 +131,7 @@ fn widget_to_js(w: &Widget) -> Object {
     set(&o, "rotation", w.rotation);
     set(&o, "onState", w.on_state.as_deref().map_or(JsValue::NULL, JsValue::from_str));
     set(&o, "hidden", w.hidden);
+    set(&o, "font", w.font.base_font());
     set(&o, "fontSize", w.font_size);
     set(&o, "align", w.align);
     o

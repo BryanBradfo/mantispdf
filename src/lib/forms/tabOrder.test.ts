@@ -8,6 +8,7 @@ const at = (page: number, x: number, top: number, extra: Partial<FormWidget> = {
   rotation: 0,
   onState: null,
   hidden: false,
+  font: "Helvetica",
   fontSize: 0,
   align: 0,
   ...extra,

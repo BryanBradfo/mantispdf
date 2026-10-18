@@ -5,6 +5,8 @@
  * the page as displayed (CropBox, /Rotate applied), like the editor.
  */
 
+import type { StdFont } from "../stampJob";
+
 /** A field value, also the wire shape `fill_form` reads. */
 export type FormValue = { kind: "text"; text: string } | { kind: "names"; names: string[] } | { kind: "none" };
 
@@ -22,7 +24,10 @@ export interface FormWidget {
   page: number;
   /** `[x0, y0, x1, y1]` in visible points (user space when `page` is 0). */
   rect: [number, number, number, number];
-  /** /MK /R plus page /Rotate, for display only. */
+  /**
+   * Counterclockwise rotation of the widget's content as seen on screen:
+   * (/MK /R - page /Rotate) mod 360. For display only.
+   */
   rotation: 0 | 90 | 180 | 270;
   /**
    * The state name that turns this button widget on, as the engine names it
@@ -31,6 +36,8 @@ export interface FormWidget {
   onState: string | null;
   /** Hidden or NoView: not shown, kept unchanged. */
   hidden: boolean;
+  /** The standard font the engine draws this widget's text with (from /DA). */
+  font: StdFont;
   /** /DA font size; 0 means auto size. */
   fontSize: number;
   /** 0 left, 1 centre, 2 right. */
