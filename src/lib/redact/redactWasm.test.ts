@@ -87,7 +87,7 @@ describe.skipIf(!built)("redact_plan / redact bindings", () => {
 
   it("refuses a missing raster and bad shapes with the engine's messages", () => {
     const job = { rects, fill: "black", removeMetadata: true, rasters: [] };
-    expect(() => wasm.redact(PDF, job)).toThrow(/^Invalid redact settings: raster \(page 2: /);
+    expect(() => wasm.redact(PDF, job)).toThrow("Invalid redact settings: needs raster [2]");
     expect(() => wasm.redact(PDF, { ...job, fill: "red" })).toThrow("Invalid redact settings: fill");
     expect(() => wasm.redact_plan(PDF, [{ page: 1, rect: [0, 0, 1] }])).toThrow("Invalid redact settings: rects[0].rect");
     // Five 32M-pixel rasters are 640 MB of pixels: refused before any is read.

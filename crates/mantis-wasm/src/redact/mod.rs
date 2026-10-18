@@ -174,15 +174,17 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
     let mut summary = RedactSummary::default();
     let mut checks = Vec::new();
     let mut created = Vec::new();
+    // Pages that need a raster the job did not bring (the plan should have
+    // reported them; listed together so the UI can ask for them).
+    let mut needs_raster = Vec::new();
     for (number, rects, result) in redact_pages(&mut doc, &by_page, job.fill, false) {
         let report = match result {
             Ok(report) => report,
-            Err(Unsupported(reason)) => {
-                let index = job
-                    .rasters
-                    .iter()
-                    .position(|r| r.page == number)
-                    .ok_or_else(|| invalid(&format!("raster (page {number}: {reason})")))?;
+            Err(Unsupported(_)) => {
+                let Some(index) = job.rasters.iter().position(|r| r.page == number) else {
+                    needs_raster.push(number);
+                    continue;
+                };
                 // Taken, not copied: rasters are large.
                 let raster = job.rasters.swap_remove(index);
                 let page = doc.get_pages()[&number];
@@ -204,6 +206,10 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
             summary.pages_widened.push(number);
         }
         checks.push((number, rects, report.uncovered.len(), false));
+    }
+    if !needs_raster.is_empty() {
+        let list: Vec<String> = needs_raster.iter().map(u32::to_string).collect();
+        return Err(invalid(&format!("needs raster [{}]", list.join(","))));
     }
     // Images this job drew carry a random tag through the rebuild, so
     // verification can tell them from any source image by identity.

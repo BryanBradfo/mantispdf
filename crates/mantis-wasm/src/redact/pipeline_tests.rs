@@ -245,7 +245,7 @@ fn plan_reports_pages_that_need_a_raster() {
     assert!(plan[1].reason.as_deref().unwrap().contains("Type3"));
     // Redacting without a raster for it is refused.
     let err = redact(&bytes(fixture_with_type3()), job(vec![area(3, 0.0, 0.0, 10.0, 10.0)])).unwrap_err();
-    assert!(err.starts_with("Invalid redact settings: raster (page 3: font T: Type3"), "{err}");
+    assert_eq!(err, "Invalid redact settings: needs raster [3]");
 }
 
 fn fixture_with_type3() -> Document {
@@ -447,7 +447,7 @@ fn pattern_page(content: &str) -> Document {
 }
 
 fn raster_needed(doc: Document, rects: Vec<RedactRect>) -> bool {
-    matches!(redact(&bytes(doc), job(rects)), Err(e) if e.starts_with("Invalid redact settings: raster"))
+    matches!(redact(&bytes(doc), job(rects)), Err(e) if e.starts_with("Invalid redact settings: needs raster"))
 }
 
 #[test]
@@ -561,7 +561,8 @@ fn planning_skips_the_pixel_work() {
     assert!(budget.decoded > (64 << 20) - 1000, "planning decoded the image");
     let mut budget = Budget::page(64 << 20);
     redact_page(&mut page_doc(), page, &rects, Fill::Black, &mut budget).unwrap();
-    assert!(budget.decoded <= (64 << 20) - 80_000, "redacting charges the pixels");
+    // Redacting holds the pixels only while editing: the budget bounds the peak.
+    assert!(budget.decoded > (64 << 20) - 1000, "the editing memory is given back");
     let plan = redact_plan(&bytes(page_doc()), &a).unwrap();
     assert_eq!(plan, vec![PageStatus { page: 1, reason: None }]);
 }
@@ -659,7 +660,7 @@ fn rasters_are_validated() {
         j.rasters = raster.into_iter().collect();
         redact(&pdf, j).map(|_| ()).unwrap_err()
     };
-    assert!(with(None).starts_with("Invalid redact settings: raster (page 3: font T: Type3"));
+    assert_eq!(with(None), "Invalid redact settings: needs raster [3]");
     assert_eq!(with(Some(white_raster(3, 600, 792, 72.0))), "Invalid redact settings: raster");
     assert_eq!(with(Some(white_raster(3, 612, 792, 0.0))), "Invalid redact settings: raster");
     let mut short = white_raster(3, 612, 792, 72.0);
@@ -911,4 +912,66 @@ fn removed_text_poking_out_of_its_area_gets_a_wider_box() {
 /// Glyphs of page `n` (1-based) of a document, read through a save.
 fn bytes_doc(doc: Document) -> Document {
     load_pdf(&bytes(doc)).unwrap()
+}
+
+/// `pages` pages each showing its own `w` x `h` gray scan, full page.
+fn scans(pages: usize, w: i64, h: i64) -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let image = super::page::flate_stream(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => w, "Height" => h,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        &vec![200u8; (w * h) as usize],
+    );
+    let mut kids = Vec::new();
+    for _ in 0..pages {
+        let im = doc.add_object(image.clone());
+        let content = doc.add_object(stream("q 612 0 0 792 0 0 cm /Im Do Q"));
+        let page = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages_id, "Contents" => content, "Resources" => dictionary! { "XObject" => dictionary! { "Im" => im } },
+        });
+        kids.push(Object::Reference(page));
+    }
+    let count = kids.len() as i64;
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => count, "MediaBox" => rect_array([0, 0, 612, 792]) }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    bytes(doc)
+}
+
+#[test]
+fn a_ten_page_scan_plans_and_redacts_alike() {
+    // 10 pages of 2550 x 3300 (300 dpi Letter): 67 MB of editing each, more
+    // than the job budget together, well within it one at a time.
+    let pdf = scans(10, 2550, 3300);
+    let rects: Vec<RedactRect> = (1..=10).map(|p| area(p, 100.0, 100.0, 200.0, 20.0)).collect();
+    let plan = redact_plan(&pdf, &rects).unwrap();
+    assert!(plan.iter().all(|p| p.reason.is_none()), "{plan:?}");
+    let (_, summary) = redact(&pdf, job(rects)).unwrap();
+    assert_eq!(summary.images_redacted, 10);
+}
+
+#[test]
+fn pages_needing_a_raster_are_listed_together() {
+    let mut doc = fixture_with_type3();
+    // Page 1 too needs a raster now: a JPX image under its area.
+    let page1 = page_ids(&doc)[0];
+    let jpx = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 2, "Height" => 2,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8, "Filter" => "JPXDecode",
+        },
+        vec![0; 4],
+    ));
+    let c = doc.add_object(stream("q 100 0 0 100 0 0 cm /J Do Q"));
+    let d = doc.get_dictionary_mut(page1).unwrap();
+    d.set("Contents", c);
+    d.set("Resources", dictionary! { "XObject" => dictionary! { "J" => jpx } });
+    let err = redact(&bytes(doc), job(vec![area(1, 10.0, 10.0, 10.0, 10.0), area(3, 0.0, 0.0, 10.0, 10.0)])).unwrap_err();
+    assert_eq!(err, "Invalid redact settings: needs raster [1,3]");
 }

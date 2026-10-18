@@ -154,10 +154,6 @@ impl<'d> ImageDecoder<'d> {
         self.walker.alpha(dict, &layout)
     }
 
-    /// Decoded bytes charged so far.
-    pub(crate) fn charged(&self) -> usize {
-        self.walker.charged
-    }
 }
 
 struct Walker<'d> {

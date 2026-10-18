@@ -104,34 +104,54 @@ pub(crate) fn redact_image(
     let (Some(width), Some(height)) = (positive_int(doc, &stream.dict, b"Width"), positive_int(doc, &stream.dict, b"Height")) else {
         return ImageEdit::Removed("corrupt");
     };
-    // Charge the memory editing takes (RGBA, coverage, encoder input:
-    // about 8 bytes a pixel) before allocating any of it.
+    // Hold the memory editing takes (RGBA, coverage, encoder input) and the
+    // decoding while this image is edited; it is given back once the new
+    // image is encoded, so the budget bounds the peak, not the total.
+    let Some(cost) = image_cost(width, height, budget.decoded) else {
+        return ImageEdit::Removed("budget");
+    };
+    let held = budget.decoded;
+    budget.decoded -= cost;
+    let edit = edit_image(doc, stream, res, (width, height), quad, rects, fill, budget.decoded);
+    budget.decoded = held;
+    edit
+}
+
+/// What editing a `width` x `height` image holds (about 8 bytes a pixel),
+/// None past the per-image cap or what the job has left (`left`). Planning
+/// and redacting both ask this.
+pub(crate) fn image_cost(width: usize, height: usize, left: usize) -> Option<usize> {
     let pixels = width.saturating_mul(height);
     let cost = pixels.saturating_mul(BYTES_PER_PIXEL);
-    if pixels > MAX_IMAGE_PIXELS || cost > budget.decoded {
-        return ImageEdit::Removed("budget");
-    }
-    budget.decoded -= cost;
+    (pixels <= MAX_IMAGE_PIXELS && cost <= left).then_some(cost)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn edit_image(
+    doc: &Document,
+    stream: &Stream,
+    res: &Dictionary,
+    (width, height): (usize, usize),
+    quad: &Quad,
+    rects: &[Rect],
+    fill: Fill,
+    left: usize,
+) -> ImageEdit {
     let Some(covered) = covered_pixels(width, height, quad, rects) else {
         return ImageEdit::Removed("degenerate placement");
     };
     if !covered.contains(&true) {
         return ImageEdit::Untouched;
     }
-    let filters: Vec<&[u8]> = match stream.dict.get(b"Filter") {
-        Err(_) => Vec::new(),
-        Ok(_) => match stream.filters() {
-            Ok(f) => f,
-            Err(_) => return ImageEdit::Removed("corrupt"),
-        },
+    let Some(filters) = filters_of(stream) else {
+        return ImageEdit::Removed("corrupt");
     };
-    let mut decoder = ImageDecoder::new(doc, budget.decoded);
+    let mut decoder = ImageDecoder::new(doc, left);
     let edit = if filters.contains(&&b"DCTDecode"[..]) {
         redact_jpeg(doc, stream, &filters, (width, height), &covered, fill, &mut decoder)
     } else {
         redact_samples(doc, stream, res, (width, height), &covered, fill, &mut decoder)
     };
-    budget.decoded = budget.decoded.saturating_sub(decoder.charged());
     edit.unwrap_or_else(ImageEdit::Removed)
 }
 
@@ -421,8 +441,7 @@ pub(crate) fn not_editable(doc: &Document, stream: &Stream, res: &Dictionary, bu
     let (Some(width), Some(height)) = (positive_int(doc, dict, b"Width"), positive_int(doc, dict, b"Height")) else {
         return Some("corrupt");
     };
-    let pixels = width.saturating_mul(height);
-    if pixels > MAX_IMAGE_PIXELS || pixels.saturating_mul(BYTES_PER_PIXEL) > budget_left {
+    if image_cost(width, height, budget_left).is_none() {
         return Some("too large");
     }
     let Some(filters) = filters_of(stream) else {
