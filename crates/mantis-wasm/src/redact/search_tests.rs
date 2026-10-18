@@ -689,3 +689,19 @@ fn pages_whose_unknown_boxes_are_complete_are_listed() {
     assert_eq!(found.unknown_boxes.iter().map(|p| p.rects.len()).sum::<usize>(), MAX_RECTS);
     assert_eq!(found.unknown_complete, Vec::<u32>::new());
 }
+
+#[test]
+fn pages_not_fully_searched_are_never_complete() {
+    // Past the job's character budget: page 2 is unsearched.
+    let doc = two_pages("BT /H 10 Tf 100 700 Td (a secret here and more) Tj ET");
+    let found = super::search::redact_search_within(&bytes(doc), "secret", &opts(), 30).unwrap();
+    assert_eq!(found.unsearched_pages, vec![2]);
+    assert_eq!(found.unknown_complete, vec![1]);
+    // Matches stopped at the rect cap on page 1: it and page 2 are unsearched.
+    let many = "(x ) Tj ".repeat(MAX_RECTS + 1);
+    let doc = two_pages(&format!("BT /H 10 Tf 0 700 Td 0.001 Tz {many} ET"));
+    let found = redact_search(&bytes(doc), "x", &opts()).unwrap();
+    assert!(found.truncated);
+    assert_eq!(found.unsearched_pages, vec![1, 2]);
+    assert_eq!(found.unknown_complete, Vec::<u32>::new());
+}

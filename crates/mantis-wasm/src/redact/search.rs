@@ -329,23 +329,23 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
             continue;
         };
         let vb = VisibleBox::of_page(&doc, page);
+        // Every unknown glyph boxed (listed once the page is fully searched).
+        let mut complete = true;
         if glyphs.iter().any(|g| g.text.is_none()) {
             result.undecodable_pages.push(number);
             let room = MAX_RECTS.saturating_sub(unknown);
             let all = unknown_rects(&glyphs, &lines, &vb);
-            let complete = all.len() <= room;
+            complete = all.len() <= room;
             let rects: Vec<[f64; 4]> = all.into_iter().take(room).collect();
             if !rects.is_empty() {
                 unknown += rects.len();
                 result.unknown_boxes.push(PageHits { page: number, rects });
             }
+        }
+        if needle.is_empty() {
             if complete {
                 result.unknown_complete.push(number);
             }
-        } else {
-            result.unknown_complete.push(number);
-        }
-        if needle.is_empty() {
             continue;
         }
         read += chars.len();
@@ -383,6 +383,12 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
             total += rects.len();
             result.pages.push(PageHits { page: number, rects });
         }
+        if complete && !result.unsearched_pages.contains(&number) {
+            result.unknown_complete.push(number);
+        }
     }
+    // A page not fully searched is never complete, whatever path left it.
+    let unsearched = &result.unsearched_pages;
+    result.unknown_complete.retain(|p| !unsearched.contains(p));
     Ok(result)
 }
