@@ -76,7 +76,11 @@ pub(crate) fn redact_content(ops: &[Operation], events: &[Event], rects: &[Rect]
     let mut dropped: HashSet<usize> = HashSet::new();
     let mut replaced: HashMap<usize, Vec<Operation>> = HashMap::new();
     let mut removed_glyphs: BTreeMap<usize, Vec<&interp::Glyph>> = BTreeMap::new();
+    let mut shown: HashMap<usize, usize> = HashMap::new();
     for event in events {
+        if let Event::Glyph(g) = event {
+            *shown.entry(g.op_index).or_default() += 1;
+        }
         match event {
             Event::Glyph(g) if graphics::quad_hit(&g.box_user, rects) => {
                 removed_glyphs.entry(g.op_index).or_default().push(g);
@@ -105,8 +109,9 @@ pub(crate) fn redact_content(ops: &[Operation], events: &[Event], rects: &[Rect]
     }
     for (index, glyphs) in removed_glyphs {
         let op = ops.get(index).ok_or_else(|| Unsupported::new("glyph outside the content"))?;
-        report.glyphs_removed += glyphs.len();
-        replaced.insert(index, text::rewrite_show(op, &glyphs)?);
+        let (rewritten, whole) = text::rewrite_show(op, &glyphs)?;
+        report.glyphs_removed += if whole { shown.get(&index).copied().unwrap_or(0) } else { glyphs.len() };
+        replaced.insert(index, rewritten);
     }
     let mut out = Vec::with_capacity(ops.len());
     for (i, op) in ops.iter().enumerate() {

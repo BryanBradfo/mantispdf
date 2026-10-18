@@ -352,3 +352,18 @@ fn negative_size_and_scaling_keep_kept_glyphs_in_place() {
         assert_kept_in_place(&out, &rects);
     }
 }
+
+#[test]
+fn zero_size_show_operations_are_dropped_whole() {
+    // Tfs 0 with Tc 2: A collapses to (10, 10), B to (12, 10). Only A is
+    // under the rect, but no number can replace it: the whole show goes.
+    let rects = [rect(9.0, 9.0, 11.0, 11.0)];
+    let out = redact(b"BT /F1 0 Tf 2 Tc 10 10 Td (AB) Tj ET", &rects);
+    assert!(out.after.is_empty());
+    assert_eq!(out.report.glyphs_removed, 2);
+    // A quote keeps its line move.
+    let out = redact(b"BT /F1 0 Tf 12 TL 10 22 Td (AB) ' /F1 10 Tf 20 0 Td (C) Tj ET", &rects);
+    assert_eq!(text(&out.after), "C");
+    assert!((out.after[0].box_user.0[0].1 - 8.0).abs() < TOLERANCE, "C stays on the line at y 10");
+    assert_eq!(out.report.glyphs_removed, 2);
+}

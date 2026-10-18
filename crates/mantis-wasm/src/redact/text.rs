@@ -14,8 +14,9 @@ const MAX_ADJUSTMENT: f64 = 1e15;
 /// Replacement for the show operator `op` (`Tj`, `TJ`, `'` or `"`) without
 /// the `removed` glyphs (all from `op`). Each run of removed glyphs becomes a
 /// TJ number moving the text position exactly as the glyphs did; the line
-/// move and spacing of `'` and `"` are kept as `T*`, `Tw` and `Tc`.
-pub(crate) fn rewrite_show(op: &Operation, removed: &[&Glyph]) -> Result<Vec<Operation>, Unsupported> {
+/// move and spacing of `'` and `"` are kept as `T*`, `Tw` and `Tc`. The flag
+/// is true when the whole show had to go (font size or scaling 0).
+pub(crate) fn rewrite_show(op: &Operation, removed: &[&Glyph]) -> Result<(Vec<Operation>, bool), Unsupported> {
     let malformed = || Unsupported(format!("cannot rewrite {}", op.operator));
     let mut out = Vec::new();
     let elements: Vec<Object> = match (op.operator.as_str(), op.operands.as_slice()) {
@@ -36,7 +37,7 @@ pub(crate) fn rewrite_show(op: &Operation, removed: &[&Glyph]) -> Result<Vec<Ope
     // Font size or scaling 0: no number can stand in for a glyph; such
     // glyphs do not move the text position anyway, so the show goes.
     if removed.iter().any(|g| g.tj_adjustment().is_none()) {
-        return Ok(out);
+        return Ok((out, true));
     }
     let mut items = Vec::new();
     for (k, element) in elements.into_iter().enumerate() {
@@ -72,7 +73,7 @@ pub(crate) fn rewrite_show(op: &Operation, removed: &[&Glyph]) -> Result<Vec<Ope
     if !items.is_empty() {
         out.push(Operation::new("TJ", vec![Object::Array(items)]));
     }
-    Ok(out)
+    Ok((out, false))
 }
 
 /// Append TJ number `n` as an integer plus a small real, so it survives
