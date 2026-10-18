@@ -60,8 +60,9 @@ pub(crate) struct WidgetRef {
     pub da: DefaultAppearance,
     /// Raw /AP /N key of the "on" state (checkbox and radio widgets).
     pub on_state: Option<Vec<u8>>,
-    /// For a radio widget without an "on" appearance: the on state listed
-    /// for it (`generated_radio_states`); a fill generates its appearance.
+    /// For a checkbox or radio widget without an "on" appearance: the on
+    /// state listed for it (`generated_states`); a fill generates its
+    /// appearance.
     pub generated_state: Option<String>,
 }
 
@@ -600,13 +601,22 @@ impl<'a> Context<'a> {
                 on_states.push(state.to_string());
             }
         }
-        if kind == FieldKind::Radio {
-            let bare = widgets.iter().filter(|w| w.on_state.is_none()).count();
-            let mut names = generated_radio_states(&on_states, bare).into_iter();
-            for (w, r) in widgets.iter_mut().zip(widget_refs.iter_mut()).filter(|(w, _)| w.on_state.is_none()) {
-                let name = names.next().unwrap_or_default();
-                w.on_state = Some(name.clone());
-                r.generated_state = Some(name.clone());
+        // Button widgets without an "on" appearance: radio widgets get one
+        // name each (On, On2, ...), checkbox widgets share one (Yes, ...).
+        let bare = widgets.iter().filter(|w| w.on_state.is_none()).count();
+        let names = match kind {
+            FieldKind::Radio => generated_states(&on_states, "On", bare),
+            FieldKind::Checkbox if bare > 0 => vec![generated_states(&on_states, "Yes", 1).remove(0); bare],
+            _ => Vec::new(),
+        };
+        let mut names = names.into_iter();
+        for (w, r) in widgets.iter_mut().zip(widget_refs.iter_mut()).filter(|(w, _)| w.on_state.is_none()) {
+            let Some(name) = names.next() else {
+                break;
+            };
+            w.on_state = Some(name.clone());
+            r.generated_state = Some(name.clone());
+            if !on_states.contains(&name) {
                 on_states.push(name);
             }
         }
@@ -631,12 +641,12 @@ impl<'a> Context<'a> {
     }
 }
 
-/// On state names for `count` radio widgets without an "on" appearance,
-/// one each: /On, /On2, /On3, ..., skipping names the group already uses.
-pub(crate) fn generated_radio_states(on_states: &[String], count: usize) -> Vec<String> {
+/// `count` on state names for button widgets without an "on" appearance:
+/// `base`, `base2`, `base3`, ..., skipping names the field already uses.
+pub(crate) fn generated_states(on_states: &[String], base: &str, count: usize) -> Vec<String> {
     let taken: HashSet<&str> = on_states.iter().map(String::as_str).collect();
     (1u64..)
-        .map(|k| if k == 1 { "On".to_string() } else { format!("On{k}") })
+        .map(|k| if k == 1 { base.to_string() } else { format!("{base}{k}") })
         .filter(|name| !taken.contains(name.as_str()))
         .take(count)
         .collect()
@@ -1380,7 +1390,32 @@ pub(crate) mod tests {
         assert_eq!(t.refs[0].widgets[1].on_state, None);
         assert_eq!(t.refs[0].widgets[1].generated_state.as_deref(), Some("On2"));
         assert_eq!(t.refs[0].widgets[0].generated_state, None);
-        assert_eq!(generated_radio_states(&[], 2), vec!["On", "On2"]);
-        assert_eq!(generated_radio_states(&["On2".into(), "On".into()], 2), vec!["On3", "On4"]);
+        assert_eq!(generated_states(&[], "On", 2), vec!["On", "On2"]);
+        assert_eq!(generated_states(&["On2".into(), "On".into()], "On", 2), vec!["On3", "On4"]);
+    }
+
+    #[test]
+    fn checkbox_widgets_without_on_appearance_list_a_generated_state() {
+        let (mut doc, page) = base(0);
+        // One field, a widget with /Yes and two bare ones: they share Yes2.
+        let field = doc.new_object_id();
+        let ap = states(&mut doc, &["Off", "Yes"]);
+        let with_ap = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![("Parent", field.into()), ("AP", ap)]));
+        let bare1 = doc.add_object(with(widget(page, [20, 0, 30, 10]), vec![("Parent", field.into())]));
+        let bare2 = doc.add_object(with(widget(page, [40, 0, 50, 10]), vec![("Parent", field.into())]));
+        doc.objects.insert(field, Object::Dictionary(dictionary! {
+            "FT" => "Btn", "T" => Object::string_literal("c"), "Kids" => vec![with_ap.into(), bare1.into(), bare2.into()],
+        }));
+        let lone = doc.add_object(with(widget(page, [0, 20, 10, 30]), vec![("FT", "Btn".into()), ("T", Object::string_literal("lone"))]));
+        finish(&mut doc, page, &[field, lone], &[with_ap, bare1, bare2, lone], vec![]);
+        let t = tree(&doc);
+        let f = &t.info.fields[0];
+        assert_eq!(f.on_states, vec!["Yes", "Yes2"]);
+        let listed: Vec<Option<&str>> = f.widgets.iter().map(|w| w.on_state.as_deref()).collect();
+        assert_eq!(listed, vec![Some("Yes"), Some("Yes2"), Some("Yes2")]);
+        assert_eq!(t.refs[0].widgets[0].generated_state, None);
+        assert_eq!(t.refs[0].widgets[2].generated_state.as_deref(), Some("Yes2"));
+        assert_eq!(t.info.fields[1].on_states, vec!["Yes"]);
+        assert_eq!(t.info.fields[1].widgets[0].on_state.as_deref(), Some("Yes"));
     }
 }

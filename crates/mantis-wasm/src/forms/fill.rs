@@ -39,8 +39,7 @@ enum Change {
     /// List box: selected /Opt indices, ascending.
     List { selected: Vec<usize>, multi: bool },
     /// Checkbox or radio group: raw "on" state name, or None for /Off.
-    /// `check_default`: the checkbox has no on appearance and is set to /Yes.
-    Button { state: Option<Vec<u8>>, check_default: bool },
+    Button { state: Option<Vec<u8>> },
 }
 
 /// What a text or choice field's widgets show.
@@ -49,9 +48,6 @@ enum Shown {
     /// Selected /Opt indices of a list box.
     List(Vec<usize>),
 }
-
-/// On state name used for a checkbox whose widgets have no "on" appearance.
-const DEFAULT_ON: &str = "Yes";
 
 pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Result<(), String> {
     let tree = read_form(doc)?;
@@ -218,7 +214,7 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option
         FieldKind::Checkbox | FieldKind::Radio => {
             let names = names_of(value)?;
             match names.as_slice() {
-                [] => Change::Button { state: None, check_default: false },
+                [] => Change::Button { state: None },
                 [name] => {
                     let found = field
                         .widgets
@@ -227,17 +223,9 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option
                         .find(|(w, _)| w.on_state.as_deref() == Some(name.as_str()))
                         .map(|(_, r)| r);
                     match found {
-                        Some(r) if r.on_state.is_some() => Change::Button { state: r.on_state.clone(), check_default: false },
-                        Some(r) if r.generated_state.is_some() => {
-                            Change::Button { state: Some(name.as_bytes().to_vec()), check_default: false }
-                        }
-                        None if field.kind == FieldKind::Checkbox
-                            && field.on_states.is_empty()
-                            && name == DEFAULT_ON
-                            && !field.widgets.is_empty() =>
-                        {
-                            Change::Button { state: Some(DEFAULT_ON.as_bytes().to_vec()), check_default: true }
-                        }
+                        Some(r) if r.on_state.is_some() => Change::Button { state: r.on_state.clone() },
+                        // A state the engine listed for a widget without an on appearance.
+                        Some(r) if r.generated_state.is_some() => Change::Button { state: Some(name.as_bytes().to_vec()) },
                         _ => return Err(invalid("value")),
                     }
                 }
@@ -302,7 +290,7 @@ fn apply(doc: &mut Document, field: &Field, field_ref: &FieldRef, change: Change
             }
             draw_field(doc, field, field_ref, &Shown::List(selected), &all, fonts);
         }
-        Change::Button { state, check_default } => {
+        Change::Button { state } => {
             let off = b"Off".to_vec();
             if let Ok(dict) = doc.get_dictionary_mut(field_ref.obj) {
                 dict.set("V", Object::Name(state.clone().unwrap_or_else(|| off.clone())));
@@ -312,12 +300,9 @@ fn apply(doc: &mut Document, field: &Field, field_ref: &FieldRef, change: Change
             let mut turned_on = false;
             for wref in &field_ref.widgets {
                 let matches = if let Some(generated) = &wref.generated_state {
-                    // Every bare radio widget gets its own states, on or off.
-                    add_button_states(doc, wref.obj, &wref.da, generated.as_bytes(), true);
+                    // Every widget without an on appearance gets its states, on or off.
+                    add_button_states(doc, wref.obj, &wref.da, generated.as_bytes(), field.kind == FieldKind::Radio);
                     state.as_deref() == Some(generated.as_bytes())
-                } else if check_default && wref.on_state.is_none() {
-                    add_button_states(doc, wref.obj, &wref.da, DEFAULT_ON.as_bytes(), false);
-                    true
                 } else {
                     state.is_some() && wref.on_state == state
                 };

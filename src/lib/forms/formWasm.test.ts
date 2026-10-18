@@ -77,7 +77,10 @@ describe.skipIf(!built)("list_form / fill_form bindings", () => {
     }
     expect(info.fields[0].kind).toEqual({ kind: "text", multiline: false, comb: false, maxLen: null, password: false });
     expect(info.fields[0].widgets).toEqual([{ page: 1, rect: [100, 700, 300, 720], rotation: 0, onState: null, hidden: false, fontSize: 12, align: 0 }]);
-    // Bare radio widgets get engine-generated state names, one each.
+    // Bare button widgets get engine-generated state names: one shared by the checkbox
+    // widgets, one each for radio widgets.
+    expect(info.fields[1].onStates).toEqual(["Yes"]);
+    expect(info.fields[1].widgets.map((w) => w.onState)).toEqual(["Yes"]);
     expect(info.fields[2].onStates).toEqual(["On", "On2"]);
     expect(info.fields[2].widgets.map((w) => w.onState)).toEqual(["On", "On2"]);
     expect(info.fields[3].options).toEqual([{ exportValue: "a", display: "Apple" }, { exportValue: "b", display: "b" }]);
@@ -85,10 +88,15 @@ describe.skipIf(!built)("list_form / fill_form bindings", () => {
   });
 
   it("fills the changed values and reads them back", () => {
-    let s = initialFormState(wasm.list_form(FORM));
+    const info = wasm.list_form(FORM);
+    let s = initialFormState(info);
+    // Buttons are set through the names the engine listed, never invented ones.
+    const check = info.fields[1].widgets[0].onState;
+    const secondRadio = info.fields[2].widgets[1].onState;
+    if (check === null || secondRadio === null) throw new Error("engine listed no on state");
     s = setValue(s, 0, { kind: "text", text: "Ada Lovelace" });
-    s = setValue(s, 1, { kind: "names", names: ["Yes"] });
-    s = setValue(s, 2, { kind: "names", names: ["On2"] });
+    s = setValue(s, 1, { kind: "names", names: [check] });
+    s = setValue(s, 2, { kind: "names", names: [secondRadio] });
     s = setValue(s, 3, { kind: "names", names: ["b", "a"] });
     const out = wasm.fill_form(FORM, toWire(s), false);
     const back = wasm.list_form(out);
@@ -98,8 +106,9 @@ describe.skipIf(!built)("list_form / fill_form bindings", () => {
       { kind: "names", names: ["On2"] },
       { kind: "names", names: ["a", "b"] },
     ]);
-    // The checkbox now has its generated appearance.
+    // The checkbox now has its generated appearance under the same name.
     expect(back.fields[1].onStates).toEqual(["Yes"]);
+    expect(back.fields[1].widgets[0].onState).toBe("Yes");
   });
 
   it("flattens: no fields are left", () => {
