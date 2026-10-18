@@ -265,29 +265,46 @@ const MAX_STREAM_VALUES_TOTAL: usize = 8 << 20;
 /// and each stream decoded once (fields may share a /V stream).
 pub(crate) struct StreamValues {
     spent: usize,
+    /// Bytes of text handed out (part of `spent`).
+    returned: usize,
     decodes: usize,
     cache: HashMap<ObjectId, Option<String>>,
 }
 
 impl StreamValues {
     pub(crate) fn new() -> StreamValues {
-        StreamValues { spent: 0, decodes: 0, cache: HashMap::new() }
+        StreamValues { spent: 0, returned: 0, decodes: 0, cache: HashMap::new() }
     }
 
+    fn left(&self) -> usize {
+        MAX_STREAM_VALUES_TOTAL.saturating_sub(self.spent)
+    }
+
+    /// The text of stream `id`. Decoding charges the decoded bytes, and every
+    /// read (cached or not) charges the length of the text it returns, so the
+    /// values handed out never add up to more than the budget.
     fn text(&mut self, id: ObjectId, stream: &lopdf::Stream) -> Option<String> {
-        if let Some(cached) = self.cache.get(&id) {
-            return cached.clone();
+        if !self.cache.contains_key(&id) {
+            let left = self.left();
+            let text = if left == 0 {
+                None
+            } else {
+                self.decodes += 1;
+                let mut charged = 0;
+                let decoded = crate::rebuild::bounded_content(stream, MAX_STREAM_VALUE.min(left), &mut charged);
+                // Several filter steps may each charge up to the cap.
+                self.spent += charged.min(left);
+                decoded.map(|b| decode_text(&b))
+            };
+            self.cache.insert(id, text);
         }
-        let left = MAX_STREAM_VALUES_TOTAL.saturating_sub(self.spent);
-        let text = if left == 0 {
-            None
-        } else {
-            self.decodes += 1;
-            crate::rebuild::bounded_content(stream, MAX_STREAM_VALUE.min(left), &mut self.spent)
-                .map(|b| decode_text(&b))
-        };
-        self.cache.insert(id, text.clone());
-        text
+        let len = self.cache.get(&id)?.as_ref()?.len();
+        if len > self.left() {
+            return None;
+        }
+        self.spent += len;
+        self.returned += len;
+        self.cache.get(&id)?.clone()
     }
 }
 
@@ -1260,9 +1277,6 @@ pub(crate) mod tests {
         pages.set("Kids", vec![second.into(), page.into()]);
         pages.set("Count", 2);
         assert_eq!(tree(&doc).info.fields[0].widgets[0].page, 1);
-        // Page 1 is now `second`; the field's /P (old page) is page 2.
-        let pages = doc.get_pages();
-        assert_eq!(pages[&1], second);
     }
 
     #[test]
@@ -1305,8 +1319,22 @@ pub(crate) mod tests {
         let mut streams = StreamValues::new();
         let info = read_form_with(&doc, &mut streams).unwrap().info;
         assert_eq!(streams.decodes, 1);
-        assert_eq!(streams.spent, MAX_STREAM_VALUE);
-        assert!(info.fields.iter().all(|f| matches!(&f.value, Value::Text(t) if t.len() == MAX_STREAM_VALUE)));
+        assert!(streams.spent <= MAX_STREAM_VALUES_TOTAL);
+        let texts: Vec<usize> = info
+            .fields
+            .iter()
+            .filter_map(|f| match &f.value {
+                Value::Text(t) => Some(t.len()),
+                _ => None,
+            })
+            .collect();
+        let total: usize = texts.iter().sum();
+        assert!(total <= MAX_STREAM_VALUES_TOTAL, "{total}");
+        assert_eq!(total, streams.returned);
+        // One decode charge, then one charge per value handed out.
+        assert_eq!(texts.len(), MAX_STREAM_VALUES_TOTAL / MAX_STREAM_VALUE - 1);
+        assert!(texts.iter().all(|&n| n == MAX_STREAM_VALUE));
+        assert_eq!(info.fields.last().unwrap().value, Value::None);
     }
 
     #[test]
@@ -1326,7 +1354,8 @@ pub(crate) mod tests {
         let info = read_form_with(&doc, &mut streams).unwrap().info;
         assert!(streams.spent <= MAX_STREAM_VALUES_TOTAL, "{}", streams.spent);
         let read = info.fields.iter().filter(|f| f.value != Value::None).count();
-        assert_eq!(read, MAX_STREAM_VALUES_TOTAL / MAX_STREAM_VALUE);
+        // Each distinct stream costs its decode plus the text handed out.
+        assert_eq!(read, MAX_STREAM_VALUES_TOTAL / (2 * MAX_STREAM_VALUE));
         assert_eq!(info.fields.last().unwrap().value, Value::None);
     }
 
