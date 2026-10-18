@@ -16,6 +16,31 @@ export function rasterSize(width: number, height: number, dpi: number): [number,
   return [Math.round((width * dpi) / 72), Math.round((height * dpi) / 72)];
 }
 
+/** Lowest dpi a raster may use, and the most bytes the rasters of one job may take together. */
+export const MIN_RASTER_DPI = 100;
+export const MAX_RASTER_BYTES = 512 * 1024 * 1024;
+
+/** RGBA bytes of rasters of `pages` (visible sizes in points) at `dpi`. */
+export function rasterBytes(pages: readonly [number, number][], dpi: number): number {
+  let total = 0;
+  for (const [w, h] of pages) {
+    const [pw, ph] = rasterSize(w, h, dpi);
+    total += pw * ph * 4;
+  }
+  return total;
+}
+
+/**
+ * The dpi for the rasters of `pages`: `RASTER_DPI`, or the highest whole dpi down to
+ * `MIN_RASTER_DPI` whose rasters fit `MAX_RASTER_BYTES` together; null when not even that fits.
+ */
+export function chooseDpi(pages: readonly [number, number][], budget = MAX_RASTER_BYTES): number | null {
+  for (let dpi = RASTER_DPI; dpi >= MIN_RASTER_DPI; dpi--) {
+    if (rasterBytes(pages, dpi) <= budget) return dpi;
+  }
+  return null;
+}
+
 /** A visible rect as canvas pixels `[x, y, w, h]` (y down from the top), rounded outwards. */
 export function rectToPixels([x, y, w, h]: Rect, scale: number, heightPx: number): [number, number, number, number] {
   const left = Math.floor(x * scale);

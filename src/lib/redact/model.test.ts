@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_MARKS, addMarks, canRedo, canUndo, clearMarks, initialMarks, redo, removeMark, togglePage, undo } from "./model";
+import { MAX_MARKS, addMarks, canRedo, canUndo, clearMarks, initialMarks, redo, removeMark, togglePage, undo, updateMark } from "./model";
 
 describe("redaction marks", () => {
   it("adds areas, search matches and whole pages with fresh ids", () => {
@@ -53,4 +53,28 @@ describe("redaction marks", () => {
     // Nothing to undo or redo: unchanged.
     expect(redo(s)).toBe(s);
   });
+
+  it("moves or resizes an area or a search match as one undo step", () => {
+    let s = addMarks(initialMarks(), [
+      { kind: "area", page: 1, rect: [0, 0, 10, 10] },
+      { kind: "search", page: 1, rect: [5, 5, 20, 8], query: "secret" },
+    ]);
+    const [area, match] = s.marks;
+    s = updateMark(s, match.id, [4, 4, 30, 10]);
+    expect(s.marks[1]).toEqual({ ...match, rect: [4, 4, 30, 10] });
+    expect(s.marks[0]).toBe(area);
+    s = undo(s);
+    expect(s.marks[1].kind === "search" && s.marks[1].rect).toEqual([5, 5, 20, 8]);
+  });
+
+  it("ignores no-op updates, unknown ids, whole pages and empty rects", () => {
+    let s = addMarks(initialMarks(), [{ kind: "area", page: 1, rect: [0, 0, 10, 10] }]);
+    s = togglePage(s, 2);
+    const [area, page] = s.marks;
+    expect(updateMark(s, area.id, [0, 0, 10, 10])).toBe(s);
+    expect(updateMark(s, "nope", [1, 1, 1, 1])).toBe(s);
+    expect(updateMark(s, page.id, [1, 1, 1, 1])).toBe(s);
+    expect(updateMark(s, area.id, [1, 1, 0, 5])).toBe(s);
+  });
 });
+

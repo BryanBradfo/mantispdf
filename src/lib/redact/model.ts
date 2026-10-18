@@ -56,6 +56,20 @@ export function removeMark(s: MarksState, id: string): MarksState {
   return marks.length === s.marks.length ? s : commit(s, marks);
 }
 
+/**
+ * Move or resize an area or a search match (so users can widen a match the search drew too
+ * tight): one undo step. Whole-page marks have no rect; an empty rect is ignored.
+ */
+export function updateMark(s: MarksState, id: string, rect: Rect): MarksState {
+  const i = s.marks.findIndex((m) => m.id === id);
+  const mark = s.marks[i];
+  if (!mark || mark.kind === "page" || rect[2] === 0 || rect[3] === 0) return s;
+  if (mark.rect.every((v, k) => v === rect[k])) return s;
+  const marks = s.marks.slice();
+  marks[i] = { ...mark, rect };
+  return commit(s, marks);
+}
+
 /** Mark the whole page, or unmark it when it already is. */
 export function togglePage(s: MarksState, page: number): MarksState {
   const existing = s.marks.find((m) => m.kind === "page" && m.page === page);

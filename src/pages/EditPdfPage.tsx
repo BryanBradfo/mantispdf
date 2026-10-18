@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
@@ -25,7 +26,6 @@ import ToolShell, { primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 
 const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/bmp";
-const WHITEOUT_NOTE = "Whiteout hides content, it does not delete it. Use Redact to remove text.";
 
 /** Upright pixel size of a picked image (the browser applies its EXIF orientation). */
 async function uprightSize(file: Blob): Promise<{ width: number; height: number }> {
@@ -326,7 +326,13 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
               Pick a tool, then click or drag on the page. Select an item to change its colour, size or order.
             </p>
           )}
-          <p className="text-xs text-gray-500 dark:text-[#777]">{WHITEOUT_NOTE}</p>
+          <p className="text-xs text-gray-500 dark:text-[#777]">
+            Whiteout hides content, it does not delete it. Use{" "}
+            <Link to="/redact" className="font-medium text-mantis-700 underline dark:text-mantis-400">
+              Redact
+            </Link>{" "}
+            to remove text.
+          </p>
         </aside>
       </div>
     </div>
