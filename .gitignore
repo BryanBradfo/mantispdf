@@ -57,6 +57,9 @@ firebase-debug.log
 # pdf.js worker copied from node_modules at build time
 public/pdf.worker.min.mjs
 
+# OCR runtime copied from node_modules at build time (scripts/copy-ocr-assets.mjs)
+public/ocr/
+
 # Stage-3 ONNX model weights (downloaded/extracted, not committed)
 src-tauri/weights/
 

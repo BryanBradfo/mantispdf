@@ -28,8 +28,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "predev": "node scripts/copy-pdf-worker.mjs",
-    "prebuild": "node scripts/copy-pdf-worker.mjs",
+    "predev": "node scripts/copy-pdf-worker.mjs && node scripts/copy-ocr-assets.mjs",
+    "prebuild": "node scripts/copy-pdf-worker.mjs && node scripts/copy-ocr-assets.mjs",
+    "postbuild": "node scripts/copy-ocr-assets.mjs --check dist",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -43,6 +44,13 @@
     "@fontsource/dancing-script": "5.3.0",
     "@fontsource/homemade-apple": "5.3.0",
     "@tauri-apps/api": "^2.11.0",
+    "@tesseract.js-data/deu": "1.0.0",
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/fra": "1.0.0",
+    "@tesseract.js-data/ita": "1.0.0",
+    "@tesseract.js-data/nld": "1.0.0",
+    "@tesseract.js-data/por": "1.0.0",
+    "@tesseract.js-data/spa": "1.0.0",
     "@vercel/analytics": "^2.0.1",
     "fflate": "^0.8.2",
     "framer-motion": "^12.40.0",
@@ -51,7 +59,9 @@
     "react-dom": "^19.0.0",
     "react-helmet-async": "^3.0.0",
     "react-pdf": "^9.2.1",
-    "react-router-dom": "^7.1.1"
+    "react-router-dom": "^7.1.1",
+    "tesseract.js": "7.0.0",
+    "tesseract.js-core": "7.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
