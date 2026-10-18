@@ -153,6 +153,7 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
     let by_page = areas_by_page(&job.rects, doc.get_pages().len())?;
     let mut summary = RedactSummary::default();
     let mut checks = Vec::new();
+    let mut created = Vec::new();
     for (number, rects, result) in redact_pages(&mut doc, &by_page, job.fill, false) {
         let report = match result {
             Ok(report) => report,
@@ -165,7 +166,7 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
                 // Taken, not copied: rasters are large.
                 let raster = job.rasters.swap_remove(index);
                 let page = doc.get_pages()[&number];
-                raster::rasterize_page(&mut doc, page, raster, &by_page[&number], job.fill)?;
+                created.push(raster::rasterize_page(&mut doc, page, raster, &by_page[&number], job.fill)?);
                 summary.pages_rasterized.push(number);
                 checks.push((number, rects, true));
                 continue;
@@ -178,7 +179,16 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
         summary.images_removed += report.images_removed.len();
         summary.forms_redacted += report.forms_redacted;
         summary.annotations_removed += report.annotations_removed;
+        created.extend(report.created_images);
         checks.push((number, rects, false));
+    }
+    // Images this job drew carry a random tag through the rebuild, so
+    // verification can tell them from any source image by identity.
+    let tag = verify::new_tag()?;
+    for id in &created {
+        if let Ok(Object::Stream(image)) = doc.get_object_mut(*id) {
+            image.dict.set(verify::TAG_KEY, Object::String(tag.clone(), lopdf::StringFormat::Hexadecimal));
+        }
     }
     let pages: Vec<OutPage> =
         doc.get_pages().into_values().map(|page| OutPage::Page { src: 0, page, rotate: 0 }).collect();
@@ -198,14 +208,20 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
                 // A picture only: no text at all.
                 verify::page_glyphs(&saved, page).is_ok_and(|glyphs| glyphs.is_empty())
             } else {
-                verify::verify_page(&saved, page, &rects)
+                verify::verify_page(&saved, page, &rects, &tag)
             }
         });
         if !ok {
             return Err(format!("Redaction verification failed on page {number}"));
         }
     }
-    Ok((bytes, summary))
+    // The tag served its purpose: the delivered file does not carry it.
+    for object in out.objects.values_mut() {
+        if let Object::Stream(stream) = object {
+            stream.dict.remove(verify::TAG_KEY.as_bytes());
+        }
+    }
+    Ok((save_pdf(&mut out)?, summary))
 }
 
 /// Copy the text entries of the source's document information dictionary.
@@ -328,6 +344,8 @@ pub(crate) struct Report {
     pub(crate) forms_redacted: usize,
     /// Annotations removed from the page.
     pub(crate) annotations_removed: usize,
+    /// Image objects this redaction drew (verification knows them by id).
+    pub(crate) created_images: Vec<lopdf::ObjectId>,
     /// /Properties names of marked-content sequences around removed content:
     /// the page needs private copies of them without /ActualText, /Alt and
     /// /E (page assembly does that; inline property lists are rewritten
@@ -356,17 +374,17 @@ fn redact_placed_image(page: &mut PageEdit, ops: &[Operation], img: &interp::Ima
 /// Add a redacted image (and its soft mask) as new objects under a fresh
 /// name in the page's own /XObject dictionary; the original stays for other
 /// users.
-fn add_image(page: &mut PageEdit, mut image: lopdf::Stream, smask: Option<lopdf::Stream>) -> Vec<u8> {
+fn add_image(page: &mut PageEdit, mut image: lopdf::Stream, smask: Option<lopdf::Stream>) -> (Vec<u8>, lopdf::ObjectId) {
     if let Some(smask) = smask {
         let id = page.doc.add_object(smask);
         image.dict.set("SMask", id);
     }
-    add_xobject(page, image, verify::REDACTED_IMAGE_PREFIX)
+    add_xobject(page, image, "RedactedIm")
 }
 
 /// Add `stream` as a new object under a fresh name (`prefix` + number) in
 /// the page's own /XObject dictionary.
-pub(crate) fn add_xobject(page: &mut PageEdit, stream: lopdf::Stream, prefix: &str) -> Vec<u8> {
+pub(crate) fn add_xobject(page: &mut PageEdit, stream: lopdf::Stream, prefix: &str) -> (Vec<u8>, lopdf::ObjectId) {
     let id = page.doc.add_object(stream);
     let mut xobjects = interp::page_resources_dict(page.doc, page.resources, b"XObject");
     let name = (1..)
@@ -375,7 +393,7 @@ pub(crate) fn add_xobject(page: &mut PageEdit, stream: lopdf::Stream, prefix: &s
         .unwrap_or_default();
     xobjects.set(name.clone(), id);
     page.resources.set("XObject", xobjects);
-    name
+    (name, id)
 }
 
 impl Report {
@@ -389,6 +407,7 @@ impl Report {
         self.images_removed.extend(other.images_removed);
         self.forms_redacted += other.forms_redacted;
         self.annotations_removed += other.annotations_removed;
+        self.created_images.extend(other.created_images);
     }
 }
 
@@ -462,7 +481,8 @@ pub(crate) fn redact_content(
                 match redact_placed_image(page, ops, img, rects) {
                     images::ImageEdit::Untouched => continue,
                     images::ImageEdit::Replaced { image, smask } => {
-                        let name = add_image(page, image, smask);
+                        let (name, id) = add_image(page, image, smask);
+                        report.created_images.push(id);
                         replaced.insert(img.op_index, vec![Operation::new("Do", vec![Object::Name(name)])]);
                         report.images_redacted += 1;
                     }

@@ -79,8 +79,8 @@ fn box_array(b: [f64; 4]) -> Object {
 
 /// Replace `page` by a page with the same geometry (MediaBox, CropBox,
 /// Rotate, UserUnit) showing only `raster`, the areas painted over.
-/// Nothing else of the original page is kept.
-pub(crate) fn rasterize_page(doc: &mut Document, page: ObjectId, raster: PageRaster, areas: &[RedactRect], fill: Fill) -> Result<(), String> {
+/// Nothing else of the original page is kept. Returns the image's id.
+pub(crate) fn rasterize_page(doc: &mut Document, page: ObjectId, raster: PageRaster, areas: &[RedactRect], fill: Fill) -> Result<ObjectId, String> {
     let vb = VisibleBox::of_page(doc, page);
     check(&raster, &vb)?;
     let (w, h) = (raster.width as usize, raster.height as usize);
@@ -103,7 +103,7 @@ pub(crate) fn rasterize_page(doc: &mut Document, page: ObjectId, raster: PageRas
     };
     let image = flate_stream(dict, &rgba);
     drop(rgba);
-    let image = doc.add_object(image);
+    let image_id = doc.add_object(image);
     let old = doc.get_dictionary(page).map_err(|_| invalid())?.clone();
     // The picture fills the visible box, upright as the page is viewed.
     let m = concat(&[vb.width(), 0.0, 0.0, vb.height(), 0.0, 0.0], &vb.matrix());
@@ -118,7 +118,7 @@ pub(crate) fn rasterize_page(doc: &mut Document, page: ObjectId, raster: PageRas
         "Type" => "Page",
         "MediaBox" => box_array(read_box(doc, page, b"MediaBox").unwrap_or([0.0, 0.0, 612.0, 792.0])),
         "Contents" => content,
-        "Resources" => dictionary! { "XObject" => dictionary! { RASTER_NAME => image } },
+        "Resources" => dictionary! { "XObject" => dictionary! { RASTER_NAME => image_id } },
     };
     if let Ok(parent) = old.get(b"Parent") {
         fresh.set("Parent", parent.clone());
@@ -133,7 +133,7 @@ pub(crate) fn rasterize_page(doc: &mut Document, page: ObjectId, raster: PageRas
         fresh.set("UserUnit", unit.clone());
     }
     doc.objects.insert(page, Object::Dictionary(fresh));
-    Ok(())
+    Ok(image_id)
 }
 
 #[cfg(test)]

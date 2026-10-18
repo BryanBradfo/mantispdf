@@ -688,3 +688,37 @@ fn boxes_keep_the_page_space_when_the_content_pops_too_far() {
         .collect();
     assert!(boxes.contains(&Rect { x0: 100.0, y0: 100.0, x1: 110.0, y1: 110.0 }), "{boxes:?}");
 }
+
+fn planted(doc: Document, a: RedactRect) -> Result<(), String> {
+    plant_leak_for_tests(true);
+    let result = redact(&bytes(doc), job(vec![a])).map(|_| ());
+    plant_leak_for_tests(false);
+    result
+}
+
+#[test]
+fn verification_exempts_only_what_this_job_drew() {
+    // A path shaped exactly like the area, with an "L" cut out inside it.
+    let shaped = "300 300 m 310 300 l 310 320 l 300 320 l h 302 302 m 303 302 l 303 318 l 302 318 l h \
+        302 302 m 308 302 l 308 303 l 302 303 l h f*";
+    let failed = Err("Redaction verification failed on page 1".to_string());
+    assert_eq!(planted(one_page(shaped, |_, _| {}), area(1, 300.0, 300.0, 10.0, 20.0)), failed);
+    // A source image named like the engine's copies.
+    let named = one_page("q 20 0 0 20 300 300 cm /RedactedIm7 Do Q", |doc, page| {
+        let image = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => 1, "Height" => 1,
+                "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+            },
+            vec![100],
+        ));
+        doc.get_dictionary_mut(page).unwrap().set("Resources", dictionary! { "XObject" => dictionary! { "RedactedIm7" => image } });
+    });
+    assert_eq!(planted(named.clone(), area(1, 300.0, 300.0, 10.0, 10.0)), failed);
+    // Without the leak both are redacted and pass verification; the tag
+    // that identified the new image is not delivered.
+    let (out, summary) = redact(&bytes(named), job(vec![area(1, 300.0, 300.0, 10.0, 10.0)])).unwrap();
+    assert_eq!(summary.images_redacted, 1);
+    let out = load_pdf(&out).unwrap();
+    assert!(!out.objects.values().any(|o| matches!(o, Object::Stream(s) if s.dict.has(super::verify::TAG_KEY.as_bytes()))));
+}
