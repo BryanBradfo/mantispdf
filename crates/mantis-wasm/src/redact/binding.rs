@@ -4,7 +4,7 @@
 //! `Invalid redact settings: <path>`.
 
 use super::raster::MAX_RASTER_PIXELS;
-use super::search::{SearchOptions, SearchResult};
+use super::search::{PageHits, SearchOptions, SearchResult};
 use super::{Fill, MAX_RECTS, PageRaster, PageStatus, RedactJob, RedactRect, RedactSummary, invalid};
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue};
@@ -161,25 +161,49 @@ pub(crate) fn read_search_options(options: &JsValue) -> Result<SearchOptions, St
     Ok(SearchOptions { whole_word: flag("wholeWord")?, case_sensitive: flag("caseSensitive")? })
 }
 
-/// `{ pages: [{ page, quads: [[x, y, w, h]] }], undecodablePages, truncated, unsearchedPages }`.
-pub(crate) fn search_to_js(result: &SearchResult) -> JsValue {
-    let pages: Array = result
-        .pages
+/// Visible-space rects `[[x, y, w, h]]`.
+fn rects_to_js(rects: &[[f64; 4]]) -> JsValue {
+    let list: Array = rects.iter().map(|r| JsValue::from(r.iter().map(|v| JsValue::from_f64(*v)).collect::<Array>())).collect();
+    list.into()
+}
+
+/// `{ page, <key>: [[x, y, w, h]] }` per page.
+fn page_rects_to_js(pages: &[PageHits], key: &str) -> JsValue {
+    let list: Array = pages
         .iter()
         .map(|hits| {
             let obj = Object::new();
             set(&obj, "page", &JsValue::from_f64(f64::from(hits.page)));
-            let quads: Array = hits
-                .rects
-                .iter()
-                .map(|r| JsValue::from(r.iter().map(|v| JsValue::from_f64(*v)).collect::<Array>()))
-                .collect();
-            set(&obj, "quads", &quads.into());
+            set(&obj, key, &rects_to_js(&hits.rects));
+            JsValue::from(obj)
+        })
+        .collect();
+    list.into()
+}
+
+/// `{ pages: [{ page, quads }], matches: [{ page, rects, context: { before, text, after } }],
+/// unknownBoxes: [{ page, rects }], undecodablePages, truncated, unsearchedPages }`; every rect
+/// `[x, y, w, h]` in visible space.
+pub(crate) fn search_to_js(result: &SearchResult) -> JsValue {
+    let matches: Array = result
+        .matches
+        .iter()
+        .map(|m| {
+            let context = Object::new();
+            set(&context, "before", &JsValue::from_str(&m.context.before));
+            set(&context, "text", &JsValue::from_str(&m.context.text));
+            set(&context, "after", &JsValue::from_str(&m.context.after));
+            let obj = Object::new();
+            set(&obj, "page", &JsValue::from_f64(f64::from(m.page)));
+            set(&obj, "rects", &rects_to_js(&m.rects));
+            set(&obj, "context", &context.into());
             JsValue::from(obj)
         })
         .collect();
     let obj = Object::new();
-    set(&obj, "pages", &pages.into());
+    set(&obj, "pages", &page_rects_to_js(&result.pages, "quads"));
+    set(&obj, "matches", &matches.into());
+    set(&obj, "unknownBoxes", &page_rects_to_js(&result.unknown_boxes, "rects"));
     set(&obj, "undecodablePages", &numbers(&result.undecodable_pages));
     set(&obj, "truncated", &JsValue::from_bool(result.truncated));
     set(&obj, "unsearchedPages", &numbers(&result.unsearched_pages));

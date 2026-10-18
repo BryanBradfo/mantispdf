@@ -22,5 +22,9 @@ export const RESULT_KEYS = [
 ] as const;
 /** `redact_search`: its options and what it returns. */
 export const SEARCH_OPTION_KEYS = ["wholeWord", "caseSensitive"] as const;
-export const SEARCH_KEYS = ["pages", "undecodablePages", "truncated", "unsearchedPages"] as const;
+export const SEARCH_KEYS = ["pages", "matches", "unknownBoxes", "undecodablePages", "truncated", "unsearchedPages"] as const;
 export const SEARCH_PAGE_KEYS = ["page", "quads"] as const;
+/** One match (`matches`), its context, and one page of `unknownBoxes`. */
+export const SEARCH_MATCH_KEYS = ["page", "rects", "context"] as const;
+export const SEARCH_CONTEXT_KEYS = ["before", "text", "after"] as const;
+export const UNKNOWN_BOX_KEYS = ["page", "rects"] as const;

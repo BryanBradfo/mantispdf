@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { addMarks, initialMarks } from "./model";
 import { toJob, type PageStatusWire, type RedactResultWire } from "./toJob";
-import { PLAN_KEYS, RESULT_KEYS, SEARCH_KEYS, SEARCH_PAGE_KEYS } from "./wireKeys";
+import type { RedactSearchResultWire } from "./searchWire";
+import { PLAN_KEYS, RESULT_KEYS, SEARCH_CONTEXT_KEYS, SEARCH_KEYS, SEARCH_MATCH_KEYS, SEARCH_PAGE_KEYS } from "./wireKeys";
 
 const PKG = fileURLToPath(new URL("../../../crates/mantis-wasm/pkg/", import.meta.url));
 const built = existsSync(`${PKG}mantis_wasm_bg.wasm`);
@@ -99,11 +100,7 @@ describe.skipIf(!built)("redact_plan / redact bindings", () => {
 });
 
 describe.skipIf(!built)("redact_search binding", () => {
-  type Search = (
-    pdf: Uint8Array,
-    query: string,
-    options: unknown,
-  ) => { pages: { page: number; quads: number[][] }[]; undecodablePages: number[]; truncated: boolean; unsearchedPages: number[] };
+  type Search = (pdf: Uint8Array, query: string, options: unknown) => RedactSearchResultWire;
   it("finds text as the exact glyph boxes, and reports pages it cannot read", () => {
     const search = (wasm as unknown as { redact_search: Search }).redact_search;
     const found = search(PDF, "world", { wholeWord: false, caseSensitive: false });
@@ -115,6 +112,15 @@ describe.skipIf(!built)("redact_search binding", () => {
     expect(x + w).toBeGreaterThan(150);
     expect(y).toBeLessThan(700);
     expect(y + h).toBeGreaterThan(705);
+    expect(found.matches).toHaveLength(found.pages[0].quads.length);
+    for (const m of found.matches) {
+      expect(Object.keys(m).sort()).toEqual([...SEARCH_MATCH_KEYS].sort());
+      expect(Object.keys(m.context).sort()).toEqual([...SEARCH_CONTEXT_KEYS].sort());
+    }
+    expect(found.matches[0].page).toBe(1);
+    expect(found.matches[0].rects).toEqual([found.pages[0].quads[0]]);
+    expect(found.matches[0].context.text.toLowerCase()).toBe("world");
+    expect(Array.isArray(found.unknownBoxes)).toBe(true);
     expect(found.undecodablePages).toEqual([2]);
     expect(found.truncated).toBe(false);
     expect(found.unsearchedPages).toEqual([]);

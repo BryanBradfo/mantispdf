@@ -3,7 +3,20 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { addMarks, initialMarks, togglePage } from "./model";
 import { toJob } from "./toJob";
-import { FILLS, JOB_KEYS, PLAN_KEYS, RASTER_KEYS, RECT_KEYS, RESULT_KEYS, SEARCH_KEYS, SEARCH_OPTION_KEYS, SEARCH_PAGE_KEYS } from "./wireKeys";
+import {
+  FILLS,
+  JOB_KEYS,
+  PLAN_KEYS,
+  RASTER_KEYS,
+  RECT_KEYS,
+  RESULT_KEYS,
+  SEARCH_CONTEXT_KEYS,
+  SEARCH_KEYS,
+  SEARCH_MATCH_KEYS,
+  SEARCH_OPTION_KEYS,
+  SEARCH_PAGE_KEYS,
+  UNKNOWN_BOX_KEYS,
+} from "./wireKeys";
 
 /**
  * The wire contract with `crates/mantis-wasm/src/redact/binding.rs` (keys in `wireKeys.ts`).
@@ -31,7 +44,7 @@ describe("redact wire shape", () => {
   });
 
   it("the Rust binding reads and writes every key as a literal", () => {
-    for (const k of [...RECT_KEYS, ...JOB_KEYS, ...RASTER_KEYS, ...FILLS, ...PLAN_KEYS, ...RESULT_KEYS, ...SEARCH_OPTION_KEYS, ...SEARCH_KEYS, ...SEARCH_PAGE_KEYS]) {
+    for (const k of [...RECT_KEYS, ...JOB_KEYS, ...RASTER_KEYS, ...FILLS, ...PLAN_KEYS, ...RESULT_KEYS, ...SEARCH_OPTION_KEYS, ...SEARCH_KEYS, ...SEARCH_PAGE_KEYS, ...SEARCH_MATCH_KEYS, ...SEARCH_CONTEXT_KEYS, ...UNKNOWN_BOX_KEYS]) {
       expect(binding.includes(`"${k}"`), k).toBe(true);
     }
   });

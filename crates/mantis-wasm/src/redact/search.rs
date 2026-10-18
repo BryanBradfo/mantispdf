@@ -35,9 +35,35 @@ pub(crate) struct PageHits {
     pub(crate) rects: Vec<[f64; 4]>,
 }
 
+/// The page text around a match, as drawn (not folded): up to
+/// `CONTEXT_CHARS` characters each side. Unknown text reads as U+FFFD.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Context {
+    pub(crate) before: String,
+    pub(crate) text: String,
+    pub(crate) after: String,
+}
+
+/// One match: its rects (visible space, one per line) and its context.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Match {
+    pub(crate) page: u32,
+    pub(crate) rects: Vec<[f64; 4]>,
+    pub(crate) context: Context,
+}
+
+/// Characters of context on each side of a match.
+const CONTEXT_CHARS: usize = 20;
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct SearchResult {
+    /// Every match's rects, page by page (the same rects as `matches`).
     pub(crate) pages: Vec<PageHits>,
+    /// Every match, in page and reading order.
+    pub(crate) matches: Vec<Match>,
+    /// Per page, the visible-space boxes of glyphs whose text is unknown
+    /// (each run of them on a line merged): where search cannot see.
+    pub(crate) unknown_boxes: Vec<PageHits>,
     /// Pages with text whose characters cannot be known (or that cannot be
     /// read at all, or have too much text): search may miss text there.
     pub(crate) undecodable_pages: Vec<u32>,
@@ -55,6 +81,8 @@ const MAX_PAGE_CHARS: usize = 2_000_000;
 struct Char {
     ch: char,
     glyph: Option<usize>,
+    /// The drawn character this one starts (None for the rest of a fold).
+    shown: Option<char>,
 }
 
 /// The characters `c` reads as: ligatures (U+FB00..=U+FB06) as their
@@ -88,11 +116,11 @@ fn needle(query: &str, case_sensitive: bool) -> Vec<char> {
 
 /// Add `ch` (from `glyph`) to the page text; a space after a space is
 /// dropped (whitespace runs read as one space).
-fn push(chars: &mut Vec<Char>, ch: char, glyph: Option<usize>) {
+fn push(chars: &mut Vec<Char>, ch: char, glyph: Option<usize>, shown: Option<char>) {
     if ch == ' ' && chars.last().is_some_and(|c| c.ch == ' ') {
         return;
     }
-    chars.push(Char { ch, glyph });
+    chars.push(Char { ch, glyph, shown });
 }
 
 /// The page text with assumed spaces and the line of each glyph; None past
@@ -113,19 +141,22 @@ fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> Option<(Vec<Char>, Vec<u
             let em = g.em.max(p.em).max(f64::MIN_POSITIVE);
             if across > 0.5 * em || along < -0.5 * em {
                 line += 1;
-                push(&mut chars, ' ', None);
+                push(&mut chars, ' ', None, Some(' '));
             } else if along > 0.25 * em {
-                push(&mut chars, ' ', None);
+                push(&mut chars, ' ', None, Some(' '));
             }
         }
         match &g.text {
             Some(text) => {
-                for c in text.chars().flat_map(|c| fold(c, case_sensitive)) {
-                    push(&mut chars, c, Some(i));
+                for original in text.chars() {
+                    let shown = if original.is_whitespace() { ' ' } else { original };
+                    for (k, c) in fold(original, case_sensitive).into_iter().enumerate() {
+                        push(&mut chars, c, Some(i), (k == 0).then_some(shown));
+                    }
                 }
             }
             // Unknown text: breaks any match across it.
-            None => chars.push(Char { ch: '\u{FFFD}', glyph: Some(i) }),
+            None => chars.push(Char { ch: '\u{FFFD}', glyph: Some(i), shown: Some('\u{FFFD}') }),
         }
         lines.push(line);
         previous = Some(g);
@@ -167,6 +198,38 @@ const MIN_SIDE: f64 = 1.0;
 
 fn union(quads: impl Iterator<Item = Quad>) -> Option<Rect> {
     quads.map(|q| q.bbox()).reduce(|a, b| Rect { x0: a.x0.min(b.x0), y0: a.y0.min(b.y0), x1: a.x1.max(b.x1), y1: a.y1.max(b.y1) })
+}
+
+/// The drawn text of `chars`.
+fn shown(chars: &[Char]) -> String {
+    chars.iter().filter_map(|c| c.shown).collect()
+}
+
+/// The context of the match at `chars[at..end]`.
+fn context(chars: &[Char], at: usize, end: usize) -> Context {
+    let mut before: Vec<char> = chars[..at].iter().rev().filter_map(|c| c.shown).take(CONTEXT_CHARS).collect();
+    before.reverse();
+    Context {
+        before: before.into_iter().collect(),
+        text: shown(&chars[at..end]),
+        after: chars[end..].iter().filter_map(|c| c.shown).take(CONTEXT_CHARS).collect(),
+    }
+}
+
+/// Visible-space boxes of the glyphs without text, each run of them on one
+/// line merged.
+fn unknown_rects(glyphs: &[Glyph], lines: &[usize], vb: &VisibleBox) -> Vec<[f64; 4]> {
+    let mut runs: Vec<Vec<usize>> = Vec::new();
+    for (i, g) in glyphs.iter().enumerate() {
+        if g.text.is_some() {
+            continue;
+        }
+        match runs.last_mut() {
+            Some(run) if run.last().is_some_and(|&p| p + 1 == i && lines[p] == lines[i]) => run.push(i),
+            _ => runs.push(vec![i]),
+        }
+    }
+    runs.iter().filter_map(|run| union(run.iter().map(|&g| glyphs[g].box_user))).map(|r| to_visible(vb, &r)).collect()
 }
 
 /// Every match of `query` in `pdf`, page by page. A match that would take
@@ -234,6 +297,8 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
     let needle = needle(query, options.case_sensitive);
     let mut result = SearchResult::default();
     let mut total = 0;
+    // Unknown-text boxes reported so far (at most `MAX_RECTS`).
+    let mut unknown = 0;
     let mut read = 0usize;
     let mut decoded = JOB_DECODED;
     // Fonts' text maps, shared by every page of the job.
@@ -258,8 +323,15 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
             result.undecodable_pages.push(number);
             continue;
         };
+        let vb = VisibleBox::of_page(&doc, page);
         if glyphs.iter().any(|g| g.text.is_none()) {
             result.undecodable_pages.push(number);
+            let room = MAX_RECTS.saturating_sub(unknown);
+            let rects: Vec<[f64; 4]> = unknown_rects(&glyphs, &lines, &vb).into_iter().take(room).collect();
+            if !rects.is_empty() {
+                unknown += rects.len();
+                result.unknown_boxes.push(PageHits { page: number, rects });
+            }
         }
         if needle.is_empty() {
             continue;
@@ -270,7 +342,6 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
             result.unsearched_pages.push(number);
             continue;
         }
-        let vb = VisibleBox::of_page(&doc, page);
         let mut rects = Vec::new();
         for at in find_starts(&chars, &needle, options.whole_word) {
             let mut matched: Vec<usize> = chars[at..at + needle.len()].iter().filter_map(|c| c.glyph).collect();
@@ -293,7 +364,8 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
                 result.unsearched_pages.push(number);
                 break;
             }
-            rects.extend(found);
+            rects.extend(found.iter().copied());
+            result.matches.push(Match { page: number, rects: found, context: context(&chars, at, at + needle.len()) });
         }
         if !rects.is_empty() {
             total += rects.len();

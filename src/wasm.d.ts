@@ -55,7 +55,8 @@ declare module "mantis-wasm" {
   export function redact_prepare(pdf_bytes: Uint8Array): Uint8Array;
   /** The redacted bytes and summary, `widenedPages` included (pages whose fill box was widened). */
   export function redact(pdf_bytes: Uint8Array, job: object): import("./lib/redact/toJob").RedactResultWire;
-  export function redact_search(pdf_bytes: Uint8Array, query: string, options: object): import("./lib/redact/toJob").RedactSearchWire;
+  /** Matches (flat per page in `pages`, grouped with context in `matches`) and `unknownBoxes`. */
+  export function redact_search(pdf_bytes: Uint8Array, query: string, options: object): import("./lib/redact/searchWire").RedactSearchResultWire;
   export function crop_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
   export function resize_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
   export class NupOutput {

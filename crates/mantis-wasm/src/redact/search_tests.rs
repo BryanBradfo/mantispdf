@@ -1,7 +1,7 @@
 //! Engine-side text search: matches are unions of the exact glyph boxes the
 //! redactor removes, so searching then redacting leaves nothing behind.
 
-use super::search::{SearchOptions, redact_search};
+use super::search::{Context, SearchOptions, redact_search};
 use super::verify::page_glyphs;
 use super::*;
 use crate::pdf_util::{load_pdf, save_pdf};
@@ -572,6 +572,28 @@ fn type3_text_is_unknown_but_the_rest_of_the_page_is_searched() {
     let found = redact_search(&bytes(doc), "visible", &opts()).unwrap();
     assert_eq!(found.pages.iter().map(|p| p.page).collect::<Vec<_>>(), vec![1]);
     assert_eq!(found.undecodable_pages, vec![1]);
+    // Where the unknown text is: one box for the run of three Type3 glyphs.
+    assert_eq!(found.unknown_boxes.len(), 1);
+    assert_eq!(found.unknown_boxes[0].page, 1);
+    let [[x, y, w, h]] = found.unknown_boxes[0].rects[..] else { panic!("{:?}", found.unknown_boxes) };
+    assert!((x - 100.0).abs() < 1e-6 && (w - 54.0).abs() < 1e-4, "{x} {w}");
+    assert!(y <= 600.0 && y + h >= 600.0 + 0.7 * 24.0, "{y} {h}");
+}
+
+#[test]
+fn matches_come_with_their_rects_and_context() {
+    let doc = one_page("BT /H 10 Tf 100 700 Td (The Quick brown fox jumps over the lazy dog and more text) Tj 0 -20 Td (lazy) Tj ET", with_helvetica);
+    let found = redact_search(&bytes(doc), "LAZY", &opts()).unwrap();
+    assert_eq!(found.matches.len(), 2);
+    let first = &found.matches[0];
+    assert_eq!(first.page, 1);
+    assert_eq!(first.rects, vec![found.pages[0].rects[0]]);
+    assert_eq!(first.context, Context { before: " fox jumps over the ".into(), text: "lazy".into(), after: " dog and more text l".into() });
+    // The line break reads as a space.
+    assert_eq!(found.matches[1].context.before, "y dog and more text ");
+    let found = redact_search(&bytes(one_page("BT /H 10 Tf 100 700 Td (The Quick brown fox jumps over) Tj ET", with_helvetica)), "quick", &opts()).unwrap();
+    // The text as drawn, not as folded for matching.
+    assert_eq!(found.matches[0].context, Context { before: "The ".into(), text: "Quick".into(), after: " brown fox jumps ove".into() });
 }
 
 /// The glyphs left after redacting `rect` (visible = user space here).
