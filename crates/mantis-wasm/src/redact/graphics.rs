@@ -14,11 +14,12 @@ pub(crate) enum PathEdit {
     Unpaint(usize),
 }
 
-/// The edit for a path whose bounds meet a rect: a painted path goes, a
+/// The edit for a path whose bounds meet a rect: a painted (or unpainted,
+/// unclipping) path goes, a
 /// single-rectangle clip keeps its clip and loses its paint. Any other clip
 /// there is Unsupported: a clip shaped like letter outlines (or built from
 /// several rectangles) carries the text.
-/// None for paths that stay clear of every rect or only clip with rects.
+/// None for paths that stay clear of every rect or only clip with one rect.
 pub(crate) fn path_edit(path: &PathPaint, rects: &[Rect]) -> Result<Option<PathEdit>, Unsupported> {
     let Some(bbox) = path.bbox_user else {
         return Ok(None);
@@ -30,9 +31,11 @@ pub(crate) fn path_edit(path: &PathPaint, rects: &[Rect]) -> Result<Option<PathE
         return Err(Unsupported::new("shaped clip path under a redaction area"));
     }
     Ok(match (path.painted, path.clip) {
-        (false, _) => None,
+        // A single-rectangle clip that paints nothing stays as it is.
+        (false, true) => None,
         (true, true) => Some(PathEdit::Unpaint(path.op_range.end - 1)),
-        (true, false) => Some(PathEdit::Remove(path.op_range.clone())),
+        // Painted, or drawn with `n` for nothing: its geometry goes.
+        (_, false) => Some(PathEdit::Remove(path.op_range.clone())),
     })
 }
 

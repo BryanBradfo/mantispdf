@@ -574,3 +574,13 @@ fn the_carried_distance_is_converted_with_the_next_shows_size() {
     let err = try_redact(b"BT /H 10 Tf 100 700 Td (AB ) Tj (SECRET) Tj /H 0 Tf ( CD) Tj ET", &[SECRET]).unwrap_err();
     assert!(err.0.contains("size"), "{err:?}");
 }
+
+#[test]
+fn unpainted_paths_under_a_rect_are_dropped() {
+    let rects = [rect(40.0, 40.0, 55.0, 55.0)];
+    let out = redact(b"42 42 5 5 re n 0 0 m 50 50 l n 0 0 10 10 re n", &rects);
+    assert_eq!(out.report.paths_removed, 2);
+    let kept = paths(&out.after_events);
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].bbox_user, Some(rect(0.0, 0.0, 10.0, 10.0)));
+}
