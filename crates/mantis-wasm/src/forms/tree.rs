@@ -60,6 +60,9 @@ pub(crate) struct WidgetRef {
     pub da: DefaultAppearance,
     /// Raw /AP /N key of the "on" state (checkbox and radio widgets).
     pub on_state: Option<Vec<u8>>,
+    /// For a radio widget without an "on" appearance: the on state listed
+    /// for it (`generated_radio_states`); a fill generates its appearance.
+    pub generated_state: Option<String>,
 }
 
 /// Document objects behind one listed field; `widgets[i]` is
@@ -70,9 +73,6 @@ pub(crate) struct FieldRef {
     pub widgets: Vec<WidgetRef>,
     /// Raw name bytes of a /V name (checkbox and radio state).
     pub value_name: Option<Vec<u8>>,
-    /// On state listed for the radio widgets that have no "on" appearance
-    /// (`generated_radio_state`); a fill generates their appearance.
-    pub generated_state: Option<String>,
 }
 
 /// `info.fields[i]` is backed by `refs[i]`.
@@ -88,7 +88,7 @@ pub fn list_form(pdf: &[u8]) -> Result<FormInfo, String> {
     Ok(read_form(&doc)?.info)
 }
 
-fn acroform(doc: &Document) -> Option<&Dictionary> {
+pub(crate) fn acroform(doc: &Document) -> Option<&Dictionary> {
     let root = deref(doc, doc.trailer.get(b"Root").ok()?)?.as_dict().ok()?;
     deref(doc, root.get(b"AcroForm").ok()?)?.as_dict().ok()
 }
@@ -577,7 +577,7 @@ impl<'a> Context<'a> {
             font_size: da.size,
             align,
         };
-        Some((widget, WidgetRef { obj: id, da, on_state }))
+        Some((widget, WidgetRef { obj: id, da, on_state, generated_state: None }))
     }
 
     fn field(&self, index: usize, t: &Terminal, streams: &mut StreamValues) -> Result<Option<(Field, FieldRef)>, String> {
@@ -591,7 +591,7 @@ impl<'a> Context<'a> {
             .filter(|s| !s.is_empty())
             .or_else(|| (!t.partial.is_empty()).then(|| t.partial.clone()))
             .unwrap_or_else(|| t.name.clone());
-        let (mut widgets, widget_refs): (Vec<Widget>, Vec<WidgetRef>) =
+        let (mut widgets, mut widget_refs): (Vec<Widget>, Vec<WidgetRef>) =
             t.widgets.iter().filter_map(|&w| self.widget(w, t.obj, &kind)).unzip();
         let mut on_states: Vec<String> = Vec::new();
         let mut seen: HashSet<&str> = HashSet::new();
@@ -600,14 +600,15 @@ impl<'a> Context<'a> {
                 on_states.push(state.to_string());
             }
         }
-        let mut generated_state = None;
-        if kind == FieldKind::Radio && widgets.iter().any(|w| w.on_state.is_none()) {
-            let name = generated_radio_state(&on_states);
-            for w in widgets.iter_mut().filter(|w| w.on_state.is_none()) {
+        if kind == FieldKind::Radio {
+            let bare = widgets.iter().filter(|w| w.on_state.is_none()).count();
+            let mut names = generated_radio_states(&on_states, bare).into_iter();
+            for (w, r) in widgets.iter_mut().zip(widget_refs.iter_mut()).filter(|(w, _)| w.on_state.is_none()) {
+                let name = names.next().unwrap_or_default();
                 w.on_state = Some(name.clone());
+                r.generated_state = Some(name.clone());
+                on_states.push(name);
             }
-            on_states.push(name.clone());
-            generated_state = Some(name);
         }
         let value = inherited_entry(doc, t.obj, b"V");
         let value_name = match (&kind, value.and_then(|v| deref(doc, v))) {
@@ -626,18 +627,19 @@ impl<'a> Context<'a> {
             on_states,
             widgets,
         };
-        Ok(Some((field, FieldRef { obj: t.obj, widgets: widget_refs, value_name, generated_state })))
+        Ok(Some((field, FieldRef { obj: t.obj, widgets: widget_refs, value_name })))
     }
 }
 
-/// On state name for radio widgets without an "on" appearance: /On, or
-/// /On2, /On3, ... when the group already uses it.
-pub(crate) fn generated_radio_state(on_states: &[String]) -> String {
-    let taken = |name: &str| on_states.iter().any(|s| s == name);
-    (1u32..)
+/// On state names for `count` radio widgets without an "on" appearance,
+/// one each: /On, /On2, /On3, ..., skipping names the group already uses.
+pub(crate) fn generated_radio_states(on_states: &[String], count: usize) -> Vec<String> {
+    let taken: HashSet<&str> = on_states.iter().map(String::as_str).collect();
+    (1u64..)
         .map(|k| if k == 1 { "On".to_string() } else { format!("On{k}") })
-        .find(|name| !taken(name))
-        .unwrap_or_default()
+        .filter(|name| !taken.contains(name.as_str()))
+        .take(count)
+        .collect()
 }
 
 /// Read the form of a loaded document. Field ids are indices in this
@@ -1376,8 +1378,9 @@ pub(crate) mod tests {
         assert_eq!(f.on_states, vec!["On", "On2"]);
         assert_eq!(f.widgets[1].on_state.as_deref(), Some("On2"));
         assert_eq!(t.refs[0].widgets[1].on_state, None);
-        assert_eq!(t.refs[0].generated_state.as_deref(), Some("On2"));
-        // Checkbox widgets and radio groups with every appearance are unchanged.
-        assert_eq!(generated_radio_state(&[]), "On");
+        assert_eq!(t.refs[0].widgets[1].generated_state.as_deref(), Some("On2"));
+        assert_eq!(t.refs[0].widgets[0].generated_state, None);
+        assert_eq!(generated_radio_states(&[], 2), vec!["On", "On2"]);
+        assert_eq!(generated_radio_states(&["On2".into(), "On".into()], 2), vec!["On3", "On4"]);
     }
 }
