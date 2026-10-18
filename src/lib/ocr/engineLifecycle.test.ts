@@ -9,6 +9,7 @@ interface FakeWorker {
   options: Record<string, unknown>;
   langs: unknown;
   reinitialize: ReturnType<typeof vi.fn>;
+  setParameters: ReturnType<typeof vi.fn>;
   recognize: ReturnType<typeof vi.fn>;
   terminate: ReturnType<typeof vi.fn>;
 }
@@ -19,12 +20,14 @@ let recognizeBehaviour: (w: FakeWorker, jobId: string) => Promise<unknown> = asy
 
 vi.mock("tesseract.js", () => ({
   OEM: { LSTM_ONLY: 1 },
+  PSM: { AUTO: "3" },
   createWorker: vi.fn((langs: unknown, _oem: unknown, options: Record<string, unknown>) => {
     const w: FakeWorker = {
       id: `w${workers.length + 1}`,
       options,
       langs,
       reinitialize: vi.fn(() => reinitBehaviour()),
+      setParameters: vi.fn(async () => ({})),
       recognize: vi.fn((_img: unknown, _o: unknown, _out: unknown, jobId: string) => recognizeBehaviour(w, jobId)),
       terminate: vi.fn(async () => {}),
     };
@@ -62,6 +65,8 @@ describe("OcrEngine.create", () => {
       // Without an errorHandler, tesseract.js throws worker rejections as uncaught errors.
       expect(typeof w.options.errorHandler).toBe("function");
       expect(w.reinitialize).toHaveBeenCalledWith("eng+fra", 1);
+      // Automatic page segmentation (the library default is a single block).
+      expect(w.setParameters).toHaveBeenCalledWith({ tessedit_pageseg_mode: "3" });
     }
   });
 
@@ -122,6 +127,22 @@ describe("OcrEngine.create", () => {
 });
 
 describe("OcrEngine.recognize", () => {
+  it("deskews automatically and puts the words back on the page image", async () => {
+    const block = (bbox: object) => [{ paragraphs: [{ lines: [{ baseline: { x0: 0, y0: 0, x1: 0, y1: 0 }, words: [{ text: "MANTIS", bbox, confidence: 90 }] }] }] }];
+    recognizeBehaviour = async () => ({ data: { text: "MANTIS", blocks: block({ x0: 314, y0: 481, x1: 946, y1: 594 }), rotateRadians: 0.03516174480319023 } });
+    const engine = await OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN });
+    const page = await engine.recognize(new TextEncoder().encode("P5\n2550 3300\n255\n"));
+    expect(workers[0].recognize.mock.calls[0][1]).toEqual({ rotateAuto: true, user_defined_dpi: "300" });
+    expect(page.words[0].bbox.x0).toBeCloseTo(273.5, 0);
+    expect(page.words[0].bbox.y1).toBeCloseTo(628.4, 0);
+  });
+
+  it("does not deskew an image whose size it cannot read (boxes could not be put back)", async () => {
+    const engine = await OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN });
+    await engine.recognize(new Uint8Array([0xff, 0xd8, 0xff]), undefined, 150);
+    expect(workers[0].recognize.mock.calls[0][1]).toEqual({ user_defined_dpi: "150" });
+  });
+
   it("reports each page's progress to its own callback", async () => {
     recognizeBehaviour = async (w, jobId) => {
       const logger = w.options.logger as (m: object) => void;

@@ -3,7 +3,7 @@
  * and the language models are the files `scripts/copy-ocr-assets.mjs` puts under `/ocr/`
  * (absolute URLs, no blob: worker), so no request leaves the origin.
  */
-import { OEM, createWorker, type Block, type LoggerMessage, type Worker } from "tesseract.js";
+import { OEM, PSM, createWorker, type Block, type LoggerMessage, type Worker } from "tesseract.js";
 import { OCR_BASE, OCR_WORKER_FILE } from "./assets";
 import type { OcrLanguage } from "./languages";
 
@@ -62,10 +62,58 @@ export function wordsFromBlocks(blocks: Block[] | null): RecognizedWord[] {
   return out;
 }
 
+/**
+ * Pixel size `[width, height]` of a binary PGM (P5) or a PNG, from its header; null for anything
+ * else.
+ */
+export function imageSize(bytes: Uint8Array): [number, number] | null {
+  if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const size: [number, number] = [view.getUint32(16), view.getUint32(20)];
+    return size[0] > 0 && size[1] > 0 ? size : null;
+  }
+  if (bytes[0] !== 0x50 || bytes[1] !== 0x35) return null;
+  // "P5", then width and height as decimal tokens; whitespace and # comments between.
+  const header = new TextDecoder("latin1").decode(bytes.subarray(2, Math.min(bytes.length, 512)));
+  const tokens = header.replace(/#[^\n\r]*/g, " ").trim().split(/\s+/);
+  const [w, h] = [Number(tokens[0]), Number(tokens[1])];
+  return Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 ? [w, h] : null;
+}
+
+/**
+ * Words tesseract read on a page it deskewed by `angle` radians (`rotateRadians` of a
+ * `rotateAuto` recognition), back on the page image of `size` pixels: tesseract rotates the
+ * image about its centre, so each box is rotated back about it and replaced by the axis-aligned
+ * box of its corners; the baseline is the one at the word's centre, rotated back the same way.
+ */
+export function unskewWords(words: RecognizedWord[], angle: number, [width, height]: [number, number]): RecognizedWord[] {
+  if (!angle) return words;
+  const [cx, cy, cos, sin] = [width / 2, height / 2, Math.cos(angle), Math.sin(angle)];
+  const back = (x: number, y: number): [number, number] => {
+    const [dx, dy] = [x - cx, y - cy];
+    return [cx + dx * cos + dy * sin, cy - dx * sin + dy * cos];
+  };
+  return words.map((w) => {
+    const { x0, y0, x1, y1 } = w.bbox;
+    const corners = [back(x0, y0), back(x1, y0), back(x0, y1), back(x1, y1)];
+    const xs = corners.map((c) => c[0]);
+    const ys = corners.map((c) => c[1]);
+    const baseline = w.baseline === null ? null : round2(back((x0 + x1) / 2, w.baseline)[1]);
+    return {
+      ...w,
+      bbox: { x0: round2(Math.min(...xs)), y0: round2(Math.min(...ys)), x1: round2(Math.max(...xs)), y1: round2(Math.max(...ys)) },
+      baseline,
+    };
+  });
+}
+
 export interface OcrProgress {
   status: string;
   progress: number;
 }
+
+/** Resolution assumed for page images when `recognize` is not told (render.ts renders at 300 dpi). */
+export const DEFAULT_DPI = 300;
 
 /** How long `OcrEngine.create` may take (worker, core and model downloads) before giving up. */
 export const CREATE_TIMEOUT_MS = 120_000;
@@ -147,6 +195,10 @@ export class OcrEngine {
         throw new Error(CANCELLED);
       }
       await w.reinitialize(langs.join("+"), OEM.LSTM_ONLY);
+      // Automatic page segmentation, like the tesseract CLI (the library's own default is a
+      // single block, which reads tables and multi-column pages badly); it is also the mode
+      // rotateAuto measures the skew with.
+      await w.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
       return w;
     };
 
@@ -184,12 +236,15 @@ export class OcrEngine {
   }
 
   /**
-   * Recognise one page image (PGM, PNG or any format leptonica reads). `onProgress` receives
-   * this page's recognition progress (0 to 1). Rejects with "OCR cancelled" once `terminate`
+   * Recognise one page image (PGM, PNG or any format leptonica reads) rendered at `dpi`.
+   * `onProgress` receives this page's recognition progress (0 to 1). Rejects with "OCR cancelled" once `terminate`
    * is called.
    */
-  async recognize(image: Uint8Array, onProgress?: (progress: number) => void): Promise<RecognizedPage> {
+  async recognize(image: Uint8Array, onProgress?: (progress: number) => void, dpi = DEFAULT_DPI): Promise<RecognizedPage> {
     if (this.terminated) throw new Error(CANCELLED);
+    // Skewed scans read far better deskewed (measured on real scans), but tesseract then reports
+    // boxes on the deskewed image: only deskew when they can be put back (the size is known).
+    const size = imageSize(image);
     const run = (async () => {
       const w = await this.acquire();
       if (this.terminated) throw new Error(CANCELLED);
@@ -197,7 +252,10 @@ export class OcrEngine {
       if (onProgress) this.pageProgress.set(jobId, onProgress);
       try {
         // tesseract.js types its inputs as DOM images or Node Buffers; a Uint8Array is read as bytes.
-        return await w.recognize(image as unknown as Blob, {}, { text: true, blocks: true }, jobId);
+        // The image's resolution: tesseract cannot read it from a PGM and would guess it (and log
+        // "Estimating resolution as ..." to the console).
+        const options = { user_defined_dpi: String(Math.round(dpi)), ...(size ? { rotateAuto: true } : {}) };
+        return await w.recognize(image as unknown as Blob, options, { text: true, blocks: true }, jobId);
       } finally {
         this.pageProgress.delete(jobId);
         if (!this.terminated) this.release(w);
@@ -206,7 +264,8 @@ export class OcrEngine {
     // A page cut off by terminate may reject later, or never settle: it is abandoned.
     run.catch(() => {});
     const { data } = await Promise.race([run, this.cancelled]);
-    const words = wordsFromBlocks(data.blocks);
+    const angle = (data as { rotateRadians?: number | null }).rotateRadians ?? 0;
+    const words = size ? unskewWords(wordsFromBlocks(data.blocks), angle, size) : wordsFromBlocks(data.blocks);
     const confidence = words.length ? words.reduce((s, w) => s + w.confidence, 0) / words.length : 0;
     return { words, text: data.text, confidence };
   }

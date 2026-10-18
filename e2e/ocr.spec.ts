@@ -214,7 +214,7 @@ test("makes a scan searchable where the words are, exports the text, all from th
 
   const text = await downloadOf(page, "Download text");
   expect(text.download.suggestedFilename()).toBe("scan_ocr.txt");
-  expect(new TextDecoder().decode(text.bytes)).toBe("--- Page 1 ---\nMANTIS OCR TEST 2026\nSEARCHABLE SCANNED PAGE\n");
+  expect(new TextDecoder().decode(text.bytes)).toBe("--- Page 1 ---\nMANTIS OCR TEST 2026\n\nSEARCHABLE SCANNED PAGE\n");
 
   // Worker, one core build and the English model, all served by this origin.
   const paths = net.ocrAssets.map((a) => a.path);
@@ -244,7 +244,7 @@ test("skips a page that already has text and leaves it as it was", async ({ page
   expectPopplerWordsAt(bytes, 2, 792, (await expected())["scan-mixed.pdf"]["2"]);
 
   const text = await downloadOf(page, "Download text");
-  expect(new TextDecoder().decode(text.bytes)).toBe("--- Page 2 ---\nMANTIS OCR TEST 2026\nSEARCHABLE SCANNED PAGE\n");
+  expect(new TextDecoder().decode(text.bytes)).toBe("--- Page 2 ---\nMANTIS OCR TEST 2026\n\nSEARCHABLE SCANNED PAGE\n");
 });
 
 test("places words in visible space on a rotated, cropped page", async ({ page }) => {

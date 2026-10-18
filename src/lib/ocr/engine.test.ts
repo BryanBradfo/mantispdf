@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Block } from "tesseract.js";
-import { ocrAssetUrls, ocrWorkerCount, wordsFromBlocks } from "./engine";
+import { imageSize, ocrAssetUrls, ocrWorkerCount, unskewWords, wordsFromBlocks, type RecognizedWord } from "./engine";
+import { encodePgm } from "./render";
 
 describe("OCR asset URLs", () => {
   it("are absolute on the app origin", () => {
@@ -49,5 +50,50 @@ describe("words from tesseract blocks", () => {
     const words = wordsFromBlocks(blocks([{ baseline: bbox(0, 10, 100, 10), words: [{ text: "  ", bbox: bbox(0, 0, 5, 10), confidence: 1 }, { text: "a", bbox: bbox(10, 0, 20, 12), confidence: 9 }] }]));
     expect(words.map((w) => w.text)).toEqual(["a"]);
     expect(words[0].lineEnd).toBe(true);
+  });
+});
+
+describe("image size", () => {
+  it("reads PGM and PNG headers", () => {
+    expect(imageSize(encodePgm(new Uint8Array(6), 3, 2))).toEqual([3, 2]);
+    expect(imageSize(new TextEncoder().encode("P5 # scanner\n 2550\n3300 255\n"))).toEqual([2550, 3300]);
+    const png = new Uint8Array(24);
+    png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    new DataView(png.buffer).setUint32(16, 1800);
+    new DataView(png.buffer).setUint32(20, 400);
+    expect(imageSize(png)).toEqual([1800, 400]);
+  });
+
+  it("is null for anything else", () => {
+    expect(imageSize(new Uint8Array([0xff, 0xd8, 0xff]))).toBeNull();
+    expect(imageSize(new TextEncoder().encode("P5\n0 10\n255\n"))).toBeNull();
+    expect(imageSize(new Uint8Array())).toBeNull();
+  });
+});
+
+describe("words of a deskewed page back on the page image", () => {
+  const word = (x0: number, y0: number, x1: number, y1: number, baseline: number | null): RecognizedWord => ({
+    text: "w",
+    bbox: { x0, y0, x1, y1 },
+    baseline,
+    confidence: 90,
+    lineEnd: true,
+  });
+
+  it("leaves words alone without rotation", () => {
+    const words = [word(1, 2, 3, 4, 3.5)];
+    expect(unskewWords(words, 0, [100, 100])).toEqual(words);
+  });
+
+  it("rotates boxes about the image centre by tesseract's angle (measured: a scan turned 2 degrees)", () => {
+    // tesseract.js read a 2550 x 3300 scan turned 2 degrees counter-clockwise with rotateAuto: it found
+    // rotateRadians 0.03516 and MANTIS at [314, 481, 946, 594] deskewed; read without rotateAuto,
+    // the same word's box on the turned image is [274, 495, 908, 626].
+    const [w] = unskewWords([word(314, 481, 946, 594, 590)], 0.03516174480319023, [2550, 3300]);
+    const { x0, y0, x1, y1 } = w.bbox;
+    for (const [got, want] of [[x0, 274], [y0, 495], [x1, 908], [y1, 626]]) expect(Math.abs(got - want)).toBeLessThanOrEqual(3);
+    // The baseline at the word's centre moves with it: (630, 590) -> y 613.3.
+    expect(w.baseline).toBeCloseTo(613.3, 0);
+    expect(w.text).toBe("w");
   });
 });
