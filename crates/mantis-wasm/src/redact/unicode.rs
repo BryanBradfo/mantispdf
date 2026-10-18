@@ -261,15 +261,14 @@ fn read_cmap(bytes: &[u8], map: &mut TextMap) -> bool {
     true
 }
 
-/// A CMap token: a string (hex or literal), `[`, `]`, any other word
-/// (keyword, name, number, `<<`, `>>`), or something malformed.
+/// A CMap token: a string (hex or literal), `[`, `]`, or any other word
+/// (keyword, name, number, `<<`, `>>`).
 #[derive(Debug, PartialEq)]
 enum Tok {
     Str(Vec<u8>),
     Open,
     Close,
     Word(Vec<u8>),
-    Bad,
 }
 
 fn is_delimiter(b: u8) -> bool {
@@ -325,53 +324,76 @@ fn literal(c: &[u8], mut i: usize) -> (usize, Option<Vec<u8>>) {
     (i, None)
 }
 
-/// The tokens of a CMap: `%` comments and `{ ... }` procedures skipped.
-fn tokens(c: &[u8]) -> Vec<Tok> {
+/// Map block keywords: never allowed where the parser does not read.
+const MAP_KEYWORDS: [&[u8]; 4] = [b"beginbfchar", b"endbfchar", b"beginbfrange", b"endbfrange"];
+
+fn has_map_keyword(region: &[u8]) -> bool {
+    MAP_KEYWORDS.iter().any(|k| region.windows(k.len()).any(|w| w == *k))
+}
+
+/// Index of the `}` closing the procedure opened at `c[i] == b'{'` (strings
+/// and comments inside honoured); None when it is not closed.
+fn procedure_end(c: &[u8], mut i: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    while i < c.len() {
+        match c[i] {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            b'(' => {
+                let (next, text) = literal(c, i);
+                text?;
+                i = next;
+                continue;
+            }
+            b'%' => {
+                while i < c.len() && c[i] != b'\n' && c[i] != b'\r' {
+                    i += 1;
+                }
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The tokens of a CMap, `%` comments and `{ ... }` procedures skipped.
+/// None (the CMap cannot be trusted) on anything malformed: a stray or bad
+/// token, an unterminated string or procedure, or a map keyword in a
+/// comment or procedure.
+fn tokens(c: &[u8]) -> Option<Vec<Tok>> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < c.len() {
         match c[i] {
             b if b.is_ascii_whitespace() || b == 0 => i += 1,
             b'%' => {
+                let start = i;
                 while i < c.len() && c[i] != b'\n' && c[i] != b'\r' {
                     i += 1;
                 }
-            }
-            b'{' => {
-                // A procedure: skipped, strings inside it included.
-                let mut depth = 0usize;
-                while i < c.len() {
-                    match c[i] {
-                        b'{' => depth += 1,
-                        b'}' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                i += 1;
-                                break;
-                            }
-                        }
-                        b'(' => {
-                            i = literal(c, i).0;
-                            continue;
-                        }
-                        b'%' => {
-                            while i < c.len() && c[i] != b'\n' && c[i] != b'\r' {
-                                i += 1;
-                            }
-                            continue;
-                        }
-                        _ => {}
-                    }
-                    i += 1;
+                if has_map_keyword(&c[start..i]) {
+                    return None;
                 }
             }
-            b'}' => {
-                out.push(Tok::Bad);
-                i += 1;
+            b'{' => {
+                let end = procedure_end(c, i)?;
+                // The body must tokenize cleanly and hold no map block.
+                let body = tokens(&c[i + 1..end])?;
+                if body.iter().any(|t| matches!(t, Tok::Word(w) if MAP_KEYWORDS.contains(&w.as_slice()))) {
+                    return None;
+                }
+                i = end + 1;
             }
             b'(' => {
                 let (next, text) = literal(c, i);
-                out.push(text.map_or(Tok::Bad, Tok::Str));
+                out.push(Tok::Str(text?));
                 i = next;
             }
             b'<' if c.get(i + 1) == Some(&b'<') => {
@@ -383,32 +405,22 @@ fn tokens(c: &[u8]) -> Vec<Tok> {
                 i += 2;
             }
             b'<' => {
-                let end = c[i..].iter().position(|&b| b == b'>').map(|p| i + p);
-                let Some(end) = end else {
-                    out.push(Tok::Bad);
-                    break;
-                };
+                let end = i + c[i..].iter().position(|&b| b == b'>')?;
                 let digits: Vec<u8> = c[i + 1..end].iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
-                let mut bytes = Vec::with_capacity(digits.len() / 2 + 1);
-                let mut ok = digits.iter().all(u8::is_ascii_hexdigit);
-                if ok {
-                    for pair in digits.chunks(2) {
-                        let text = std::str::from_utf8(pair).unwrap_or("0");
-                        // An odd last digit counts as followed by 0.
-                        let text = if text.len() == 1 { format!("{text}0") } else { text.to_string() };
-                        match u8::from_str_radix(&text, 16) {
-                            Ok(v) => bytes.push(v),
-                            Err(_) => ok = false,
-                        }
-                    }
+                if !digits.iter().all(u8::is_ascii_hexdigit) {
+                    return None;
                 }
-                out.push(if ok { Tok::Str(bytes) } else { Tok::Bad });
+                let mut bytes = Vec::with_capacity(digits.len() / 2 + 1);
+                for pair in digits.chunks(2) {
+                    // An odd last digit counts as followed by 0.
+                    let hi = (pair[0] as char).to_digit(16)?;
+                    let lo = pair.get(1).map_or(Some(0), |d| (*d as char).to_digit(16))?;
+                    bytes.push((hi * 16 + lo) as u8);
+                }
+                out.push(Tok::Str(bytes));
                 i = end + 1;
             }
-            b'>' | b')' => {
-                out.push(Tok::Bad);
-                i += 1;
-            }
+            b'>' | b')' | b'}' => return None,
             b'[' => {
                 out.push(Tok::Open);
                 i += 1;
@@ -427,7 +439,7 @@ fn tokens(c: &[u8]) -> Vec<Tok> {
             }
         }
     }
-    out
+    Some(out)
 }
 
 /// The `bfchar` / `bfrange` blocks of a CMap as operations (operands, then
@@ -435,17 +447,23 @@ fn tokens(c: &[u8]) -> Vec<Tok> {
 /// unterminated block, or anything but strings (and arrays of strings in a
 /// bfrange) inside one.
 fn map_blocks(c: &[u8]) -> Option<Vec<lopdf::content::Operation>> {
-    let toks = tokens(c);
+    let toks = tokens(c)?;
     let mut ops = Vec::new();
     let mut i = 0;
     while i < toks.len() {
-        let end: &[u8] = match &toks[i] {
-            Tok::Word(w) if w == b"beginbfchar" => b"endbfchar",
-            Tok::Word(w) if w == b"beginbfrange" => b"endbfrange",
+        let (end, per_entry): (&[u8], usize) = match &toks[i] {
+            Tok::Word(w) if w == b"beginbfchar" => (b"endbfchar", 2),
+            Tok::Word(w) if w == b"beginbfrange" => (b"endbfrange", 3),
+            Tok::Word(w) if MAP_KEYWORDS.contains(&w.as_slice()) => return None,
             _ => {
                 i += 1;
                 continue;
             }
+        };
+        // The declared entry count comes just before the keyword.
+        let declared: usize = match i.checked_sub(1).map(|k| &toks[k]) {
+            Some(Tok::Word(n)) => std::str::from_utf8(n).ok()?.parse().ok()?,
+            _ => return None,
         };
         i += 1;
         let mut operands = Vec::new();
@@ -469,6 +487,9 @@ fn map_blocks(c: &[u8]) -> Option<Vec<lopdf::content::Operation>> {
                 _ => return None,
             }
             i += 1;
+        }
+        if operands.len() != declared * per_entry {
+            return None;
         }
         ops.push(lopdf::content::Operation::new(std::str::from_utf8(end).unwrap_or(""), operands));
         i += 1;
@@ -634,7 +655,7 @@ mod tests {
     fn cmap_work_is_counted_even_for_codes_not_kept() {
         // 70000 codes of ranges (each mapping the same few codes again),
         // then one more entry: past the work cap, it is not read.
-        let mut cmap = String::from("1 beginbfrange ");
+        let mut cmap = String::from("70 beginbfrange ");
         for _ in 0..70 {
             cmap.push_str("<0000> <03E7> <0041> ");
         }
@@ -688,6 +709,27 @@ mod tests {
         cache.set_limit(70 - cache.charged());
         assert!(cache.map_for(&doc, Some(b), &b_dict).is_some());
         assert_eq!(cache.charged(), 70);
+    }
+
+    #[test]
+    fn cmaps_fail_closed_on_anything_but_comments_and_clean_procedures() {
+        let ok = "1 beginbfchar <41> <0041> endbfchar";
+        let read = |cmap: &str| read_cmap(cmap.as_bytes(), &mut TextMap::new());
+        assert!(read(ok));
+        assert!(read(&format!("%!PS comment\n{ok}\n/p {{ 1 2 add {{ (}}) }} if }} bind def % end")));
+        for (case, cmap) in [
+            ("map block in a procedure", format!("{ok} /p {{ 1 beginbfchar <42> <0058> endbfchar }} def")),
+            ("map keyword in a comment", format!("{ok} % endbfrange\n")),
+            ("stray token", format!("{ok} )")),
+            ("unterminated literal", format!("{ok} (abc")),
+            ("unterminated hex", format!("{ok} <41")),
+            ("unterminated procedure", format!("{ok} {{ 1 2")),
+            ("count too high", "2 beginbfchar <41> <0041> endbfchar".to_string()),
+            ("count too low", "1 beginbfrange <41> <42> <0041> <43> <44> <0043> endbfrange".to_string()),
+            ("no count", "beginbfchar <41> <0041> endbfchar".to_string()),
+        ] {
+            assert!(!read(&cmap), "{case}: {cmap}");
+        }
     }
 
     #[test]
