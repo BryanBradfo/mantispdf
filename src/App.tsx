@@ -29,6 +29,7 @@ const ResizePdfPage = lazy(() => import("./pages/ResizePdfPage"));
 const NupPdfPage = lazy(() => import("./pages/NupPdfPage"));
 const EditPdfPage = lazy(() => import("./pages/EditPdfPage"));
 const FillFormPage = lazy(() => import("./pages/FillFormPage"));
+const RedactPage = lazy(() => import("./pages/RedactPage"));
 const ImagesToPdfPage = lazy(() => import("./pages/ImagesToPdfPage"));
 const ExtractImagesPage = lazy(() => import("./pages/ExtractImagesPage"));
 
@@ -75,6 +76,7 @@ export default function App() {
               <Route path="/edit" element={<Navigate to="/organize" replace />} />
               <Route path="/edit-pdf" element={<EditPdfPage />} />
               <Route path="/fill-form" element={<FillFormPage />} />
+              <Route path="/redact" element={<RedactPage />} />
               <Route path="/organize" element={<OrganizePdfPage />} />
               <Route path="/remove-pages" element={<RemovePagesPage />} />
               <Route path="/extract-pages" element={<ExtractPagesPage />} />
