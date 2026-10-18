@@ -280,6 +280,8 @@ fn space_components(doc: &Document, cs: &Object) -> Option<usize> {
             b"DeviceRGB" | b"CalRGB" => Some(3),
             _ => None,
         },
+        Object::Array(items) if items.first().and_then(|o| o.as_name().ok()) == Some(b"CalGray") => Some(1),
+        Object::Array(items) if items.first().and_then(|o| o.as_name().ok()) == Some(b"CalRGB") => Some(3),
         Object::Array(items) if items.first().and_then(|o| o.as_name().ok()) == Some(b"ICCBased") => {
             let Some(Object::Stream(icc)) = items.get(1).and_then(|o| deref(doc, o)) else {
                 return None;

@@ -481,3 +481,19 @@ fn alias_names_of_a_replaced_image_go_too() {
     let out = redact(page, b"q 40 0 0 40 0 0 cm /Im1 Do Q q 1 0 0 1 200 200 cm /Alias Do Q", &[rect(0.0, 0.0, 20.0, 40.0)]);
     assert!(super::interp::page_resources_dict(&out.doc, &out.resources, b"XObject").has(b"Alias"));
 }
+
+#[test]
+fn calibrated_jpeg_colour_spaces_are_kept() {
+    let white = || dictionary! { "WhitePoint" => vec![Object::Real(0.95), 1.into(), Object::Real(1.09)] };
+    for (colour, kind, family) in [
+        (vec![180u8], jpeg_encoder::ColorType::Luma, "CalGray"),
+        (vec![200u8, 100, 50], jpeg_encoder::ColorType::Rgb, "CalRGB"),
+    ] {
+        let mut image = jpeg_image(jpeg(16, 16, &colour, kind), 16, 16, "DeviceGray");
+        let space = Object::Array(vec![Object::Name(family.as_bytes().to_vec()), Object::Dictionary(white())]);
+        image.dict.set("ColorSpace", space.clone());
+        let out = redact(page_with(image), b"q 16 0 0 16 0 0 cm /Im1 Do Q", &[rect(0.0, 0.0, 8.0, 16.0)]);
+        let new = xobject(&out, &drawn(&out.content)[0]);
+        assert_eq!(new.dict.get(b"ColorSpace").unwrap(), &space, "{family}");
+    }
+}
