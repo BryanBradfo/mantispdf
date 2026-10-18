@@ -531,7 +531,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod optional_content_tests {
+pub(crate) mod optional_content_tests {
     use super::*;
     use crate::forms::fill::fill_form;
     use crate::pdf_util::{load_pdf, save_pdf};
@@ -609,37 +609,5 @@ mod optional_content_tests {
         let out = load_pdf(&out).unwrap();
         // The OCG keeps its id through the save (same document, same objects).
         assert_on_layer(&out, ocg);
-    }
-}
-
-#[cfg(test)]
-mod hidden_layer_redaction_tests {
-    use super::optional_content_tests_support::hidden_layer_widget_pdf;
-    use crate::pdf_util::load_pdf;
-    use crate::redact::{Fill, RedactJob, RedactRect, redact};
-
-    #[test]
-    fn redaction_removes_a_hidden_layer_widget_under_an_area() {
-        let job = RedactJob { rects: vec![RedactRect { page: 1, rect: [95.0, 595.0, 210.0, 30.0] }], fill: Fill::Black, remove_metadata: true, rasters: Vec::new() };
-        let (out, summary) = redact(&hidden_layer_widget_pdf(), job).unwrap();
-        assert!(summary.glyphs_removed > 0);
-        let out = load_pdf(&out).unwrap();
-        let mut all = Vec::new();
-        for object in out.objects.values() {
-            if let lopdf::Object::Stream(s) = object {
-                all.extend(s.decompressed_content().unwrap_or_else(|_| s.content.clone()));
-            }
-        }
-        assert!(!String::from_utf8_lossy(&all).contains("HIDDENVALUE"));
-    }
-}
-
-#[cfg(test)]
-mod optional_content_tests_support {
-    use crate::pdf_util::save_pdf;
-
-    pub(crate) fn hidden_layer_widget_pdf() -> Vec<u8> {
-        let (mut doc, _) = super::optional_content_tests::hidden_layer_widget();
-        save_pdf(&mut doc).unwrap()
     }
 }

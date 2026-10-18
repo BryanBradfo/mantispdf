@@ -1028,3 +1028,19 @@ fn a_whole_page_mark_blanks_the_page_without_a_raster() {
     // Other pages are still redacted as usual.
     assert_eq!(text_of(&out, page_ids(&out)[0]), "Hello World");
 }
+
+#[test]
+fn redaction_removes_a_hidden_layer_widget_under_an_area() {
+    let (mut doc, _) = crate::forms::flatten::optional_content_tests::hidden_layer_widget();
+    let pdf = save_pdf(&mut doc).unwrap();
+    let (out, summary) = redact(&pdf, job(vec![area(1, 95.0, 595.0, 210.0, 30.0)])).unwrap();
+    assert!(summary.glyphs_removed > 0);
+    let out = load_pdf(&out).unwrap();
+    let mut all = Vec::new();
+    for object in out.objects.values() {
+        if let Object::Stream(s) = object {
+            all.extend(s.decompressed_content().unwrap_or_else(|_| s.content.clone()));
+        }
+    }
+    assert!(!String::from_utf8_lossy(&all).contains("HIDDENVALUE"));
+}
