@@ -178,6 +178,13 @@ pub fn redact_search(pdf_bytes: &[u8], query: &str, options: JsValue) -> Result<
     Ok(redact::binding::search_to_js(&result))
 }
 
+/// The PDF prepared for rendering the rasters of pages that need one: form
+/// fields flattened (their values drawn), only links kept as annotations.
+#[wasm_bindgen]
+pub fn redact_prepare(pdf_bytes: &[u8]) -> Result<Vec<u8>, JsValue> {
+    redact::redact_prepare(pdf_bytes).map_err(|e| JsValue::from_str(&e))
+}
+
 /// Redact the job's areas: `{ bytes, pagesRedacted, ... }`.
 #[wasm_bindgen]
 pub fn redact(pdf_bytes: &[u8], job: JsValue) -> Result<JsValue, JsValue> {

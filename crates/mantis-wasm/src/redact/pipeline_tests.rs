@@ -975,3 +975,37 @@ fn pages_needing_a_raster_are_listed_together() {
     let err = redact(&bytes(doc), job(vec![area(1, 10.0, 10.0, 10.0, 10.0), area(3, 0.0, 0.0, 10.0, 10.0)])).unwrap_err();
     assert_eq!(err, "Invalid redact settings: needs raster [1,3]");
 }
+
+#[test]
+fn prepared_bytes_show_field_values_and_keep_only_links() {
+    let mut doc = fixture();
+    let page1 = page_ids(&doc)[0];
+    let font = doc.add_object(helvetica());
+    let ap = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 200, 20]),
+            "Resources" => dictionary! { "Font" => dictionary! { "H" => font } },
+        },
+        b"BT /H 10 Tf 2 5 Td (FIELDVALUE) Tj ET".to_vec(),
+    ));
+    let widget = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx", "T" => text("f"), "Rect" => rect_array([100, 500, 300, 520]),
+        "AP" => dictionary! { "N" => ap }, "P" => page1,
+    });
+    let mut annots = doc.get_dictionary(page1).unwrap().get(b"Annots").unwrap().as_array().unwrap().clone();
+    annots.push(widget.into());
+    doc.get_dictionary_mut(page1).unwrap().set("Annots", annots);
+    let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+    doc.get_dictionary_mut(root).unwrap().set("AcroForm", dictionary! { "Fields" => vec![widget.into()] });
+
+    let prepared = load_pdf(&redact_prepare(&bytes(doc)).unwrap()).unwrap();
+    let page = page_ids(&prepared)[0];
+    assert!(text_of(&prepared, page).contains("FIELDVALUE"), "the field's value is drawn by the page");
+    let annots = prepared.get_dictionary(page).unwrap().get(b"Annots").map(|a| prepared.dereference(a).unwrap().1.as_array().unwrap().clone()).unwrap_or_default();
+    let subtypes: Vec<Vec<u8>> = annots
+        .iter()
+        .map(|a| prepared.dereference(a).unwrap().1.as_dict().unwrap().get(b"Subtype").unwrap().as_name().unwrap().to_vec())
+        .collect();
+    assert_eq!(subtypes, vec![b"Link".to_vec(), b"Link".to_vec()]);
+    assert_eq!(page_ids(&prepared).len(), 3);
+}

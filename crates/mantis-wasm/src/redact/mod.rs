@@ -156,6 +156,40 @@ pub(crate) fn load_prepared(pdf: &[u8]) -> Result<Document, String> {
     Ok(doc)
 }
 
+/// The bytes the UI renders rasters from: `load_prepared` (widget
+/// appearances flattened into the pages, their optional content kept) with
+/// every annotation but links dropped, so a rasterized page shows what the
+/// redacted file shows (form values included, no comments).
+pub(crate) fn redact_prepare(pdf: &[u8]) -> Result<Vec<u8>, String> {
+    let mut doc = load_prepared(pdf)?;
+    for page in doc.get_pages().into_values().collect::<Vec<_>>() {
+        let Some(annots) = doc
+            .get_dictionary(page)
+            .ok()
+            .and_then(|d| d.get(b"Annots").ok())
+            .and_then(|a| rebuild::deref(&doc, a))
+            .and_then(|a| a.as_array().ok())
+            .cloned()
+        else {
+            continue;
+        };
+        let links: Vec<Object> = annots
+            .into_iter()
+            .filter(|a| {
+                rebuild::deref(&doc, a).and_then(|a| a.as_dict().ok()).and_then(|d| rebuild::name_of(d, b"Subtype")) == Some(b"Link")
+            })
+            .collect();
+        if let Ok(dict) = doc.get_dictionary_mut(page) {
+            if links.is_empty() {
+                dict.remove(b"Annots");
+            } else {
+                dict.set("Annots", links);
+            }
+        }
+    }
+    save_pdf(&mut doc)
+}
+
 /// Which pages with areas can be redacted in place.
 pub(crate) fn redact_plan(pdf: &[u8], rects: &[RedactRect]) -> Result<Vec<PageStatus>, String> {
     let mut doc = load_prepared(pdf)?;
