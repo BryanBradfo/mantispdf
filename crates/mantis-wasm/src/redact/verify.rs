@@ -3,7 +3,7 @@
 
 use super::forms::MAX_FORM_DEPTH;
 use super::graphics::{quad_hit, shading_hit, unanalysed_paint};
-use super::interp::{Event, Glyph, IDENTITY, ImagePlacement as Image, ImageSource, Interp, Matrix, Paint, Rect, content_ops, decode_ops, page_resources, page_resources_dict};
+use super::interp::{Event, IDENTITY, ImagePlacement as Image, ImageSource, Interp, Matrix, Paint, Rect, content_ops, decode_ops, page_resources, page_resources_dict};
 use super::{Budget, JOB_DECODED, Unsupported};
 use crate::page_content::{original_contents, owned_dict};
 use crate::rebuild::{Decoded, MAX_STREAM_DECODED, deref, strict_content_in};
@@ -43,12 +43,14 @@ fn page_seen(doc: &Document, page: ObjectId, tag: &[u8]) -> Result<(Vec<Seen>, V
 }
 
 /// Every event of `page`, its forms included (form events in user space).
+#[cfg(test)]
 pub(crate) fn page_events(doc: &Document, page: ObjectId) -> Result<Vec<Event>, Unsupported> {
     Ok(page_seen(doc, page, &[])?.0.into_iter().map(|s| s.event).collect())
 }
 
 /// Every glyph drawn by `page`, its forms included.
-pub(crate) fn page_glyphs(doc: &Document, page: ObjectId) -> Result<Vec<Glyph>, Unsupported> {
+#[cfg(test)]
+pub(crate) fn page_glyphs(doc: &Document, page: ObjectId) -> Result<Vec<super::interp::Glyph>, Unsupported> {
     Ok(page_events(doc, page)?
         .into_iter()
         .filter_map(|e| match e {
