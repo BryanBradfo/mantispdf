@@ -189,7 +189,7 @@ impl Font {
             b"Type3" => return Err(err("Type3 fonts are not supported")),
             other => return Err(err(&format!("unsupported font type {}", String::from_utf8_lossy(other)))),
         };
-        let text = text.map(|cache| cache.map_for(doc, obj.as_reference().ok(), font));
+        let text = text.and_then(|cache| cache.map_for(doc, obj.as_reference().ok(), font));
         Ok(Font { label, kind, ascent, descent, bbox, text })
     }
 

@@ -219,3 +219,54 @@ fn pages_with_too_much_text_are_undecodable() {
     assert_eq!(found.undecodable_pages, vec![1]);
     assert!(found.pages.is_empty());
 }
+
+fn two_pages(content: &str) -> Document {
+    let mut doc = one_page(content, with_helvetica);
+    let pages_id = doc.catalog().unwrap().get(b"Pages").unwrap().as_reference().unwrap();
+    let first = doc.get_pages()[&1];
+    let second = doc.add_object(doc.get_dictionary(first).unwrap().clone());
+    let pages = doc.get_dictionary_mut(pages_id).unwrap();
+    pages.set("Kids", vec![first.into(), second.into()]);
+    pages.set("Count", 2);
+    doc
+}
+
+fn rect_count(found: &super::search::SearchResult) -> usize {
+    found.pages.iter().map(|p| p.rects.len()).sum()
+}
+
+#[test]
+fn a_match_that_does_not_fit_is_dropped_whole() {
+    // MAX_RECTS - 1 one-line matches, then one across two lines (2 rects).
+    let line = format!("{}x", "x y ".repeat(MAX_RECTS - 1));
+    let doc = one_page(&format!("BT /H 10 Tf 0.01 Tz 10 700 Td ({line}) Tj 0 -20 Td (y) Tj ET"), with_helvetica);
+    let found = redact_search(&bytes(doc), "x y", &opts()).unwrap();
+    assert_eq!(rect_count(&found), MAX_RECTS - 1, "never half a match");
+    assert!(found.truncated);
+    assert_eq!(found.unsearched_pages, vec![1]);
+}
+
+#[test]
+fn pages_after_the_limit_are_not_searched() {
+    // Page 1 fills the limit exactly; page 2 is never searched.
+    let doc = two_pages(&format!("BT /H 10 Tf 0.01 Tz 10 700 Td ({}) Tj ET", "x y ".repeat(MAX_RECTS)));
+    let found = redact_search(&bytes(doc), "x y", &opts()).unwrap();
+    assert_eq!(rect_count(&found), MAX_RECTS);
+    assert!(found.truncated);
+    assert_eq!(found.unsearched_pages, vec![2]);
+}
+
+#[test]
+fn unreadable_tounicode_makes_the_page_undecodable() {
+    let doc = one_page("BT /F 10 Tf 100 700 Td (a) Tj ET", |doc| {
+        let broken = doc.add_object(Stream::new(dictionary! { "Filter" => "FlateDecode" }, b"not zlib".to_vec()));
+        let font = doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding",
+            "ToUnicode" => broken,
+        });
+        dictionary! { "Font" => dictionary! { "F" => font } }
+    });
+    let found = redact_search(&bytes(doc), "a", &opts()).unwrap();
+    assert_eq!(found.undecodable_pages, vec![1]);
+    assert!(found.pages.is_empty());
+}

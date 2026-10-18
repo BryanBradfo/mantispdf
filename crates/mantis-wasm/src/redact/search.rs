@@ -127,8 +127,10 @@ fn union(quads: impl Iterator<Item = Quad>) -> Option<Rect> {
     quads.map(|q| q.bbox()).reduce(|a, b| Rect { x0: a.x0.min(b.x0), y0: a.y0.min(b.y0), x1: a.x1.max(b.x1), y1: a.y1.max(b.y1) })
 }
 
-/// Every match of `query` in `pdf`, page by page. Past `MAX_RECTS` rects
-/// the search stops and says so (`truncated`, `unsearched_pages`).
+/// Every match of `query` in `pdf`, page by page. A match that would take
+/// the rects past `MAX_RECTS` is dropped whole and the search stops there,
+/// saying so (`truncated`; that page and every later one in
+/// `unsearched_pages`).
 pub(crate) fn redact_search(pdf: &[u8], query: &str, options: &SearchOptions) -> Result<SearchResult, String> {
     if query.chars().count() > MAX_QUERY_CHARS {
         return Err(super::invalid("query"));
@@ -141,7 +143,9 @@ pub(crate) fn redact_search(pdf: &[u8], query: &str, options: &SearchOptions) ->
     // Fonts' text maps, shared by every page of the job.
     let cache = Rc::new(RefCell::new(TextCache::new(decoded)));
     for (number, page) in doc.get_pages() {
-        if result.truncated {
+        // Past the limit (or once it is reached): not searched at all.
+        if result.truncated || (total >= MAX_RECTS && !needle.is_empty()) {
+            result.truncated = true;
             result.unsearched_pages.push(number);
             continue;
         }
@@ -184,21 +188,19 @@ pub(crate) fn redact_search(pdf: &[u8], query: &str, options: &SearchOptions) ->
                     None => by_line.push((lines[g], vec![g])),
                 }
             }
-            for (_, list) in by_line {
-                if let Some(r) = union(list.iter().map(|&g| glyphs[g].box_user)) {
-                    rects.push(to_visible(&vb, &r));
-                }
-            }
-            at += needle.len();
-            if total + rects.len() >= MAX_RECTS {
-                rects.truncate(MAX_RECTS - total);
-                // More text left to search on this page: it was cut short.
-                if at < chars.len() {
-                    result.truncated = true;
-                    result.unsearched_pages.push(number);
-                }
+            let found: Vec<[f64; 4]> = by_line
+                .into_iter()
+                .filter_map(|(_, list)| union(list.iter().map(|&g| glyphs[g].box_user)))
+                .map(|r| to_visible(&vb, &r))
+                .collect();
+            // A match is marked whole or not at all.
+            if total + rects.len() + found.len() > MAX_RECTS {
+                result.truncated = true;
+                result.unsearched_pages.push(number);
                 break;
             }
+            rects.extend(found);
+            at += needle.len();
         }
         if !rects.is_empty() {
             total += rects.len();
