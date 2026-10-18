@@ -216,8 +216,9 @@ pub(crate) struct PathPaint {
     pub(crate) painted: bool,
     /// `W` or `W*` came before the painting operator.
     pub(crate) clip: bool,
-    /// Built from `re` (and `h`) only: as a clip it carries no glyph shape.
-    pub(crate) rects_only: bool,
+    /// One `re` (and maybe `h`) and nothing else: as a clip it carries no
+    /// glyph shape (several rectangles can spell letters).
+    pub(crate) single_rect: bool,
     /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
     pub(crate) marked: Option<usize>,
 }
@@ -497,7 +498,10 @@ struct PathBuild {
     start: usize,
     bbox: Option<Rect>,
     clip: bool,
-    rects_only: bool,
+    /// `re` operators so far.
+    rects: usize,
+    /// Any construction operator other than `re` (and `h`).
+    shaped: bool,
 }
 
 /// Text position: Tm and Tlm.
@@ -637,8 +641,12 @@ impl Run<'_> {
     /// whether it is `re`.
     fn add_points(&mut self, op_index: usize, points: &[(f64, f64)], rect: bool) {
         let ctm = self.gs.ctm;
-        let path = self.path.get_or_insert(PathBuild { start: op_index, bbox: None, clip: false, rects_only: true });
-        path.rects_only &= rect;
+        let path = self.path.get_or_insert(PathBuild { start: op_index, bbox: None, clip: false, rects: 0, shaped: false });
+        if rect {
+            path.rects += 1;
+        } else {
+            path.shaped = true;
+        }
         for &(x, y) in points {
             let p = apply(&ctm, x, y);
             path.bbox = Some(path.bbox.map_or(Rect::point(p.0, p.1), |r| r.including(p)));
@@ -656,7 +664,7 @@ impl Run<'_> {
             bbox_user,
             painted,
             clip: path.clip,
-            rects_only: path.rects_only,
+            single_rect: !path.shaped && path.rects == 1,
             marked: self.marked(),
         }))
     }
@@ -1549,10 +1557,12 @@ mod tests {
     #[test]
     fn clip_paths_are_marked() {
         let p = path("0 0 m 10 0 l 10 10 l W n");
-        assert_eq!((p.op_range.clone(), p.painted, p.clip, p.rects_only), (0..5, false, true, false));
+        assert_eq!((p.op_range.clone(), p.painted, p.clip, p.single_rect), (0..5, false, true, false));
         let p = path("0 0 10 10 re W* f");
-        assert_eq!((p.op_range.clone(), p.painted, p.clip, p.rects_only), (0..3, true, true, true));
-        assert!(path("0 0 10 10 re h 20 20 5 5 re W n").rects_only);
+        assert_eq!((p.op_range.clone(), p.painted, p.clip, p.single_rect), (0..3, true, true, true));
+        assert!(path("0 0 10 10 re h W n").single_rect);
+        // Several rectangles can spell letters.
+        assert!(!path("0 0 10 10 re 20 20 5 5 re W n").single_rect);
     }
 
     #[test]

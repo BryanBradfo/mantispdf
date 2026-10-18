@@ -288,6 +288,8 @@ fn shaped_clips_under_a_rect_make_the_page_unsupported() {
         b"q 0 0 m 100 0 l 50 100 l h W n Q",
         b"q 0 0 m 100 0 l 50 100 l h W* f Q",
         b"q 0 0 100 100 re 30 30 m 60 60 l 30 60 l h W n Q",
+        b"q 40 40 2 10 re 44 40 2 10 re 40 48 6 2 re W n Q",
+        b"q 0 0 100 100 re 10 10 20 20 re W f Q",
     ] {
         let err = try_redact(content, &rects).unwrap_err();
         assert!(err.0.contains("clip"), "{}: {err:?}", String::from_utf8_lossy(content));

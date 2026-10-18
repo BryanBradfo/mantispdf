@@ -15,8 +15,9 @@ pub(crate) enum PathEdit {
 }
 
 /// The edit for a path whose bounds meet a rect: a painted path goes, a
-/// rectangle clip keeps its clip and loses its paint. Any other clip there
-/// is Unsupported: a clip shaped like letter outlines carries the text.
+/// single-rectangle clip keeps its clip and loses its paint. Any other clip
+/// there is Unsupported: a clip shaped like letter outlines (or built from
+/// several rectangles) carries the text.
 /// None for paths that stay clear of every rect or only clip with rects.
 pub(crate) fn path_edit(path: &PathPaint, rects: &[Rect]) -> Result<Option<PathEdit>, Unsupported> {
     let Some(bbox) = path.bbox_user else {
@@ -25,7 +26,7 @@ pub(crate) fn path_edit(path: &PathPaint, rects: &[Rect]) -> Result<Option<PathE
     if !rects.iter().any(|r| bbox.overlaps(r)) {
         return Ok(None);
     }
-    if path.clip && !path.rects_only {
+    if path.clip && !path.single_rect {
         return Err(Unsupported::new("shaped clip path under a redaction area"));
     }
     Ok(match (path.painted, path.clip) {
