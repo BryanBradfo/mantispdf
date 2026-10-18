@@ -22,6 +22,9 @@ pub(crate) const MAX_WIDGETS: usize = 50_000;
 pub(crate) const MAX_OPTIONS: usize = 10_000;
 /// Characters in one text value.
 pub(crate) const MAX_VALUE_CHARS: usize = 20_000;
+/// Options (/Opt entries) all fields of one form may list together
+/// (inherited /Opt arrays count once per field).
+pub(crate) const MAX_OPTIONS_TOTAL: usize = 200_000;
 /// Field tree depth: fields nested deeper are not listed.
 pub(crate) const MAX_DEPTH: usize = 32;
 

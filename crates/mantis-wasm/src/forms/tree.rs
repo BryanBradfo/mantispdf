@@ -3,8 +3,8 @@
 //! placement in visible page space.
 
 use super::{
-    Field, FieldKind, FormInfo, MAX_DEPTH, MAX_FIELDS, MAX_OPTIONS, MAX_WIDGETS, Value, Widget, Xfa,
-    invalid,
+    Field, FieldKind, FormInfo, MAX_DEPTH, MAX_FIELDS, MAX_OPTIONS, MAX_OPTIONS_TOTAL, MAX_WIDGETS, Value, Widget,
+    Xfa, invalid,
 };
 use crate::annotations::parse_numbers;
 use crate::doc_tools::decode_text;
@@ -526,12 +526,20 @@ struct Context<'a> {
     /// Parsed /DA per source string (by address: fields inheriting one /DA
     /// share it).
     das: std::cell::RefCell<HashMap<usize, DefaultAppearance>>,
+    /// What is left of `MAX_OPTIONS_TOTAL`.
+    options_left: std::cell::Cell<usize>,
 }
 
 /// A /DA longer than this is not parsed: the default appearance is used.
 pub(crate) const MAX_DA_BYTES: usize = 4096;
 
 impl<'a> Context<'a> {
+    fn charge_options(&self, options: Vec<(String, String)>) -> Result<Vec<(String, String)>, String> {
+        let left = self.options_left.get().checked_sub(options.len()).ok_or_else(|| invalid("options"))?;
+        self.options_left.set(left);
+        Ok(options)
+    }
+
     /// `key` on the widget itself, else inherited by the field, else the
     /// AcroForm default.
     fn widget_attr(&self, widget: &'a Dictionary, field: ObjectId, key: &[u8]) -> Option<&'a Object> {
@@ -643,7 +651,7 @@ impl<'a> Context<'a> {
             read_only: flags & FF_READ_ONLY != 0,
             required: flags & FF_REQUIRED != 0,
             value: read_value(doc, value, &kind, streams),
-            options: read_options(doc, inherited(doc, t.obj, b"Opt"))?,
+            options: self.charge_options(read_options(doc, inherited(doc, t.obj, b"Opt"))?)?,
             kind,
             on_states,
             widgets,
@@ -686,6 +694,7 @@ fn read_form_with(doc: &Document, streams: &mut StreamValues) -> Result<FormTree
         dr: form.get(b"DR").ok().and_then(|d| deref(doc, d)?.as_dict().ok()),
         pages: Pages::new(doc),
         das: std::cell::RefCell::new(HashMap::new()),
+        options_left: std::cell::Cell::new(MAX_OPTIONS_TOTAL),
     };
     let mut fields = Vec::new();
     let mut refs = Vec::new();
@@ -1472,5 +1481,25 @@ pub(crate) mod tests {
         // Longer than MAX_DA_BYTES: the default appearance.
         assert_eq!(t.refs[0].widgets[0].da, DefaultAppearance::default());
         assert_eq!(t.refs[2000].widgets[0].da.font, StdFont::Courier);
+    }
+    #[test]
+    fn inherited_options_share_one_document_budget() {
+        let build = |kids_count: usize| {
+            let (mut doc, page) = base(0);
+            let parent = doc.new_object_id();
+            let opt: Vec<Object> = (0..MAX_OPTIONS).map(|i| Object::string_literal(format!("{i}"))).collect();
+            let kids: Vec<Object> = (0..kids_count)
+                .map(|i| doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+                    ("T", Object::string_literal(format!("k{i}"))), ("Parent", parent.into()),
+                ])).into())
+                .collect();
+            doc.objects.insert(parent, Object::Dictionary(dictionary! {
+                "FT" => "Ch", "T" => Object::string_literal("p"), "Opt" => opt, "Kids" => kids,
+            }));
+            finish(&mut doc, page, &[parent], &[], vec![]);
+            doc
+        };
+        assert_eq!(read_form(&build(MAX_OPTIONS_TOTAL / MAX_OPTIONS)).unwrap().info.fields.len(), 20);
+        assert_eq!(read_form(&build(MAX_OPTIONS_TOTAL / MAX_OPTIONS + 1)).unwrap_err(), "Invalid form settings: options");
     }
 }
