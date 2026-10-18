@@ -55,10 +55,11 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
   const title = bad ? `${label}: characters the PDF fonts cannot save` : tooLong ? `${label}: ${tooLong}` : label;
   const kind = field.kind;
 
-  // pdf.js still paints read-only text and choice fields into the preview (their appearance has
-  // its own canvas even without widgets), and the value cannot change: frame it, draw nothing.
-  if (disabled && (kind.kind === "text" || kind.kind === "combo" || kind.kind === "list")) {
-    const shown = kind.kind === "list" ? namesOf(value).join(", ") : textOf(value);
+  // pdf.js still paints read-only text fields into the widget-less preview (their appearance
+  // gets its own canvas), and the value cannot change: frame it, draw nothing over it. Read-only
+  // combo and list boxes are not painted, so they keep a disabled control showing the value.
+  if (disabled && kind.kind === "text") {
+    const shown = textOf(value);
     return (
       <div
         style={frame}

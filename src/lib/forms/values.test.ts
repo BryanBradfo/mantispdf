@@ -61,7 +61,7 @@ describe("unsupportedIn", () => {
     expect(unsupportedIn(field(), text("ok 日"))).toBe("日");
     expect(unsupportedIn(field({ kind: { kind: "combo", editable: true } }), text("€ ✓"))).toBe("✓");
     expect(unsupportedIn(field({ kind: { kind: "list", multi: true } }), names("日"))).toBe("");
-    expect(unsupportedIn(field(), text("line\\nbreak\\ttab"))).toBe("");
+    expect(unsupportedIn(field(), text("line\nbreak\ttab"))).toBe("");
   });
 });
 
