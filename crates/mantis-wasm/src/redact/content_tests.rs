@@ -467,7 +467,8 @@ fn trailing_removals_leave_no_number_unless_later_text_depends_on_it() {
     assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB SECRET) Tj ET"), vec![0]);
     assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB SECRET) Tj 0 -20 Td (X) Tj ET"), vec![0]);
     assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB SECRET) Tj 12 TL (X) ' ET"), vec![0]);
-    assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB SECRET) Tj /H 9 Tf (X) Tj ET"), vec![1]);
+    // The distance moves to the next kept show, as its leading number.
+    assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB SECRET) Tj /H 9 Tf (X) Tj ET"), vec![0, 1]);
     // A show removed entirely: one number when later text depends on it,
     // nothing otherwise.
     assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td (AB ) Tj (SECRET) Tj (X) Tj ET"), vec![1]);
@@ -534,4 +535,40 @@ fn et_is_not_a_position_barrier() {
     let ops = decode_ops(b"BT (A) Tj ET (B) Tj BT (C) Tj ET").unwrap();
     assert!(super::text::later_text_depends(&ops, 1), "ET does not reset the text position");
     assert!(!super::text::later_text_depends(&ops, 3), "BT does");
+}
+
+fn number_count(content: &[u8]) -> usize {
+    tj_arrays(content).iter().map(|a| a.iter().filter(|o| is_number(o)).count()).sum()
+}
+
+#[test]
+fn consecutive_removed_shows_leave_at_most_one_number() {
+    // One glyph per show: per-op numbers would spell out each width.
+    let content = b"BT /H 10 Tf 100 700 Td (AB ) Tj (S) Tj (E) Tj (C) Tj (R) Tj (E) Tj (T) Tj ( CD) Tj ET";
+    let out = redact(content, &[SECRET]);
+    assert_eq!(text(&out.after), "AB  CD");
+    assert_eq!(number_count(&out.content), 1, "{}", String::from_utf8_lossy(&out.content));
+    assert_kept_in_place(&out, &[SECRET]);
+    // Colour, font and spacing operators in between do not split the run.
+    let content = b"BT /H 10 Tf 100 700 Td (AB ) Tj (SE) Tj 0 g (CR) Tj /H 10 Tf 0 Tc (ET) Tj ( CD) Tj ET";
+    let out = redact(content, &[SECRET]);
+    assert_eq!(number_count(&out.content), 1, "{}", String::from_utf8_lossy(&out.content));
+    assert_kept_in_place(&out, &[SECRET]);
+    // Nothing after the run depends on it: no number at all.
+    let content = b"BT /H 10 Tf 100 700 Td (AB ) Tj (SE) Tj 0 g (CRET) Tj 0 -20 Td (X) Tj ET";
+    let out = redact(content, &[SECRET]);
+    assert_eq!(number_count(&out.content), 0, "{}", String::from_utf8_lossy(&out.content));
+    assert_kept_in_place(&out, &[SECRET]);
+}
+
+#[test]
+fn the_carried_distance_is_converted_with_the_next_shows_size() {
+    // The kept show after the run uses another size and scaling.
+    let content = b"BT /H 10 Tf 100 700 Td (AB ) Tj (SECRET) Tj /H 20 Tf 50 Tz ( CD) Tj ET";
+    let out = redact(content, &[SECRET]);
+    assert_eq!(number_count(&out.content), 1);
+    assert_kept_in_place(&out, &[SECRET]);
+    // A size of 0 there cannot carry it.
+    let err = try_redact(b"BT /H 10 Tf 100 700 Td (AB ) Tj (SECRET) Tj /H 0 Tf ( CD) Tj ET", &[SECRET]).unwrap_err();
+    assert!(err.0.contains("size"), "{err:?}");
 }

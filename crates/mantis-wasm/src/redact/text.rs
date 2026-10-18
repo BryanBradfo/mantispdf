@@ -1,14 +1,72 @@
 //! Text removal: show operators rewritten so removed glyphs disappear and
 //! every kept glyph stays exactly where it was.
+//!
+//! The distance removed text covered is never written per glyph: it is
+//! carried, across removed shows and the operators between them that do not
+//! position text, to the next kept glyph and written there as ONE TJ
+//! number (in that show's font size and scaling). A positioning operator
+//! (`Td`, `TD`, `Tm`, `T*`, `'`, `"`, `BT`) or the end of the content drops
+//! it: nothing depends on it then.
 
 use super::Unsupported;
 use super::interp::Glyph;
 use lopdf::Object;
 use lopdf::content::Operation;
-use std::ops::Range;
+use std::collections::BTreeMap;
 
 /// Largest TJ adjustment written (thousandths of text space).
 const MAX_ADJUSTMENT: f64 = 1e15;
+
+/// What `rewrite_text` changed.
+#[derive(Debug, Default)]
+pub(crate) struct TextEdits {
+    /// Replacement operators per original op index.
+    pub(crate) replaced: BTreeMap<usize, Vec<Operation>>,
+    /// Glyphs no longer drawn.
+    pub(crate) removed: usize,
+}
+
+/// True for operators that set the text position afresh.
+fn repositions(op: &str) -> bool {
+    matches!(op, "Td" | "TD" | "Tm" | "T*" | "'" | "\"" | "BT")
+}
+
+/// Rewrite the show operators of `ops` so the glyphs flagged `true` in
+/// `glyphs` (every glyph event, in content order) disappear.
+pub(crate) fn rewrite_text(ops: &[Operation], glyphs: &[(&Glyph, bool)]) -> Result<TextEdits, Unsupported> {
+    let mut by_op: BTreeMap<usize, Vec<(&Glyph, bool)>> = BTreeMap::new();
+    for &(g, removed) in glyphs {
+        by_op.entry(g.op_index).or_default().push((g, removed));
+    }
+    let mut edits = TextEdits::default();
+    // Text-space distance of removed text not yet written.
+    let mut carry = 0.0;
+    for (index, op) in ops.iter().enumerate() {
+        if repositions(&op.operator) {
+            carry = 0.0;
+        }
+        let Some(shown) = by_op.get(&index) else {
+            continue;
+        };
+        let removing = shown.iter().any(|(_, removed)| *removed);
+        if !removing && carry == 0.0 {
+            continue;
+        }
+        let rewrite = rewrite_show(op, shown, carry)?;
+        if rewrite.dropped_whole {
+            let moves = shown.iter().any(|(g, _)| g.advance() != 0.0);
+            if moves && later_text_depends(ops, index) {
+                return Err(Unsupported::new("zero-size text under a redaction area moves later text"));
+            }
+            edits.removed += shown.len();
+        } else {
+            edits.removed += shown.iter().filter(|(_, removed)| *removed).count();
+        }
+        carry = rewrite.carry;
+        edits.replaced.insert(index, rewrite.ops);
+    }
+    Ok(edits)
+}
 
 /// One element of a rewritten TJ array.
 enum Item {
@@ -16,19 +74,17 @@ enum Item {
     Number(f64),
 }
 
-/// Replacement for the show operator `op` (`Tj`, `TJ`, `'` or `"`) without
-/// the `removed` glyphs (all from `op`). Each maximal run of removed glyphs,
-/// together with the TJ numbers next to it, becomes ONE number: the total
-/// distance, never per-glyph widths. Numbers after the last kept glyph are
-/// written only when `later_text_depends` (a later show continues from this
-/// position). The line move and spacing of `'` and `"` are kept as `T*`,
-/// `Tw` and `Tc`. The flag is true when the whole show had to go (font size
-/// or scaling 0: no number can stand in for a glyph).
-pub(crate) fn rewrite_show(
-    op: &Operation,
-    removed: &[&Glyph],
-    later_text_depends: bool,
-) -> Result<(Vec<Operation>, bool), Unsupported> {
+struct ShowRewrite {
+    ops: Vec<Operation>,
+    /// Distance left to write before the next kept glyph.
+    carry: f64,
+    /// The show went entirely (font size or scaling 0).
+    dropped_whole: bool,
+}
+
+/// `op` (`Tj`, `TJ`, `'` or `"`) without its removed glyphs, starting with
+/// `carry` (text space) still to move before its first kept glyph.
+fn rewrite_show(op: &Operation, shown: &[(&Glyph, bool)], carry: f64) -> Result<ShowRewrite, Unsupported> {
     let malformed = || Unsupported(format!("cannot rewrite {}", op.operator));
     let mut out = Vec::new();
     let elements: Vec<Object> = match (op.operator.as_str(), op.operands.as_slice()) {
@@ -46,51 +102,62 @@ pub(crate) fn rewrite_show(
         }
         _ => return Err(malformed()),
     };
-    if removed.iter().any(|g| g.tj_adjustment().is_none()) {
-        return Ok((out, true));
+    let (first, _) = shown.first().ok_or_else(malformed)?;
+    let scale = first.font_size * first.h_scale;
+    if scale == 0.0 && !shown.iter().any(|(_, removed)| *removed) {
+        return Err(Unsupported::new("removed text distance cannot carry to a zero-size show"));
     }
+    if scale == 0.0 {
+        // No number moves at this size: the (invisible) show goes whole and
+        // its advance joins the carry.
+        let carry = carry + shown.iter().map(|(g, _)| g.advance()).sum::<f64>();
+        return Ok(ShowRewrite { ops: out, carry, dropped_whole: true });
+    }
+    // Text space distance to TJ number in this show.
+    let to_number = |distance: f64| -distance * 1000.0 / scale;
     let mut items: Vec<Item> = Vec::new();
-    let push_number = |items: &mut Vec<Item>, n: f64| match items.last_mut() {
-        Some(Item::Number(total)) => *total += n,
-        _ => items.push(Item::Number(n)),
-    };
+    let mut pending = carry;
     for (k, element) in elements.into_iter().enumerate() {
         let (bytes, format) = match element {
             Object::String(bytes, format) => (bytes, format),
             Object::Integer(i) => {
-                push_number(&mut items, i as f64);
+                pending += -(i as f64) / 1000.0 * scale;
                 continue;
             }
             Object::Real(r) => {
-                push_number(&mut items, f64::from(r));
+                pending += -f64::from(r) / 1000.0 * scale;
                 continue;
             }
             _ => return Err(malformed()),
         };
-        let mut cuts: Vec<(Range<usize>, f64)> = removed
-            .iter()
-            .filter(|g| g.elem_index == k)
-            .map(|g| (g.byte_range.clone(), g.tj_adjustment().unwrap_or(0.0)))
-            .collect();
-        cuts.sort_by_key(|(r, _)| r.start);
+        let mut in_element: Vec<&(&Glyph, bool)> = shown.iter().filter(|(g, _)| g.elem_index == k).collect();
+        in_element.sort_by_key(|(g, _)| g.byte_range.start);
+        let mut kept: Vec<u8> = Vec::new();
         let mut pos = 0;
-        for (range, adjustment) in cuts {
+        for (g, removed) in in_element {
+            let range = g.byte_range.clone();
             if range.start < pos || range.end > bytes.len() {
                 return Err(malformed());
             }
-            if range.start > pos {
-                items.push(Item::Text(bytes[pos..range.start].to_vec(), format));
+            if *removed {
+                if !kept.is_empty() {
+                    items.push(Item::Text(std::mem::take(&mut kept), format));
+                }
+                pending += g.advance();
+            } else {
+                if pending != 0.0 {
+                    if !kept.is_empty() {
+                        items.push(Item::Text(std::mem::take(&mut kept), format));
+                    }
+                    items.push(Item::Number(to_number(pending)));
+                    pending = 0.0;
+                }
+                kept.extend_from_slice(&bytes[range.clone()]);
             }
-            push_number(&mut items, adjustment);
             pos = range.end;
         }
-        if pos < bytes.len() {
-            items.push(Item::Text(bytes[pos..].to_vec(), format));
-        }
-    }
-    if !later_text_depends {
-        while matches!(items.last(), Some(Item::Number(_))) {
-            items.pop();
+        if !kept.is_empty() {
+            items.push(Item::Text(kept, format));
         }
     }
     let mut array = Vec::with_capacity(items.len());
@@ -103,7 +170,7 @@ pub(crate) fn rewrite_show(
     if !array.is_empty() {
         out.push(Operation::new("TJ", vec![Object::Array(array)]));
     }
-    Ok((out, false))
+    Ok(ShowRewrite { ops: out, carry: pending, dropped_whole: false })
 }
 
 /// TJ number `n`: an integer when it is one, else a real; nothing for 0.
@@ -125,7 +192,7 @@ pub(crate) fn later_text_depends(ops: &[Operation], index: usize) -> bool {
     for op in ops.iter().skip(index + 1) {
         match op.operator.as_str() {
             "Tj" | "TJ" => return true,
-            "Td" | "TD" | "Tm" | "T*" | "'" | "\"" | "BT" => return false,
+            o if repositions(o) => return false,
             _ => {}
         }
     }

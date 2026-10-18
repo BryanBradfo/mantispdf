@@ -19,7 +19,7 @@ use crate::rebuild;
 use interp::{Event, Rect};
 use lopdf::content::Operation;
 use lopdf::Object;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// Why a page cannot be redacted by rewriting its content (the page is then
 /// rasterized instead).
@@ -161,26 +161,26 @@ pub(crate) fn redact_content(
     let mut report = Report::default();
     let mut dropped: HashSet<usize> = HashSet::new();
     let mut replaced: HashMap<usize, Vec<Operation>> = HashMap::new();
-    let mut removed_glyphs: BTreeMap<usize, Vec<&interp::Glyph>> = BTreeMap::new();
-    let mut shown: HashMap<usize, usize> = HashMap::new();
-    let mut advance: HashMap<usize, f64> = HashMap::new();
+    let mut glyphs: Vec<(&interp::Glyph, bool)> = Vec::new();
+    // Show operators with a removed glyph.
+    let mut cut_shows: HashSet<usize> = HashSet::new();
     let mut parents: HashMap<usize, Option<usize>> = HashMap::new();
     // Innermost sequences around removed content.
     let mut touched: Vec<usize> = Vec::new();
     for event in events {
         match event {
-            Event::Glyph(g) => {
-                *shown.entry(g.op_index).or_default() += 1;
-                *advance.entry(g.op_index).or_default() += g.advance();
-            }
             Event::Marked(m) => {
                 parents.insert(m.op_index, m.parent);
             }
             _ => {}
         }
         match event {
-            Event::Glyph(g) if graphics::quad_hit(&g.box_user, rects) => {
-                removed_glyphs.entry(g.op_index).or_default().push(g);
+            Event::Glyph(g) => {
+                let removed = graphics::quad_hit(&g.box_user, rects);
+                if removed {
+                    cut_shows.insert(g.op_index);
+                }
+                glyphs.push((g, removed));
             }
             Event::Path(p) => match graphics::path_edit(p, rects)? {
                 Some(graphics::PathEdit::Remove(range)) => {
@@ -222,25 +222,14 @@ pub(crate) fn redact_content(
             _ => {}
         }
     }
-    for (&index, glyphs) in &removed_glyphs {
-        let op = ops.get(index).ok_or_else(|| Unsupported::new("glyph outside the content"))?;
-        let depends = text::later_text_depends(ops, index);
-        let (rewritten, whole) = text::rewrite_show(op, glyphs, depends)?;
-        if whole && depends && advance.get(&index).is_some_and(|a| *a != 0.0) {
-            // No number can stand in for it and later text relies on it.
-            return Err(Unsupported::new("zero-size text under a redaction area moves later text"));
-        }
-        report.glyphs_removed += if whole { shown.get(&index).copied().unwrap_or(0) } else { glyphs.len() };
-        replaced.insert(index, rewritten);
+    if glyphs.iter().any(|(g, _)| g.op_index >= ops.len()) {
+        return Err(Unsupported::new("glyph outside the content"));
     }
-    // Every glyph of a rewritten show counts as touched (a whole show may go).
-    for event in events {
-        if let Event::Glyph(g) = event
-            && removed_glyphs.contains_key(&g.op_index)
-        {
-            touched.extend(g.marked);
-        }
-    }
+    let edits = text::rewrite_text(ops, &glyphs)?;
+    report.glyphs_removed = edits.removed;
+    replaced.extend(edits.replaced);
+    // Every glyph of a cut show counts as touched (a whole show may go).
+    touched.extend(glyphs.iter().filter(|(g, _)| cut_shows.contains(&g.op_index)).filter_map(|(g, _)| g.marked));
     let mut sequences = BTreeSet::new();
     for mut current in touched {
         while sequences.insert(current) {
