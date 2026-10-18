@@ -13,7 +13,7 @@ use crate::rebuild::{
     Decoded, MAX_STREAM_DECODED, decode_complete, decode_inline_dict, deref, inline_image_extent, is_pdf_regular,
     name_of, skip_literal_string, strict_content_in,
 };
-use lopdf::content::Operation;
+use lopdf::content::{Content, Operation};
 use lopdf::{Dictionary, Document, Object, Stream};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -303,6 +303,39 @@ pub(crate) fn decode_ops(c: &[u8]) -> Result<Vec<Operation>, Unsupported> {
     }
     ops.extend(decode_complete(&c[segment_start..]).ok_or_else(unparsable)?);
     Ok(ops)
+}
+
+/// Content bytes of `ops`; inline images (`BI` ops from `decode_ops`) are
+/// written back as `BI <dict> ID <data> EI` with their data unchanged.
+pub(crate) fn encode_ops(ops: &[Operation]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut run: Vec<Operation> = Vec::new();
+    let flush = |run: &mut Vec<Operation>, out: &mut Vec<u8>| {
+        if !run.is_empty() {
+            // Writing to a Vec cannot fail.
+            out.extend(Content { operations: std::mem::take(run) }.encode().unwrap_or_default());
+            out.push(b'\n');
+        }
+    };
+    for op in ops {
+        match (op.operator.as_str(), op.operands.as_slice()) {
+            ("BI", [Object::Stream(image)]) => {
+                flush(&mut run, &mut out);
+                out.extend_from_slice(b"BI\n");
+                for (key, value) in image.dict.iter() {
+                    let entry = Operation::new("", vec![Object::Name(key.clone()), value.clone()]);
+                    out.extend(Content { operations: vec![entry] }.encode().unwrap_or_default());
+                    out.push(b'\n');
+                }
+                out.extend_from_slice(b"ID ");
+                out.extend_from_slice(&image.content);
+                out.extend_from_slice(b"\nEI\n");
+            }
+            _ => run.push(op.clone()),
+        }
+    }
+    flush(&mut run, &mut out);
+    out
 }
 
 /// The operations of content `items` (streams, direct or by reference),

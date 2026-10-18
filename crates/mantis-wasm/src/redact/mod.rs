@@ -5,8 +5,16 @@
 // once the redaction job is exported.
 #![cfg_attr(not(test), allow(dead_code))]
 
+#[cfg(test)]
+mod content_tests;
 pub(crate) mod fonts;
+pub(crate) mod graphics;
 pub(crate) mod interp;
+pub(crate) mod text;
+
+use interp::{Event, Rect};
+use lopdf::content::Operation;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Why a page cannot be redacted by rewriting its content (the page is then
 /// rasterized instead).
@@ -49,4 +57,66 @@ impl Budget {
         self.events = self.events.checked_sub(1).ok_or_else(|| Unsupported::new("too much content"))?;
         Ok(())
     }
+}
+
+/// What `redact_content` removed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Report {
+    pub(crate) glyphs_removed: usize,
+    pub(crate) paths_removed: usize,
+    pub(crate) shadings_removed: usize,
+    pub(crate) inline_images_removed: usize,
+}
+
+/// `ops` without the glyphs, painted paths, shadings and inline images of
+/// `events` (their interpretation) that intersect any of `rects` (user
+/// space). Image and form XObjects are left to their own passes.
+pub(crate) fn redact_content(ops: &[Operation], events: &[Event], rects: &[Rect]) -> Result<(Vec<Operation>, Report), Unsupported> {
+    let mut report = Report::default();
+    let mut dropped: HashSet<usize> = HashSet::new();
+    let mut replaced: HashMap<usize, Vec<Operation>> = HashMap::new();
+    let mut removed_glyphs: BTreeMap<usize, Vec<&interp::Glyph>> = BTreeMap::new();
+    for event in events {
+        match event {
+            Event::Glyph(g) if graphics::quad_hit(&g.box_user, rects) => {
+                removed_glyphs.entry(g.op_index).or_default().push(g);
+            }
+            Event::Path(p) => match graphics::path_edit(p, rects) {
+                Some(graphics::PathEdit::Remove(range)) => {
+                    dropped.extend(range);
+                    report.paths_removed += 1;
+                }
+                Some(graphics::PathEdit::Unpaint(paint)) => {
+                    replaced.insert(paint, vec![Operation::new("n", vec![])]);
+                    report.paths_removed += 1;
+                }
+                None => {}
+            },
+            Event::Shading(s) if graphics::shading_hit(s, rects) => {
+                dropped.insert(s.op_index);
+                report.shadings_removed += 1;
+            }
+            Event::Image(img) if img.source == interp::ImageSource::Inline && graphics::quad_hit(&img.quad_user, rects) => {
+                dropped.insert(img.op_index);
+                report.inline_images_removed += 1;
+            }
+            _ => {}
+        }
+    }
+    for (index, glyphs) in removed_glyphs {
+        let op = ops.get(index).ok_or_else(|| Unsupported::new("glyph outside the content"))?;
+        report.glyphs_removed += glyphs.len();
+        replaced.insert(index, text::rewrite_show(op, &glyphs)?);
+    }
+    let mut out = Vec::with_capacity(ops.len());
+    for (i, op) in ops.iter().enumerate() {
+        if dropped.contains(&i) {
+            continue;
+        }
+        match replaced.remove(&i) {
+            Some(ops) => out.extend(ops),
+            None => out.push(op.clone()),
+        }
+    }
+    Ok((out, report))
 }
