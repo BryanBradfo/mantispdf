@@ -8,6 +8,7 @@ import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob"
 import type { StampJobSpec } from "../lib/stampJob";
 import type { FormInfo } from "../lib/forms/model";
 import type { FormWireEntry } from "../lib/forms/toWire";
+import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire } from "../lib/redact/toJob";
 import { PdfWorkerClient } from "../lib/workerClient";
 
 export interface SanitizeReport {
@@ -117,6 +118,14 @@ const asSanitized = (p: SuccessPayload): { bytes: Uint8Array; report: SanitizeRe
 const asForm = (p: SuccessPayload): FormInfo => {
   if (p.kind !== "form") throw new Error("Unexpected worker payload");
   return p.info;
+};
+const asRedactPlan = (p: SuccessPayload): PageStatusWire[] => {
+  if (p.kind !== "redact-plan") throw new Error("Unexpected worker payload");
+  return p.pages;
+};
+const asRedacted = (p: SuccessPayload): RedactResultWire => {
+  if (p.kind !== "redacted") throw new Error("Unexpected worker payload");
+  return p.result;
 };
 const asMetadata = (p: SuccessPayload): PdfMetadata => {
   if (p.kind !== "metadata") throw new Error("Unexpected worker payload");
@@ -318,6 +327,22 @@ export function usePdfWorker() {
     [run],
   );
 
+  /** Which pages with marks need a raster (`reason` set) before `redactPdf`. */
+  const redactPlan = useCallback(
+    (pdfBytes: Uint8Array, rects: RedactRectWire[]): Promise<PageStatusWire[]> =>
+      run(null, (id) => ({ type: "redact-plan", id, pdfBytes, rects }), asRedactPlan),
+    [run],
+  );
+
+  /** Redact `job`; the rasters' pixel buffers are transferred to the worker (not copied). */
+  const redactPdf = useCallback(
+    (pdfBytes: Uint8Array, job: RedactJobWire): Promise<RedactResultWire> =>
+      run(null, (id) => ({ type: "redact", id, pdfBytes, job }), asRedacted, {
+        transfer: job.rasters.map((r) => r.rgba.buffer as ArrayBuffer),
+      }),
+    [run],
+  );
+
   const cropPdf = useCallback(
     (pdfBytes: Uint8Array, job: CropJobSpec): Promise<Uint8Array> =>
       run(null, (id) => ({ type: "crop", id, pdfBytes, job }), asBytes),
@@ -414,6 +439,8 @@ export function usePdfWorker() {
       editPdf,
       listForm,
       fillForm,
+      redactPlan,
+      redactPdf,
       cropPdf,
       resizePdf,
       nupPdf,
@@ -440,6 +467,8 @@ export function usePdfWorker() {
       editPdf,
       listForm,
       fillForm,
+      redactPlan,
+      redactPdf,
       cropPdf,
       resizePdf,
       nupPdf,

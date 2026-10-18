@@ -222,6 +222,8 @@ impl Glyph {
     /// The `TJ` number that moves the text matrix exactly as showing this
     /// glyph does; None when the font size or the scaling is 0 (no number
     /// can move then). Th cancels out: a number n moves by -n/1000 Tfs Th.
+    /// (The text rewrite carries distances instead; tests use this.)
+    #[cfg(test)]
     pub(crate) fn tj_adjustment(&self) -> Option<f64> {
         if self.font_size == 0.0 || self.h_scale == 0.0 {
             return None;

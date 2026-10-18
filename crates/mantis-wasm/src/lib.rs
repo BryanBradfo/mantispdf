@@ -158,6 +158,24 @@ pub fn edit_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<Vec<u8>, JsValue> {
     edit_ops::edit_pdf(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))
 }
 
+/// Which pages with areas can be redacted in place: `[{ page, reason }]`,
+/// `reason` null or why the page needs a raster. See
+/// `src/lib/redact/toJob.ts` for the shapes.
+#[wasm_bindgen]
+pub fn redact_plan(pdf_bytes: &[u8], rects: JsValue) -> Result<JsValue, JsValue> {
+    let rects = redact::binding::read_rects(&rects).map_err(|e| JsValue::from_str(&e))?;
+    let plan = redact::redact_plan(pdf_bytes, &rects).map_err(|e| JsValue::from_str(&e))?;
+    Ok(redact::binding::plan_to_js(&plan))
+}
+
+/// Redact the job's areas: `{ bytes, pagesRedacted, ... }`.
+#[wasm_bindgen]
+pub fn redact(pdf_bytes: &[u8], job: JsValue) -> Result<JsValue, JsValue> {
+    let job = redact::binding::read_job(&job).map_err(|e| JsValue::from_str(&e))?;
+    let (bytes, summary) = redact::redact(pdf_bytes, job).map_err(|e| JsValue::from_str(&e))?;
+    Ok(redact::binding::result_to_js(&bytes, &summary))
+}
+
 /// The fields of a PDF form as a plain object: `{ xfa, fields }`. See
 /// `src/lib/forms/model.ts` for the shape.
 #[wasm_bindgen]

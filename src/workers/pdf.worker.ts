@@ -2,7 +2,7 @@ import { toWasmJob } from "../lib/stampJob";
 import type { ExtractedImage } from "../lib/imageInput";
 import type { ToWorker, FromWorker, ReqId, SuccessPayload } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, edit_pdf, crop_pdf, resize_pdf, nup_pdf, images_to_pdf, extract_images, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf, list_form, fill_form } from "mantis-wasm";
+import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, edit_pdf, crop_pdf, resize_pdf, nup_pdf, images_to_pdf, extract_images, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf, list_form, fill_form, redact_plan, redact } from "mantis-wasm";
 
 let ready = false;
 
@@ -153,6 +153,18 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         const bytes = fill_form(msg.pdfBytes, msg.values, msg.flatten);
         // A fresh copy out of WASM memory: hand it over instead of cloning.
         postSuccess(msg.id, { kind: "merge", bytes }, [bytes.buffer as ArrayBuffer]);
+        break;
+      }
+
+      case "redact-plan": {
+        postSuccess(msg.id, { kind: "redact-plan", pages: redact_plan(msg.pdfBytes, msg.rects) });
+        break;
+      }
+
+      case "redact": {
+        const result = redact(msg.pdfBytes, msg.job);
+        // A fresh copy out of WASM memory: hand it over instead of cloning.
+        postSuccess(msg.id, { kind: "redacted", result }, [result.bytes.buffer as ArrayBuffer]);
         break;
       }
 

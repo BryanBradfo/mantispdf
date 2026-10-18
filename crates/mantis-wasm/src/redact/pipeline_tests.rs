@@ -127,7 +127,7 @@ fn text_of(doc: &Document, page: ObjectId) -> String {
 }
 
 fn run(doc: Document, rects: Vec<RedactRect>) -> (Document, RedactSummary) {
-    let (out, summary) = redact(&bytes(doc), &job(rects)).unwrap();
+    let (out, summary) = redact(&bytes(doc), job(rects)).unwrap();
     (load_pdf(&out).unwrap(), summary)
 }
 
@@ -213,7 +213,7 @@ fn hidden_data_is_gone() {
 fn info_can_be_kept_on_request() {
     let mut j = job(vec![world()]);
     j.remove_metadata = false;
-    let (out, _) = redact(&bytes(fixture()), &j).unwrap();
+    let (out, _) = redact(&bytes(fixture()), j).unwrap();
     let out = load_pdf(&out).unwrap();
     let info = out.trailer.get(b"Info").and_then(|i| out.dereference(i)).unwrap().1.as_dict().unwrap().clone();
     assert_eq!(info.get(b"Title").unwrap().as_str().unwrap(), b"Secret report");
@@ -223,7 +223,7 @@ fn info_can_be_kept_on_request() {
 #[test]
 fn verification_catches_a_planted_leak() {
     plant_leak_for_tests(true);
-    let result = redact(&bytes(fixture()), &job(vec![world()]));
+    let result = redact(&bytes(fixture()), job(vec![world()]));
     plant_leak_for_tests(false);
     assert_eq!(result.unwrap_err(), "Redaction verification failed on page 1");
 }
@@ -244,7 +244,7 @@ fn plan_reports_pages_that_need_a_raster() {
     assert_eq!(plan[1].page, 3);
     assert!(plan[1].reason.as_deref().unwrap().contains("Type3"));
     // Redacting without a raster for it is refused.
-    let err = redact(&bytes(fixture_with_type3()), &job(vec![area(3, 0.0, 0.0, 10.0, 10.0)])).unwrap_err();
+    let err = redact(&bytes(fixture_with_type3()), job(vec![area(3, 0.0, 0.0, 10.0, 10.0)])).unwrap_err();
     assert!(err.starts_with("Invalid redact settings: raster (page 3: font T: Type3"), "{err}");
 }
 
@@ -262,7 +262,7 @@ fn fixture_with_type3() -> Document {
 #[test]
 fn settings_are_validated() {
     let pdf = bytes(fixture());
-    let err = |rects: Vec<RedactRect>| redact(&pdf, &job(rects)).unwrap_err();
+    let err = |rects: Vec<RedactRect>| redact(&pdf, job(rects)).unwrap_err();
     assert_eq!(err(vec![area(0, 0.0, 0.0, 1.0, 1.0)]), "Invalid redact settings: rects[0].page");
     assert_eq!(err(vec![world(), area(4, 0.0, 0.0, 1.0, 1.0)]), "Invalid redact settings: rects[1].page");
     assert_eq!(err(vec![area(1, f64::NAN, 0.0, 1.0, 1.0)]), "Invalid redact settings: rects[0].x");
@@ -447,7 +447,7 @@ fn pattern_page(content: &str) -> Document {
 }
 
 fn raster_needed(doc: Document, rects: Vec<RedactRect>) -> bool {
-    matches!(redact(&bytes(doc), &job(rects)), Err(e) if e.starts_with("Invalid redact settings: raster"))
+    matches!(redact(&bytes(doc), job(rects)), Err(e) if e.starts_with("Invalid redact settings: raster"))
 }
 
 #[test]
@@ -487,7 +487,7 @@ fn verification_fails_on_soft_masks_and_patterns_under_an_area() {
     ];
     for (doc, a) in cases {
         plant_leak_for_tests(true);
-        let result = redact(&bytes(doc), &job(vec![a]));
+        let result = redact(&bytes(doc), job(vec![a]));
         plant_leak_for_tests(false);
         assert_eq!(result.unwrap_err(), "Redaction verification failed on page 1");
     }
@@ -530,9 +530,9 @@ fn verification_fails_on_paths_shadings_and_images_left_under_an_area() {
     let a = area(1, 300.0, 300.0, 10.0, 10.0);
     for doc in [one_page("300 300 20 20 re f", |_, _| {}), shading_page(), image_page()] {
         // Without the planted leak each is redacted and verified.
-        assert!(redact(&bytes(doc.clone()), &job(vec![a.clone()])).is_ok());
+        assert!(redact(&bytes(doc.clone()), job(vec![a.clone()])).is_ok());
         plant_leak_for_tests(true);
-        let result = redact(&bytes(doc), &job(vec![a.clone()]));
+        let result = redact(&bytes(doc), job(vec![a.clone()]));
         plant_leak_for_tests(false);
         assert_eq!(result.unwrap_err(), "Redaction verification failed on page 1");
     }
@@ -572,7 +572,7 @@ fn each_area_is_covered_by_a_box_of_the_fill_colour() {
     let doc = one_page("q 2 0 0 2 0 0 cm 0 0 1 rg 10 10 5 5 re f", |_, _| {});
     let mut j = job(vec![area(1, 300.0, 300.0, 10.0, 20.0), area(1, 100.0, 100.0, 5.0, 5.0)]);
     j.fill = Fill::White;
-    let (out, _) = redact(&bytes(doc), &j).unwrap();
+    let (out, _) = redact(&bytes(doc), j).unwrap();
     let out = load_pdf(&out).unwrap();
     let page = page_ids(&out)[0];
     let boxes: Vec<Rect> = super::verify::page_events(&out, page)
@@ -607,7 +607,7 @@ fn image_of(doc: &Document, page: ObjectId) -> (usize, usize, Vec<u8>) {
 fn unsupported_pages_are_replaced_by_their_raster() {
     let mut j = job(vec![world(), area(3, 0.0, 0.0, 10.0, 20.0)]);
     j.rasters = vec![white_raster(3, 612, 792, 72.0)];
-    let (out, summary) = redact(&bytes(fixture_with_type3()), &j).unwrap();
+    let (out, summary) = redact(&bytes(fixture_with_type3()), j).unwrap();
     assert_eq!(summary.pages_rasterized, vec![3]);
     let out = load_pdf(&out).unwrap();
     let pages = page_ids(&out);
@@ -638,7 +638,7 @@ fn rasterized_pages_keep_their_geometry() {
     let mut j = job(vec![area(3, 0.0, 0.0, 10.0, 20.0)]);
     // Visible size 792 x 600 points at 144 dpi.
     j.rasters = vec![white_raster(3, 1584, 1200, 144.0)];
-    let (out, _) = redact(&bytes(doc), &j).unwrap();
+    let (out, _) = redact(&bytes(doc), j).unwrap();
     let out = load_pdf(&out).unwrap();
     let page = page_ids(&out)[2];
     let vb = crate::stamp::geometry::VisibleBox::of_page(&out, page);
@@ -657,7 +657,7 @@ fn rasters_are_validated() {
     let with = |raster: Option<PageRaster>| {
         let mut j = job(vec![area(3, 0.0, 0.0, 10.0, 10.0)]);
         j.rasters = raster.into_iter().collect();
-        redact(&pdf, &j).map(|_| ()).unwrap_err()
+        redact(&pdf, j).map(|_| ()).unwrap_err()
     };
     assert!(with(None).starts_with("Invalid redact settings: raster (page 3: font T: Type3"));
     assert_eq!(with(Some(white_raster(3, 600, 792, 72.0))), "Invalid redact settings: raster");
@@ -668,5 +668,5 @@ fn rasters_are_validated() {
     // Within 2 px is accepted.
     let mut j = job(vec![area(3, 0.0, 0.0, 10.0, 10.0)]);
     j.rasters = vec![white_raster(3, 614, 790, 72.0)];
-    assert!(redact(&pdf, &j).is_ok());
+    assert!(redact(&pdf, j).is_ok());
 }

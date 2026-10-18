@@ -21,8 +21,8 @@ use crate::stamp::image::build_image;
 use lopdf::content::Operation;
 use lopdf::{Dictionary, Document, Object, ObjectId, dictionary};
 
-/// Most pixels a raster may have.
-const MAX_RASTER_PIXELS: u64 = 100_000_000;
+/// Most pixels a raster may have (A4 at 200 dpi is about 3.9 M).
+pub(crate) const MAX_RASTER_PIXELS: u64 = 40_000_000;
 /// Highest rendering resolution accepted.
 const MAX_DPI: f64 = 2400.0;
 /// How far (pixels) a raster may differ from the expected size.
@@ -35,7 +35,7 @@ fn invalid() -> String {
 }
 
 /// The raster must show the page's visible box at its dpi (within 2 px),
-/// with exactly `width * height` RGBA pixels, at most 100 M of them.
+/// with exactly `width * height` RGBA pixels, at most 40 M of them.
 fn check(raster: &PageRaster, vb: &VisibleBox) -> Result<(), String> {
     let (w, h) = (u64::from(raster.width), u64::from(raster.height));
     if !(raster.dpi.is_finite() && raster.dpi > 0.0 && raster.dpi <= MAX_DPI) || w == 0 || h == 0 || w * h > MAX_RASTER_PIXELS {
@@ -82,11 +82,11 @@ fn box_array(b: [f64; 4]) -> Object {
 /// Replace `page` by a page with the same geometry (MediaBox, CropBox,
 /// Rotate, UserUnit) showing only `raster`, the areas painted over.
 /// Nothing else of the original page is kept.
-pub(crate) fn rasterize_page(doc: &mut Document, page: ObjectId, raster: &PageRaster, areas: &[RedactRect], fill: Fill) -> Result<(), String> {
+pub(crate) fn rasterize_page(doc: &mut Document, page: ObjectId, raster: PageRaster, areas: &[RedactRect], fill: Fill) -> Result<(), String> {
     let vb = VisibleBox::of_page(doc, page);
-    check(raster, &vb)?;
+    check(&raster, &vb)?;
     let (w, h) = (raster.width as usize, raster.height as usize);
-    let mut rgba = raster.rgba.clone();
+    let mut rgba = raster.rgba;
     paint_areas(&mut rgba, (w, h), &vb, areas, fill);
     // Flatten over white: the page is opaque.
     for px in rgba.chunks_exact_mut(4) {
@@ -128,4 +128,22 @@ pub(crate) fn rasterize_page(doc: &mut Document, page: ObjectId, raster: &PageRa
     }
     doc.objects.insert(page, Object::Dictionary(fresh));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rasters_over_40_million_pixels_are_refused_before_reading_them() {
+        // 8000 x 5001 at 72 dpi: the right size for an 8000 x 5001 pt page.
+        let vb = VisibleBox { x0: 0.0, y0: 0.0, x1: 8000.0, y1: 5001.0, rotate: 0 };
+        let raster = PageRaster { page: 1, width: 8000, height: 5001, dpi: 72.0, rgba: Vec::new() };
+        assert_eq!(check(&raster, &vb), Err(invalid()));
+        let vb = VisibleBox { x0: 0.0, y0: 0.0, x1: 8000.0, y1: 5000.0, rotate: 0 };
+        let raster = PageRaster { page: 1, width: 8000, height: 5000, dpi: 72.0, rgba: vec![0; 4] };
+        // At the cap the size passes; only the (short) data is refused.
+        assert_eq!(check(&raster, &vb), Err(invalid()));
+        assert!(8000 * 5000 <= MAX_RASTER_PIXELS);
+    }
 }

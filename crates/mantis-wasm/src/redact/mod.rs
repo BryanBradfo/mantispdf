@@ -1,10 +1,6 @@
 //! Redaction: remove the content under marked areas (text, images, vector
 //! graphics) instead of only covering it.
 
-// The engine lands piece by piece before the job that calls it; drop this
-// once the redaction job is exported.
-#![cfg_attr(not(test), allow(dead_code))]
-
 #[cfg(test)]
 mod content_tests;
 pub(crate) mod fonts;
@@ -15,6 +11,7 @@ mod image_tests;
 pub(crate) mod images;
 pub(crate) mod interp;
 pub(crate) mod marked;
+pub(crate) mod binding;
 pub(crate) mod page;
 pub(crate) mod raster;
 #[cfg(test)]
@@ -151,7 +148,7 @@ pub(crate) fn redact_plan(pdf: &[u8], rects: &[RedactRect]) -> Result<Vec<PageSt
 
 /// Redact `job.rects` from `pdf`: remove the content under them, rebuild
 /// the document without hidden data, verify, and return the new bytes.
-pub(crate) fn redact(pdf: &[u8], job: &RedactJob) -> Result<(Vec<u8>, RedactSummary), String> {
+pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactSummary), String> {
     let mut doc = load_pdf(pdf)?;
     let by_page = areas_by_page(&job.rects, doc.get_pages().len())?;
     let mut summary = RedactSummary::default();
@@ -160,11 +157,13 @@ pub(crate) fn redact(pdf: &[u8], job: &RedactJob) -> Result<(Vec<u8>, RedactSumm
         let report = match result {
             Ok(report) => report,
             Err(Unsupported(reason)) => {
-                let raster = job
+                let index = job
                     .rasters
                     .iter()
-                    .find(|r| r.page == number)
+                    .position(|r| r.page == number)
                     .ok_or_else(|| invalid(&format!("raster (page {number}: {reason})")))?;
+                // Taken, not copied: rasters are large.
+                let raster = job.rasters.swap_remove(index);
                 let page = doc.get_pages()[&number];
                 raster::rasterize_page(&mut doc, page, raster, &by_page[&number], job.fill)?;
                 summary.pages_rasterized.push(number);
