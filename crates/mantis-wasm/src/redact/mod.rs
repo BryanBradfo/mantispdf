@@ -142,7 +142,7 @@ pub(crate) fn redact(pdf: &[u8], job: &RedactJob) -> Result<(Vec<u8>, RedactSumm
     let mut checks = Vec::new();
     for (number, rects, result) in redact_pages(&mut doc, &by_page, job.fill) {
         // Pages that need a raster arrive with one (Task 5); none yet.
-        let report = result.map_err(|_| invalid("raster"))?;
+        let report = result.map_err(|Unsupported(reason)| invalid(&format!("raster (page {number}: {reason})")))?;
         summary.pages_redacted.push(number);
         summary.glyphs_removed += report.glyphs_removed;
         summary.paths_removed += report.paths_removed + report.shadings_removed;

@@ -245,7 +245,7 @@ fn plan_reports_pages_that_need_a_raster() {
     assert!(plan[1].reason.as_deref().unwrap().contains("Type3"));
     // Redacting without a raster for it is refused.
     let err = redact(&bytes(fixture_with_type3()), &job(vec![area(3, 0.0, 0.0, 10.0, 10.0)])).unwrap_err();
-    assert_eq!(err, "Invalid redact settings: raster");
+    assert!(err.starts_with("Invalid redact settings: raster (page 3: font T: Type3"), "{err}");
 }
 
 fn fixture_with_type3() -> Document {
