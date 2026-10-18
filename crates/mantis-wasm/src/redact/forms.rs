@@ -69,7 +69,7 @@ pub(crate) fn redact_form(page: &mut PageEdit, placement: &FormPlacement, rects:
         dict.remove(key);
     }
     dict.set("Resources", Object::Dictionary(resources));
-    let (name, _) = add_xobject(page, flate_stream(dict, &encode_ops(&new_ops)), "RedactedFm");
+    let (name, _) = add_xobject(page, flate_stream(dict, &encode_ops(&new_ops)), "RedactedFm")?;
     Ok((Some(name), report))
 }
 

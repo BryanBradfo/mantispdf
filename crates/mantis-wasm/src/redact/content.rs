@@ -39,8 +39,9 @@ fn cannot_edit(detail: &str) -> Unsupported {
 /// Add a redacted image (and its soft mask) as new objects under a fresh
 /// name in the page's own /XObject dictionary; the original stays for other
 /// users.
-fn add_image(page: &mut PageEdit, mut image: lopdf::Stream, smask: Option<lopdf::Stream>) -> (Vec<u8>, lopdf::ObjectId) {
+fn add_image(page: &mut PageEdit, mut image: lopdf::Stream, smask: Option<lopdf::Stream>) -> Result<(Vec<u8>, lopdf::ObjectId), Unsupported> {
     if let Some(smask) = smask {
+        page.budget.take_bytes(smask.content.len())?;
         let id = page.doc.add_object(smask);
         image.dict.set("SMask", id);
     }
@@ -48,8 +49,10 @@ fn add_image(page: &mut PageEdit, mut image: lopdf::Stream, smask: Option<lopdf:
 }
 
 /// Add `stream` as a new object under a fresh name (`prefix` + number) in
-/// the page's own /XObject dictionary.
-pub(crate) fn add_xobject(page: &mut PageEdit, stream: lopdf::Stream, prefix: &str) -> (Vec<u8>, lopdf::ObjectId) {
+/// the page's own /XObject dictionary. Its encoded bytes stay charged to
+/// the budget.
+pub(crate) fn add_xobject(page: &mut PageEdit, stream: lopdf::Stream, prefix: &str) -> Result<(Vec<u8>, lopdf::ObjectId), Unsupported> {
+    page.budget.take_bytes(stream.content.len())?;
     let id = page.doc.add_object(stream);
     let mut xobjects = interp::page_resources_dict(page.doc, page.resources, b"XObject");
     let name = (1..)
@@ -58,7 +61,7 @@ pub(crate) fn add_xobject(page: &mut PageEdit, stream: lopdf::Stream, prefix: &s
         .unwrap_or_default();
     xobjects.set(name.clone(), id);
     page.resources.set("XObject", xobjects);
-    (name, id)
+    Ok((name, id))
 }
 
 /// `ops` without the glyphs, painted paths, shadings and image pixels of
@@ -142,7 +145,7 @@ pub(crate) fn redact_content(
                 match images::redact_image(page.doc, &stream, page.resources, &img.quad_user, rects, page.fill, page.budget) {
                     images::ImageEdit::Untouched => continue,
                     images::ImageEdit::Replaced { image, smask } => {
-                        let (name, id) = add_image(page, image, smask);
+                        let (name, id) = add_image(page, image, smask)?;
                         report.created_images.push(id);
                         replaced.insert(img.op_index, vec![Operation::new("Do", vec![Object::Name(name)])]);
                         report.images_redacted += 1;

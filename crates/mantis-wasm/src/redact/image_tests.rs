@@ -502,11 +502,14 @@ fn huge_images_need_a_raster_before_any_large_allocation() {
     // Within the per-image cap but over what the job has left.
     needs_raster(|| page_with(rgb_image(4, 4, gradient)), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)], 4 * 4 * 8 - 1, true);
     // Enough budget: about 8 bytes per pixel are held while editing, then
-    // given back (the budget bounds the peak).
+    // given back (the budget bounds the peak); the new image's encoded
+    // bytes stay charged.
     let mut budget = Budget::page(4 * 4 * 8 + 1024);
     let out = redact_page(page_with(rgb_image(4, 4, gradient)), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)], Fill::Black, &mut budget);
     assert_eq!(out.report.images_redacted, 1);
-    assert_eq!(budget.decoded, 4 * 4 * 8 + 1024);
+    let created: usize = out.report.created_images.iter().map(|id| out.doc.get_object(*id).unwrap().as_stream().unwrap().content.len()).sum();
+    assert!(created > 0);
+    assert_eq!(budget.decoded, 4 * 4 * 8 + 1024 - created);
 }
 
 #[test]

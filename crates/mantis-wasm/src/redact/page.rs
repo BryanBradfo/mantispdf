@@ -60,7 +60,7 @@ pub(crate) fn plan_page(doc: &mut Document, page: ObjectId, rects: &[Rect], budg
 
 fn edit_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, budget: &mut Budget, pixels: bool) -> Result<Report, Unsupported> {
     if covers_page(doc, page, rects) {
-        return blank_page(doc, page, rects, fill);
+        return blank_page(doc, page, rects, fill, budget);
     }
     let page_dict = doc.get_dictionary(page).map_err(|_| Unsupported::new("page not found"))?.clone();
     let mut resources = page_resources(doc, page);
@@ -75,7 +75,9 @@ fn edit_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, bud
     // must never lose text with no box over it.
     report.uncovered = merge_boxes(std::mem::take(&mut report.uncovered));
     let boxes: Vec<Rect> = rects.iter().chain(&report.uncovered).copied().collect();
-    let content = doc.add_object(flate_stream(Dictionary::new(), &with_boxes(new_ops, &boxes, fill)?));
+    let content = flate_stream(Dictionary::new(), &with_boxes(new_ops, &boxes, fill)?);
+    budget.take_bytes(content.content.len())?;
+    let content = doc.add_object(content);
     let dict = doc.get_dictionary_mut(page).map_err(|_| Unsupported::new("page not found"))?;
     dict.set("Contents", content);
     dict.set("Resources", Object::Dictionary(resources));
@@ -107,7 +109,7 @@ const GEOMETRY: [&[u8]; 7] = [b"MediaBox", b"CropBox", b"BleedBox", b"TrimBox", 
 /// `page` replaced by a blank page of the same geometry with the fill boxes
 /// over `rects`: nothing of the original content, resources or annotations
 /// is kept, whatever they hold (no analysis, so no raster is ever needed).
-fn blank_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill) -> Result<Report, Unsupported> {
+fn blank_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, budget: &mut Budget) -> Result<Report, Unsupported> {
     let old = doc.get_dictionary(page).map_err(|_| Unsupported::new("page not found"))?;
     let annotations_removed = old
         .get(b"Annots")
@@ -129,7 +131,9 @@ fn blank_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill) ->
         let vb = VisibleBox::of_page(doc, page);
         dict.set("MediaBox", [vb.x0, vb.y0, vb.x1, vb.y1].map(|v| Object::Real(v as f32)).to_vec());
     }
-    let content = doc.add_object(flate_stream(Dictionary::new(), &with_boxes(Vec::new(), rects, fill)?));
+    let content = flate_stream(Dictionary::new(), &with_boxes(Vec::new(), rects, fill)?);
+    budget.take_bytes(content.content.len())?;
+    let content = doc.add_object(content);
     dict.set("Contents", content);
     dict.set("Resources", Dictionary::new());
     doc.objects.insert(page, Object::Dictionary(dict));
@@ -257,5 +261,25 @@ mod tests {
         let ops = vec![Operation::new("a)b", vec![])];
         assert!(with_boxes(ops, &[], Fill::Black).is_err());
         assert!(with_boxes(vec![Operation::new("q", vec![])], &[], Fill::Black).is_ok());
+    }
+
+    #[test]
+    fn the_new_content_stream_stays_charged_to_the_budget() {
+        let mut doc = Document::with_version("1.7");
+        let content = doc.add_object(Stream::new(Dictionary::new(), b"0 0 10 10 re f 100 100 10 10 re f".to_vec()));
+        let page = doc.add_object(lopdf::dictionary! { "Type" => "Page", "Contents" => content, "Resources" => Dictionary::new() });
+        let start = 1 << 20;
+        let mut budget = Budget::page(start);
+        let rect = Rect { x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0 };
+        redact_page(&mut doc, page, &[rect], Fill::Black, &mut budget).unwrap();
+        let written = doc.get_dictionary(page).unwrap().get(b"Contents").unwrap().as_reference().unwrap();
+        let written = doc.get_object(written).unwrap().as_stream().unwrap().content.len();
+        let source = b"0 0 10 10 re f 100 100 10 10 re f".len();
+        assert_eq!(budget.decoded, start - source - written);
+        // Too little left for it: Unsupported, not over budget.
+        let mut tight = Budget::page(source + 1);
+        let mut doc2 = doc.clone();
+        doc2.get_dictionary_mut(page).unwrap().set("Contents", content);
+        assert!(redact_page(&mut doc2, page, &[rect], Fill::Black, &mut tight).is_err());
     }
 }

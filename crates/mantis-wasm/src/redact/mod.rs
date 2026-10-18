@@ -361,6 +361,12 @@ impl Budget {
         Ok(())
     }
 
+    /// Charge `bytes` the job keeps for good (a stream it writes).
+    pub(crate) fn take_bytes(&mut self, bytes: usize) -> Result<(), Unsupported> {
+        self.decoded = self.decoded.checked_sub(bytes).ok_or_else(|| Unsupported::new("redacted content too large"))?;
+        Ok(())
+    }
+
     pub(crate) fn take_event(&mut self) -> Result<(), Unsupported> {
         self.events = self.events.checked_sub(1).ok_or_else(|| Unsupported::new("too much content"))?;
         Ok(())
