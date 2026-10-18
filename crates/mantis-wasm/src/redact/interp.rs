@@ -594,6 +594,12 @@ pub(crate) fn page_resources(doc: &Document, page: lopdf::ObjectId) -> Dictionar
     crate::page_content::owned_dict(doc, get_inherited_attr(doc, page, b"Resources").as_ref())
 }
 
+/// An owned copy of the `category` dictionary of `resources` (references
+/// followed); empty when absent.
+pub(crate) fn page_resources_dict(doc: &Document, resources: &Dictionary, category: &[u8]) -> Dictionary {
+    crate::page_content::owned_dict(doc, resources.get(category).ok())
+}
+
 /// Walks operations against one resource dictionary.
 pub(crate) struct Interp<'d> {
     doc: &'d Document,

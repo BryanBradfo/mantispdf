@@ -100,6 +100,66 @@ fn extract_within(doc: &Document, max_decoded: usize, max_pixels: u64) -> Extrac
     }
 }
 
+/// Decodes single images for editing their pixels (redaction), with the
+/// same conversions and budgets as extraction.
+pub(crate) struct ImageDecoder<'d> {
+    walker: Walker<'d>,
+}
+
+impl<'d> ImageDecoder<'d> {
+    /// A decoder that may decode `max_decoded` bytes in all.
+    pub(crate) fn new(doc: &'d Document, max_decoded: usize) -> ImageDecoder<'d> {
+        let walker = Walker {
+            doc,
+            max_decoded,
+            max_pixels: JOB_PIXELS,
+            seen_images: HashSet::new(),
+            seen_forms: HashSet::new(),
+            images: Vec::new(),
+            skipped: BTreeMap::new(),
+            charged: 0,
+            content_charged: 0,
+            pixels: 0,
+        };
+        ImageDecoder { walker }
+    }
+
+    /// `(width, height, RGBA)` of a non-JPEG image, without its /SMask or
+    /// /Mask; an /ImageMask comes back black where it paints and transparent
+    /// elsewhere. Errors name why it cannot be decoded (JPEG included).
+    pub(crate) fn rgba(&mut self, stream: &Stream, res: &Dictionary) -> Result<(usize, usize, Vec<u8>), &'static str> {
+        let filters: Vec<&[u8]> = match stream.dict.get(b"Filter") {
+            Err(_) => Vec::new(),
+            Ok(_) => stream.filters().map_err(|_| CORRUPT)?,
+        };
+        for filter in filters {
+            match filter {
+                b"JPXDecode" => return Err("jpeg2000"),
+                b"JBIG2Decode" => return Err("jbig2"),
+                b"CCITTFaxDecode" => return Err("ccitt"),
+                b"DCTDecode" => return Err("jpeg"),
+                _ => {}
+            }
+        }
+        let (layout, rgba, _) = self.walker.opaque_rgba(stream, res)?;
+        self.walker.pixels += layout.pixels() as u64;
+        Ok((layout.width, layout.height, rgba))
+    }
+
+    /// Alpha (one byte per pixel) of the /SMask or /Mask stream of `dict` for
+    /// an image of `width` x `height`. Ok(None): no mask. Err: a mask that
+    /// cannot be applied (other size, undecodable, colour-key array).
+    pub(crate) fn alpha(&mut self, dict: &Dictionary, width: usize, height: usize) -> Result<Option<Vec<u8>>, ()> {
+        let layout = Layout::new(width as i64, height as i64, 8, 1).map_err(|_| ())?;
+        self.walker.alpha(dict, &layout)
+    }
+
+    /// Decoded bytes charged so far.
+    pub(crate) fn charged(&self) -> usize {
+        self.walker.charged
+    }
+}
+
 struct Walker<'d> {
     doc: &'d Document,
     seen_images: HashSet<ObjectId>,
@@ -213,6 +273,23 @@ impl<'d> Walker<'d> {
             return Ok(ExtractedKind::Jpeg(jpeg));
         }
 
+        let (layout, mut rgba, masked) = self.opaque_rgba(stream, res)?;
+        if masked {
+            match self.alpha(&stream.dict, &layout) {
+                Ok(Some(alpha)) => colour::apply_alpha(&mut rgba, &alpha),
+                Ok(None) => {}
+                Err(()) => self.skip(ALPHA_DROPPED),
+            }
+        }
+        self.pixels += layout.pixels() as u64;
+        Ok(ExtractedKind::Rgba { width: layout.width as u32, height: layout.height as u32, pixels: rgba })
+    }
+
+    /// RGBA of a non-JPEG image before its /SMask or /Mask (stencil masks:
+    /// black where they paint, transparent elsewhere), and whether such a
+    /// mask may apply (false for stencil masks). Checks, but does not
+    /// charge, the pixel budget.
+    fn opaque_rgba(&mut self, stream: &Stream, res: &Dictionary) -> Result<(Layout, Vec<u8>, bool), Skip> {
         let dict = &stream.dict;
         let mask = self.bool_of(dict, b"ImageMask");
         let (space, bpc) = if mask {
@@ -230,21 +307,12 @@ impl<'d> Walker<'d> {
         }
         let data = self.samples(stream, &layout)?;
         let decode = self.decode_of(dict);
-        let mut rgba = match &space {
+        let rgba = match &space {
             None => colour::stencil_rgba(&data, &layout, decode.as_deref()),
             Some(space) => colour::to_rgba(&data, &layout, space, decode.as_deref()),
         }
         .ok_or(CORRUPT)?;
-        drop(data);
-        if space.is_some() {
-            match self.alpha(dict, &layout) {
-                Ok(Some(alpha)) => colour::apply_alpha(&mut rgba, &alpha),
-                Ok(None) => {}
-                Err(()) => self.skip(ALPHA_DROPPED),
-            }
-        }
-        self.pixels += pixels;
-        Ok(ExtractedKind::Rgba { width: layout.width as u32, height: layout.height as u32, pixels: rgba })
+        Ok((layout, rgba, space.is_some()))
     }
 
     /// The JPEG inside a /DCTDecode image: its raw bytes, or (behind other

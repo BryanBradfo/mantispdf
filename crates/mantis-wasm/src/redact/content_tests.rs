@@ -75,17 +75,23 @@ struct Out {
 }
 
 fn try_redact(content: &[u8], rects: &[Rect]) -> Result<(Vec<lopdf::content::Operation>, Report), Unsupported> {
-    let (doc, resources) = fixture();
+    let (mut doc, resources) = fixture();
     let ops = decode_ops(content).unwrap();
-    let events = Interp::new(&doc, resources).run(&ops, IDENTITY, &mut Budget::page(1 << 20)).unwrap();
-    redact_content(&ops, &events, rects)
+    let events = Interp::new(&doc, resources.clone()).run(&ops, IDENTITY, &mut Budget::page(1 << 20)).unwrap();
+    let mut page_resources = resources;
+    let mut budget = Budget::page(1 << 20);
+    let mut page = PageEdit { doc: &mut doc, resources: &mut page_resources, fill: Fill::Black, budget: &mut budget };
+    redact_content(&mut page, &ops, &events, rects)
 }
 
 fn redact(content: &[u8], rects: &[Rect]) -> Out {
-    let (doc, resources) = fixture();
+    let (mut doc, resources) = fixture();
     let ops = decode_ops(content).unwrap();
     let events = Interp::new(&doc, resources.clone()).run(&ops, IDENTITY, &mut Budget::page(1 << 20)).unwrap();
-    let (new_ops, report) = redact_content(&ops, &events, rects).unwrap();
+    let mut resources = resources;
+    let mut budget = Budget::page(1 << 20);
+    let mut page = PageEdit { doc: &mut doc, resources: &mut resources, fill: Fill::Black, budget: &mut budget };
+    let (new_ops, report) = redact_content(&mut page, &ops, &events, rects).unwrap();
     let content = encode_ops(&new_ops);
     assert_no_number_runs(&content);
     let after_events = interpret(&doc, &resources, &content);
@@ -308,12 +314,14 @@ fn shadings_over_a_rect_or_unbounded_are_removed() {
 }
 
 #[test]
-fn covered_inline_images_are_removed_others_written_back_unchanged() {
+fn covered_undecodable_inline_images_are_removed_others_written_back_unchanged() {
     let rects = [rect(40.0, 40.0, 55.0, 55.0)];
-    let content: &[u8] = b"q 10 0 0 10 42 42 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x00 EI Q \
-        q 10 0 0 10 0 0 cm BI /W 2 /H 1 /CS /G /BPC 8 /F /AHx ID 00FF> EI Q";
+    // ASCIIHex cannot be decoded here: the covered image goes entirely.
+    let content: &[u8] = b"q 10 0 0 10 42 42 cm BI /W 2 /H 1 /CS /G /BPC 8 /F /AHx ID 00FF> EI Q \
+        q 10 0 0 10 0 0 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x00 EI Q";
     let out = redact(content, &rects);
     assert_eq!(out.report.inline_images_removed, 1);
+    assert_eq!(out.report.images_removed, vec!["corrupt"]);
     let ops = decode_ops(&out.content).unwrap();
     let images: Vec<&Stream> = ops
         .iter()
@@ -323,8 +331,8 @@ fn covered_inline_images_are_removed_others_written_back_unchanged() {
         })
         .collect();
     assert_eq!(images.len(), 1);
-    assert_eq!(images[0].content, b"00FF>");
-    assert_eq!(images[0].dict.get(b"W").unwrap(), &Object::Integer(2));
+    assert_eq!(images[0].content, b"\x00");
+    assert_eq!(images[0].dict.get(b"W").unwrap(), &Object::Integer(1));
 }
 
 #[test]

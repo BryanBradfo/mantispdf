@@ -9,9 +9,13 @@
 mod content_tests;
 pub(crate) mod fonts;
 pub(crate) mod graphics;
+#[cfg(test)]
+mod image_tests;
+pub(crate) mod images;
 pub(crate) mod interp;
 pub(crate) mod text;
 
+use crate::rebuild;
 use interp::{Event, Rect};
 use lopdf::content::Operation;
 use lopdf::Object;
@@ -60,6 +64,31 @@ impl Budget {
     }
 }
 
+/// Colour painted over redacted image pixels (and of the boxes drawn later).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Fill {
+    Black,
+    White,
+}
+
+impl Fill {
+    pub(crate) fn rgb(self) -> [u8; 3] {
+        match self {
+            Fill::Black => [0, 0, 0],
+            Fill::White => [255, 255, 255],
+        }
+    }
+}
+
+/// The page being redacted: new image objects go into `doc`, their names
+/// into `resources` (the page's own copy, inheritance resolved).
+pub(crate) struct PageEdit<'a> {
+    pub(crate) doc: &'a mut lopdf::Document,
+    pub(crate) resources: &'a mut lopdf::Dictionary,
+    pub(crate) fill: Fill,
+    pub(crate) budget: &'a mut Budget,
+}
+
 /// What `redact_content` removed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Report {
@@ -67,6 +96,10 @@ pub(crate) struct Report {
     pub(crate) paths_removed: usize,
     pub(crate) shadings_removed: usize,
     pub(crate) inline_images_removed: usize,
+    /// Images (XObject or inline) redrawn with painted pixels.
+    pub(crate) images_redacted: usize,
+    /// Why each image under a rect was removed entirely instead.
+    pub(crate) images_removed: Vec<&'static str>,
     /// /Properties names of marked-content sequences around removed content:
     /// the page needs private copies of them without /ActualText, /Alt and
     /// /E (page assembly does that; inline property lists are rewritten
@@ -74,13 +107,57 @@ pub(crate) struct Report {
     pub(crate) named_properties: BTreeSet<Vec<u8>>,
 }
 
+/// The edit for an image placement under a rect.
+fn redact_placed_image(page: &mut PageEdit, ops: &[Operation], img: &interp::ImagePlacement, rects: &[Rect]) -> images::ImageEdit {
+    let stream = match &img.source {
+        interp::ImageSource::XObject(name) => {
+            let xobjects = interp::page_resources_dict(page.doc, page.resources, b"XObject");
+            match xobjects.get(name).ok().and_then(|o| rebuild::deref(page.doc, o)) {
+                Some(Object::Stream(s)) => s.clone(),
+                _ => return images::ImageEdit::Removed("missing"),
+            }
+        }
+        interp::ImageSource::Inline => match ops.get(img.op_index).and_then(|op| op.operands.first()) {
+            Some(Object::Stream(s)) => images::inline_as_xobject(s),
+            _ => return images::ImageEdit::Removed("corrupt"),
+        },
+    };
+    images::redact_image(page.doc, &stream, page.resources, &img.quad_user, rects, page.fill, page.budget)
+}
+
+/// Add a redacted image (and its soft mask) as new objects under a fresh
+/// name in the page's own /XObject dictionary; the original stays for other
+/// users.
+fn add_image(page: &mut PageEdit, mut image: lopdf::Stream, smask: Option<lopdf::Stream>) -> Vec<u8> {
+    if let Some(smask) = smask {
+        let id = page.doc.add_object(smask);
+        image.dict.set("SMask", id);
+    }
+    let id = page.doc.add_object(image);
+    let mut xobjects = interp::page_resources_dict(page.doc, page.resources, b"XObject");
+    let name = (1..)
+        .map(|n| format!("RedactedIm{n}").into_bytes())
+        .find(|n| !xobjects.has(n))
+        .unwrap_or_default();
+    xobjects.set(name.clone(), id);
+    page.resources.set("XObject", xobjects);
+    name
+}
+
 /// Property list keys that can repeat the content they describe.
 const REPLACEMENT_TEXT_KEYS: [&[u8]; 3] = [b"ActualText", b"Alt", b"E"];
 
-/// `ops` without the glyphs, painted paths, shadings and inline images of
+/// `ops` without the glyphs, painted paths, shadings and image pixels of
 /// `events` (their interpretation) that intersect any of `rects` (user
-/// space). Image and form XObjects are left to their own passes.
-pub(crate) fn redact_content(ops: &[Operation], events: &[Event], rects: &[Rect]) -> Result<(Vec<Operation>, Report), Unsupported> {
+/// space). Images under a rect are redrawn from new objects added to
+/// `page.doc` under new names in `page.resources`. Form XObjects are left
+/// to their own pass.
+pub(crate) fn redact_content(
+    page: &mut PageEdit,
+    ops: &[Operation],
+    events: &[Event],
+    rects: &[Rect],
+) -> Result<(Vec<Operation>, Report), Unsupported> {
     let mut report = Report::default();
     let mut dropped: HashSet<usize> = HashSet::new();
     let mut replaced: HashMap<usize, Vec<Operation>> = HashMap::new();
@@ -123,9 +200,23 @@ pub(crate) fn redact_content(ops: &[Operation], events: &[Event], rects: &[Rect]
                 report.shadings_removed += 1;
                 touched.extend(s.marked);
             }
-            Event::Image(img) if img.source == interp::ImageSource::Inline && graphics::quad_hit(&img.quad_user, rects) => {
-                dropped.insert(img.op_index);
-                report.inline_images_removed += 1;
+            Event::Image(img) if graphics::quad_hit(&img.quad_user, rects) => {
+                let inline = img.source == interp::ImageSource::Inline;
+                match redact_placed_image(page, ops, img, rects) {
+                    images::ImageEdit::Untouched => continue,
+                    images::ImageEdit::Replaced { image, smask } => {
+                        let name = add_image(page, image, smask);
+                        replaced.insert(img.op_index, vec![Operation::new("Do", vec![Object::Name(name)])]);
+                        report.images_redacted += 1;
+                    }
+                    images::ImageEdit::Removed(reason) => {
+                        dropped.insert(img.op_index);
+                        report.images_removed.push(reason);
+                        if inline {
+                            report.inline_images_removed += 1;
+                        }
+                    }
+                }
                 touched.extend(img.marked);
             }
             _ => {}
