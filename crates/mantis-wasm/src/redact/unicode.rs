@@ -78,18 +78,45 @@ fn text_map(doc: &Document, font: &Dictionary, left: usize, charged: &mut usize)
     if simple {
         encoding_map(doc, font, &mut map);
     }
-    if let Ok(cmap) = font.get(b"ToUnicode") {
-        let Some(Object::Stream(cmap)) = deref(doc, cmap) else {
-            return None;
-        };
-        let Decoded::Content(bytes) = strict_content_in(Some(doc), cmap, MAX_CMAP_BYTES.min(left), charged) else {
-            return None;
-        };
-        if !read_cmap(&bytes, &mut map) {
-            return None;
-        }
+    let Ok(cmap) = font.get(b"ToUnicode") else {
+        // Without a /ToUnicode, a symbolic font's codes are glyph ids (as are
+        // a TrueType font's without /Encoding): their text is unknown.
+        return (!simple || !symbolic(doc, font)).then_some(map);
+    };
+    let Some(Object::Stream(cmap)) = deref(doc, cmap) else {
+        return None;
+    };
+    let Decoded::Content(bytes) = strict_content_in(Some(doc), cmap, MAX_CMAP_BYTES.min(left), charged) else {
+        return None;
+    };
+    if !read_cmap(&bytes, &mut map) {
+        return None;
+    }
+    // Mostly Private Use Area text is not the text shown.
+    let private = map.values().filter(|t| t.chars().any(is_private_use)).count();
+    if private * 2 > map.len() {
+        return None;
     }
     Some(map)
+}
+
+fn is_private_use(c: char) -> bool {
+    matches!(u32::from(c), 0xE000..=0xF8FF | 0xF0000..=0xFFFFD | 0x100000..=0x10FFFD)
+}
+
+/// A simple font whose codes need not follow any standard encoding: the
+/// descriptor's Symbolic flag (bit 3), or a TrueType font without /Encoding.
+fn symbolic(doc: &Document, font: &Dictionary) -> bool {
+    let flags = font
+        .get(b"FontDescriptor")
+        .ok()
+        .and_then(|d| deref(doc, d))
+        .and_then(|d| d.as_dict().ok())
+        .and_then(|d| d.get(b"Flags").ok())
+        .and_then(|f| deref(doc, f))
+        .and_then(|f| f.as_i64().ok())
+        .unwrap_or(0);
+    flags & 4 != 0 || (name_of(font, b"Subtype") == Some(b"TrueType") && !font.has(b"Encoding"))
 }
 
 /// `text` cut to at most `MAX_TEXT_UNITS` UTF-16 units.
@@ -128,9 +155,12 @@ fn code(bytes: &[u8]) -> Option<u32> {
 /// False when reading stopped there or at a full map (or did not parse):
 /// the map is then incomplete.
 fn read_cmap(bytes: &[u8], map: &mut TextMap) -> bool {
-    let Ok(content) = Content::decode(bytes) else {
+    // All of it must parse: a CMap read in part could leave codes unknown
+    // that the encoding would then read wrongly.
+    let Some(operations) = crate::rebuild::decode_complete(bytes) else {
         return false;
     };
+    let content = Content { operations };
     let string = |o: &Object| match o {
         Object::String(b, _) => Some(b.clone()),
         _ => None,

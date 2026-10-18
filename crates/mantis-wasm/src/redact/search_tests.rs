@@ -314,3 +314,34 @@ fn whitespace_runs_read_as_one_space() {
     let pdf = bytes(one_page("BT /H 10 Tf 100 700 Td (John   Smith) Tj ET", with_helvetica));
     assert_eq!(hits(&pdf, "john smith"), 1);
 }
+
+fn undecodable(pdf: &[u8]) -> Vec<u32> {
+    redact_search(pdf, "x", &opts()).unwrap().undecodable_pages
+}
+
+#[test]
+fn fonts_whose_text_cannot_be_trusted_flag_the_page() {
+    // A symbolic TrueType font without /ToUnicode: its codes are glyph ids.
+    let symbolic = |flags: i64, encoding: bool| {
+        bytes(one_page("BT /H 10 Tf 100 700 Td (+\\(&5) Tj ET", |d| {
+            let desc = d.add_object(dictionary! { "Type" => "FontDescriptor", "FontName" => "Arial", "Flags" => flags });
+            let mut font = dictionary! {
+                "Type" => "Font", "Subtype" => "TrueType", "BaseFont" => "Arial", "FirstChar" => 32, "LastChar" => 126,
+                "Widths" => vec![Object::Integer(500); 95], "FontDescriptor" => desc,
+            };
+            if encoding {
+                font.set("Encoding", "WinAnsiEncoding");
+            }
+            let font = d.add_object(font);
+            dictionary! { "Font" => dictionary! { "H" => font } }
+        }))
+    };
+    assert_eq!(undecodable(&symbolic(4, true)), vec![1], "symbolic flag");
+    assert_eq!(undecodable(&symbolic(32, false)), vec![1], "TrueType without /Encoding");
+    assert!(undecodable(&symbolic(32, true)).is_empty(), "a plain WinAnsi TrueType is fine");
+    // A /ToUnicode mapping into the Private Use Area, and one that does not parse.
+    let pua = bytes(one_page("BT /H 10 Tf 100 700 Td (SECRET) Tj ET", |d| tounicode_font(d, "1 beginbfrange <20> <7E> <E000> endbfrange")));
+    assert_eq!(undecodable(&pua), vec![1]);
+    let garbage = bytes(one_page("BT /H 10 Tf 100 700 Td (SECRET) Tj ET", |d| tounicode_font(d, "<<<< garbage ) ( [")));
+    assert_eq!(undecodable(&garbage), vec![1]);
+}
