@@ -84,6 +84,9 @@ describe.skipIf(!built)("redact_plan / redact bindings", () => {
     expect(() => wasm.redact(PDF, job)).toThrow(/^Invalid redact settings: raster \(page 2: /);
     expect(() => wasm.redact(PDF, { ...job, fill: "red" })).toThrow("Invalid redact settings: fill");
     expect(() => wasm.redact_plan(PDF, [{ page: 1, rect: [0, 0, 1] }])).toThrow("Invalid redact settings: rects[0].rect");
+    // Five 32M-pixel rasters are 640 MB of pixels: refused before any is read.
+    const huge = Array.from({ length: 5 }, (_, i) => ({ page: i + 1, width: 8000, height: 4000, dpi: 72, rgba: new Uint8Array(4) }));
+    expect(() => wasm.redact(PDF, { ...job, rasters: huge })).toThrow("Invalid redact settings: raster size");
     const short = { page: 2, width: 612, height: 792, dpi: 72, rgba: new Uint8Array(4) };
     expect(() => wasm.redact(PDF, { ...job, rasters: [short] })).toThrow("Invalid redact settings: raster");
   });

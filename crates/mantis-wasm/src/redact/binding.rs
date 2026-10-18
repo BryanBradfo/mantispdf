@@ -67,10 +67,24 @@ pub(crate) fn read_rects(rects: &JsValue) -> Result<Vec<RedactRect>, String> {
     Ok(out)
 }
 
+/// Raster pixel bytes one job may send in all (the UI lowers the dpi to fit).
+const MAX_RASTER_BYTES: u64 = 512 << 20;
+
 /// `rasters`: `[{ page, width, height, dpi, rgba: Uint8Array }]`. The pixel
-/// count and buffer length are checked before the pixels are copied in.
+/// count of each, the total size of all and each buffer's length are
+/// checked before any pixel is copied in.
 fn read_rasters(rasters: &JsValue) -> Result<Vec<PageRaster>, String> {
     let list = array(rasters, MAX_RECTS, "rasters")?;
+    let mut total = 0u64;
+    for i in 0..list.length() {
+        let path = format!("rasters[{i}]");
+        let item = list.get(i);
+        let pixels = u64::from(count(&item, "width", &path)?) * u64::from(count(&item, "height", &path)?);
+        total = total.saturating_add(pixels.saturating_mul(4));
+        if total > MAX_RASTER_BYTES {
+            return Err(invalid("raster size"));
+        }
+    }
     let mut out = Vec::with_capacity(list.length() as usize);
     for i in 0..list.length() {
         let path = format!("rasters[{i}]");
