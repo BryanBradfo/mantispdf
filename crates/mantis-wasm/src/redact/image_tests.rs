@@ -423,3 +423,35 @@ fn names_only_removed_ops_used_are_pruned_others_kept() {
     assert!(!xobjects.has(b"Im1"));
     assert!(xobjects.has(b"Far") && xobjects.has(b"Unused"), "names the content never used stay (forms may)");
 }
+
+fn flate(bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    enc.write_all(bytes).unwrap();
+    enc.finish().unwrap()
+}
+
+#[test]
+fn huge_images_are_removed_before_any_large_allocation() {
+    // 10000 x 10000 1-bit stencil: a few KB encoded, 800 MB once expanded.
+    let (w, h) = (10_000usize, 10_000usize);
+    let mask = Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => w as i64, "Height" => h as i64,
+            "ImageMask" => true, "BitsPerComponent" => 1, "Filter" => "FlateDecode",
+        },
+        flate(&vec![0u8; w / 8 * h]),
+    );
+    let out = redact(page_with(mask), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)]);
+    assert!(drawn(&out.content).is_empty());
+    assert_eq!(out.report.images_removed, vec!["budget"]);
+    // Within the per-image cap but over what the job has left: removed too.
+    let mut budget = Budget::page(4 * 4 * 8 - 1);
+    let out = redact_page(page_with(rgb_image(4, 4, gradient)), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)], Fill::Black, &mut budget);
+    assert_eq!(out.report.images_removed, vec!["budget"]);
+    // Enough budget: the image is charged about 8 bytes per pixel up front.
+    let mut budget = Budget::page(1 << 20);
+    let out = redact_page(page_with(rgb_image(4, 4, gradient)), DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)], Fill::Black, &mut budget);
+    assert_eq!(out.report.images_redacted, 1);
+    assert!(budget.decoded <= (1 << 20) - 4 * 4 * 8);
+}

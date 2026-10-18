@@ -5,7 +5,7 @@
 use super::interp::{Quad, Rect};
 use super::{Budget, Fill};
 use crate::images::extract::ImageDecoder;
-use crate::rebuild::{MAX_STREAM_DECODED, deref};
+use crate::rebuild::deref;
 use crate::stamp::engine::ImageData;
 use crate::stamp::image::{build_image, jpeg_info};
 use flate2::{Compression, write::ZlibEncoder};
@@ -14,6 +14,11 @@ use std::io::Write;
 use zune_jpeg::JpegDecoder;
 use zune_jpeg::zune_core::colorspace::ColorSpace;
 use zune_jpeg::zune_core::options::DecoderOptions;
+
+/// Most pixels one redacted image may have (64 MiB of RGBA).
+const MAX_IMAGE_PIXELS: usize = (64 << 20) / 4;
+/// Memory charged per pixel of a redacted image.
+const BYTES_PER_PIXEL: usize = 8;
 
 /// Quality of re-encoded JPEG images.
 const JPEG_QUALITY: u8 = 90;
@@ -99,9 +104,14 @@ pub(crate) fn redact_image(
     let (Some(width), Some(height)) = (positive_int(doc, &stream.dict, b"Width"), positive_int(doc, &stream.dict, b"Height")) else {
         return ImageEdit::Removed("corrupt");
     };
-    if width.saturating_mul(height) as u64 > crate::images::colour::MAX_PIXELS {
-        return ImageEdit::Removed("too large");
+    // Charge the memory editing takes (RGBA, coverage, encoder input:
+    // about 8 bytes a pixel) before allocating any of it.
+    let pixels = width.saturating_mul(height);
+    let cost = pixels.saturating_mul(BYTES_PER_PIXEL);
+    if pixels > MAX_IMAGE_PIXELS || cost > budget.decoded {
+        return ImageEdit::Removed("budget");
     }
+    budget.decoded -= cost;
     let Some(covered) = covered_pixels(width, height, quad, rects) else {
         return ImageEdit::Removed("degenerate placement");
     };
@@ -117,7 +127,7 @@ pub(crate) fn redact_image(
     };
     let mut decoder = ImageDecoder::new(doc, budget.decoded);
     let edit = if filters.contains(&&b"DCTDecode"[..]) {
-        redact_jpeg(doc, stream, &filters, (width, height), &covered, fill, &mut decoder, budget)
+        redact_jpeg(doc, stream, &filters, (width, height), &covered, fill, &mut decoder)
     } else {
         redact_samples(doc, stream, res, (width, height), &covered, fill, &mut decoder)
     };
@@ -191,8 +201,7 @@ fn redact_samples(
 
 /// A JPEG: decoded, painted and re-encoded as a JPEG in its own (Gray or
 /// RGB) colour space. CMYK, inverted (/Decode) or filtered-twice JPEGs are
-/// removed.
-#[allow(clippy::too_many_arguments)]
+/// removed. Its pixels are already charged to the budget.
 fn redact_jpeg(
     doc: &Document,
     stream: &Stream,
@@ -201,7 +210,6 @@ fn redact_jpeg(
     covered: &[bool],
     fill: Fill,
     decoder: &mut ImageDecoder,
-    budget: &mut Budget,
 ) -> Result<ImageEdit, &'static str> {
     if filters != [b"DCTDecode"] {
         return Err("jpeg");
@@ -219,13 +227,6 @@ fn redact_jpeg(
         return Err("corrupt");
     }
     let size = width * height * components;
-    if size > MAX_STREAM_DECODED {
-        return Err("too large");
-    }
-    if size > budget.decoded {
-        return Err("budget");
-    }
-    budget.decoded -= size;
     let options = DecoderOptions::default()
         .set_max_width(width)
         .set_max_height(height)
