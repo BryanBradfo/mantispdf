@@ -260,7 +260,10 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option
                 return Err(invalid("value"));
             }
             let shown = match field.options.iter().find(|(export, _)| *export == text) {
-                Some((_, display)) => display.clone(),
+                Some((_, display)) => {
+                    check_text(display, false, &field.label)?;
+                    drawn_text(display)
+                }
                 None if text.is_empty() || *editable => {
                     check_text(&text, false, &field.label)?;
                     drawn_text(&text)
@@ -1195,5 +1198,26 @@ mod tests {
         doc.get_dictionary_mut(root).unwrap().set("NeedsRendering", true);
         fill_document(&mut doc, &[(0, Value::Text("x".into()))]).unwrap();
         assert!(!dict(&doc, root).has(b"NeedsRendering"));
+    }
+
+    #[test]
+    fn combo_option_display_must_be_drawable() {
+        let (mut doc, page) = base(0);
+        let mut jp = vec![0xFE, 0xFF];
+        for u in "日本".encode_utf16() {
+            jp.extend_from_slice(&u.to_be_bytes());
+        }
+        let opt = Object::Array(vec![
+            Object::Array(vec![Object::string_literal("jp"), Object::String(jp, StringFormat::Literal)]),
+            Object::string_literal("fr"),
+        ]);
+        let combo = doc.add_object(with(widget(page, [0, 0, 100, 20]), vec![
+            ("FT", "Ch".into()), ("T", Object::string_literal("c")), ("TU", Object::string_literal("Country")),
+            ("Ff", FF_COMBO.into()), ("Opt", opt),
+        ]));
+        finish(&mut doc, page, &[combo], &[combo], vec![]);
+        let err = fill_document(&mut doc, &[(0, Value::Text("jp".into()))]).unwrap_err();
+        assert_eq!(err, "Characters not supported by the standard PDF fonts: 日本 in field \"Country\"");
+        fill_document(&mut doc, &[(0, Value::Text("fr".into()))]).unwrap();
     }
 }
