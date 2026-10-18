@@ -8,6 +8,7 @@ import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob"
 import type { StampJobSpec } from "../lib/stampJob";
 import type { FormInfo } from "../lib/forms/model";
 import type { FormWireEntry } from "../lib/forms/toWire";
+import type { OcrPageWire } from "../lib/ocr/textLayerWire";
 import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, SearchOptionsWire } from "../lib/redact/toJob";
 import type { RedactSearchResultWire } from "../lib/redact/searchWire";
 import { PdfWorkerClient } from "../lib/workerClient";
@@ -352,6 +353,13 @@ export function usePdfWorker() {
     [run],
   );
 
+  /** `pdfBytes` with the recognised words of `pages` added as an invisible, searchable text layer. */
+  const addTextLayer = useCallback(
+    (pdfBytes: Uint8Array, pages: OcrPageWire[]): Promise<Uint8Array> =>
+      run(null, (id) => ({ type: "ocr-text-layer", id, pdfBytes, pages }), asPlainBytes),
+    [run],
+  );
+
   /** Which pages with marks need a raster (`reason` set) before `redactPdf`. */
   const redactPlan = useCallback(
     (pdfBytes: Uint8Array, rects: RedactRectWire[]): Promise<PageStatusWire[]> =>
@@ -471,6 +479,7 @@ export function usePdfWorker() {
       redactPrepare,
       redactPlan,
       redactPdf,
+      addTextLayer,
       cropPdf,
       resizePdf,
       nupPdf,
@@ -501,6 +510,7 @@ export function usePdfWorker() {
       redactPrepare,
       redactPlan,
       redactPdf,
+      addTextLayer,
       cropPdf,
       resizePdf,
       nupPdf,

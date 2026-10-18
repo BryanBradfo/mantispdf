@@ -49,6 +49,8 @@ declare module "mantis-wasm" {
   /** The form fields; shape built by `forms::binding::form_to_js`. */
   export function list_form(pdf_bytes: Uint8Array): import("./lib/forms/model").FormInfo;
   export function fill_form(pdf_bytes: Uint8Array, values: object, flatten: boolean): Uint8Array;
+  /** The PDF with an invisible OCR text layer; `pages` shaped as in `lib/ocr/textLayerWire`. */
+  export function add_text_layer(pdf_bytes: Uint8Array, pages: object): Uint8Array;
   /** Per page with areas: null reason, or why it needs a raster. Shapes in `lib/redact/toJob`. */
   export function redact_plan(pdf_bytes: Uint8Array, rects: object): import("./lib/redact/toJob").PageStatusWire[];
   /** The bytes to render rasters from: form fields flattened (values drawn), only links kept. */

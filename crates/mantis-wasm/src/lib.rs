@@ -24,7 +24,6 @@ mod watermark;
 pub use compress::compress_pdf;
 pub use edit::reorder_pages;
 pub use encrypt::encrypt_pdf;
-pub use ocr::{OcrPage, OcrWord, add_text_layer};
 pub use rotate::rotate_pdf;
 pub use watermark::add_watermark;
 use lopdf::Document;
@@ -201,6 +200,15 @@ pub fn redact(pdf_bytes: &[u8], job: JsValue) -> Result<JsValue, JsValue> {
 pub fn list_form(pdf_bytes: &[u8]) -> Result<JsValue, JsValue> {
     let info = forms::list_form(pdf_bytes).map_err(|e| JsValue::from_str(&e))?;
     Ok(forms::binding::form_to_js(&info))
+}
+
+/// Add an invisible OCR text layer (`pages` from `src/lib/ocr/textLayerWire.ts`, words in
+/// visible-space points).
+#[wasm_bindgen]
+pub fn add_text_layer(pdf_bytes: &[u8], pages: JsValue) -> Result<Vec<u8>, JsValue> {
+    let raw = ocr::binding::read_pages(&pages).map_err(|e| JsValue::from_str(&e))?;
+    let pages = ocr::job::to_pages(raw).map_err(|e| JsValue::from_str(&e))?;
+    ocr::add_text_layer(pdf_bytes, &pages).map_err(|e| JsValue::from_str(&e))
 }
 
 /// Fill form fields (`values` from `src/lib/forms/toWire.ts`), optionally

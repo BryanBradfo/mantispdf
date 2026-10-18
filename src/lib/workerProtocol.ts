@@ -7,6 +7,7 @@ import type { FormInfo } from "./forms/model";
 import type { FormWireEntry } from "./forms/toWire";
 import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, SearchOptionsWire } from "./redact/toJob";
 import type { RedactSearchResultWire } from "./redact/searchWire";
+import type { OcrPageWire } from "./ocr/textLayerWire";
 
 /** Correlates a request with its response/progress/failure messages. */
 export type ReqId = number;
@@ -53,14 +54,16 @@ export type ToWorker =
   /** The document as the redaction will see it (forms flattened): what rasters are drawn from. */
   | { type: "redact-prepare"; id: ReqId; pdfBytes: Uint8Array }
   | { type: "redact"; id: ReqId; pdfBytes: Uint8Array; job: RedactJobWire }
-  | { type: "redact-search"; id: ReqId; pdfBytes: Uint8Array; query: string; options: SearchOptionsWire };
+  | { type: "redact-search"; id: ReqId; pdfBytes: Uint8Array; query: string; options: SearchOptionsWire }
+  /** Recognised words added as an invisible text layer. */
+  | { type: "ocr-text-layer"; id: ReqId; pdfBytes: Uint8Array; pages: OcrPageWire[] };
 
 // The successful result of an operation, tagged by `kind` so the requesting side
 // can extract the right field with a runtime check (no unsafe casts).
 export type SuccessPayload =
   | { kind: "split"; parts: PdfPart[] }
   | { kind: "merge"; bytes: Uint8Array }
-  /** Bytes that are not a merge result (`redact-prepare`). */
+  /** Bytes that are not a merge result (`redact-prepare`, `ocr-text-layer`). */
   | { kind: "bytes"; bytes: Uint8Array }
   | { kind: "count"; count: number }
   | { kind: "buffer"; result: ArrayBuffer }

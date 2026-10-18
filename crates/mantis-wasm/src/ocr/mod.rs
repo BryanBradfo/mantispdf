@@ -8,7 +8,9 @@
 //! resources (`stamp::page_writer`); the original content and anything
 //! other pages share are left as they are.
 
+pub(crate) mod binding;
 pub(crate) mod font;
+pub(crate) mod job;
 pub(crate) mod layer;
 #[cfg(test)]
 mod tests;
@@ -113,13 +115,7 @@ pub fn add_text_layer(pdf: &[u8], pages: &[OcrPage]) -> Result<Vec<u8>, String> 
 
 /// The limits that do not need the document: checked before parsing it.
 fn validate_shape(pages: &[OcrPage]) -> Result<(), String> {
-    if pages.len() > MAX_PAGES {
-        return Err(invalid("pages"));
-    }
-    if pages.iter().any(|p| p.words.len() > MAX_WORDS) || pages.iter().map(|p| p.words.len()).sum::<usize>() > MAX_JOB_WORDS {
-        return Err(invalid("words"));
-    }
-    Ok(())
+    job::check_counts(pages.len(), pages.iter().map(|p| p.words.len()))
 }
 
 fn validate(pages: &[OcrPage], total: usize) -> Result<(), String> {
