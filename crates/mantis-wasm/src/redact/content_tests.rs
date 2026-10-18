@@ -338,3 +338,17 @@ fn zero_size_text_under_a_rect_is_removed() {
         assert!(!String::from_utf8_lossy(&out.content).contains("SECRET"));
     }
 }
+
+#[test]
+fn negative_size_and_scaling_keep_kept_glyphs_in_place() {
+    // A covers x -6..1 (size -10) or -3..0.5 (Tz -50); B lies further left.
+    for (content, area) in [
+        (&b"BT /F1 -10 Tf (ABC) Tj ET"[..], rect(-3.0, -5.0, 0.0, 0.0)),
+        (b"BT /F1 10 Tf -50 Tz (ABC) Tj ET", rect(-1.0, 0.0, 0.0, 5.0)),
+    ] {
+        let rects = [area];
+        let out = redact(content, &rects);
+        assert_eq!(text(&out.after), "BC", "{}", String::from_utf8_lossy(&out.content));
+        assert_kept_in_place(&out, &rects);
+    }
+}

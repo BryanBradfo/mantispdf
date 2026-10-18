@@ -1115,6 +1115,22 @@ mod tests {
     }
 
     #[test]
+    fn negative_font_size_flips_the_box_and_the_advance() {
+        let g = glyphs("BT /F1 -10 Tf (AB) Tj ET");
+        assert_quad(&g[0].box_user, [(1.0, 2.0), (-6.0, 2.0), (-6.0, -9.0), (1.0, -9.0)]);
+        assert_quad(&g[1].box_user, [(-4.0, 2.0), (-12.0, 2.0), (-12.0, -9.0), (-4.0, -9.0)]);
+        assert_eq!(g[0].advance(), -5.0);
+    }
+
+    #[test]
+    fn negative_horizontal_scaling_mirrors_the_box_and_the_advance() {
+        let g = glyphs("BT /F1 10 Tf -50 Tz (AB) Tj ET");
+        assert_quad(&g[0].box_user, [(0.5, -2.0), (-3.0, -2.0), (-3.0, 9.0), (0.5, 9.0)]);
+        assert_quad(&g[1].box_user, [(-2.0, -2.0), (-6.0, -2.0), (-6.0, 9.0), (-2.0, 9.0)]);
+        assert_eq!(g[0].advance(), -2.5);
+    }
+
+    #[test]
     fn rise_shifts_the_glyph_box() {
         let g = glyphs("BT /F1 10 Tf 3 Ts 1 0 0.5 1 10 20 Tm (A) Tj ET");
         assert_quad(&g[0].box_user, [(9.5, 21.0), (16.5, 21.0), (22.0, 32.0), (15.0, 32.0)]);
