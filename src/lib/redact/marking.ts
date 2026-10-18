@@ -14,7 +14,7 @@ export interface SearchEntry {
 
 /**
  * The review list: the engine's matches (with context), then the fallback matches found by pdf.js
- * in text the engine cannot read (already limited to its unknown boxes, see `fallbackRects`).
+ * in text the engine cannot read (already filtered by `keepFallback`).
  */
 export function searchEntries(
   matches: readonly SearchMatchWire[],
@@ -41,16 +41,24 @@ export function selectedMarks(entries: readonly SearchEntry[], checked: Readonly
   return entries.filter((e) => checked.has(e.id)).flatMap((e) => e.marks);
 }
 
-/** Whether two rects share a positive area. */
-const meets = (a: Rect, b: Rect) =>
-  Math.min(a[0] + a[2], b[0] + b[2]) > Math.max(a[0], b[0]) && Math.min(a[1] + a[3], b[1] + b[3]) > Math.max(a[1], b[1]);
+/** How far around an unknown-text box a fallback match still counts as meeting it, in points. */
+export const UNKNOWN_TOLERANCE = 2;
+
+/** Whether `a` meets `b` grown by `pad` on every side (touching edges count). */
+const meets = (a: Rect, b: Rect, pad: number) =>
+  a[0] <= b[0] + b[2] + pad && a[0] + a[2] >= b[0] - pad && a[1] <= b[1] + b[3] + pad && a[1] + a[3] >= b[1] - pad;
 
 /**
- * Of the whole-item rects pdf.js found on a page the engine could not fully read, the ones that
- * meet its unknown-text boxes: text the engine decoded already has exact match rects.
+ * Whether to keep a fallback (pdf.js) match, whose rects are `rects`, on a page the engine could
+ * not fully read. Fails closed:
+ * - only a page whose unknown-text boxes the engine reports as complete is filtered at all;
+ *   on any other page every fallback match is kept;
+ * - a match is kept whole when any of its rects meets an unknown box grown by
+ *   `UNKNOWN_TOLERANCE` (touching counts): text the engine read itself already has exact rects.
  */
-export function fallbackRects(rects: readonly Rect[], unknown: readonly Rect[]): Rect[] {
-  return rects.filter((r) => unknown.some((u) => meets(r, u)));
+export function keepFallback(rects: readonly Rect[], unknown: readonly Rect[], complete: boolean): boolean {
+  if (!complete) return true;
+  return rects.some((r) => unknown.some((u) => meets(r, u, UNKNOWN_TOLERANCE)));
 }
 
 /**

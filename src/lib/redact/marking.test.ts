@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entryText, fallbackRects, repeatTargets, searchEntries, selectedMarks } from "./marking";
+import { entryText, keepFallback, repeatTargets, searchEntries, selectedMarks } from "./marking";
 import type { Rect } from "./model";
 import type { SearchMatchWire } from "./searchWire";
 
@@ -50,20 +50,39 @@ describe("search results review", () => {
   });
 });
 
-describe("fallback filter", () => {
+describe("fallback filter (fails closed)", () => {
   const unknown: Rect[] = [[100, 100, 50, 20]];
 
-  it("keeps only the pdf.js rects that meet unknown text, by positive area", () => {
-    const rects: Rect[] = [
-      [90, 110, 20, 5], // overlaps
-      [200, 110, 20, 5], // elsewhere on the line (decoded text: the engine has it)
-      [150, 100, 10, 20], // touches the edge only
+  it("decides per match: one rect meeting unknown text keeps every rect of the match", () => {
+    const match: Rect[] = [
+      [90, 110, 20, 5], // meets the unknown box
+      [300, 90, 40, 10], // elsewhere (the next line of the same match)
     ];
-    expect(fallbackRects(rects, unknown)).toEqual([[90, 110, 20, 5]]);
+    expect(keepFallback(match, unknown, true)).toBe(true);
+    expect(keepFallback([[300, 90, 40, 10]], unknown, true)).toBe(false);
   });
 
-  it("keeps nothing when the page has no unknown boxes", () => {
-    expect(fallbackRects([[0, 0, 10, 10]], [])).toEqual([]);
+  it("counts edges that touch, and anything within 2 pt, as meeting", () => {
+    // Touching the right edge (x = 150).
+    expect(keepFallback([[150, 100, 10, 20]], unknown, true)).toBe(true);
+    // 1.9 pt to the right of the box: inside the 2 pt tolerance.
+    expect(keepFallback([[151.9, 100, 10, 20]], unknown, true)).toBe(true);
+    // Exactly 2 pt away still touches the inflated box.
+    expect(keepFallback([[152, 100, 10, 20]], unknown, true)).toBe(true);
+    // 2.1 pt away does not.
+    expect(keepFallback([[152.1, 100, 10, 20]], unknown, true)).toBe(false);
+    // Same below the box (y = 100).
+    expect(keepFallback([[110, 90, 10, 8]], unknown, true)).toBe(true);
+    expect(keepFallback([[110, 80, 10, 7.9]], unknown, true)).toBe(false);
+  });
+
+  it("keeps every match on a page whose unknown boxes the engine does not vouch for", () => {
+    expect(keepFallback([[400, 400, 10, 10]], unknown, false)).toBe(true);
+    expect(keepFallback([[400, 400, 10, 10]], [], false)).toBe(true);
+  });
+
+  it("drops matches on a complete page without unknown text", () => {
+    expect(keepFallback([[0, 0, 10, 10]], [], true)).toBe(false);
   });
 });
 

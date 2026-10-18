@@ -24,7 +24,7 @@ import {
   type Rect,
 } from "../lib/redact/model";
 import { formatPageRanges, parsePageRanges } from "../lib/pagePlan";
-import { fallbackRects, repeatTargets, searchEntries, type SearchEntry } from "../lib/redact/marking";
+import { keepFallback, repeatTargets, searchEntries, type SearchEntry } from "../lib/redact/marking";
 import { chooseDpi, renderRaster } from "../lib/redact/raster";
 import { REPORT_TITLE, TOO_LARGE_REASON, neededRasters, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
 import { findMatches, type TextRun } from "../lib/redact/search";
@@ -170,11 +170,14 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
       // boxes, so text the engine did read is never over-marked a line at a time.
       const fallback: { page: number; rects: Rect[] }[] = [];
       const unknownByPage = new Map(result.unknownBoxes.map((u) => [u.page, u.rects] as const));
+      // Fail closed: only pages whose unknown boxes the engine reports as complete are filtered.
+      const complete = new Set(result.unknownComplete ?? []);
       if (result.undecodablePages.length > 0) {
         const doc = await openDoc();
         for (const n of result.undecodablePages) {
           const unknown = unknownByPage.get(n) ?? [];
-          if (unknown.length === 0) continue;
+          const filtered = complete.has(n);
+          if (filtered && unknown.length === 0) continue;
           const p = await doc.getPage(n);
           const content = await p.getTextContent();
           const runs: TextRun[] = [];
@@ -183,8 +186,8 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           }
           const view = p.view as [number, number, number, number];
           for (const m of findMatches(runs, { view, rotate: p.rotate }, query, { wholeWord })) {
-            const rects = fallbackRects(m.rects, unknown);
-            if (rects.length > 0) fallback.push({ page: n, rects });
+            // Decided per match: a match meeting unknown text is kept with all its rects.
+            if (keepFallback(m.rects, unknown, filtered)) fallback.push({ page: n, rects: m.rects });
           }
         }
       }
