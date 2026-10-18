@@ -13,6 +13,7 @@ pub(crate) mod graphics;
 mod image_tests;
 pub(crate) mod images;
 pub(crate) mod interp;
+pub(crate) mod marked;
 pub(crate) mod text;
 
 use crate::rebuild;
@@ -144,8 +145,6 @@ fn add_image(page: &mut PageEdit, mut image: lopdf::Stream, smask: Option<lopdf:
     name
 }
 
-/// Property list keys that can repeat the content they describe.
-const REPLACEMENT_TEXT_KEYS: [&[u8]; 3] = [b"ActualText", b"Alt", b"E"];
 
 /// `ops` without the glyphs, painted paths, shadings and image pixels of
 /// `events` (their interpretation) that intersect any of `rects` (user
@@ -164,14 +163,10 @@ pub(crate) fn redact_content(
     let mut glyphs: Vec<(&interp::Glyph, bool)> = Vec::new();
     // Show operators with a removed glyph.
     let mut cut_shows: HashSet<usize> = HashSet::new();
-    let mut parents: HashMap<usize, Option<usize>> = HashMap::new();
     // Innermost sequences around removed content.
     let mut touched: Vec<usize> = Vec::new();
     for event in events {
         match event {
-            Event::Marked(m) => {
-                parents.insert(m.op_index, m.parent);
-            }
             _ => {}
         }
         match event {
@@ -230,32 +225,9 @@ pub(crate) fn redact_content(
     replaced.extend(edits.replaced);
     // Every glyph of a cut show counts as touched (a whole show may go).
     touched.extend(glyphs.iter().filter(|(g, _)| cut_shows.contains(&g.op_index)).filter_map(|(g, _)| g.marked));
-    let mut sequences = BTreeSet::new();
-    for mut current in touched {
-        while sequences.insert(current) {
-            match parents.get(&current) {
-                Some(Some(parent)) => current = *parent,
-                _ => break,
-            }
-        }
-    }
-    for index in sequences {
-        match ops.get(index).map(|op| (op.operator.as_str(), op.operands.as_slice())) {
-            Some(("BDC", [tag, Object::Dictionary(props)])) => {
-                if REPLACEMENT_TEXT_KEYS.iter().any(|k| props.has(k)) {
-                    let mut props = props.clone();
-                    for key in REPLACEMENT_TEXT_KEYS {
-                        props.remove(key);
-                    }
-                    replaced.insert(index, vec![Operation::new("BDC", vec![tag.clone(), Object::Dictionary(props)])]);
-                }
-            }
-            Some(("BDC", [_, Object::Name(name)])) => {
-                report.named_properties.insert(name.clone());
-            }
-            _ => {}
-        }
-    }
+    let stripped = marked::strip_replacement_text(ops, events, touched);
+    report.named_properties = stripped.named_properties;
+    replaced.extend(stripped.replaced);
     let mut out = Vec::with_capacity(ops.len());
     for (i, op) in ops.iter().enumerate() {
         if dropped.contains(&i) {
