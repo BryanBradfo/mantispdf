@@ -1,28 +1,39 @@
 /**
  * Page images for OCR: pdf.js renders the page's visible box at 300 dpi (lower for pages that
- * would pass 25 Mpx), annotations off, on white; the pixels become 8-bit gray and are handed to
- * tesseract as a binary PGM (no PNG encoding pass).
+ * would pass 25 Mpx or 16384 px on a side), annotations off, on white; the pixels become 8-bit
+ * gray and are handed to tesseract as a binary PGM (no PNG encoding pass).
  */
 import { pdfjs } from "../pdf";
 
 export const OCR_DPI = 300;
 export const MAX_OCR_PIXELS = 25_000_000;
 
-/** Pixel size and dpi of the OCR image of a `widthPt` x `heightPt` visible box. */
+/**
+ * Longest image side: a margin under browsers' 32767 px canvas limit, and within what iOS
+ * Safari can allocate.
+ */
+export const MAX_OCR_SIDE = 16384;
+
+/**
+ * Pixel size and dpi of the OCR image of a `widthPt` x `heightPt` visible box: 300 dpi, lowered
+ * until the image has at most `MAX_OCR_PIXELS` pixels and no side over `MAX_OCR_SIDE`.
+ */
 export function ocrRenderSize(widthPt: number, heightPt: number): { width: number; height: number; dpi: number } {
   const at = (dpi: number) => [Math.max(1, Math.floor((widthPt * dpi) / 72)), Math.max(1, Math.floor((heightPt * dpi) / 72))];
+  const fits = ([w, h]: number[]) => w * h <= MAX_OCR_PIXELS && Math.max(w, h) <= MAX_OCR_SIDE;
   let dpi = OCR_DPI;
-  let [width, height] = at(dpi);
-  if (width * height > MAX_OCR_PIXELS) {
-    dpi = OCR_DPI * Math.sqrt(MAX_OCR_PIXELS / (width * height));
-    [width, height] = at(dpi);
+  let size = at(dpi);
+  if (!fits(size)) {
+    const [w, h] = size;
+    dpi = OCR_DPI * Math.min(Math.sqrt(MAX_OCR_PIXELS / (w * h)), MAX_OCR_SIDE / Math.max(w, h));
+    size = at(dpi);
     // Flooring keeps it under; guard against rounding at the edge.
-    while (width * height > MAX_OCR_PIXELS) {
+    while (!fits(size)) {
       dpi *= 0.999;
-      [width, height] = at(dpi);
+      size = at(dpi);
     }
   }
-  return { width, height, dpi };
+  return { width: size[0], height: size[1], dpi };
 }
 
 /** Rec. 601 luma of RGBA pixels, composited over white. */
