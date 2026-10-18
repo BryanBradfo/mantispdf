@@ -23,6 +23,9 @@ use std::rc::Rc;
 const MAX_SAVE_DEPTH: usize = 4096;
 /// `[` / `<<` nesting deeper than this is unsupported (the parser recurses).
 const MAX_NESTING: usize = 64;
+/// Coordinates and matrix entries past this magnitude (or not finite) make
+/// the page unsupported: rounding there could hide where content lands.
+const MAX_COORD: f64 = 1e9;
 /// Half the width of a zero-width ("thinnest") line, user space.
 const MIN_STROKE_REACH: f64 = 0.5;
 
@@ -447,6 +450,34 @@ fn paint_kind(op: &str) -> Option<(bool, bool)> {
     }
 }
 
+fn in_range(values: impl IntoIterator<Item = f64>) -> Result<(), Unsupported> {
+    for v in values {
+        if !v.is_finite() || v.abs() > MAX_COORD {
+            return Err(Unsupported::new("geometry out of range"));
+        }
+    }
+    Ok(())
+}
+
+fn quad_values(q: &Quad) -> impl Iterator<Item = f64> + '_ {
+    q.0.iter().flat_map(|&(x, y)| [x, y])
+}
+
+fn rect_values(r: &Option<Rect>) -> Vec<f64> {
+    r.iter().flat_map(|r| [r.x0, r.y0, r.x1, r.y1]).collect()
+}
+
+/// Every coordinate an event places must be in range.
+fn check_event(event: &Event) -> Result<(), Unsupported> {
+    match event {
+        Event::Glyph(g) => in_range(quad_values(&g.box_user)),
+        Event::Path(p) => in_range(rect_values(&p.bbox_user)),
+        Event::Image(i) => in_range(quad_values(&i.quad_user)),
+        Event::Shading(s) => in_range(rect_values(&s.bbox_user)),
+        Event::Form(f) => in_range(f.matrix),
+    }
+}
+
 fn malformed(op: &str) -> Unsupported {
     Unsupported(format!("malformed operands for {op}"))
 }
@@ -499,6 +530,7 @@ struct Run<'b> {
 impl Run<'_> {
     fn emit(&mut self, event: Event) -> Result<(), Unsupported> {
         self.budget.take_event()?;
+        check_event(&event)?;
         self.events.push(event);
         Ok(())
     }
@@ -671,6 +703,7 @@ impl<'d> Interp<'d> {
         for (i, op) in ops.iter().enumerate() {
             run.budget.take_op()?;
             self.step(&mut run, i, op)?;
+            in_range(run.gs.ctm.into_iter().chain(run.text.tm).chain(run.text.tlm))?;
         }
         Ok(run.events)
     }
@@ -1312,6 +1345,26 @@ mod tests {
         assert!(tiny.intersects(&r));
         let tiny_diamond = Quad([(10.0 + 3e-7, 0.0), (10.0 + 6e-7, 3e-7), (10.0 + 3e-7, 6e-7), (10.0, 3e-7)]);
         assert!(!tiny_diamond.intersects(&r), "tiny quad touching the edge only");
+    }
+
+    #[test]
+    fn huge_or_non_finite_geometry_is_unsupported() {
+        let big = "100000000000000000000000000000000000000.0";
+        for content in [
+            format!("{big} 0 0 1 0 0 cm {big} 0 0 1 0 0 cm"),
+            "10000000000 0 0 1 0 0 cm".to_string(),
+            "BT 1 0 0 1 2000000000 0 Tm ET".to_string(),
+            "BT 0 2000000000 Td ET".to_string(),
+            "BT 0 2000000000 TD ET".to_string(),
+            format!("BT /F1 1000000 Tf {big} Tc (AAAA) Tj ET"),
+            "BT /F1 10 Tf [(A) -1000000000000000 (A)] TJ ET".to_string(),
+            format!("{big} 0 0 1 0 0 cm /Im1 Do"),
+            "0 0 m 2000000000 0 l S".to_string(),
+        ] {
+            assert!(unsupported(&content).contains("out of range"), "{content}");
+        }
+        // Large but sane coordinates are fine.
+        assert!(events("BT /F1 10 Tf 1 0 0 1 900000000 0 Tm (A) Tj ET").is_ok());
     }
 
     #[test]
