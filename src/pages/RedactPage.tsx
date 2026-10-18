@@ -23,6 +23,8 @@ import {
   type MarksState,
   type Rect,
 } from "../lib/redact/model";
+import { formatPageRanges, parsePageRanges } from "../lib/pagePlan";
+import { numberEntries, repeatTargets } from "../lib/redact/marking";
 import { chooseDpi, renderRaster } from "../lib/redact/raster";
 import { REPORT_TITLE, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
 import { findMatches, type TextRun } from "../lib/redact/search";
@@ -68,9 +70,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   const [fill, setFill] = useState<Fill>("black");
   const [removeMetadata, setRemoveMetadata] = useState(true);
   const [searching, setSearching] = useState(false);
-  const [search, setSearch] = useState<
-    (SearchResult & { marks: MarkInput[]; undecodablePages: number[]; truncated: boolean; unsearchedPages: number[] }) | null
-  >(null);
+  const [search, setSearch] = useState<(SearchResult & { truncated: boolean }) | null>(null);
   // Pages the engine cannot redact in place, waiting for the user's go-ahead, for that run.
   const [confirm, setConfirm] = useState<{ run: RedactRun; pages: PageStatusWire[] } | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
@@ -88,6 +88,11 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   const pageMarks = useMemo(() => marks.filter((m) => m.page === page), [marks, page]);
   const marked = useMemo(() => new Set(marks.map((m) => m.page)), [marks]);
   const wholePage = pageMarks.some((m) => m.kind === "page");
+  // The selected area or search match, which "Repeat on pages" copies.
+  const selectedMark = pageMarks.find((m) => m.id === selectedId && m.kind !== "page") ?? null;
+  const [repeatText, setRepeatText] = useState("");
+  const [repeatNote, setRepeatNote] = useState<string | null>(null);
+  useEffect(() => setRepeatNote(null), [selectedId]);
 
   // One pdf.js document for search and rasters, opened when first needed, closed with the page.
   const openDoc = useCallback((): Promise<PdfDocument> => {
@@ -186,10 +191,8 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
         query,
         count: found.length,
         pages: [...pages].sort((a, b) => a - b),
-        marks: found,
-        undecodablePages: result.undecodablePages,
+        entries: numberEntries(found),
         truncated: result.truncated,
-        unsearchedPages: result.unsearchedPages,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -198,10 +201,26 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     }
   };
 
-  const markAll = () => {
-    if (!search || lockedRef.current) return;
-    change((s) => addMarks(s, search.marks));
-    if (search.pages.length > 0 && !search.pages.includes(page)) setPage(search.pages[0]);
+  /** Copy `rect` from this page to the pages of `text` ("all", or ranges like "2-5, 8"). */
+  const repeat = (rect: Rect, text: string) => {
+    if (lockedRef.current) return;
+    const parsed = text === "all" ? { ok: true as const, pages: sizes.map((_, i) => i + 1) } : parsePageRanges(text, sizes.length);
+    if (!parsed.ok) {
+      setRepeatNote(parsed.error);
+      return;
+    }
+    const { marks: copies, skipped } = repeatTargets(rect, page, parsed.pages, sizes);
+    change((s) => addMarks(s, copies));
+    const added = `Added to ${copies.length} ${copies.length === 1 ? "page" : "pages"}.`;
+    setRepeatNote(skipped.length > 0 ? `${added} Skipped (too small): ${formatPageRanges(skipped)}.` : added);
+  };
+
+  /** Mark the reviewed search areas (the checked ones, or all). */
+  const markFound = (found: MarkInput[]) => {
+    if (!search || lockedRef.current || found.length === 0) return;
+    change((s) => addMarks(s, found));
+    const pages = [...new Set(found.map((m) => m.page))].sort((a, b) => a - b);
+    if (!pages.includes(page)) setPage(pages[0]);
     setSearch(null);
   };
 
@@ -383,9 +402,47 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
               }}
             />
           )}
+          {selectedMark && selectedMark.kind !== "page" && sizes.length > 1 && (
+            <form
+              aria-label="Repeat on pages"
+              className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-[#333] dark:bg-[#111]"
+              onSubmit={(e) => {
+                e.preventDefault();
+                repeat(selectedMark.rect, repeatText);
+              }}
+            >
+              <span className="font-medium text-gray-800 dark:text-[#ccc]">Repeat this area on</span>
+              <button type="button" disabled={locked} onClick={() => repeat(selectedMark.rect, "all")} className={secondaryButton}>
+                All pages
+              </button>
+              <span className="text-gray-500 dark:text-[#888]">or pages</span>
+              <input
+                aria-label="Pages to repeat the area on"
+                value={repeatText}
+                onChange={(e) => setRepeatText(e.target.value)}
+                placeholder="2-5, 8"
+                className="w-28 rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-[#333] dark:bg-[#111] dark:text-[#ddd]"
+              />
+              <button type="submit" disabled={locked || repeatText.trim() === ""} className={secondaryButton}>
+                Repeat
+              </button>
+              {repeatNote && (
+                <p role="status" className="basis-full text-xs text-gray-600 dark:text-[#999]">
+                  {repeatNote}
+                </p>
+              )}
+            </form>
+          )}
         </div>
         <aside className="space-y-4">
-          <SearchBar searching={searching} result={search} onFind={(q, w) => void find(q, w)} onMarkAll={markAll} locked={locked} />
+          <SearchBar
+            searching={searching}
+            result={search}
+            onFind={(q, w) => void find(q, w)}
+            onMark={markFound}
+            onShowPage={setPage}
+            locked={locked}
+          />
           {search && search.truncated && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
               Too many matches; showing the first {search.count}. Refine the search.
