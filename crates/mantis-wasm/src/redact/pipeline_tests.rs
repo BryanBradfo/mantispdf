@@ -1044,3 +1044,31 @@ fn redaction_removes_a_hidden_layer_widget_under_an_area() {
     }
     assert!(!String::from_utf8_lossy(&all).contains("HIDDENVALUE"));
 }
+
+#[test]
+fn a_kept_glyph_reaching_two_thousandths_into_an_area_fails_verification() {
+    // "A" kept at (100, 700), the area starting `into` points before its
+    // advance box ends, its fill box drawn last.
+    let check = |into: f64| {
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let font = doc.add_object(helvetica());
+        let content = doc.add_object(stream("BT /H 10 Tf 100 700 Td (A) Tj ET"));
+        let page = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages_id, "Contents" => content,
+            "Resources" => dictionary! { "Font" => dictionary! { "H" => font } },
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1, "MediaBox" => rect_array([0, 0, 612, 792]) }),
+        );
+        let a = page_glyphs(&doc, page).unwrap()[0].box_user.bbox();
+        let area = Rect { x0: a.x1 - into, y0: 690.0, x1: a.x1 + 50.0, y1: 720.0 };
+        let boxed = format!("BT /H 10 Tf 100 700 Td (A) Tj ET q 0 0 0 rg {} 690 50 30 re f Q", area.x0);
+        doc.objects.insert(content, Object::Stream(stream(&boxed)));
+        super::verify::verify_page(&doc, page, &[area], 1, b"tag")
+    };
+    assert!(!check(0.002), "0.002 pt into the area must fail");
+    assert!(check(0.0), "touching passes");
+    assert!(check(0.0005), "under the 0.001 pt rounding tolerance passes");
+}
