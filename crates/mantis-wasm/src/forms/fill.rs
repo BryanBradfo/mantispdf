@@ -544,7 +544,8 @@ fn add_button_states(doc: &mut Document, widget: ObjectId, da: &DefaultAppearanc
 
 /// /NeedAppearances false (every changed widget has our appearance, the
 /// others keep theirs; true only when an unchanged value our fonts cannot
-/// show has a widget without appearance) and no /XFA on the AcroForm.
+/// show has a widget without appearance), no /XFA on the AcroForm, no
+/// /NeedsRendering in the catalog.
 fn mark_form(doc: &mut Document, viewers_must_rebuild: bool) {
     let Some(root) = doc.trailer.get(b"Root").ok().and_then(|r| r.as_reference().ok()) else {
         return;
@@ -565,6 +566,10 @@ fn mark_form(doc: &mut Document, viewers_must_rebuild: bool) {
     if let Some(form) = form {
         form.set("NeedAppearances", viewers_must_rebuild);
         form.remove(b"XFA");
+    }
+    // The XFA renderer flag would make viewers ignore the AcroForm we filled.
+    if let Ok(catalog) = doc.get_dictionary_mut(root) {
+        catalog.remove(b"NeedsRendering");
     }
 }
 
@@ -1179,5 +1184,16 @@ mod tests {
         assert_eq!(as_states(&doc, &[ja, off]), vec!["Ja", "Off"]);
         let n = dict(&doc, ja).get(b"AP").unwrap().as_dict().unwrap().get(b"N").unwrap().as_dict().unwrap();
         assert!(n.has(b"Ja"));
+    }
+
+    #[test]
+    fn fill_drops_needs_rendering() {
+        let (mut doc, page) = base(0);
+        let f = text_field(&mut doc, page, "a", vec![]);
+        finish(&mut doc, page, &[f], &[f], vec![]);
+        let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(root).unwrap().set("NeedsRendering", true);
+        fill_document(&mut doc, &[(0, Value::Text("x".into()))]).unwrap();
+        assert!(!dict(&doc, root).has(b"NeedsRendering"));
     }
 }
