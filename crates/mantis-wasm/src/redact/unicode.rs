@@ -179,9 +179,10 @@ fn code(bytes: &[u8]) -> Option<u32> {
 /// False when reading stopped there or at a full map (or did not parse):
 /// the map is then incomplete.
 fn read_cmap(bytes: &[u8], map: &mut TextMap) -> bool {
-    // All of it must parse: a CMap read in part could leave codes unknown
-    // that the encoding would then read wrongly.
-    let Some(operations) = crate::rebuild::decode_complete(bytes) else {
+    // Only the map blocks are read; each must parse entirely (a block read
+    // in part could leave codes unknown that the encoding would then read
+    // wrongly). The PostScript around them is skipped.
+    let Some(operations) = map_blocks(bytes) else {
         return false;
     };
     let content = Content { operations };
@@ -193,6 +194,9 @@ fn read_cmap(bytes: &[u8], map: &mut TextMap) -> bool {
     for op in content.operations {
         match op.operator.as_str() {
             "endbfchar" => {
+                if op.operands.len() % 2 != 0 {
+                    return false;
+                }
                 for pair in op.operands.chunks_exact(2) {
                     work += string(&pair[1]).map_or(1, |b| (b.len() / 2).clamp(1, MAX_TEXT_UNITS));
                     if work > MAX_WORK || map.len() >= MAX_ENTRIES {
@@ -204,9 +208,12 @@ fn read_cmap(bytes: &[u8], map: &mut TextMap) -> bool {
                 }
             }
             "endbfrange" => {
+                if op.operands.len() % 3 != 0 {
+                    return false;
+                }
                 for triple in op.operands.chunks_exact(3) {
                     let (Some(lo), Some(hi)) = (string(&triple[0]).and_then(|b| code(&b)), string(&triple[1]).and_then(|b| code(&b))) else {
-                        continue;
+                        return false;
                     };
                     if hi < lo || hi - lo >= MAX_RANGE {
                         continue;
@@ -252,6 +259,222 @@ fn read_cmap(bytes: &[u8], map: &mut TextMap) -> bool {
         }
     }
     true
+}
+
+/// A CMap token: a string (hex or literal), `[`, `]`, any other word
+/// (keyword, name, number, `<<`, `>>`), or something malformed.
+#[derive(Debug, PartialEq)]
+enum Tok {
+    Str(Vec<u8>),
+    Open,
+    Close,
+    Word(Vec<u8>),
+    Bad,
+}
+
+fn is_delimiter(b: u8) -> bool {
+    b.is_ascii_whitespace() || b"()<>[]{}/%".contains(&b)
+}
+
+/// Index just past the literal string at `c[i] == b'('`, with its bytes.
+fn literal(c: &[u8], mut i: usize) -> (usize, Option<Vec<u8>>) {
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    i += 1;
+    while i < c.len() {
+        match c[i] {
+            b'\\' => {
+                i += 1;
+                match c.get(i) {
+                    Some(b'n') => out.push(b'\n'),
+                    Some(b'r') => out.push(b'\r'),
+                    Some(b't') => out.push(b'\t'),
+                    Some(b'b') => out.push(8),
+                    Some(b'f') => out.push(12),
+                    Some(d @ b'0'..=b'7') => {
+                        let mut v = u32::from(d - b'0');
+                        for _ in 0..2 {
+                            match c.get(i + 1) {
+                                Some(d @ b'0'..=b'7') => {
+                                    v = v * 8 + u32::from(d - b'0');
+                                    i += 1;
+                                }
+                                _ => break,
+                            }
+                        }
+                        out.push(v as u8);
+                    }
+                    Some(b'\r' | b'\n') => {}
+                    Some(other) => out.push(*other),
+                    None => return (i, None),
+                }
+            }
+            b'(' => {
+                depth += 1;
+                out.push(b'(');
+            }
+            b')' if depth == 0 => return (i + 1, Some(out)),
+            b')' => {
+                depth -= 1;
+                out.push(b')');
+            }
+            other => out.push(other),
+        }
+        i += 1;
+    }
+    (i, None)
+}
+
+/// The tokens of a CMap: `%` comments and `{ ... }` procedures skipped.
+fn tokens(c: &[u8]) -> Vec<Tok> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < c.len() {
+        match c[i] {
+            b if b.is_ascii_whitespace() || b == 0 => i += 1,
+            b'%' => {
+                while i < c.len() && c[i] != b'\n' && c[i] != b'\r' {
+                    i += 1;
+                }
+            }
+            b'{' => {
+                // A procedure: skipped, strings inside it included.
+                let mut depth = 0usize;
+                while i < c.len() {
+                    match c[i] {
+                        b'{' => depth += 1,
+                        b'}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                i += 1;
+                                break;
+                            }
+                        }
+                        b'(' => {
+                            i = literal(c, i).0;
+                            continue;
+                        }
+                        b'%' => {
+                            while i < c.len() && c[i] != b'\n' && c[i] != b'\r' {
+                                i += 1;
+                            }
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
+            }
+            b'}' => {
+                out.push(Tok::Bad);
+                i += 1;
+            }
+            b'(' => {
+                let (next, text) = literal(c, i);
+                out.push(text.map_or(Tok::Bad, Tok::Str));
+                i = next;
+            }
+            b'<' if c.get(i + 1) == Some(&b'<') => {
+                out.push(Tok::Word(b"<<".to_vec()));
+                i += 2;
+            }
+            b'>' if c.get(i + 1) == Some(&b'>') => {
+                out.push(Tok::Word(b">>".to_vec()));
+                i += 2;
+            }
+            b'<' => {
+                let end = c[i..].iter().position(|&b| b == b'>').map(|p| i + p);
+                let Some(end) = end else {
+                    out.push(Tok::Bad);
+                    break;
+                };
+                let digits: Vec<u8> = c[i + 1..end].iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
+                let mut bytes = Vec::with_capacity(digits.len() / 2 + 1);
+                let mut ok = digits.iter().all(u8::is_ascii_hexdigit);
+                if ok {
+                    for pair in digits.chunks(2) {
+                        let text = std::str::from_utf8(pair).unwrap_or("0");
+                        // An odd last digit counts as followed by 0.
+                        let text = if text.len() == 1 { format!("{text}0") } else { text.to_string() };
+                        match u8::from_str_radix(&text, 16) {
+                            Ok(v) => bytes.push(v),
+                            Err(_) => ok = false,
+                        }
+                    }
+                }
+                out.push(if ok { Tok::Str(bytes) } else { Tok::Bad });
+                i = end + 1;
+            }
+            b'>' | b')' => {
+                out.push(Tok::Bad);
+                i += 1;
+            }
+            b'[' => {
+                out.push(Tok::Open);
+                i += 1;
+            }
+            b']' => {
+                out.push(Tok::Close);
+                i += 1;
+            }
+            _ => {
+                let start = i;
+                i += 1;
+                while i < c.len() && !is_delimiter(c[i]) {
+                    i += 1;
+                }
+                out.push(Tok::Word(c[start..i].to_vec()));
+            }
+        }
+    }
+    out
+}
+
+/// The `bfchar` / `bfrange` blocks of a CMap as operations (operands, then
+/// `endbfchar` / `endbfrange`); None when a block does not parse: an
+/// unterminated block, or anything but strings (and arrays of strings in a
+/// bfrange) inside one.
+fn map_blocks(c: &[u8]) -> Option<Vec<lopdf::content::Operation>> {
+    let toks = tokens(c);
+    let mut ops = Vec::new();
+    let mut i = 0;
+    while i < toks.len() {
+        let end: &[u8] = match &toks[i] {
+            Tok::Word(w) if w == b"beginbfchar" => b"endbfchar",
+            Tok::Word(w) if w == b"beginbfrange" => b"endbfrange",
+            _ => {
+                i += 1;
+                continue;
+            }
+        };
+        i += 1;
+        let mut operands = Vec::new();
+        loop {
+            match toks.get(i)? {
+                Tok::Word(w) if w == end => break,
+                Tok::Str(b) => operands.push(Object::String(b.clone(), lopdf::StringFormat::Hexadecimal)),
+                Tok::Open if end == b"endbfrange" => {
+                    let mut items = Vec::new();
+                    i += 1;
+                    loop {
+                        match toks.get(i)? {
+                            Tok::Close => break,
+                            Tok::Str(b) => items.push(Object::String(b.clone(), lopdf::StringFormat::Hexadecimal)),
+                            _ => return None,
+                        }
+                        i += 1;
+                    }
+                    operands.push(Object::Array(items));
+                }
+                _ => return None,
+            }
+            i += 1;
+        }
+        ops.push(lopdf::content::Operation::new(std::str::from_utf8(end).unwrap_or(""), operands));
+        i += 1;
+    }
+    // A /ToUnicode without a single map block maps nothing we can trust.
+    (!ops.is_empty()).then_some(ops)
 }
 
 /// Simple fonts: the base encoding (WinAnsi, MacRoman, Standard; the

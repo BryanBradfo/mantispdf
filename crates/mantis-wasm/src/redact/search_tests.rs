@@ -468,3 +468,47 @@ fn private_use_and_symbolic_fonts_fail_closed() {
     let text_flags = ab_page(|d| simple_font("Type1", Some(Object::String(b"4".to_vec(), StringFormat::Literal)), Some("WinAnsiEncoding".into()), None, d));
     assert_eq!(undecodable(&text_flags), vec![1]);
 }
+
+/// (SECRET) in Helvetica whose /ToUnicode is `cmap`.
+fn secret_with_cmap(cmap: &str) -> Vec<u8> {
+    bytes(one_page("BT /H 10 Tf 100 700 Td (SECRET) Tj ET", |d| {
+        let tu = d.add_object(Stream::new(dictionary! {}, cmap.as_bytes().to_vec()));
+        let font = d.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding", "ToUnicode" => tu,
+        });
+        dictionary! { "Font" => dictionary! { "H" => font } }
+    }))
+}
+
+#[test]
+fn real_world_cmaps_are_read() {
+    let cmaps = [
+        // Word / Ghostscript style.
+        "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo\n<< /Registry (Adobe)\n/Ordering (UCS)\n/Supplement 0\n>> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<00> <FF>\nendcodespacerange\n2 beginbfchar\n<53> <0053>\n<45> <0045>\nendbfchar\n1 beginbfrange\n<52> <54> <0052>\nendbfrange\n1 beginbfchar\n<43> <0043>\nendbfchar\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n",
+        // pdfTeX: %-comment lines.
+        "%!PS-Adobe-3.0 Resource-CMap\n%%DocumentNeededResources: ProcSet (CIDInit)\n%%IncludeResource: ProcSet (CIDInit)\n%%BeginResource: CMap (TeX-OT1-0)\n%%Title: (TeX-OT1-0 TeX OT1 0)\n%%Version: 1.000\n%%EndComments\n/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo\n<< /Registry (TeX)\n/Ordering (OT1)\n/Supplement 0\n>> def\n/CMapName /TeX-OT1-0 def\n/CMapType 2 def\n1 begincodespacerange\n<00> <7F>\nendcodespacerange\n3 beginbfchar\n<53> <0053>\n<45> <0045>\n<43> <0043>\nendbfchar\n1 beginbfrange\n<52> <54> <0052>\nendbfrange\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n%%EndResource\n%%EOF\n",
+        // A PostScript procedure after the maps.
+        "/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /X def /CMapType 2 def 1 begincodespacerange <00> <FF> endcodespacerange 1 beginbfrange <41> <5A> <0041> endbfrange endcmap CMapName currentdict /CMap defineresource pop end end /foo { 1 2 add { (}) } if } bind def",
+    ];
+    for (i, cmap) in cmaps.iter().enumerate() {
+        let found = redact_search(&secret_with_cmap(cmap), "secret", &opts()).unwrap();
+        assert_eq!((found.pages.len(), found.undecodable_pages.clone()), (1, vec![]), "cmap {i}");
+    }
+    // A map block that does not parse still fails closed.
+    for broken in ["1 beginbfchar <53> endbfchar", "1 beginbfchar <53> <00G3> endbfchar", "1 beginbfrange <41> <5A> /x endbfrange", "1 beginbfchar <53> <0053>"] {
+        assert_eq!(redact_search(&secret_with_cmap(broken), "secret", &opts()).unwrap().undecodable_pages, vec![1], "{broken}");
+    }
+}
+
+#[test]
+fn a_real_pdftex_paper_is_searchable() {
+    let path = "/home/wingleet/Bureau/projects/interesting/2604.11201v2.pdf";
+    let Ok(pdf) = std::fs::read(path) else {
+        eprintln!("skipped: {path} not found");
+        return;
+    };
+    let found = redact_search(&pdf, "benchmark", &opts()).unwrap();
+    assert!(found.pages.iter().any(|p| p.page == 1), "pdftotext finds it on page 1");
+    assert!(!found.undecodable_pages.contains(&1), "{:?}", found.undecodable_pages);
+    eprintln!("undecodable pages of the paper: {:?}", found.undecodable_pages);
+}
