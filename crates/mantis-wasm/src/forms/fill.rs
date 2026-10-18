@@ -7,6 +7,8 @@ use super::appearance::{
     Frame, Layout, check_appearance, font_resource, frame_content, list_appearance, radio_appearance, text_appearance,
 };
 use super::tree::{FF_RADIOS_IN_UNISON, FieldRef, inherited, integer, read_form};
+#[cfg(test)]
+use super::tree::generated_radio_state;
 use super::{Field, FieldKind, MAX_VALUE_CHARS, Value, invalid};
 use crate::annotations::parse_numbers;
 use crate::doc_tools::pdfdoc_char;
@@ -41,16 +43,6 @@ enum Change {
 
 /// On state name used for a checkbox whose widgets have no "on" appearance.
 const DEFAULT_ON: &str = "Yes";
-
-/// On state name for radio widgets without an "on" appearance: /On, or
-/// /On2, /On3, ... when the group already uses it.
-pub(crate) fn generated_radio_state(on_states: &[String]) -> String {
-    let taken = |name: &str| on_states.iter().any(|s| s == name);
-    (1u32..)
-        .map(|k| if k == 1 { "On".to_string() } else { format!("On{k}") })
-        .find(|name| !taken(name))
-        .unwrap_or_default()
-}
 
 pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Result<(), String> {
     let tree = read_form(doc)?;
@@ -179,9 +171,7 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option
                         {
                             Change::Button { state: Some(DEFAULT_ON.as_bytes().to_vec()), generate: true }
                         }
-                        None if field.kind == FieldKind::Radio
-                            && field.widgets.iter().any(|w| w.on_state.is_none())
-                            && *name == generated_radio_state(&field.on_states) =>
+                        None if field_ref.generated_state.as_ref() == Some(name) =>
                         {
                             Change::Button { state: Some(name.as_bytes().to_vec()), generate: true }
                         }
@@ -679,7 +669,7 @@ mod tests {
         }));
         finish(&mut doc, page, &[field], &[with_ap, bare], vec![]);
         assert_eq!(generated_radio_state(&["On".into()]), "On2");
-        assert_eq!(generated_radio_state(&[]), "On");
+        assert_eq!(list_form(&crate::pdf_util::save_pdf(&mut doc.clone()).unwrap()).unwrap().fields[0].on_states, vec!["On", "On2"]);
         fill_document(&mut doc, &[(0, Value::Names(vec!["On2".into()]))]).unwrap();
         assert_eq!(dict(&doc, field).get(b"V").unwrap(), &Object::Name(b"On2".to_vec()));
         assert_eq!(as_states(&doc, &[with_ap, bare]), vec!["Off", "On2"]);
