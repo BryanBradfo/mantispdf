@@ -1,7 +1,8 @@
 /**
  * Editor reducer with undo/redo. Every committed change pushes the previous `items` snapshot on
  * `past` (at most `HISTORY_LIMIT`). Between `beginGesture` and `endGesture` (a pointer drag),
- * changes are applied live but committed as a single undo step when the gesture ends.
+ * changes are applied live but committed as a single undo step when the gesture ends, or dropped
+ * altogether by `cancelGesture`.
  */
 import { resizeItem, translateItem, type Handle } from "./geometry";
 import { HISTORY_LIMIT, type EditorState, type Item, type ItemPatch, type NewItem, type Point } from "./model";
@@ -23,7 +24,8 @@ export type EditorAction =
   | { type: "undo" }
   | { type: "redo" }
   | { type: "beginGesture" }
-  | { type: "endGesture" };
+  | { type: "endGesture" }
+  | { type: "cancelGesture" };
 
 /** Apply a change to `items`; outside a gesture it becomes one undo step. */
 function commit(state: EditorState, items: Item[], extra: Partial<EditorState> = {}): EditorState {
@@ -169,5 +171,12 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       return state.gestureBase === null ? { ...state, gestureBase: state.items } : state;
     case "endGesture":
       return endGesture(state);
+    case "cancelGesture": {
+      // Back to the items of the gesture start, as if it never happened (no history entry).
+      const base = state.gestureBase;
+      if (base === null) return state;
+      const selectedId = state.selectedId !== null && base.some((it) => it.id === state.selectedId) ? state.selectedId : null;
+      return { ...state, items: base, selectedId, gestureBase: null };
+    }
   }
 }

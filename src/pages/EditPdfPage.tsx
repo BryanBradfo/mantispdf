@@ -9,7 +9,7 @@ import PropertiesPanel from "../components/editor/PropertiesPanel";
 import Toolbar, { type Tool } from "../components/editor/Toolbar";
 import { unsupportedChars, unsupportedMessage } from "../lib/editor/afm";
 import {
-  LIMITS,
+  addError,
   imageBudgetError,
   imagePayloadBytes,
   initialEditorState,
@@ -93,6 +93,9 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const editNewText = useRef(false);
+  // Id of a text box created by a click and still being typed into for the first time. Its
+  // creation and first text form one gesture, so they are a single undo step.
+  const newTextId = useRef<string | null>(null);
   const urls = useRef(new Map<Blob, string>());
 
   const { items, page, selectedId } = state;
@@ -122,7 +125,10 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
     if (!editNewText.current) return;
     editNewText.current = false;
     const it = items.find((i) => i.id === selectedId);
-    if (it?.kind === "text") setEditingId(it.id);
+    if (it?.kind === "text") {
+      newTextId.current = it.id;
+      setEditingId(it.id);
+    }
   }, [items, selectedId]);
 
   // Edits live only in memory: warn before the tab is closed or reloaded.
@@ -142,36 +148,46 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
     if (next !== "image") setPendingImage(null);
   };
 
+  /** The limit check shared by every way of adding an item; shows why it is refused. */
+  const allowAdd = (item: NewItem | Item): boolean => {
+    const problem = addError(items, item);
+    setNotice(problem);
+    return problem === null;
+  };
+
   const onCreate = (item: NewItem): boolean => {
-    if (items.length >= LIMITS.items) {
-      setNotice(`A document can hold at most ${LIMITS.items} edits.`);
-      return false;
+    if (!allowAdd(item)) return false;
+    if (item.kind === "image") setPendingImage(null);
+    if (item.kind === "text") {
+      editNewText.current = true;
+      // Closed by onCommitText: the box and its first text become one undo step.
+      dispatch({ type: "beginGesture" });
     }
-    if (item.kind === "image") {
-      const problem = imageBudgetError(items, item.image);
-      if (problem) {
-        setNotice(problem);
-        return false;
-      }
-      setPendingImage(null);
-    }
-    setNotice(null);
-    if (item.kind === "text") editNewText.current = true;
     dispatch({ type: "add", item });
     return true;
   };
 
+  const duplicate = (id: string) => {
+    const it = items.find((i) => i.id === id);
+    if (it && allowAdd(it)) dispatch({ type: "duplicate", id });
+  };
+
   const onCommitText = (id: string, text: string) => {
     setEditingId(null);
+    const isNew = newTextId.current === id;
+    newTextId.current = null;
     const it = items.find((i) => i.id === id);
     if (!it || it.kind !== "text") return;
-    // An empty text box draws nothing: drop it rather than leave an invisible item.
+    // An empty text box draws nothing: a new one is undone as if never created, an existing
+    // one is deleted.
     if (text.trim() === "") {
-      dispatch({ type: "delete", id });
+      dispatch(isNew ? { type: "cancelGesture" } : { type: "delete", id });
       return;
     }
-    if (text === it.text) return;
-    dispatch({ type: "update", id, props: { text, rect: fitTextRect(it.rect, text, it.font, it.size, it.lineHeight) } });
+    if (text !== it.text) {
+      dispatch({ type: "update", id, props: { text, rect: fitTextRect(it.rect, text, it.font, it.size, it.lineHeight) } });
+    }
+    if (isNew) dispatch({ type: "endGesture" });
   };
 
   const pickImage = () => fileRef.current?.click();
@@ -283,6 +299,7 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
               imageUrl={imageUrl}
               dispatch={dispatch}
               onCreate={onCreate}
+              onDuplicate={duplicate}
               onTool={chooseTool}
               onPickImage={pickImage}
               onEditText={setEditingId}
@@ -300,7 +317,7 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
               onEditText={() => setEditingId(selected.id)}
               onForward={() => dispatch({ type: "forward", id: selected.id })}
               onBackward={() => dispatch({ type: "backward", id: selected.id })}
-              onDuplicate={() => dispatch({ type: "duplicate", id: selected.id })}
+              onDuplicate={() => duplicate(selected.id)}
               onDelete={() => dispatch({ type: "delete", id: selected.id })}
             />
           ) : (

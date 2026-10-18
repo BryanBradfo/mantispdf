@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { unsupportedChars, unsupportedMessage } from "../../lib/editor/afm";
 import { LIMITS, type TextItem } from "../../lib/editor/model";
 import { visibleToPreviewRect, type Size } from "../../lib/editor/geometry";
-import { cssColor, cssFont } from "./svgStyle";
+import { cssColor, cssFont, textareaBaselineShift } from "./svgStyle";
 
 interface Props {
   item: TextItem;
@@ -17,7 +17,9 @@ interface Props {
 
 /**
  * Textarea over a text box, in the box's font (CSS approximation) and size scaled to the preview.
- * The PDF wraps with AFM metrics; the box grows on commit so no line is lost.
+ * While typing, the browser wraps (an accepted approximation); the canvas and the PDF use the engine
+ * layout, and the box grows on commit so no line is lost. The textarea is shifted so its first
+ * baseline sits where the engine draws it, and the text does not jump on commit.
  */
 export default function TextEditOverlay({ item, previewSize, pageSize, onCommit }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -42,19 +44,28 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
   const box = visibleToPreviewRect(item.rect, previewSize, pageSize);
   const scale = previewSize[0] / pageSize[0];
   const bad = unsupportedChars(text);
+  const fontPx = item.size * scale;
+  // Usually negative: the textarea starts a little above the box, the outline stays on the box.
+  const shift = textareaBaselineShift(item.font, item.lineHeight) * fontPx;
+  const minHeight = box.height - shift;
 
   // Grow with the content (never shorter than the box) so no typed line is hidden.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "0px";
-    const height = Math.max(box.height, el.scrollHeight);
+    const height = Math.max(minHeight, el.scrollHeight);
     el.style.height = `${height}px`;
     setAreaHeight(height);
-  }, [text, box.height, box.width, item.size, item.font, item.lineHeight]);
+  }, [text, minHeight, box.width, fontPx, item.font, item.lineHeight]);
 
   return (
     <>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute z-10 outline outline-2 outline-mantis-500"
+        style={{ left: box.left, top: box.top, width: box.width, height: Math.max(box.height, areaHeight + shift) }}
+      />
       <textarea
         ref={ref}
         value={text}
@@ -64,7 +75,11 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
         aria-describedby={bad !== "" ? messageId : undefined}
         spellCheck
         onChange={(e) => setText(e.target.value)}
-        onBlur={() => commit(false)}
+        onBlur={(e) => {
+          // Switching to another window blurs too: keep editing, focus comes back with the window.
+          if (e.relatedTarget === null && (!document.hasFocus() || document.visibilityState === "hidden")) return;
+          commit(false);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
             e.preventDefault();
@@ -73,14 +88,14 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
           }
         }}
         onPointerDown={(e) => e.stopPropagation()}
-        className="absolute z-10 resize-none overflow-hidden border-0 bg-white/70 p-0 outline outline-2 outline-mantis-500 focus:ring-0"
+        className="absolute z-10 resize-none overflow-hidden border-0 bg-white/70 p-0 outline-none focus:ring-0"
         style={{
           left: box.left,
-          top: box.top,
+          top: box.top + shift,
           width: box.width,
           fontFamily: cssFont(item.font).family,
           fontWeight: cssFont(item.font).weight,
-          fontSize: item.size * scale,
+          fontSize: fontPx,
           lineHeight: item.lineHeight,
           textAlign: item.align,
           color: cssColor(item.color),
@@ -95,7 +110,7 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
           id={messageId}
           role="alert"
           className="absolute z-10 max-w-xs rounded-md bg-red-600 px-2 py-1 text-xs text-white shadow"
-          style={{ left: box.left, top: box.top + Math.max(box.height, areaHeight) + 4 }}
+          style={{ left: box.left, top: box.top + Math.max(box.height, areaHeight + shift) + 4 }}
         >
           {unsupportedMessage(bad)}. They cannot be saved with the standard PDF fonts.
         </p>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LIMITS, clampWidth, imageBudgetError, imagePayloadBytes, type ImageItem, type ImageSource, type Item } from "./model";
+import { LIMITS, addError, clampWidth, imageBudgetError, imagePayloadBytes, type ImageItem, type ImageSource, type Item } from "./model";
 
 const source = (bytes: number): ImageSource => ({ blob: new Blob([]), width: 10, height: 10, bytes });
 
@@ -63,5 +63,33 @@ describe("imageBudgetError", () => {
     const half = LIMITS.maxImageBytes / 2;
     expect(imageBudgetError([image("a", half)], source(half))).toBeNull();
     expect(imageBudgetError([image("a", half), image("b", 1)], source(half))).toMatch(/512 MB/);
+  });
+});
+
+describe("addError", () => {
+  const rect = (id: string): Item => ({
+    id,
+    kind: "rect",
+    page: 1,
+    rect: [0, 0, 1, 1],
+    stroke: { kind: "none" },
+    width: 0,
+    fill: { kind: "none" },
+    opacity: 1,
+  });
+
+  it("accepts an item while the document is under the item limit", () => {
+    expect(addError([rect("a")], rect("b"))).toBeNull();
+  });
+
+  it("refuses any item past the item limit", () => {
+    const items = Array.from({ length: LIMITS.items }, (_, i) => rect(`r${i}`));
+    expect(addError(items, rect("x"))).toMatch(/2000 edits/);
+  });
+
+  it("applies the image budget to images (a duplicate counts again)", () => {
+    const items: Item[] = Array.from({ length: LIMITS.maxImages }, (_, i) => image(`i${i}`, 1));
+    expect(addError(items, items[0])).toMatch(/200 images/);
+    expect(addError(items.slice(1), items[0])).toBeNull();
   });
 });

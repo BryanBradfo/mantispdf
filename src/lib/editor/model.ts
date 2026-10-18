@@ -194,6 +194,15 @@ export function imagePayloadBytes(fileBytes: number, width: number, height: numb
 }
 
 /**
+ * Why `item` (a new item or a duplicate of an existing one) cannot be added to `items`: the item
+ * limit, or for an image the image budget. Null when it fits.
+ */
+export function addError(items: readonly Item[], item: NewItem | Item): string | null {
+  if (items.length >= LIMITS.items) return `A document can hold at most ${LIMITS.items} edits.`;
+  return item.kind === "image" ? imageBudgetError(items, item.image) : null;
+}
+
+/**
  * Why one more placement of `image` would exceed the engine's image budget (all pages count,
  * every placement carries its own data), or null when it fits.
  */

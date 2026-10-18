@@ -48,6 +48,9 @@ const CLICK_SIZE: Record<"text" | "rect" | "ellipse" | "highlight" | "whiteout" 
 };
 const CLICK_LINE_LENGTH = 120;
 
+/** Consecutive arrow-key nudges of one item closer together than this are one undo step. */
+const NUDGE_IDLE_MS = 500;
+
 /** Tools that stay active after creating an item (several strokes in a row are common). */
 const STICKY_TOOLS: ReadonlySet<Tool> = new Set(["draw", "highlight"]);
 
@@ -88,6 +91,8 @@ interface Props {
   dispatch: Dispatch<EditorAction>;
   /** Adds an item unless a limit refuses it (the page shows why); true when added. */
   onCreate: (item: NewItem) => boolean;
+  /** Duplicates an item unless a limit refuses it (same checks as `onCreate`). */
+  onDuplicate: (id: string) => void;
   onTool: (tool: Tool) => void;
   onPickImage: () => void;
   onEditText: (id: string | null) => void;
@@ -148,11 +153,51 @@ export default function EditorCanvas(props: Props) {
   };
   const toVisible = (px: Point): Point => previewToVisiblePoint(px, preview, pageSize);
 
-  const cancelGesture = () => {
-    if (gesture.current?.kind === "move" || gesture.current?.kind === "resize") dispatch({ type: "endGesture" });
+  /**
+   * Abandon the pointer gesture: a half-made shape is dropped; a move or resize is reverted
+   * (`revert`, Escape) or kept as one undo step.
+   */
+  const cancelGesture = (revert = false) => {
+    const g = gesture.current;
     gesture.current = null;
     setDraft(null);
+    if (g?.kind === "move" || g?.kind === "resize") dispatch({ type: revert ? "cancelGesture" : "endGesture" });
   };
+
+  // Arrow-key nudges of one item are grouped into one undo step: the group ends after
+  // `NUDGE_IDLE_MS` without a nudge, or before any other key or pointer action. (Not on keyup:
+  // each tap is a keydown + keyup, so that would make every tap its own step.)
+  const nudging = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const endNudge = () => {
+    const n = nudging.current;
+    if (!n) return;
+    clearTimeout(n.timer);
+    nudging.current = null;
+    dispatch({ type: "endGesture" });
+  };
+  const nudge = (id: string, dx: number, dy: number) => {
+    if (nudging.current && nudging.current.id !== id) endNudge();
+    if (!nudging.current) {
+      dispatch({ type: "beginGesture" });
+      nudging.current = { id, timer: setTimeout(endNudge, NUDGE_IDLE_MS) };
+    } else {
+      clearTimeout(nudging.current.timer);
+      nudging.current.timer = setTimeout(endNudge, NUDGE_IDLE_MS);
+    }
+    dispatch({ type: "move", id, dx, dy });
+  };
+  const endNudgeRef = useRef(endNudge);
+  endNudgeRef.current = endNudge;
+  useEffect(() => {
+    const end = () => endNudgeRef.current();
+    document.addEventListener("pointerdown", end, true);
+    window.addEventListener("blur", end);
+    return () => {
+      document.removeEventListener("pointerdown", end, true);
+      window.removeEventListener("blur", end);
+      end();
+    };
+  }, []);
 
   /** Build the new item of a creation gesture (drag rect or a click default). */
   const buildItem = (g: Extract<Gesture, { kind: "create" }>): NewItem | null => {
@@ -315,19 +360,22 @@ export default function EditorCanvas(props: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isTyping(e.target)) return;
+      // Mid-drag only Escape applies: no tool switch, undo or redo under the pointer.
+      if (gesture.current && e.key !== "Escape") return;
+      if (nudging.current && !e.key.startsWith("Arrow")) endNudge();
       const key = e.key.toLowerCase();
       if (e.ctrlKey || e.metaKey) {
         if (e.altKey) return;
         if (key === "z" && !e.shiftKey) dispatch({ type: "undo" });
         else if ((key === "z" && e.shiftKey) || key === "y") dispatch({ type: "redo" });
-        else if (key === "d" && selectedId) dispatch({ type: "duplicate" });
+        else if (key === "d" && selected) props.onDuplicate(selected.id);
         else return;
         e.preventDefault();
         return;
       }
       if (e.altKey) return;
       if (e.key === "Escape") {
-        if (gesture.current) cancelGesture();
+        if (gesture.current) cancelGesture(true);
         else if (selectedId) dispatch({ type: "select", id: null });
         else if (tool !== "select") props.onTool("select");
         else return;
@@ -339,16 +387,16 @@ export default function EditorCanvas(props: Props) {
       const onCanvas = target === document.body || (target !== null && rootRef.current?.contains(target) === true);
       if (onCanvas && selected && !gesture.current) {
         const step = e.shiftKey ? 10 : 1;
-        const nudge: Record<string, [number, number]> = {
+        const arrows: Record<string, [number, number]> = {
           ArrowLeft: [-step, 0],
           ArrowRight: [step, 0],
           ArrowUp: [0, step],
           ArrowDown: [0, -step],
         };
-        const d = nudge[e.key];
+        const d = arrows[e.key];
         if (d) {
           e.preventDefault();
-          dispatch({ type: "move", id: selected.id, dx: d[0], dy: d[1] });
+          nudge(selected.id, d[0], d[1]);
           return;
         }
         if (e.key === "Delete" || e.key === "Backspace") {
@@ -373,10 +421,9 @@ export default function EditorCanvas(props: Props) {
     return () => document.removeEventListener("keydown", onKey);
   });
 
-  // A page switch or tool change abandons a half-made shape.
+  // A page switch or tool change abandons a half-made shape (a move or resize is kept).
   useEffect(() => {
-    gesture.current = null;
-    setDraft(null);
+    cancelGesture();
   }, [page, tool]);
 
   if (degenerate) {
@@ -602,7 +649,7 @@ export default function EditorCanvas(props: Props) {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          onPointerCancel={cancelGesture}
+          onPointerCancel={() => cancelGesture()}
           onDoubleClick={(e) => {
             if (tool !== "select") return;
             const hit = hitTestItems(items, page, toVisible(pointerPx(e)), Math.max(HIT_SLOP, 6 / scale));

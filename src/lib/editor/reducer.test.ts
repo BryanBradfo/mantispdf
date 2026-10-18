@@ -257,4 +257,37 @@ describe("editorReducer", () => {
     expect(editorReducer(s, { type: "select", id: "nope" })).toBe(s);
     expect(editorReducer(s, { type: "select", id: "item-1" }).selectedId).toBe("item-1");
   });
+
+  it("cancelGesture puts the items back as they were when the gesture began, without history", () => {
+    const s0 = run([{ type: "add", item: rect() }]);
+    let s = editorReducer(s0, { type: "beginGesture" });
+    s = editorReducer(s, { type: "move", id: "item-1", dx: 30, dy: 5 });
+    s = editorReducer(s, { type: "cancelGesture" });
+    expect(s.items).toBe(s0.items);
+    expect(s.past).toBe(s0.past);
+    expect(s.future).toBe(s0.future);
+    expect(s.gestureBase).toBeNull();
+    expect(s.selectedId).toBe("item-1");
+  });
+
+  it("cancelGesture drops an item added inside the gesture and clears its selection", () => {
+    const s0 = run([{ type: "add", item: rect() }]);
+    const s = run([{ type: "beginGesture" }, { type: "add", item: line() }, { type: "cancelGesture" }], s0);
+    expect(s.items).toBe(s0.items);
+    expect(s.selectedId).toBeNull();
+    expect(s.past).toHaveLength(1);
+  });
+
+  it("cancelGesture outside a gesture does nothing", () => {
+    const s0 = run([{ type: "add", item: rect() }]);
+    expect(editorReducer(s0, { type: "cancelGesture" })).toBe(s0);
+  });
+
+  it("an item added and edited inside one gesture is a single undo step", () => {
+    let s = run([{ type: "beginGesture" }, { type: "add", item: rect() }]);
+    s = run([{ type: "update", id: "item-1", props: { width: 5 } }, { type: "endGesture" }], s);
+    expect(s.past).toHaveLength(1);
+    s = editorReducer(s, { type: "undo" });
+    expect(s.items).toEqual([]);
+  });
 });
