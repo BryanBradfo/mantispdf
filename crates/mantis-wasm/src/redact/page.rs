@@ -75,7 +75,7 @@ fn edit_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, bud
     // must never lose text with no box over it.
     report.uncovered = merge_boxes(std::mem::take(&mut report.uncovered));
     let boxes: Vec<Rect> = rects.iter().chain(&report.uncovered).copied().collect();
-    let content = doc.add_object(flate_stream(Dictionary::new(), &with_boxes(new_ops, &boxes, fill)));
+    let content = doc.add_object(flate_stream(Dictionary::new(), &with_boxes(new_ops, &boxes, fill)?));
     let dict = doc.get_dictionary_mut(page).map_err(|_| Unsupported::new("page not found"))?;
     dict.set("Contents", content);
     dict.set("Resources", Object::Dictionary(resources));
@@ -129,7 +129,7 @@ fn blank_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill) ->
         let vb = VisibleBox::of_page(doc, page);
         dict.set("MediaBox", [vb.x0, vb.y0, vb.x1, vb.y1].map(|v| Object::Real(v as f32)).to_vec());
     }
-    let content = doc.add_object(flate_stream(Dictionary::new(), &with_boxes(Vec::new(), rects, fill)));
+    let content = doc.add_object(flate_stream(Dictionary::new(), &with_boxes(Vec::new(), rects, fill)?));
     dict.set("Contents", content);
     dict.set("Resources", Dictionary::new());
     doc.objects.insert(page, Object::Dictionary(dict));
@@ -162,11 +162,12 @@ fn merge_boxes(mut boxes: Vec<Rect>) -> Vec<Rect> {
 /// rect, drawn in default user space: the page content runs inside `q`/`Q`
 /// deep enough that its own `Q` never pops past it, every `q` it leaves
 /// open closed first.
-fn with_boxes(ops: Vec<Operation>, rects: &[Rect], fill: Fill) -> Vec<u8> {
+fn with_boxes(ops: Vec<Operation>, rects: &[Rect], fill: Fill) -> Result<Vec<u8>, Unsupported> {
     // The content may pop more than it pushes (`excess`) and leave some open:
     // enough `q` before it that it never reaches the page level, and a `Q`
-    // for every one still open after it.
-    let (open, excess) = save_balance(&encode_ops(&ops)).unwrap_or((0, 0));
+    // for every one still open after it. Content whose balance cannot be
+    // counted is Unsupported (the page then needs a raster).
+    let (open, excess) = save_balance(&encode_ops(&ops)).ok_or_else(|| Unsupported::new("redacted content cannot be parsed"))?;
     let mut all = Vec::with_capacity(ops.len() + rects.len() * 2 + excess + open + 8);
     all.extend((0..=excess).map(|_| Operation::new("q", vec![])));
     all.extend(ops);
@@ -181,7 +182,7 @@ fn with_boxes(ops: Vec<Operation>, rects: &[Rect], fill: Fill) -> Vec<u8> {
         all.push(Operation::new("f", vec![]));
     }
     all.push(Operation::new("Q", vec![]));
-    encode_ops(&all)
+    Ok(encode_ops(&all))
 }
 
 /// Remove the page's annotations whose /Rect meets a rect (any subtype; one
@@ -244,4 +245,17 @@ pub(crate) fn leak_planted() -> bool {
 #[cfg(not(test))]
 pub(crate) fn leak_planted() -> bool {
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_whose_saves_cannot_be_counted_is_unsupported() {
+        // An operator the content parser stops at: the q/Q balance is unknown.
+        let ops = vec![Operation::new("a)b", vec![])];
+        assert!(with_boxes(ops, &[], Fill::Black).is_err());
+        assert!(with_boxes(vec![Operation::new("q", vec![])], &[], Fill::Black).is_ok());
+    }
 }
