@@ -20,12 +20,14 @@ export type Rotation = 0 | 90 | 180 | 270;
 
 /**
  * The picked image file, read lazily when the job is built. `width`/`height` are the upright
- * (EXIF applied) pixel size, used for the aspect ratio of the placement.
+ * (EXIF applied) pixel size, used for the aspect ratio of the placement. `bytes` is what one
+ * placement adds to the engine's image budget (`imagePayloadBytes`).
  */
 export interface ImageSource {
   blob: Blob;
   width: number;
   height: number;
+  bytes: number;
 }
 
 interface Base {
@@ -158,13 +160,55 @@ export const LIMITS = {
   strokePoints: 5000,
   textChars: 5000,
   coord: 1e6,
+  /** Rectangles and ellipses: 0 draws no outline. */
   minWidth: 0,
+  /** Lines, arrows and drawings must stay visible (the engine refuses 0). */
+  minStrokeWidth: 0.1,
   maxWidth: 100,
   minFontSize: 4,
   maxFontSize: 400,
   minLineHeight: 0.5,
   maxLineHeight: 5,
+  /** Image items per job (`MAX_IMAGES`). */
+  maxImages: 200,
+  /** Image data of all image items together (`MAX_IMAGE_BYTES`): JPEG bytes plus RGBA pixels. */
+  maxImageBytes: 512 * 1024 * 1024,
 } as const;
+
+/** Kinds with a stroke `width`. */
+export type StrokedKind = "rect" | "ellipse" | "line" | "freehand";
+
+/** `width` clamped to what the engine accepts for `kind` (a non-number becomes the minimum). */
+export function clampWidth(kind: StrokedKind, width: number): number {
+  const min = kind === "line" || kind === "freehand" ? LIMITS.minStrokeWidth : LIMITS.minWidth;
+  if (!Number.isFinite(width)) return min;
+  return Math.min(LIMITS.maxWidth, Math.max(min, width));
+}
+
+/**
+ * Bytes the engine receives for one placement of an image: the file itself when it is a JPEG
+ * passed through as is, else its RGBA pixels (like `buildEditJob`).
+ */
+export function imagePayloadBytes(fileBytes: number, width: number, height: number, jpegPassthrough: boolean): number {
+  return jpegPassthrough ? fileBytes : width * height * 4;
+}
+
+/**
+ * Why one more placement of `image` would exceed the engine's image budget (all pages count,
+ * every placement carries its own data), or null when it fits.
+ */
+export function imageBudgetError(items: readonly Item[], image: ImageSource): string | null {
+  let count = 1;
+  let bytes = image.bytes;
+  for (const it of items) {
+    if (it.kind !== "image") continue;
+    count += 1;
+    bytes += it.image.bytes;
+  }
+  if (count > LIMITS.maxImages) return `A document can hold at most ${LIMITS.maxImages} images.`;
+  if (bytes > LIMITS.maxImageBytes) return "Images can add up to at most 512 MB of image data per document.";
+  return null;
+}
 
 export const NO_PAINT: Paint = { kind: "none" };
 export const rgbPaint = (color: Rgb): Paint => ({ kind: "rgb", color });

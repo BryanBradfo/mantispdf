@@ -39,7 +39,7 @@ function fakeReader(bytes: Map<Blob, Uint8Array>): ImageReader & { decodes: numb
 }
 
 function imageItem(blob: Blob, rotation: ImageItem["rotation"] = 0, id = "img"): ImageItem {
-  return { id, kind: "image", page: 2, rect: [10, 20, 40, 20], image: { blob, width: 4, height: 2 }, opacity: 0.8, rotation };
+  return { id, kind: "image", page: 2, rect: [10, 20, 40, 20], image: { blob, width: 4, height: 2, bytes: 32 }, opacity: 0.8, rotation };
 }
 
 describe("readEditImage", () => {

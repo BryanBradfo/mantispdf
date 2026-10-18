@@ -62,6 +62,12 @@ describe("afm", () => {
     expect(unsupportedChars("a😀b😀")).toBe("😀");
     expect(unsupportedChars("café")).toBe("");
   });
+
+  it("does not flag line breaks and tabs, which the engine turns into spaces", () => {
+    expect(unsupportedChars("one\ntwo\r\nthree\rfour\tfive")).toBe("");
+    expect(unsupportedChars("a\n日")).toBe("日");
+    expect(unsupportedChars("\u0001")).toBe("\u0001");
+  });
 });
 
 describe("wrapLines", () => {

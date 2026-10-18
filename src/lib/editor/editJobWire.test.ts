@@ -42,8 +42,8 @@ const base = { page: 1, opacity: 1 };
 const rgb: [number, number, number] = [0, 0, 0];
 const items: Item[] = [
   { ...base, id: "1", kind: "text", rect: [0, 0, 9, 9], text: "a", font: "Helvetica", size: 12, color: rgb, align: "left", lineHeight: 1.2 },
-  { ...base, id: "2", kind: "image", rect: [0, 0, 9, 9], image: { blob: jpegBlob, width: 4, height: 2 }, rotation: 0 },
-  { ...base, id: "3", kind: "image", rect: [0, 0, 9, 9], image: { blob: pngBlob, width: 1, height: 1 }, rotation: 90 },
+  { ...base, id: "2", kind: "image", rect: [0, 0, 9, 9], image: { blob: jpegBlob, width: 4, height: 2, bytes: jpegBlob.size }, rotation: 0 },
+  { ...base, id: "3", kind: "image", rect: [0, 0, 9, 9], image: { blob: pngBlob, width: 1, height: 1, bytes: 4 }, rotation: 90 },
   { ...base, id: "4", kind: "rect", rect: [0, 0, 9, 9], stroke: { kind: "rgb", color: rgb }, width: 1, fill: { kind: "none" } },
   { ...base, id: "5", kind: "ellipse", rect: [0, 0, 9, 9], stroke: { kind: "none" }, width: 1, fill: { kind: "rgb", color: rgb } },
   { ...base, id: "6", kind: "line", from: [0, 0], to: [5, 5], color: rgb, width: 2, arrowStart: false, arrowEnd: true },

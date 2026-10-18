@@ -24,10 +24,15 @@ export function winAnsiByte(ch: string): number | null {
   return CP1252_HIGH.get(cp) ?? null;
 }
 
-/** Characters of `text` the standard fonts cannot show, deduplicated, in order of first appearance. */
+/**
+ * Characters of a text box the standard fonts cannot show, deduplicated, in order of first
+ * appearance. `\r`, `\n` and `\t` are not reported: the engine checks the text with them replaced
+ * by spaces (they break lines and words, they are never drawn).
+ */
 export function unsupportedChars(text: string): string {
   let bad = "";
   for (const ch of text) {
+    if (ch === "\r" || ch === "\n" || ch === "\t") continue;
     if (winAnsiByte(ch) === null && !bad.includes(ch)) bad += ch;
   }
   return bad;

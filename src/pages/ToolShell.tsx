@@ -8,11 +8,13 @@ interface Props {
   heading: string;
   intro: string;
   children: ReactNode;
+  /** Wider column for tools with a large workspace (the Edit PDF editor). */
+  wide?: boolean;
 }
 
-export default function ToolShell({ title, description, path, heading, intro, children }: Props) {
+export default function ToolShell({ title, description, path, heading, intro, children, wide = false }: Props) {
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
+    <div className={`mx-auto px-4 py-8 ${wide ? "max-w-6xl" : "max-w-2xl"}`}>
       <PageSEO title={title} description={description} path={path} />
       <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{heading}</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">{intro}</p>
