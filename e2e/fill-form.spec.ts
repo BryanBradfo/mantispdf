@@ -36,22 +36,11 @@ function watchOrigin(page: Page, origin: string): string[] {
 /** Opens `file` in the Fill PDF form page; `opened` is what shows once it is read. */
 async function openForm(page: Page, file: string, opened: string) {
   await page.goto("/fill-form");
-  const input = page.locator('input[type="file"]').first();
-  const shown = page.getByText(opened);
-  const loading = page.getByText("Engine is still loading, please wait a moment.");
-  // The file is picked once; it is picked again only while the page says the engine was not
-  // ready for it. That message stays up while an accepted pick is being read, so each new pick
-  // first gives the previous one a second to show (a new pick would supersede it).
+  // The drop zone says when the engine can take a file: one pick, no retries.
+  const input = page.locator('input[type="file"][data-engine-ready="true"]');
+  await input.waitFor({ state: "attached", timeout: 20000 });
   await input.setInputFiles(file);
-  for (let attempt = 0; attempt < 40; attempt++) {
-    await expect(shown.or(loading).first()).toBeVisible({ timeout: 20000 });
-    if (await shown.isVisible()) break;
-    const through = await shown.waitFor({ timeout: 1000 }).then(() => true, () => false);
-    if (through) break;
-    // The drop zone is gone once a pick was read: never wait on a missing input.
-    await input.setInputFiles(file, { timeout: 2000 }).catch(() => undefined);
-  }
-  await expect(shown).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText(opened)).toBeVisible({ timeout: 20000 });
 }
 
 async function download(page: Page): Promise<{ bytes: Uint8Array; name: string }> {

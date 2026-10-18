@@ -50,7 +50,8 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
   const [missing, setMissing] = useState<FormField[] | null>(null);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const signed = useMemo(() => hasFilledSignature(form.fields), [form.fields]);
+  // The engine's flag covers signed fields and document-level signatures (/Perms UR3, DocMDP).
+  const signed = useMemo(() => form.signed || hasFilledSignature(form.fields), [form]);
 
   const pageSize = sizes[page - 1] ?? null;
   const pagesWithFields = useMemo(

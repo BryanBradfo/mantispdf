@@ -29,19 +29,11 @@ const baselineBelow = (top: number, size = 16) => top + HELVETICA_ASCENT * size;
 
 async function openEditor(page: Page, file: string, label: string) {
   await page.goto("/edit-pdf");
-  const input = page.locator('input[type="file"]').first();
-  const opened = page.getByText(label);
-  const loading = page.getByText("Engine is still loading, please wait a moment.");
-  // The file is picked once; it is picked again only when the page says the engine was not
-  // ready for it (that pick was refused, nothing else is in flight).
+  // The drop zone says when the engine can take a file: one pick, no retries.
+  const input = page.locator('input[type="file"][data-engine-ready="true"]');
+  await input.waitFor({ state: "attached", timeout: 20000 });
   await input.setInputFiles(file);
-  for (let attempt = 0; attempt < 40; attempt++) {
-    await expect(opened.or(loading).first()).toBeVisible({ timeout: 20000 });
-    if (await opened.isVisible()) break;
-    await page.waitForTimeout(250);
-    await input.setInputFiles(file);
-  }
-  await expect(opened).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText(label)).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId("editor-overlay")).toBeVisible();
 }
 
