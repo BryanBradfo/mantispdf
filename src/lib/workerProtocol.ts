@@ -5,7 +5,8 @@ import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "./geometryJob";
 import type { StampJobSpec } from "./stampJob";
 import type { FormInfo } from "./forms/model";
 import type { FormWireEntry } from "./forms/toWire";
-import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, RedactSearchWire, SearchOptionsWire } from "./redact/toJob";
+import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, SearchOptionsWire } from "./redact/toJob";
+import type { RedactSearchResultWire } from "./redact/searchWire";
 
 /** Correlates a request with its response/progress/failure messages. */
 export type ReqId = number;
@@ -72,7 +73,7 @@ export type SuccessPayload =
   | { kind: "form"; info: FormInfo }
   | { kind: "redact-plan"; pages: PageStatusWire[] }
   | { kind: "redacted"; result: RedactResultWire }
-  | { kind: "redact-search"; result: RedactSearchWire };
+  | { kind: "redact-search"; result: RedactSearchResultWire };
 
 // Worker → Main messages. `init-done`/`init-error` are the one-time handshake;
 // all operation responses carry the originating `id`.

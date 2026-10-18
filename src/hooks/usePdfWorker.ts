@@ -8,7 +8,8 @@ import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob"
 import type { StampJobSpec } from "../lib/stampJob";
 import type { FormInfo } from "../lib/forms/model";
 import type { FormWireEntry } from "../lib/forms/toWire";
-import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, RedactSearchWire, SearchOptionsWire } from "../lib/redact/toJob";
+import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, SearchOptionsWire } from "../lib/redact/toJob";
+import type { RedactSearchResultWire } from "../lib/redact/searchWire";
 import { PdfWorkerClient } from "../lib/workerClient";
 
 export interface SanitizeReport {
@@ -131,7 +132,7 @@ const asRedacted = (p: SuccessPayload): RedactResultWire => {
   if (p.kind !== "redacted") throw new Error("Unexpected worker payload");
   return p.result;
 };
-const asRedactSearch = (p: SuccessPayload): RedactSearchWire => {
+const asRedactSearch = (p: SuccessPayload): RedactSearchResultWire => {
   if (p.kind !== "redact-search") throw new Error("Unexpected worker payload");
   return p.result;
 };
@@ -337,7 +338,7 @@ export function usePdfWorker() {
 
   /** Every match of `query` as visible-space rects (the exact glyph boxes the engine removes). */
   const redactSearch = useCallback(
-    (pdfBytes: Uint8Array, query: string, options: SearchOptionsWire): Promise<RedactSearchWire> =>
+    (pdfBytes: Uint8Array, query: string, options: SearchOptionsWire): Promise<RedactSearchResultWire> =>
       run(null, (id) => ({ type: "redact-search", id, pdfBytes, query, options }), asRedactSearch),
     [run],
   );
