@@ -13,6 +13,10 @@ const MIN_BOX_PT = 0.01;
  * Words recognised on an image of `imagePx` pixels (y down) to visible-space points (y up) on a
  * page of `pagePt` points. A space follows every word but the last of its line. Words the engine
  * would refuse (box under 0.01 pt, text over 200 UTF-16 units) are dropped.
+ *
+ * The mapping is proportional: the image is pdf.js's render of the visible box, `pagePt` the
+ * engine's visible size. Both clip the CropBox to the MediaBox (the MediaBox when they do not
+ * overlap), apply /Rotate and ignore /UserUnit, so they are the same box (pageBox.test.ts).
  */
 export function wordsToWire(words: readonly RecognizedWord[], imagePx: [number, number], pagePt: [number, number]): OcrWordWire[] {
   const sx = pagePt[0] / imagePx[0];
@@ -83,4 +87,23 @@ export function formatEta(ms: number | null): string {
 export function toggleLanguage(selected: readonly OcrLanguage[], lang: OcrLanguage): OcrLanguage[] {
   if (!selected.includes(lang)) return [...selected, lang];
   return selected.length > 1 ? selected.filter((l) => l !== lang) : [...selected];
+}
+
+/** The engine's word limits (`add_text_layer`): per page and for the whole job. */
+export const MAX_WORDS_PER_PAGE = 200_000;
+export const MAX_WORDS_TOTAL = 2_000_000;
+
+/** Why the text layer cannot be added (too many words), in plain words; null when it can. */
+export function wordLimitProblem(pages: readonly { page: number; words: readonly unknown[] }[]): string | null {
+  let total = 0;
+  for (const p of pages) {
+    if (p.words.length > MAX_WORDS_PER_PAGE) {
+      return `Page ${p.page} has too many recognised words (more than ${MAX_WORDS_PER_PAGE}) to add a text layer. Download the text instead.`;
+    }
+    total += p.words.length;
+  }
+  if (total > MAX_WORDS_TOTAL) {
+    return `Too many recognised words in all (more than ${MAX_WORDS_TOTAL}) to add a text layer. Split the PDF, or download the text instead.`;
+  }
+  return null;
 }

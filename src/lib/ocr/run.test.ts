@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RecognizedWord } from "./engine";
-import { LOW_QUALITY, estimateRemainingMs, formatEta, summarize, toggleLanguage, wordsToWire } from "./run";
+import { LOW_QUALITY, MAX_WORDS_PER_PAGE, MAX_WORDS_TOTAL, estimateRemainingMs, formatEta, summarize, toggleLanguage, wordLimitProblem, wordsToWire } from "./run";
 
 const word = (text: string, x0: number, y0: number, x1: number, y1: number, extra: Partial<RecognizedWord> = {}): RecognizedWord => ({
   text,
@@ -85,3 +85,32 @@ describe("language selection", () => {
     expect(toggleLanguage(["eng"], "eng")).toEqual(["eng"]);
   });
 });
+
+describe("word limits before download", () => {
+  // Sparse arrays: only the length matters.
+  const page = (n: number, words: number) => ({ page: n, words: { length: words } as unknown as never[] });
+
+  it("mirrors the engine's limits", () => {
+    expect(MAX_WORDS_PER_PAGE).toBe(200_000);
+    expect(MAX_WORDS_TOTAL).toBe(2_000_000);
+  });
+
+  it("accepts what the engine accepts", () => {
+    expect(wordLimitProblem([page(1, 200_000), page(2, 10)])).toBeNull();
+    expect(wordLimitProblem(Array.from({ length: 10 }, (_, i) => page(i + 1, 200_000)))).toBeNull();
+  });
+
+  it("names the page over the per-page limit", () => {
+    expect(wordLimitProblem([page(1, 5), page(7, 200_001)])).toBe(
+      "Page 7 has too many recognised words (more than 200000) to add a text layer. Download the text instead.",
+    );
+  });
+
+  it("refuses more words than the job allows in all", () => {
+    const pages = Array.from({ length: 11 }, (_, i) => page(i + 1, 190_000));
+    expect(wordLimitProblem(pages)).toBe(
+      "Too many recognised words in all (more than 2000000) to add a text layer. Split the PDF, or download the text instead.",
+    );
+  });
+});
+

@@ -50,7 +50,8 @@ const FLASH_MS = 1500;
 const SCANNED = /scanned image/i;
 const OCR_HINT = (
   <>
-    <Link to="/ocr" className="font-medium underline">
+    {/* A new tab: leaving this page would lose the marks and any run in progress. */}
+    <Link to="/ocr" target="_blank" rel="noopener" className="font-medium underline">
       Run OCR first
     </Link>{" "}
     to search scanned pages.

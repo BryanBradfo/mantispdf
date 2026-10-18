@@ -8,8 +8,8 @@ import ErrorAlert from "../components/common/ErrorAlert";
 import PageStrip from "../components/editor/PageStrip";
 import { OcrEngine, ocrWorkerCount } from "../lib/ocr/engine";
 import { OCR_LANGUAGES, defaultLanguages, type OcrLanguage } from "../lib/ocr/languages";
-import { renderPageImage } from "../lib/ocr/render";
-import { estimateRemainingMs, formatEta, summarize, toggleLanguage, wordsToWire, type PageOutcome } from "../lib/ocr/run";
+import { renderPageImage, type OcrPageImage } from "../lib/ocr/render";
+import { estimateRemainingMs, formatEta, summarize, toggleLanguage, wordLimitProblem, wordsToWire, type PageOutcome } from "../lib/ocr/run";
 import { exportText, hasText } from "../lib/ocr/text";
 import type { OcrPageWire } from "../lib/ocr/textLayerWire";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
@@ -18,10 +18,15 @@ import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 /** The engine's page limit (`add_text_layer`). */
 const MAX_PAGES = 2000;
 const CANCELLED = "OCR cancelled";
+const NOT_STARTED = "OCR engine could not start";
 const linkClass = "font-medium text-mantis-700 underline dark:text-mantis-400";
 
 interface Progress {
   done: number;
+  /** Pages recognised so far (skipped pages do not set the pace). */
+  recognised: number;
+  /** Progress (0..1) of the pages being recognised right now, summed: a smoother bar. */
+  partial: number;
   total: number;
   startedAt: number;
   /** What happens now (loading models, a page number). */
@@ -58,10 +63,13 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
   const [result, setResult] = useState<OcrResult | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const engineRef = useRef<OcrEngine | null>(null);
+  // Aborts the engine start too (core and model downloads).
+  const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
   const running = progress !== null;
 
   const summary = useMemo(() => (result ? summarize(result.outcomes) : null), [result]);
+  const withText = summary ? summary.processed - summary.noText.length : 0;
   const recognised = useMemo(() => new Set(result?.layer.map((p) => p.page) ?? []), [result]);
 
   // The ETA ticks while running.
@@ -86,6 +94,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
   useEffect(
     () => () => {
       cancelledRef.current = true;
+      abortRef.current?.abort();
       void engineRef.current?.terminate();
     },
     [],
@@ -100,13 +109,15 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
     setError(null);
     setResult(null);
     cancelledRef.current = false;
+    const abort = new AbortController();
+    abortRef.current = abort;
     const total = sizes.length;
-    setProgress({ done: 0, total, startedAt: Date.now(), status: "Loading the OCR engine and languages…" });
+    setProgress({ done: 0, recognised: 0, partial: 0, total, startedAt: Date.now(), status: "Loading the OCR engine and languages…" });
     const workers = ocrWorkerCount(typeof navigator === "undefined" ? undefined : navigator.hardwareConcurrency);
     let engine: OcrEngine | null = null;
     let doc: Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]> | null = null;
     try {
-      engine = await OcrEngine.create(languages, { workers, origin: window.location.origin });
+      engine = await OcrEngine.create(languages, { workers, origin: window.location.origin, signal: abort.signal });
       engineRef.current = engine;
       if (cancelledRef.current) throw new Error(CANCELLED);
       doc = await pdfjs.getDocument({ data: input.bytes.slice() }).promise;
@@ -116,34 +127,60 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       const startedAt = Date.now();
       let next = 0;
       let done = 0;
-      setProgress({ done: 0, total, startedAt, status: "Reading page 1" });
+      let recognisedPages = 0;
+      // One lane failing stops the others too.
+      let stop = false;
+      setProgress({ done: 0, recognised: 0, partial: 0, total, startedAt, status: "Reading page 1" });
+      // Progress of the pages in flight, by page number.
+      const inFlight = new Map<number, number>();
+      const showPartial = () => {
+        let sum = 0;
+        for (const v of inFlight.values()) sum += v;
+        setProgress((pr) => (pr ? { ...pr, partial: sum } : pr));
+      };
       const pdf = doc;
       const eng = engine;
       // One page at a time per worker: render, recognise, convert.
       const lane = async () => {
-        while (next < total && !cancelledRef.current) {
-          const n = ++next;
-          setProgress((p) => (p ? { ...p, status: `Reading page ${n}` } : p));
-          if (skipText) {
-            const p = await pdf.getPage(n);
-            const content = await p.getTextContent();
-            p.cleanup();
-            if (hasText(content.items)) {
-              outcomes.push({ page: n, skipped: true });
-              done++;
-              setProgress((pr) => (pr ? { ...pr, done } : pr));
-              continue;
+        try {
+          while (next < total && !cancelledRef.current && !stop) {
+            const n = ++next;
+            setProgress((p) => (p ? { ...p, status: `Reading page ${n}` } : p));
+            if (skipText) {
+              const p = await pdf.getPage(n);
+              const content = await p.getTextContent();
+              p.cleanup();
+              if (hasText(content.items)) {
+                outcomes.push({ page: n, skipped: true });
+                done++;
+                setProgress((pr) => (pr ? { ...pr, done } : pr));
+                continue;
+              }
             }
+            let image: OcrPageImage | null = await renderPageImage(pdf, n);
+            const imagePx: [number, number] = [image.width, image.height];
+            inFlight.set(n, 0);
+            const job = eng.recognize(image.pgm, (fraction) => {
+              inFlight.set(n, fraction);
+              showPartial();
+            });
+            // The engine copies the image: drop it now rather than hold it for the whole page.
+            image = null;
+            const recognised = await job;
+            inFlight.delete(n);
+            showPartial();
+            const size = sizes[n - 1];
+            const words = wordsToWire(recognised.words, imagePx, size);
+            outcomes.push({ page: n, skipped: false, confidence: recognised.confidence, words: words.length });
+            if (words.length > 0) layer.push({ page: n, words });
+            texts.push({ page: n, text: recognised.text });
+            done++;
+            recognisedPages++;
+            setProgress((pr) => (pr ? { ...pr, done, recognised: recognisedPages } : pr));
           }
-          const image = await renderPageImage(pdf, n);
-          const recognised = await eng.recognize(image.pgm);
-          const size = sizes[n - 1];
-          const words = wordsToWire(recognised.words, [image.width, image.height], size);
-          outcomes.push({ page: n, skipped: false, confidence: recognised.confidence, words: words.length });
-          if (words.length > 0) layer.push({ page: n, words });
-          texts.push({ page: n, text: recognised.text });
-          done++;
-          setProgress((pr) => (pr ? { ...pr, done } : pr));
+        } catch (e) {
+          stop = true;
+          throw e;
         }
       };
       await Promise.all(Array.from({ length: Math.min(workers, total) }, lane));
@@ -152,9 +189,13 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       setResult({ outcomes: outcomes.sort(byPage), layer: layer.sort(byPage), texts: texts.sort(byPage) });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      if (!cancelledRef.current && message !== CANCELLED) setError(message);
+      if (cancelledRef.current || message === CANCELLED) return;
+      setError(
+        message === NOT_STARTED ? "The OCR engine could not start. Check your connection to this site and try again." : message,
+      );
     } finally {
       engineRef.current = null;
+      abortRef.current = null;
       setProgress(null);
       void engine?.terminate();
       void doc?.destroy();
@@ -163,11 +204,17 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
 
   const cancel = () => {
     cancelledRef.current = true;
+    abortRef.current?.abort();
     void engineRef.current?.terminate();
   };
 
   const downloadPdf = () => {
     if (!result) return;
+    const tooMany = wordLimitProblem(result.layer);
+    if (tooMany) {
+      setError(tooMany);
+      return;
+    }
     void run(
       () => addTextLayer(input.bytes, result.layer),
       (out) => downloadBlob(out, `${baseName(input.file)}_ocr.pdf`),
@@ -185,8 +232,18 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
     onStartOver();
   };
 
-  const eta = progress ? formatEta(estimateRemainingMs({ done: progress.done, total: progress.total, elapsedMs: now - progress.startedAt })) : "";
-  const percent = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+  // The pace comes from recognised pages only (skipped ones are quick); every page left may need OCR.
+  const eta = progress
+    ? formatEta(
+        estimateRemainingMs({
+          done: progress.recognised,
+          total: progress.recognised + (progress.total - progress.done),
+          elapsedMs: now - progress.startedAt,
+        }),
+      )
+    : "";
+  const percent =
+    progress && progress.total > 0 ? Math.min(100, Math.round(((progress.done + progress.partial) / progress.total) * 100)) : 0;
 
   return (
     <div className={panelClass}>
@@ -242,12 +299,16 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       </fieldset>
 
       {progress && (
-        <div className="mt-6" role="status" aria-live="polite">
-          <div className="flex items-center justify-between text-sm text-gray-700 dark:text-[#aaa]">
+        <div className="mt-6">
+          {/* Announced only when the page count changes; the status and ETA below are visual. */}
+          <p className="sr-only" role="status" aria-live="polite">
+            {progress.done} of {progress.total} pages done
+          </p>
+          <div className="flex items-center justify-between text-sm text-gray-700 dark:text-[#aaa]" aria-hidden="true">
             <span>
               {progress.status} ({progress.done} of {progress.total} done)
             </span>
-            <span>{progress.done > 0 ? eta : ""}</span>
+            <span>{progress.recognised > 0 ? eta : ""}</span>
           </div>
           <div
             role="progressbar"
@@ -265,7 +326,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       {summary && result && (
         <div role="status" className="mt-6 rounded-lg border border-mantis-300 bg-mantis-50 p-3 text-sm text-mantis-900 dark:border-mantis-800 dark:bg-[#0f1a0f] dark:text-mantis-200">
           <p className="font-medium">
-            Text recognised on {summary.processed} {summary.processed === 1 ? "page" : "pages"} ({summary.words}{" "}
+            Text recognised on {withText} {withText === 1 ? "page" : "pages"} ({summary.words}{" "}
             {summary.words === 1 ? "word" : "words"}).
           </p>
           <ul className="mt-1 list-disc pl-5">
@@ -319,11 +380,11 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       </div>
 
       <p className="mt-4 text-xs text-gray-500 dark:text-[#777]">
-        Run OCR first to redact scanned documents by search:{" "}
-        <Link to="/redact" className={linkClass}>
+        Run OCR first to redact scanned documents by search.{" "}
+        {/* A new tab: leaving this page would lose the recognised text and any run in progress. */}
+        <Link to="/redact" target="_blank" rel="noopener" className={linkClass}>
           Redact PDF
         </Link>
-        .
       </p>
     </div>
   );
