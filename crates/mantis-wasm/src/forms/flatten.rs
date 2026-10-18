@@ -16,46 +16,43 @@ struct PagePlan {
     page: ObjectId,
     /// Appearance XObject and `cm` per visible widget, in /Annots order.
     draws: Vec<(ObjectId, [f64; 6])>,
-    /// /Annots without widgets; None when the page has no /Annots array.
-    kept: Option<Vec<Object>>,
+    /// /Annots without widgets.
+    kept: Vec<Object>,
+    /// Widget annotations taken out of /Annots (indirect ones).
+    removed: Vec<ObjectId>,
 }
 
-fn is_widget(doc: &Document, entry: &Object) -> bool {
-    deref(doc, entry)
-        .and_then(|a| a.as_dict().ok())
-        .is_some_and(|a| name_of(a, b"Subtype") == Some(b"Widget"))
-}
-
+/// None when the page has no /Annots array.
 fn plan_page(doc: &Document, page: ObjectId) -> Option<PagePlan> {
     let dict = doc.get_dictionary(page).ok()?;
     let entries = dict.get(b"Annots").ok().and_then(|a| deref(doc, a))?.as_array().ok()?;
-    let mut draws = Vec::new();
-    let mut kept = Vec::new();
+    let mut plan = PagePlan { page, draws: Vec::new(), kept: Vec::new(), removed: Vec::new() };
     for entry in entries {
-        if !is_widget(doc, entry) {
-            kept.push(entry.clone());
-            continue;
-        }
-        let Some(annot) = deref(doc, entry).and_then(|a| a.as_dict().ok()) else {
+        let widget = deref(doc, entry)
+            .and_then(|a| a.as_dict().ok())
+            .filter(|a| name_of(a, b"Subtype") == Some(b"Widget"));
+        let Some(annot) = widget else {
+            plan.kept.push(entry.clone());
             continue;
         };
+        if let Ok(id) = entry.as_reference() {
+            plan.removed.push(id);
+        }
         if let Some((Object::Reference(appearance), cm)) = widget_placement(doc, annot) {
-            draws.push((*appearance, cm));
+            plan.draws.push((*appearance, cm));
         }
     }
-    Some(PagePlan { page, draws, kept: Some(kept) })
+    Some(plan)
 }
 
-/// Every object of the field tree: terminal fields, their widgets and their
-/// ancestors (bounded /Parent chains).
-fn form_objects(doc: &Document) -> Result<HashSet<ObjectId>, String> {
-    let tree = read_form(doc)?;
-    let mut objects = HashSet::new();
-    for field in &tree.refs {
-        objects.extend(field.widgets.iter().map(|w| w.obj));
-        let mut current = field.obj;
+/// The catalog, every page and every page tree node above them: never
+/// deleted, whatever a malformed field tree points at.
+fn document_structure(doc: &Document, pages: &[ObjectId]) -> HashSet<ObjectId> {
+    let mut keep: HashSet<ObjectId> = doc.trailer.get(b"Root").ok().and_then(|r| r.as_reference().ok()).into_iter().collect();
+    for &page in pages {
+        let mut current = page;
         for _ in 0..=MAX_DEPTH {
-            if !objects.insert(current) {
+            if !keep.insert(current) {
                 break;
             }
             match doc.get_dictionary(current).ok().and_then(|d| d.get(b"Parent").ok()) {
@@ -64,14 +61,30 @@ fn form_objects(doc: &Document) -> Result<HashSet<ObjectId>, String> {
             }
         }
     }
+    keep
+}
+
+/// Terminal fields and their widgets. Their ancestors are left to
+/// `prune_objects`: once /AcroForm and the kids are gone nothing refers to
+/// them.
+fn form_objects(doc: &Document) -> Result<HashSet<ObjectId>, String> {
+    let tree = read_form(doc)?;
+    let mut objects = HashSet::new();
+    for field in &tree.refs {
+        objects.insert(field.obj);
+        objects.extend(field.widgets.iter().map(|w| w.obj));
+    }
     Ok(objects)
 }
 
 /// Flatten every widget of `doc` (filled or not) into its page.
 pub(crate) fn flatten_document(doc: &mut Document) -> Result<(), String> {
-    let form = form_objects(doc)?;
+    let mut doomed = form_objects(doc)?;
     let pages: Vec<ObjectId> = doc.get_pages().into_values().collect();
+    let structure = document_structure(doc, &pages);
     let plans: Vec<PagePlan> = pages.iter().filter_map(|&p| plan_page(doc, p)).collect();
+    // Widgets on pages but outside /Fields go too (with their /AA).
+    doomed.extend(plans.iter().flat_map(|p| p.removed.iter().copied()));
 
     let mut writer = DocWriter::new();
     for plan in plans {
@@ -86,18 +99,19 @@ pub(crate) fn flatten_document(doc: &mut Document) -> Result<(), String> {
             }
             page.finish(doc, &mut writer)?;
         }
-        if let (Some(kept), Ok(dict)) = (plan.kept, doc.get_dictionary_mut(plan.page)) {
-            if kept.is_empty() {
+        if let Ok(dict) = doc.get_dictionary_mut(plan.page) {
+            if plan.kept.is_empty() {
                 dict.remove(b"Annots");
             } else {
-                dict.set("Annots", kept);
+                dict.set("Annots", plan.kept);
             }
         }
     }
 
-    // The form itself: catalog entries, then every field and widget object
-    // (a reference left elsewhere, say a structure element, becomes null on
-    // save), so no field /AA action survives.
+    // The form itself: catalog entries, then every terminal field and every
+    // widget object (a reference left elsewhere, say a structure element,
+    // becomes null on save), so no field /AA action survives. The catalog
+    // and the page tree are never deleted.
     if let Some(root) = doc.trailer.get(b"Root").ok().and_then(|r| r.as_reference().ok()) {
         let form_ref = doc
             .get_dictionary(root)
@@ -112,8 +126,8 @@ pub(crate) fn flatten_document(doc: &mut Document) -> Result<(), String> {
             catalog.remove(b"NeedsRendering");
         }
     }
-    for id in form {
-        doc.objects.remove(&id);
+    for id in doomed.difference(&structure) {
+        doc.objects.remove(id);
     }
     doc.prune_objects();
     Ok(())
@@ -280,5 +294,56 @@ mod tests {
         let before = page_dict(&doc, page).clone();
         flatten_document(&mut doc).unwrap();
         assert_eq!(page_dict(&doc, page), &before);
+    }
+
+    #[test]
+    fn parent_pointing_at_the_page_tree_never_deletes_pages() {
+        let (mut doc, page) = base(0);
+        let pages_id = page_dict(&doc, page).get(b"Parent").unwrap().as_reference().unwrap();
+        let ap = ap_stream(&mut doc, [0, 0, 50, 20], None, b"(a) Tj");
+        // Field "a" (its /Parent wrongly the page tree root) with one widget kid.
+        let field = doc.new_object_id();
+        let w = doc.add_object(with(widget(page, [100, 200, 150, 220]), vec![
+            ("Parent", field.into()), ("AP", dictionary! { "N" => ap }.into()),
+        ]));
+        doc.objects.insert(field, Object::Dictionary(dictionary! {
+            "FT" => "Tx", "T" => Object::string_literal("a"), "Kids" => vec![w.into()], "Parent" => pages_id,
+        }));
+        finish(&mut doc, page, &[field], &[w], vec![]);
+        flatten_document(&mut doc).unwrap();
+        assert_eq!(doc.get_pages().len(), 1);
+        assert!(doc.get_object(pages_id).is_ok());
+        let (ops, _) = drawing(&doc, page);
+        assert_eq!(ops, "q 1 0 0 1 100 200 cm /Fw1 Do Q\n");
+        assert!(doc.get_object(w).is_err() && doc.get_object(field).is_err());
+        let saved = save_pdf(&mut doc).unwrap();
+        assert_eq!(load_pdf(&saved).unwrap().get_pages().len(), 1);
+    }
+
+    #[test]
+    fn orphan_widget_with_actions_is_deleted_even_if_referenced() {
+        let (mut doc, page) = base(0);
+        let ap = ap_stream(&mut doc, [0, 0, 10, 10], None, b"");
+        let orphan = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("AP", dictionary! { "N" => ap }.into()),
+            ("AA", dictionary! { "U" => dictionary! { "S" => "JavaScript", "JS" => Object::string_literal("app.alert(1)") } }.into()),
+        ]));
+        finish(&mut doc, page, &[], &[orphan], vec![]);
+        // A structure element still points at it.
+        let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        let tree_root = doc.add_object(dictionary! {
+            "Type" => "StructTreeRoot",
+            "K" => dictionary! { "Type" => "StructElem", "S" => "Form", "K" => dictionary! { "Type" => "OBJR", "Obj" => orphan } },
+        });
+        doc.get_dictionary_mut(root).unwrap().set("StructTreeRoot", tree_root);
+        flatten_document(&mut doc).unwrap();
+        assert!(doc.get_object(orphan).is_err());
+        assert_eq!(drawing(&doc, page).0, "q 1 0 0 1 0 0 cm /Fw1 Do Q\n");
+        let saved = save_pdf(&mut doc).unwrap();
+        let out = load_pdf(&saved).unwrap();
+        assert!(out.objects.values().all(|o| match o {
+            Object::Dictionary(d) => !d.has(b"AA") && d.get(b"Subtype").ok() != Some(&Object::Name(b"Widget".to_vec())),
+            _ => true,
+        }));
     }
 }
