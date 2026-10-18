@@ -650,12 +650,25 @@ impl<'a> Context<'a> {
                 on_states.push(state.to_string());
             }
         }
+        let value = inherited_entry(doc, t.obj, b"V");
+        let value_name = match (&kind, value.and_then(|v| deref(doc, v))) {
+            (FieldKind::Checkbox | FieldKind::Radio, Some(Object::Name(n))) => Some(n.clone()),
+            _ => None,
+        };
         // Button widgets without an "on" appearance: radio widgets get one
-        // name each (On, On2, ...), checkbox widgets share one (Yes, ...).
+        // name each (On, On2, ...), checkbox widgets share one: the checked
+        // /V name when there is one (a checked box stays checked), else Yes.
         let bare = widgets.iter().filter(|w| w.on_state.is_none()).count();
+        let checked_name = value_name
+            .as_deref()
+            .and_then(|n| std::str::from_utf8(n).ok())
+            .filter(|n| !n.is_empty() && *n != "Off");
         let names = match kind {
             FieldKind::Radio => generated_states(&on_states, "On", bare),
-            FieldKind::Checkbox if bare > 0 => vec![generated_states(&on_states, "Yes", 1).remove(0); bare],
+            FieldKind::Checkbox if bare > 0 => {
+                let name = checked_name.map_or_else(|| generated_states(&on_states, "Yes", 1).remove(0), str::to_string);
+                vec![name; bare]
+            }
             _ => Vec::new(),
         };
         let mut names = names.into_iter();
@@ -669,11 +682,6 @@ impl<'a> Context<'a> {
                 on_states.push(name);
             }
         }
-        let value = inherited_entry(doc, t.obj, b"V");
-        let value_name = match (&kind, value.and_then(|v| deref(doc, v))) {
-            (FieldKind::Checkbox | FieldKind::Radio, Some(Object::Name(n))) => Some(n.clone()),
-            _ => None,
-        };
         let field = Field {
             id: index as u32,
             name: t.name.clone(),

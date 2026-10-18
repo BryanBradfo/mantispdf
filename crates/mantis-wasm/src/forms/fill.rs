@@ -1160,4 +1160,24 @@ mod tests {
         let err = fill_form(&pdf, &[], true).unwrap_err();
         assert_eq!(err, "Cannot flatten field \"Japanese name\": its value has characters the standard PDF fonts cannot show");
     }
+
+    #[test]
+    fn bare_checkbox_keeps_its_checked_value_name() {
+        let (mut doc, page) = base(0);
+        let ja = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("FT", "Btn".into()), ("T", Object::string_literal("ja")), ("V", "Ja".into()),
+        ]));
+        let off = doc.add_object(with(widget(page, [0, 20, 10, 30]), vec![
+            ("FT", "Btn".into()), ("T", Object::string_literal("off")), ("V", "Off".into()),
+        ]));
+        finish(&mut doc, page, &[ja, off], &[ja, off], vec![]);
+        let info = read_form(&doc).unwrap().info;
+        assert_eq!(info.fields[0].on_states, vec!["Ja"]);
+        assert_eq!(info.fields[0].value, Value::Names(vec!["Ja".into()]));
+        assert_eq!(info.fields[1].on_states, vec!["Yes"]);
+        fill_document(&mut doc, &[]).unwrap();
+        assert_eq!(as_states(&doc, &[ja, off]), vec!["Ja", "Off"]);
+        let n = dict(&doc, ja).get(b"AP").unwrap().as_dict().unwrap().get(b"N").unwrap().as_dict().unwrap();
+        assert!(n.has(b"Ja"));
+    }
 }
