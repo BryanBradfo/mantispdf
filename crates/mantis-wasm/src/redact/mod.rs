@@ -426,6 +426,15 @@ pub(crate) fn redact_content(
         return Ok((ops.to_vec(), Report::default()));
     }
     graphics::check_unanalysed_paint(events, rects)?;
+    if !rects.is_empty() {
+        for event in events {
+            if let Event::SoftMask(m) = event
+                && m.group.is_none_or(|(group, matrix)| verify::group_meets(page.doc, group, matrix, page.resources, rects, page.budget))
+            {
+                return Err(Unsupported::new("soft mask content under a redaction area"));
+            }
+        }
+    }
     let mut report = Report::default();
     let mut dropped: HashSet<usize> = HashSet::new();
     let mut replaced: HashMap<usize, Vec<Operation>> = HashMap::new();

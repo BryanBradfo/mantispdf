@@ -136,6 +136,15 @@ pub(crate) fn verify_page(doc: &Document, page: ObjectId, rects: &[Rect], tag: &
     if unanalysed_paint(&events, rects).is_some() {
         return false;
     }
+    let resources = page_resources(doc, page);
+    let mut budget = Budget::page(JOB_DECODED);
+    for event in &events {
+        if let Event::SoftMask(m) = event
+            && m.group.is_none_or(|(group, matrix)| group_meets(doc, group, matrix, &resources, rects, &mut budget))
+        {
+            return false;
+        }
+    }
     let boxes = box_ops(&ops, rects.len());
     let is_box = |s: &Seen| match (&s.event, &boxes) {
         (Event::Path(p), Some(range)) => s.top && range.contains(&p.op_range.start) && p.op_range.end <= range.end && p.op_range.len() == 2,
@@ -163,4 +172,34 @@ pub(crate) fn verify_raster_page(doc: &Document, page: ObjectId, tag: &[u8]) -> 
         return false;
     };
     matches!(seen.as_slice(), [only] if only.top && only.tagged)
+}
+
+/// True when the content of soft-mask group `group` (drawn with `matrix`;
+/// without its own /Resources it uses `resources`) puts a glyph, a painted
+/// path, a shading or an image under a rect, or paints anything we cannot
+/// analyse there, whatever its /BBox: such content is drawn into the mask.
+/// Unreadable content counts as meeting the rects.
+pub(crate) fn group_meets(doc: &Document, group: ObjectId, matrix: Matrix, resources: &Dictionary, rects: &[Rect], budget: &mut Budget) -> bool {
+    let Ok(Object::Stream(form)) = doc.get_object(group) else {
+        return true;
+    };
+    let mut charged = 0;
+    let decoded = strict_content_in(Some(doc), form, MAX_STREAM_DECODED.min(budget.decoded), &mut charged);
+    budget.decoded = budget.decoded.saturating_sub(charged);
+    let Decoded::Content(content) = decoded else {
+        return true;
+    };
+    let Ok(ops) = decode_ops(&content) else {
+        return true;
+    };
+    let inner = match form.dict.get(b"Resources") {
+        Ok(res) => owned_dict(doc, Some(res)),
+        Err(_) => resources.clone(),
+    };
+    let mut seen = Vec::new();
+    if walk(doc, &ops, inner, matrix, Paint::default(), &mut vec![group], budget, &[], &mut seen).is_err() {
+        return true;
+    }
+    let events: Vec<Event> = seen.into_iter().map(|s| s.event).collect();
+    unanalysed_paint(&events, rects).is_some() || events.iter().any(|e| left_under(e, rects))
 }

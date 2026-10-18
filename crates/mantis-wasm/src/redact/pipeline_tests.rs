@@ -453,8 +453,8 @@ fn raster_needed(doc: Document, rects: Vec<RedactRect>) -> bool {
 #[test]
 fn soft_mask_groups_under_an_area_need_a_raster() {
     assert!(raster_needed(soft_mask_page([0, 0, 612, 792]), vec![area(1, 95.0, 695.0, 80.0, 15.0)]));
-    // A group whose box misses every area is fine.
-    assert!(!raster_needed(soft_mask_page([0, 0, 50, 50]), vec![area(1, 95.0, 695.0, 80.0, 15.0)]));
+    // A group whose box and content miss every area is fine.
+    assert!(!raster_needed(soft_mask_page([0, 0, 50, 50]), vec![area(1, 300.0, 300.0, 10.0, 10.0)]));
 }
 
 #[test]
@@ -749,4 +749,26 @@ fn a_rasterized_page_shows_exactly_one_tagged_image() {
     assert!(!page_with("q 612 0 0 792 0 0 cm /P Do Q /P Do", true), "two images");
     assert!(!page_with("q 612 0 0 792 0 0 cm /P Do Q 0 0 5 5 re f", true), "a path");
     assert!(!page_with("q 612 0 0 792 0 0 cm /P Do Q BT /H 1 Tf 3 Tr (x) Tj ET", true), "invisible text");
+}
+
+#[test]
+fn soft_mask_group_content_under_an_area_needs_a_raster_whatever_its_box() {
+    // The group's /BBox is small and far away, but its content draws text
+    // under the area.
+    let doc = one_page("q /GS1 gs 0 g 0 0 50 50 re f Q", |doc, page| {
+        let font = doc.add_object(helvetica());
+        let group = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 50, 50]),
+                "Group" => dictionary! { "S" => "Transparency" },
+                "Resources" => dictionary! { "Font" => dictionary! { "H" => font } },
+            },
+            b"BT /H 10 Tf 100 700 Td (SECRETOUTSIDE) Tj ET".to_vec(),
+        ));
+        let gs = dictionary! { "Type" => "ExtGState", "SMask" => dictionary! { "S" => "Luminosity", "G" => group } };
+        doc.get_dictionary_mut(page).unwrap().set("Resources", dictionary! { "ExtGState" => dictionary! { "GS1" => gs } });
+    });
+    assert!(raster_needed(doc.clone(), vec![area(1, 95.0, 695.0, 100.0, 15.0)]));
+    // Areas missing both its box and its content: fine.
+    assert!(!raster_needed(doc, vec![area(1, 300.0, 300.0, 10.0, 10.0)]));
 }

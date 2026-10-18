@@ -160,6 +160,9 @@ pub(crate) struct SoftMaskSet {
     pub(crate) op_index: usize,
     /// The group's /BBox in user space; None when unknown (anywhere).
     pub(crate) bbox_user: Option<Rect>,
+    /// The group form (/G) and its form space to user space matrix; None
+    /// when it cannot be read.
+    pub(crate) group: Option<(lopdf::ObjectId, Matrix)>,
 }
 
 /// Colour spaces in effect that paint with a Pattern.
@@ -797,7 +800,8 @@ impl<'d> Interp<'d> {
             && deref(self.doc, smask).and_then(|o| o.as_name().ok()) != Some(b"None")
         {
             let bbox_user = self.soft_mask_box(smask, &run.gs.ctm);
-            run.emit(Event::SoftMask(SoftMaskSet { op_index, bbox_user }))?;
+            let group = self.soft_mask_group(smask, &run.gs.ctm);
+            run.emit(Event::SoftMask(SoftMaskSet { op_index, bbox_user, group }))?;
         }
         let gs = &mut run.gs;
         let value = |key: &[u8]| -> Result<Option<f64>, Unsupported> {
@@ -837,6 +841,19 @@ impl<'d> Interp<'d> {
         let [x0, y0, x1, y1] = <[f64; 4]>::try_from(v).ok()?;
         let matrix = concat(&self.matrix_of(group.dict.get(b"Matrix").ok())?, ctm);
         Some(Quad::of_box(&matrix, [x0, y0, x1, y1]).bbox())
+    }
+
+    /// The soft mask's group form and where its content lands (/Matrix x
+    /// `ctm`).
+    fn soft_mask_group(&self, smask: &Object, ctm: &Matrix) -> Option<(lopdf::ObjectId, Matrix)> {
+        let Object::Dictionary(mask) = deref(self.doc, smask)? else {
+            return None;
+        };
+        let id = mask.get(b"G").ok()?.as_reference().ok()?;
+        let Ok(Object::Stream(group)) = self.doc.get_object(id) else {
+            return None;
+        };
+        Some((id, concat(&self.matrix_of(group.dict.get(b"Matrix").ok())?, ctm)))
     }
 
     fn matrix_of(&self, obj: Option<&Object>) -> Option<Matrix> {
