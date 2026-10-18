@@ -80,13 +80,17 @@ fn edit_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, bud
 
 /// Content bytes of `ops` followed by a box of the fill colour over each
 /// rect, drawn in default user space: the page content runs inside `q`/`Q`
-/// and every `q` it leaves open is closed first.
+/// deep enough that its own `Q` never pops past it, every `q` it leaves
+/// open closed first.
 fn with_boxes(ops: Vec<Operation>, rects: &[Rect], fill: Fill) -> Vec<u8> {
-    let mut all = Vec::with_capacity(ops.len() + rects.len() + 8);
-    all.push(Operation::new("q", vec![]));
+    // The content may pop more than it pushes (`excess`) and leave some open:
+    // enough `q` before it that it never reaches the page level, and a `Q`
+    // for every one still open after it.
+    let (open, excess) = save_balance(&encode_ops(&ops)).unwrap_or((0, 0));
+    let mut all = Vec::with_capacity(ops.len() + rects.len() * 2 + excess + open + 8);
+    all.extend((0..=excess).map(|_| Operation::new("q", vec![])));
     all.extend(ops);
-    let open = save_balance(&encode_ops(&all)).map_or(1, |(open, _)| open);
-    all.extend((0..open).map(|_| Operation::new("Q", vec![])));
+    all.extend((0..=open).map(|_| Operation::new("Q", vec![])));
     all.push(Operation::new("q", vec![]));
     let [r, g, b] = fill.rgb().map(|c| Object::Integer(i64::from(c / 255)));
     all.push(Operation::new("rg", vec![r, g, b]));

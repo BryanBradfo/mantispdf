@@ -670,3 +670,21 @@ fn rasters_are_validated() {
     j.rasters = vec![white_raster(3, 614, 790, 72.0)];
     assert!(redact(&pdf, j).is_ok());
 }
+
+#[test]
+fn boxes_keep_the_page_space_when_the_content_pops_too_far() {
+    // An extra Q, then a scaled CTM: the boxes must still land on the areas.
+    let doc = one_page("Q 2 0 0 2 0 0 cm 0 0 1 rg 400 400 5 5 re f", |_, _| {});
+    let (out, _) = redact(&bytes(doc), job(vec![area(1, 100.0, 100.0, 10.0, 10.0)])).unwrap();
+    let out = load_pdf(&out).unwrap();
+    let page = page_ids(&out)[0];
+    let boxes: Vec<Rect> = super::verify::page_events(&out, page)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| match e {
+            super::interp::Event::Path(p) => p.bbox_user,
+            _ => None,
+        })
+        .collect();
+    assert!(boxes.contains(&Rect { x0: 100.0, y0: 100.0, x1: 110.0, y1: 110.0 }), "{boxes:?}");
+}
