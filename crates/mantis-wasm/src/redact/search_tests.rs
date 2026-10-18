@@ -611,9 +611,22 @@ fn search_redact_content(content: &str, query: &str) -> String {
 }
 
 #[test]
-fn kerned_neighbours_overlapping_a_match_are_kept() {
-    // Each glyph pulled 0.15 em into the one before it.
+fn a_match_rect_never_cuts_a_matched_glyph() {
+    // Each glyph pulled 0.15 em into the one before it: stopping the rect at
+    // the neighbour would cut the matched glyph next to it, so the whole
+    // union is marked and the overlapping neighbour goes too.
     let were = "BT /H 20 Tf 100 700 Td [(W) 150 (e) 150 (r) 150 (e)] TJ ET";
-    assert_eq!(search_redact_content(were, "We"), "re");
-    assert_eq!(search_redact_content(were, "re"), "We");
+    let pdf = bytes(one_page(were, with_helvetica));
+    let glyphs = {
+        let doc = load_pdf(&pdf).unwrap();
+        page_glyphs(&doc, doc.get_pages()[&1]).unwrap()
+    };
+    let found = redact_search(&pdf, "We", &opts()).unwrap();
+    let [x, y, w, h] = found.pages[0].rects[0];
+    for g in &glyphs[..2] {
+        let b = g.box_user.bbox();
+        assert!(b.x0 >= x - 1e-9 && b.x1 <= x + w + 1e-9 && b.y0 >= y - 1e-9 && b.y1 <= y + h + 1e-9, "{b:?} outside the match rect");
+    }
+    assert_eq!(search_redact_content(were, "We"), "e");
+    assert_eq!(search_redact_content(were, "re"), "W");
 }
