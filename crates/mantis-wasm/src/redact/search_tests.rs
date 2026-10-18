@@ -412,3 +412,59 @@ fn a_page_with_a_far_away_widget_passes_verification() {
     let text: String = page_glyphs(&out, out.get_pages()[&1]).unwrap().iter().map(|g| char::from_u32(g.code).unwrap()).collect();
     assert!(text.contains("Other") && !text.contains("Name"), "{text:?}");
 }
+
+/// A one-page PDF showing (AB) in simple font `font` (built by `make`).
+fn ab_page(make: impl FnOnce(&mut Document) -> Dictionary) -> Vec<u8> {
+    bytes(one_page("BT /H 10 Tf 100 700 Td (AB) Tj ET", |d| {
+        let font = make(d);
+        let font = d.add_object(font);
+        dictionary! { "Font" => dictionary! { "H" => font } }
+    }))
+}
+
+fn simple_font(subtype: &str, flags: Option<Object>, encoding: Option<Object>, to_unicode: Option<ObjectId>, d: &mut Document) -> Dictionary {
+    let mut desc = dictionary! { "Type" => "FontDescriptor", "FontName" => "X" };
+    if let Some(f) = flags {
+        desc.set("Flags", f);
+    }
+    let desc = d.add_object(desc);
+    let mut font = dictionary! {
+        "Type" => "Font", "Subtype" => Object::Name(subtype.as_bytes().to_vec()), "BaseFont" => "X",
+        "FirstChar" => 65, "LastChar" => 66, "Widths" => vec![500.into(), 500.into()], "FontDescriptor" => desc,
+    };
+    if let Some(e) = encoding {
+        font.set("Encoding", e);
+    }
+    if let Some(t) = to_unicode {
+        font.set("ToUnicode", t);
+    }
+    font
+}
+
+#[test]
+fn private_use_and_symbolic_fonts_fail_closed() {
+    // One code of two maps into the Private Use Area: that glyph is unknown.
+    let pdf = ab_page(|d| {
+        let tu = d.add_object(Stream::new(dictionary! {}, b"2 beginbfchar <41> <E000> <42> <0042> endbfchar".to_vec()));
+        simple_font("Type1", None, Some("WinAnsiEncoding".into()), Some(tu), d)
+    });
+    assert_eq!(undecodable(&pdf), vec![1], "PUA glyph");
+    // A symbolic font: only /ToUnicode counts, its encoding never does.
+    let pdf = ab_page(|d| {
+        let tu = d.add_object(Stream::new(dictionary! {}, b"1 beginbfchar <41> <0041> endbfchar".to_vec()));
+        simple_font("Type1", Some(4.into()), Some("WinAnsiEncoding".into()), Some(tu), d)
+    });
+    assert_eq!(undecodable(&pdf), vec![1], "symbolic, B not in /ToUnicode");
+    // Unrecognised encodings count as none: symbolic.
+    let bogus = |subtype: &'static str| ab_page(move |d| simple_font(subtype, Some(32.into()), Some("Bogus".into()), None, d));
+    assert_eq!(undecodable(&bogus("TrueType")), vec![1]);
+    assert_eq!(undecodable(&bogus("Type1")), vec![1]);
+    let empty_dict = ab_page(|d| simple_font("Type1", Some(32.into()), Some(Object::Dictionary(dictionary! {})), None, d));
+    assert_eq!(undecodable(&empty_dict), vec![1]);
+    // /Flags as a real is rounded; anything else is symbolic.
+    let real = |flags: f32| ab_page(move |d| simple_font("Type1", Some(Object::Real(flags)), Some("WinAnsiEncoding".into()), None, d));
+    assert_eq!(undecodable(&real(4.0)), vec![1]);
+    assert!(undecodable(&real(32.0)).is_empty());
+    let text_flags = ab_page(|d| simple_font("Type1", Some(Object::String(b"4".to_vec(), StringFormat::Literal)), Some("WinAnsiEncoding".into()), None, d));
+    assert_eq!(undecodable(&text_flags), vec![1]);
+}

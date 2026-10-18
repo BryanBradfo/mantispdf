@@ -75,28 +75,27 @@ impl TextCache {
 fn text_map(doc: &Document, font: &Dictionary, left: usize, charged: &mut usize) -> Option<TextMap> {
     let mut map = TextMap::new();
     let simple = !matches!(name_of(font, b"Subtype"), Some(b"Type0"));
-    if simple {
+    // A symbolic font's codes need not follow its encoding: only /ToUnicode
+    // tells its text.
+    let symbolic = simple && symbolic(doc, font);
+    if simple && !symbolic {
         encoding_map(doc, font, &mut map);
     }
-    let Ok(cmap) = font.get(b"ToUnicode") else {
-        // Without a /ToUnicode, a symbolic font's codes are glyph ids (as are
-        // a TrueType font's without /Encoding): their text is unknown.
-        return (!simple || !symbolic(doc, font)).then_some(map);
-    };
-    let Some(Object::Stream(cmap)) = deref(doc, cmap) else {
-        return None;
-    };
-    let Decoded::Content(bytes) = strict_content_in(Some(doc), cmap, MAX_CMAP_BYTES.min(left), charged) else {
-        return None;
-    };
-    if !read_cmap(&bytes, &mut map) {
-        return None;
-    }
-    // Mostly Private Use Area text is not the text shown.
-    let private = map.values().filter(|t| t.chars().any(is_private_use)).count();
-    if private * 2 > map.len() {
+    if let Ok(cmap) = font.get(b"ToUnicode") {
+        let Some(Object::Stream(cmap)) = deref(doc, cmap) else {
+            return None;
+        };
+        let Decoded::Content(bytes) = strict_content_in(Some(doc), cmap, MAX_CMAP_BYTES.min(left), charged) else {
+            return None;
+        };
+        if !read_cmap(&bytes, &mut map) {
+            return None;
+        }
+    } else if symbolic {
         return None;
     }
+    // Private Use Area text is not the text shown: those codes stay unknown.
+    map.retain(|_, text| !text.chars().any(is_private_use));
     Some(map)
 }
 
@@ -104,8 +103,25 @@ fn is_private_use(c: char) -> bool {
     matches!(u32::from(c), 0xE000..=0xF8FF | 0xF0000..=0xFFFFD | 0x100000..=0x10FFFD)
 }
 
+const BASE_ENCODINGS: [&[u8]; 3] = [b"WinAnsiEncoding", b"MacRomanEncoding", b"StandardEncoding"];
+
+/// An /Encoding we can read: a standard base encoding by name, or a
+/// dictionary with a recognised /BaseEncoding or (without one) /Differences.
+fn usable_encoding(doc: &Document, encoding: &Object) -> bool {
+    match deref(doc, encoding) {
+        Some(Object::Name(n)) => BASE_ENCODINGS.contains(&n.as_slice()),
+        Some(Object::Dictionary(d)) => match d.get(b"BaseEncoding").ok().and_then(|b| deref(doc, b)) {
+            Some(Object::Name(n)) => BASE_ENCODINGS.contains(&n.as_slice()),
+            Some(_) => false,
+            None => matches!(d.get(b"Differences").ok().and_then(|o| deref(doc, o)), Some(Object::Array(_))),
+        },
+        _ => false,
+    }
+}
+
 /// A simple font whose codes need not follow any standard encoding: the
-/// descriptor's Symbolic flag (bit 3), or a TrueType font without /Encoding.
+/// descriptor's Symbolic flag (bit 3; a /Flags that is not a number counts
+/// as set), an /Encoding we cannot read, or a TrueType font without one.
 fn symbolic(doc: &Document, font: &Dictionary) -> bool {
     let flags = font
         .get(b"FontDescriptor")
@@ -113,10 +129,18 @@ fn symbolic(doc: &Document, font: &Dictionary) -> bool {
         .and_then(|d| deref(doc, d))
         .and_then(|d| d.as_dict().ok())
         .and_then(|d| d.get(b"Flags").ok())
-        .and_then(|f| deref(doc, f))
-        .and_then(|f| f.as_i64().ok())
-        .unwrap_or(0);
-    flags & 4 != 0 || (name_of(font, b"Subtype") == Some(b"TrueType") && !font.has(b"Encoding"))
+        .and_then(|f| deref(doc, f));
+    let symbolic_flag = match flags {
+        None => false,
+        Some(Object::Integer(i)) => i & 4 != 0,
+        Some(Object::Real(r)) if r.is_finite() => (r.round() as i64) & 4 != 0,
+        Some(_) => true,
+    };
+    let encoding_ok = match font.get(b"Encoding") {
+        Ok(e) => usable_encoding(doc, e),
+        Err(_) => name_of(font, b"Subtype") != Some(b"TrueType"),
+    };
+    symbolic_flag || !encoding_ok
 }
 
 /// `text` cut to at most `MAX_TEXT_UNITS` UTF-16 units.
