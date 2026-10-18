@@ -14,7 +14,7 @@ export const pdfjsRenderer: Renderer = {
   async open(bytes) {
     const pdf = await pdfjs.getDocument({ data: bytes }).promise;
     return {
-      async render(pageNumber, width) {
+      async render(pageNumber, width, mode) {
         const page = await pdf.getPage(pageNumber);
         const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
         const base = page.getViewport({ scale: 1 });
@@ -25,7 +25,10 @@ export const pdfjsRenderer: Renderer = {
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("2D canvas unavailable");
         try {
-          await page.render({ canvasContext: ctx, viewport }).promise;
+          // ENABLE_FORMS leaves form widgets to an HTML layer (here: none), so their appearances
+          // are not painted; every other annotation still is.
+          const annotationMode = mode === "no-widgets" ? pdfjs.AnnotationMode.ENABLE_FORMS : pdfjs.AnnotationMode.ENABLE;
+          await page.render({ canvasContext: ctx, viewport, annotationMode }).promise;
           return await canvasToBlob(canvas);
         } finally {
           page.cleanup();

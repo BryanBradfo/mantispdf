@@ -3,7 +3,7 @@ import { pickNext } from "./priority";
 import type { QueuedJob } from "./types";
 
 const job = (p: Partial<QueuedJob> & { seq: number }): QueuedJob => ({
-  doc: "d", page: 2, width: 160, visible: false, ...p,
+  doc: "d", page: 2, width: 160, mode: "full", visible: false, ...p,
 });
 
 describe("pickNext", () => {

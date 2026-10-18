@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { unsupportedChars } from "../../lib/editor/afm";
+import { cssFont } from "../editor/svgStyle";
 import { PADDING, textFontSize, widgetFrame } from "../../lib/forms/layout";
 import { NO_VALUE, type FormField, type FormValue, type FormWidget } from "../../lib/forms/model";
 
@@ -31,16 +32,10 @@ interface OverlayProps {
   box: { left: number; top: number; width: number; height: number };
 }
 
-// Opaque: the page preview also draws the file's own field appearances, which must not show
-// through a value (they hold the old one).
-const controlClass =
-  "h-full w-full rounded-none border border-sky-400 bg-sky-50 text-gray-900 outline-none focus:border-mantis-600 focus:bg-white focus:ring-2 focus:ring-mantis-500 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-100 disabled:text-gray-700";
-/**
- * An empty text box is see-through, so the page's own printing under the widget (labels, guide
- * text, comb ticks) stays readable until something is typed.
- */
-const emptyTextClass = "!bg-sky-100/40 focus:!bg-white";
-const textClass = (text: string) => (text === "" ? `${controlClass} ${emptyTextClass}` : controlClass);
+// See-through: the preview is drawn without the file's field appearances (FormCanvas), so only
+// the page's own printing (labels, comb ticks) is under a control, and it stays readable.
+const frameClass = "border border-sky-400/80 bg-sky-100/40";
+const controlClass = `h-full w-full rounded-none ${frameClass} text-gray-900 outline-none focus:border-mantis-600 focus:ring-2 focus:ring-mantis-500 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-100/40 disabled:text-gray-700`;
 
 /**
  * The HTML control drawn over one widget of the page: sized to the widget, its content turned
@@ -65,16 +60,33 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
   const invalid = bad ? " !border-red-600 !ring-2 !ring-red-500" : "";
   const kind = field.kind;
 
+  // pdf.js still paints read-only text and choice fields into the preview (their appearance has
+  // its own canvas even without widgets), and the value cannot change: frame it, draw nothing.
+  if (disabled && (kind.kind === "text" || kind.kind === "combo" || kind.kind === "list")) {
+    const shown = kind.kind === "list" ? namesOf(value).join(", ") : textOf(value);
+    return (
+      <div
+        style={frame}
+        role="note"
+        aria-label={`${label} (read-only)${shown ? `: ${shown}` : ""}`}
+        title={`${label} (read-only)`}
+        className="border border-dashed border-gray-400/80"
+      />
+    );
+  }
+
   switch (kind.kind) {
     case "text": {
       const text = textOf(value);
       const fontPx = textFontSize(kind, widget, text) * scale;
+      const { family, weight } = cssFont(widget.font);
       const style: CSSProperties = {
         fontSize: fontPx,
         lineHeight: kind.multiline ? 1.15 : 1,
         textAlign: ALIGN[widget.align],
         padding: `0 ${PADDING * scale}px`,
-        fontFamily: "Helvetica, Arial, sans-serif",
+        fontFamily: family,
+        fontWeight: weight,
       };
       if (kind.comb && kind.maxLen !== null && kind.maxLen > 0) {
         // One character per cell: a monospace font spaced to the cell width.
@@ -93,7 +105,7 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
         disabled,
         value: text,
         maxLength: kind.maxLen ?? undefined,
-        className: textClass(text) + invalid,
+        className: controlClass + invalid,
         style,
         title: bad ? `${label}: characters the PDF fonts cannot save` : label,
       };
@@ -118,7 +130,7 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
       if (state === null) return null;
       const checked = namesOf(value).includes(state);
       return (
-        <div style={frame} className="flex items-center justify-center border border-sky-400 bg-sky-50">
+        <div style={frame} className={`flex items-center justify-center ${frameClass}`}>
           <input
             type={kind.kind}
             name={kind.kind === "radio" ? `field-${field.id}` : undefined}
@@ -135,7 +147,14 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
     case "combo": {
       const text = textOf(value);
       const fontPx = textFontSize({ kind: "text", multiline: false, comb: false, maxLen: null, password: false }, widget, text) * scale;
-      const style: CSSProperties = { fontSize: fontPx, padding: `0 ${PADDING * scale}px`, textAlign: ALIGN[widget.align] };
+      const { family, weight } = cssFont(widget.font);
+      const style: CSSProperties = {
+        fontSize: fontPx,
+        fontFamily: family,
+        fontWeight: weight,
+        padding: `0 ${PADDING * scale}px`,
+        textAlign: ALIGN[widget.align],
+      };
       if (kind.editable) {
         const listId = `field-${field.id}-options`;
         return (
@@ -148,7 +167,7 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
               disabled={disabled}
               value={text}
               onChange={(e) => onChange({ kind: "text", text: e.target.value })}
-              className={textClass(text) + invalid}
+              className={controlClass + invalid}
               style={style}
             />
             <datalist id={listId}>
@@ -195,7 +214,7 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
               onChange(picked.length === 0 ? NO_VALUE : { kind: "names", names: picked });
             }}
             className={controlClass}
-            style={{ fontSize: fontPx, padding: 0 }}
+            style={{ fontSize: fontPx, fontFamily: cssFont(widget.font).family, padding: 0 }}
           >
             {field.options.map((o) => (
               <option key={o.exportValue} value={o.exportValue}>{o.display}</option>
@@ -206,7 +225,7 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
     }
     case "signature":
       return (
-        <div style={frame} className="flex items-center justify-center border border-dashed border-sky-500 bg-sky-50 text-center">
+        <div style={frame} className="flex items-center justify-center border border-dashed border-sky-500 bg-sky-50/60 text-center">
           <Link to="/sign" className="px-1 text-[11px] font-medium leading-tight text-sky-800 underline">
             Sign with Sign PDF
           </Link>

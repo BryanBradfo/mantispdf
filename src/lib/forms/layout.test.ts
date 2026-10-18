@@ -76,4 +76,15 @@ describe("textFontSize", () => {
     const tall = widget([0, 0, 20, 200], { fontSize: 0, rotation: 90 });
     expect(textFontSize(text(), tall, "")).toBe(15);
   });
+
+  it("measures with the widget's own font", () => {
+    // Courier: every glyph 600 units, so 10 characters are 6 pt per point of size.
+    const courier = widget([0, 0, 80, 20], { fontSize: 0, font: "Courier" });
+    expect(textFontSize(text(), courier, "WWWWWWWWWW")).toBeCloseTo(76 / 6, 6);
+    expect(autoFontSize(text(), "WWWWWWWWWW", 80, 20, "Courier")).toBeCloseTo(76 / 6, 6);
+    // Helvetica's W is wider (944 units): a smaller size for the same box.
+    expect(textFontSize(text(), { ...courier, font: "Helvetica" }, "WWWWWWWWWW")).toBeCloseTo(76 / 9.44, 6);
+    // Times-Roman multiline: ascender 683, descender -217 (0.9 em) instead of Helvetica's 0.925.
+    expect(autoFontSize(text({ multiline: true }), "one\ntwo", 200, 20, "Times-Roman")).toBe(7);
+  });
 });

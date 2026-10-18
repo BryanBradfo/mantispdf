@@ -1,5 +1,5 @@
 import { pickNext } from "./priority";
-import type { DocKey, QueuedJob, Renderer, RendererDoc, ThumbState } from "./types";
+import type { DocKey, QueuedJob, RenderMode, Renderer, RendererDoc, ThumbState } from "./types";
 
 export const LOADING: ThumbState = { status: "loading" };
 const ERROR: ThumbState = { status: "error" };
@@ -22,7 +22,8 @@ interface DocEntry {
 }
 
 const SEP = "\u0000";
-const keyOf = (doc: DocKey, page: number, width: number) => `${doc}${SEP}${page}${SEP}${width}`;
+// The mode is part of the key: a page without widgets never stands in for the full page.
+const keyOf = (doc: DocKey, page: number, width: number, mode: RenderMode) => `${doc}${SEP}${page}${SEP}${width}${SEP}${mode}`;
 
 const docKeys = new WeakMap<object, DocKey>();
 let nextDocKey = 0;
@@ -85,22 +86,22 @@ export class ThumbnailStore {
     });
   }
 
-  request(doc: DocKey, page: number, width: number): void {
-    const key = keyOf(doc, page, width);
+  request(doc: DocKey, page: number, width: number, mode: RenderMode = "full"): void {
+    const key = keyOf(doc, page, width, mode);
     if (this.states.has(key) || !this.docs.has(doc)) return;
     this.states.set(key, LOADING);
-    this.queue.push({ doc, page, width, visible: false, seq: this.seq++ });
+    this.queue.push({ doc, page, width, mode, visible: false, seq: this.seq++ });
     this.emit();
     this.pump();
   }
 
-  setVisible(doc: DocKey, page: number, width: number, visible: boolean): void {
-    const job = this.queue.find((j) => j.doc === doc && j.page === page && j.width === width);
+  setVisible(doc: DocKey, page: number, width: number, visible: boolean, mode: RenderMode = "full"): void {
+    const job = this.queue.find((j) => j.doc === doc && j.page === page && j.width === width && j.mode === mode);
     if (job) job.visible = visible;
   }
 
-  getThumb(doc: DocKey, page: number, width: number): ThumbState | undefined {
-    return this.states.get(keyOf(doc, page, width));
+  getThumb(doc: DocKey, page: number, width: number, mode: RenderMode = "full"): ThumbState | undefined {
+    return this.states.get(keyOf(doc, page, width, mode));
   }
 
   subscribe = (fn: () => void): (() => void) => {
@@ -125,12 +126,12 @@ export class ThumbnailStore {
   private async run(job: QueuedJob): Promise<void> {
     const entry = this.docs.get(job.doc);
     if (!entry) return;
-    const key = keyOf(job.doc, job.page, job.width);
+    const key = keyOf(job.doc, job.page, job.width, job.mode);
     let next: ThumbState;
     try {
       entry.open ??= this.openDoc(entry.source);
       const doc = await entry.open;
-      const blob = await doc.render(job.page, job.width);
+      const blob = await doc.render(job.page, job.width, job.mode);
       if (entry.disposed) return;
       const url = this.createUrl(blob);
       entry.urls.add(url);

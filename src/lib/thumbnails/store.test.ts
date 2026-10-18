@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { ThumbnailStore, docKeyFor } from "./store";
-import type { Renderer, RendererDoc } from "./types";
+import type { RenderMode, Renderer, RendererDoc } from "./types";
 
 interface Deferred<T> { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void }
 function deferred<T>(): Deferred<T> {
@@ -11,7 +11,7 @@ function deferred<T>(): Deferred<T> {
 
 /** Fake renderer: every render waits until the test resolves it. */
 function setup(opts: { openFails?: boolean } = {}) {
-  const renders: { page: number; width: number; d: Deferred<Blob> }[] = [];
+  const renders: { page: number; width: number; mode: RenderMode; d: Deferred<Blob> }[] = [];
   const destroy = vi.fn();
   const opens = vi.fn();
   const renderer: Renderer = {
@@ -19,7 +19,7 @@ function setup(opts: { openFails?: boolean } = {}) {
       opens(bytes);
       if (opts.openFails) throw new Error("corrupt");
       const doc: RendererDoc = {
-        render(page, width) { const d = deferred<Blob>(); renders.push({ page, width, d }); return d.promise; },
+        render(page, width, mode) { const d = deferred<Blob>(); renders.push({ page, width, mode, d }); return d.promise; },
         destroy,
       };
       return doc;
@@ -199,5 +199,50 @@ describe("docKeyFor", () => {
     const a = new Uint8Array(1), b = new Uint8Array(1);
     expect(docKeyFor(a)).toBe(docKeyFor(a));
     expect(docKeyFor(a)).not.toBe(docKeyFor(b));
+  });
+
+  describe("render modes", () => {
+    it("renders the full page by default", async () => {
+      const { store, renders } = setup();
+      store.register("a", bytes());
+      store.request("a", 1, 200);
+      await vi.waitFor(() => expect(renders).toHaveLength(1));
+      expect(renders[0].mode).toBe("full");
+    });
+
+    it("caches a page without form widgets apart from the full page", async () => {
+      const { store, renders } = setup();
+      store.register("a", bytes());
+      store.request("a", 1, 200);
+      store.request("a", 1, 200, "no-widgets");
+      await vi.waitFor(() => expect(renders).toHaveLength(2));
+      expect(renders.map((r) => r.mode)).toEqual(["full", "no-widgets"]);
+      renders[1].d.resolve(new Blob(["bare"]));
+      await vi.waitFor(() => expect(store.getThumb("a", 1, 200, "no-widgets")).toEqual({ status: "ready", url: "blob:test/1" }));
+      // The full page is still its own entry, not the widget-less one.
+      expect(store.getThumb("a", 1, 200)).toEqual({ status: "loading" });
+      renders[0].d.resolve(new Blob(["full"]));
+      await vi.waitFor(() => expect(store.getThumb("a", 1, 200, "full")).toEqual({ status: "ready", url: "blob:test/2" }));
+      expect(store.getThumb("a", 1, 200, "no-widgets")).toEqual({ status: "ready", url: "blob:test/1" });
+      // Both are cache hits now.
+      store.request("a", 1, 200);
+      store.request("a", 1, 200, "no-widgets");
+      expect(renders).toHaveLength(2);
+    });
+
+    it("raises the priority of the matching mode only", async () => {
+      const { store, renders } = setup();
+      store.register("a", bytes());
+      // Fill both render slots, then queue the two modes of page 3.
+      store.request("a", 1, 200);
+      store.request("a", 2, 200);
+      store.request("a", 3, 200);
+      store.request("a", 3, 200, "no-widgets");
+      store.setVisible("a", 3, 200, true, "no-widgets");
+      await vi.waitFor(() => expect(renders).toHaveLength(2));
+      renders[0].d.resolve(new Blob(["x"]));
+      await vi.waitFor(() => expect(renders).toHaveLength(3));
+      expect(renders[2]).toMatchObject({ page: 3, mode: "no-widgets" });
+    });
   });
 });

@@ -1,8 +1,9 @@
 /**
  * Sizes for the page view's form controls, mirroring the engine's text appearance
- * (crates/mantis-wasm/src/forms/appearance.rs). The /DA font is not listed by the engine, so
- * automatic sizes use Helvetica metrics (the engine's fallback font).
+ * (crates/mantis-wasm/src/forms/appearance.rs), with the metrics of the font the engine draws
+ * the widget with (`FormWidget.font`).
  */
+import type { StdFont } from "../stampJob";
 import { ascent, charUnits, descent } from "../editor/afm";
 import type { Rect } from "../editor/model";
 import { wrapLines } from "../editor/wrap";
@@ -15,7 +16,6 @@ export const COMB_PADDING = 1;
 export const LEADING = 1.15;
 const MIN_AUTO_SIZE = 4;
 const MAX_AUTO_SIZE = 12;
-const FONT = "Helvetica";
 
 /**
  * A widget's visible box `[x, y, w, h]`, and the size of its content frame: the box itself, or
@@ -29,33 +29,33 @@ export function widgetFrame(w: FormWidget): { rect: Rect; width: number; height:
 }
 
 /** Width of `text` at size 1 (characters the fonts lack count 0, like the engine drops them). */
-function unitWidth(text: string): number {
+function unitWidth(text: string, font: StdFont): number {
   let units = 0;
-  for (const ch of text) units += charUnits(FONT, ch);
+  for (const ch of text) units += charUnits(font, ch);
   return units / 1000;
 }
 
 /** The engine's automatic font size for a text field showing `text` in a `width` x `height` frame. */
-export function autoFontSize(kind: FieldKind, text: string, width: number, height: number): number {
+export function autoFontSize(kind: FieldKind, text: string, width: number, height: number, font: StdFont = "Helvetica"): number {
   const byHeight = height * 0.75;
   const floor = Math.min(MIN_AUTO_SIZE, byHeight);
   if (kind.kind === "text" && kind.comb && kind.maxLen !== null) {
     const cell = width / Math.max(1, kind.maxLen);
     let widest = 0;
-    for (const ch of Array.from(text).slice(0, kind.maxLen)) widest = Math.max(widest, unitWidth(ch));
+    for (const ch of Array.from(text).slice(0, kind.maxLen)) widest = Math.max(widest, unitWidth(ch, font));
     const byWidth = widest > 0 ? (cell - 2 * COMB_PADDING) / widest : Infinity;
     return Math.max(Math.min(byHeight, byWidth), floor);
   }
   if (kind.kind === "text" && kind.multiline) {
     const avail = width - 2 * PADDING;
     for (let s = MAX_AUTO_SIZE; s >= MIN_AUTO_SIZE; s--) {
-      const lines = wrapLines(text, FONT, s, avail).length;
-      const needed = 2 * PADDING + ((ascent(FONT) - descent(FONT)) * s) / 1000 + Math.max(0, lines - 1) * s * LEADING;
+      const lines = wrapLines(text, font, s, avail).length;
+      const needed = 2 * PADDING + ((ascent(font) - descent(font)) * s) / 1000 + Math.max(0, lines - 1) * s * LEADING;
       if (needed <= height) return s;
     }
     return MIN_AUTO_SIZE;
   }
-  const unit = unitWidth(text);
+  const unit = unitWidth(text, font);
   const byWidth = unit > 0 ? (width - 2 * PADDING) / unit : Infinity;
   return Math.max(Math.min(byHeight, byWidth), floor);
 }
@@ -64,5 +64,5 @@ export function autoFontSize(kind: FieldKind, text: string, width: number, heigh
 export function textFontSize(kind: FieldKind, widget: FormWidget, text: string): number {
   if (widget.fontSize > 0) return widget.fontSize;
   const { width, height } = widgetFrame(widget);
-  return autoFontSize(kind, text, width, height);
+  return autoFontSize(kind, text, width, height, widget.font);
 }

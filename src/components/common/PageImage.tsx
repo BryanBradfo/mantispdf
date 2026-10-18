@@ -1,5 +1,5 @@
 import { useRef, type CSSProperties } from "react";
-import { useThumbnail } from "../../lib/thumbnails";
+import { useThumbnail, type RenderMode } from "../../lib/thumbnails";
 
 interface PageImageProps {
   source: Blob | Uint8Array;
@@ -8,11 +8,13 @@ interface PageImageProps {
   alt: string;
   imgStyle?: CSSProperties;
   className?: string;
+  /** "no-widgets" leaves out form field appearances (for a page under live form controls). */
+  mode?: RenderMode;
 }
 
-export default function PageImage({ source, page, width, alt, imgStyle, className = "" }: PageImageProps) {
+export default function PageImage({ source, page, width, alt, imgStyle, className = "", mode = "full" }: PageImageProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const thumb = useThumbnail(source, page, width, ref);
+  const thumb = useThumbnail(source, page, width, ref, mode);
 
   return (
     <div

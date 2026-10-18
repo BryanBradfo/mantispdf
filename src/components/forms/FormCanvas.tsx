@@ -55,7 +55,8 @@ export default function FormCanvas({ source, page, pageSize, fields, state, onCh
         className="relative mx-auto overflow-hidden rounded-lg border border-gray-300 shadow-sm dark:border-[#333]"
         style={{ width: pw, height: ph }}
       >
-        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={`Page ${page}`} className="h-full" />
+        {/* Without the file's field appearances: the controls below show the values instead. */}
+        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={`Page ${page}`} className="h-full" mode="no-widgets" />
         {fields.flatMap((field) =>
           field.widgets.map((widget, i) => {
             if (widget.page !== page || !isDrawn(widget) || field.kind.kind === "button") return null;
