@@ -3,6 +3,8 @@
 
 #[cfg(test)]
 mod content_tests;
+#[cfg(test)]
+mod fixture_tests;
 pub(crate) mod fonts;
 pub(crate) mod forms;
 pub(crate) mod graphics;
