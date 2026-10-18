@@ -156,6 +156,13 @@ const tools = [
     available: true,
   },
   {
+    title: "Fill PDF form",
+    description: "Fill in form fields, then download editable or flattened.",
+    href: "/fill-form",
+    icon: "📝",
+    available: true,
+  },
+  {
     title: "Images to PDF",
     description: "Turn JPG, PNG or WebP images into a PDF, one per page.",
     href: "/images-to-pdf",
