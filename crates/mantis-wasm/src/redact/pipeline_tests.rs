@@ -722,3 +722,31 @@ fn verification_exempts_only_what_this_job_drew() {
     let out = load_pdf(&out).unwrap();
     assert!(!out.objects.values().any(|o| matches!(o, Object::Stream(s) if s.dict.has(super::verify::TAG_KEY.as_bytes()))));
 }
+
+#[test]
+fn a_rasterized_page_shows_exactly_one_tagged_image() {
+    let tag = b"0123456789abcdef".to_vec();
+    let page_with = |content: &str, tagged: bool| {
+        let doc = one_page(content, |doc, page| {
+            let mut dict = dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => 1, "Height" => 1,
+                "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+            };
+            if tagged {
+                dict.set(super::verify::TAG_KEY, Object::String(b"0123456789abcdef".to_vec(), StringFormat::Hexadecimal));
+            }
+            let image = doc.add_object(Stream::new(dict, vec![100]));
+            let font = doc.add_object(helvetica());
+            doc.get_dictionary_mut(page)
+                .unwrap()
+                .set("Resources", dictionary! { "XObject" => dictionary! { "P" => image }, "Font" => dictionary! { "H" => font } });
+        });
+        let page = page_ids(&doc)[0];
+        super::verify::verify_raster_page(&doc, page, &tag)
+    };
+    assert!(page_with("q 612 0 0 792 0 0 cm /P Do Q", true));
+    assert!(!page_with("q 612 0 0 792 0 0 cm /P Do Q", false), "not this job's image");
+    assert!(!page_with("q 612 0 0 792 0 0 cm /P Do Q /P Do", true), "two images");
+    assert!(!page_with("q 612 0 0 792 0 0 cm /P Do Q 0 0 5 5 re f", true), "a path");
+    assert!(!page_with("q 612 0 0 792 0 0 cm /P Do Q BT /H 1 Tf 3 Tr (x) Tj ET", true), "invisible text");
+}

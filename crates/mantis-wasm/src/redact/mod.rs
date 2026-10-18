@@ -205,8 +205,7 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
     for (number, rects, rasterized) in checks {
         let ok = saved_pages.get(&number).is_some_and(|&page| {
             if rasterized {
-                // A picture only: no text at all.
-                verify::page_glyphs(&saved, page).is_ok_and(|glyphs| glyphs.is_empty())
+                verify::verify_raster_page(&saved, page, &tag)
             } else {
                 verify::verify_page(&saved, page, &rects, &tag)
             }

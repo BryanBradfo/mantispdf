@@ -155,3 +155,12 @@ fn left_under(event: &Event, rects: &[Rect]) -> bool {
         _ => false,
     }
 }
+
+/// True when a rasterized `page` draws exactly one thing: the image this
+/// job made (carrying `tag`), and nothing else at all.
+pub(crate) fn verify_raster_page(doc: &Document, page: ObjectId, tag: &[u8]) -> bool {
+    let Ok((seen, _)) = page_seen(doc, page, tag) else {
+        return false;
+    };
+    matches!(seen.as_slice(), [only] if only.top && only.tagged)
+}
