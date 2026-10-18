@@ -104,7 +104,7 @@ fn area(page: u32, x: f64, y: f64, w: f64, h: f64) -> RedactRect {
 }
 
 fn job(rects: Vec<RedactRect>) -> RedactJob {
-    RedactJob { rects, fill: Fill::Black, remove_metadata: true }
+    RedactJob { rects, fill: Fill::Black, remove_metadata: true, rasters: Vec::new() }
 }
 
 /// "World" on page 1 (the space before it stays clear).
@@ -587,4 +587,86 @@ fn each_area_is_covered_by_a_box_of_the_fill_colour() {
     assert!(boxes.contains(&Rect { x0: 100.0, y0: 100.0, x1: 105.0, y1: 105.0 }), "{boxes:?}");
     let content = String::from_utf8_lossy(&out.get_page_content(page).unwrap()).into_owned();
     assert!(content.contains("1 1 1 rg"), "{content}");
+}
+
+/// An all-white raster of `width` x `height` at `dpi` for 1-based `page`.
+fn white_raster(page: u32, width: u32, height: u32, dpi: f64) -> PageRaster {
+    PageRaster { page, width, height, dpi, rgba: vec![255; width as usize * height as usize * 4] }
+}
+
+fn image_of(doc: &Document, page: ObjectId) -> (usize, usize, Vec<u8>) {
+    let res = super::interp::page_resources(doc, page);
+    let xobjects = super::interp::page_resources_dict(doc, &res, b"XObject");
+    assert_eq!(xobjects.len(), 1);
+    let (_, image) = xobjects.iter().next().unwrap();
+    let stream = doc.dereference(image).unwrap().1.as_stream().unwrap();
+    crate::images::extract::ImageDecoder::new(doc, 1 << 30).rgba(stream, &res).unwrap()
+}
+
+#[test]
+fn unsupported_pages_are_replaced_by_their_raster() {
+    let mut j = job(vec![world(), area(3, 0.0, 0.0, 10.0, 20.0)]);
+    j.rasters = vec![white_raster(3, 612, 792, 72.0)];
+    let (out, summary) = redact(&bytes(fixture_with_type3()), &j).unwrap();
+    assert_eq!(summary.pages_rasterized, vec![3]);
+    let out = load_pdf(&out).unwrap();
+    let pages = page_ids(&out);
+    assert_eq!(text_of(&out, pages[0]), "Hello ");
+    assert_eq!(text_of(&out, pages[1]), "SECRET DATA");
+    assert_eq!(text_of(&out, pages[2]), "", "no text at all on a rasterized page");
+    let (w, h, rgba) = image_of(&out, pages[2]);
+    assert_eq!((w, h), (612, 792));
+    // The engine paints the areas itself: bottom-left 10 x 20 px black.
+    let px = |x: usize, y: usize| &rgba[4 * (y * w + x)..4 * (y * w + x) + 3];
+    assert_eq!(px(0, h - 1), [0, 0, 0]);
+    assert_eq!(px(9, h - 20), [0, 0, 0]);
+    assert_eq!(px(10, h - 1), [255, 255, 255]);
+    assert_eq!(px(0, h - 21), [255, 255, 255]);
+    let page = out.get_dictionary(pages[2]).unwrap();
+    for key in [&b"Annots"[..], b"Group", b"StructParents", b"Thumb", b"PieceInfo", b"Metadata", b"AA"] {
+        assert!(!page.has(key), "{}", String::from_utf8_lossy(key));
+    }
+}
+
+#[test]
+fn rasterized_pages_keep_their_geometry() {
+    let mut doc = fixture_with_type3();
+    let page3 = page_ids(&doc)[2];
+    let d = doc.get_dictionary_mut(page3).unwrap();
+    d.set("Rotate", 90);
+    d.set("CropBox", rect_array([12, 0, 612, 792]));
+    let mut j = job(vec![area(3, 0.0, 0.0, 10.0, 20.0)]);
+    // Visible size 792 x 600 points at 144 dpi.
+    j.rasters = vec![white_raster(3, 1584, 1200, 144.0)];
+    let (out, _) = redact(&bytes(doc), &j).unwrap();
+    let out = load_pdf(&out).unwrap();
+    let page = page_ids(&out)[2];
+    let vb = crate::stamp::geometry::VisibleBox::of_page(&out, page);
+    assert_eq!((vb.x0, vb.y0, vb.x1, vb.y1, vb.rotate), (12.0, 0.0, 612.0, 792.0, 90));
+    let (w, h, rgba) = image_of(&out, page);
+    assert_eq!((w, h), (1584, 1200));
+    // 10 x 20 points at 144 dpi: 20 x 40 px from the visible bottom-left.
+    assert_eq!(&rgba[4 * ((h - 1) * w)..4 * ((h - 1) * w) + 3], [0, 0, 0]);
+    assert_eq!(&rgba[4 * ((h - 40) * w + 19)..4 * ((h - 40) * w + 19) + 3], [0, 0, 0]);
+    assert_eq!(&rgba[4 * ((h - 41) * w)..4 * ((h - 41) * w) + 3], [255, 255, 255]);
+}
+
+#[test]
+fn rasters_are_validated() {
+    let pdf = bytes(fixture_with_type3());
+    let with = |raster: Option<PageRaster>| {
+        let mut j = job(vec![area(3, 0.0, 0.0, 10.0, 10.0)]);
+        j.rasters = raster.into_iter().collect();
+        redact(&pdf, &j).map(|_| ()).unwrap_err()
+    };
+    assert!(with(None).starts_with("Invalid redact settings: raster (page 3: font T: Type3"));
+    assert_eq!(with(Some(white_raster(3, 600, 792, 72.0))), "Invalid redact settings: raster");
+    assert_eq!(with(Some(white_raster(3, 612, 792, 0.0))), "Invalid redact settings: raster");
+    let mut short = white_raster(3, 612, 792, 72.0);
+    short.rgba.pop();
+    assert_eq!(with(Some(short)), "Invalid redact settings: raster");
+    // Within 2 px is accepted.
+    let mut j = job(vec![area(3, 0.0, 0.0, 10.0, 10.0)]);
+    j.rasters = vec![white_raster(3, 614, 790, 72.0)];
+    assert!(redact(&pdf, &j).is_ok());
 }

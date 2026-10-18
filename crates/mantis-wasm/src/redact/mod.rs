@@ -16,12 +16,14 @@ pub(crate) mod images;
 pub(crate) mod interp;
 pub(crate) mod marked;
 pub(crate) mod page;
+pub(crate) mod raster;
 #[cfg(test)]
 mod pipeline_tests;
 pub(crate) mod text;
 pub(crate) mod verify;
 
 pub(crate) use page::{page_rects_user, plan_page, redact_page};
+pub(crate) use raster::PageRaster;
 #[cfg(test)]
 pub(crate) use page::plant_leak_for_tests;
 
@@ -46,6 +48,8 @@ pub(crate) struct RedactJob {
     pub(crate) fill: Fill,
     /// Drop the document information dictionary too (XMP always goes).
     pub(crate) remove_metadata: bool,
+    /// Renderings of the pages `redact_plan` reported as unsupported.
+    pub(crate) rasters: Vec<PageRaster>,
 }
 
 /// Whether a page with areas can be redacted by rewriting its content;
@@ -60,6 +64,8 @@ pub(crate) struct PageStatus {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct RedactSummary {
     pub(crate) pages_redacted: Vec<u32>,
+    /// Pages replaced by their raster.
+    pub(crate) pages_rasterized: Vec<u32>,
     pub(crate) glyphs_removed: usize,
     pub(crate) paths_removed: usize,
     pub(crate) images_redacted: usize,
@@ -151,8 +157,21 @@ pub(crate) fn redact(pdf: &[u8], job: &RedactJob) -> Result<(Vec<u8>, RedactSumm
     let mut summary = RedactSummary::default();
     let mut checks = Vec::new();
     for (number, rects, result) in redact_pages(&mut doc, &by_page, job.fill, false) {
-        // Pages that need a raster arrive with one (Task 5); none yet.
-        let report = result.map_err(|Unsupported(reason)| invalid(&format!("raster (page {number}: {reason})")))?;
+        let report = match result {
+            Ok(report) => report,
+            Err(Unsupported(reason)) => {
+                let raster = job
+                    .rasters
+                    .iter()
+                    .find(|r| r.page == number)
+                    .ok_or_else(|| invalid(&format!("raster (page {number}: {reason})")))?;
+                let page = doc.get_pages()[&number];
+                raster::rasterize_page(&mut doc, page, raster, &by_page[&number], job.fill)?;
+                summary.pages_rasterized.push(number);
+                checks.push((number, rects, true));
+                continue;
+            }
+        };
         summary.pages_redacted.push(number);
         summary.glyphs_removed += report.glyphs_removed;
         summary.paths_removed += report.paths_removed + report.shadings_removed;
@@ -160,7 +179,7 @@ pub(crate) fn redact(pdf: &[u8], job: &RedactJob) -> Result<(Vec<u8>, RedactSumm
         summary.images_removed += report.images_removed.len();
         summary.forms_redacted += report.forms_redacted;
         summary.annotations_removed += report.annotations_removed;
-        checks.push((number, rects));
+        checks.push((number, rects, false));
     }
     let pages: Vec<OutPage> =
         doc.get_pages().into_values().map(|page| OutPage::Page { src: 0, page, rotate: 0 }).collect();
@@ -174,8 +193,15 @@ pub(crate) fn redact(pdf: &[u8], job: &RedactJob) -> Result<(Vec<u8>, RedactSumm
     // Verify what a reader will see: the saved file, parsed again.
     let saved = load_pdf(&bytes)?;
     let saved_pages = saved.get_pages();
-    for (number, rects) in checks {
-        let ok = saved_pages.get(&number).is_some_and(|&page| verify::verify_page(&saved, page, &rects));
+    for (number, rects, rasterized) in checks {
+        let ok = saved_pages.get(&number).is_some_and(|&page| {
+            if rasterized {
+                // A picture only: no text at all.
+                verify::page_glyphs(&saved, page).is_ok_and(|glyphs| glyphs.is_empty())
+            } else {
+                verify::verify_page(&saved, page, &rects)
+            }
+        });
         if !ok {
             return Err(format!("Redaction verification failed on page {number}"));
         }
