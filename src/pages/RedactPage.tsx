@@ -41,6 +41,7 @@ import ToolShell, { primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 
 const KEEP_ORIGINAL = "Redaction permanently removes the marked content. Keep your original file.";
+const ALSO_REMOVED = "Comments are removed from the whole document, and form fields are flattened.";
 
 type PdfDocument = Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]>;
 
@@ -293,7 +294,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
       </div>
 
       <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-[#1f1a0a] dark:text-amber-200">
-        {KEEP_ORIGINAL}
+        {KEEP_ORIGINAL} {ALSO_REMOVED}
       </p>
 
       <ErrorAlert error={error} onDismiss={() => setError(null)} />
@@ -448,7 +449,9 @@ export default function RedactPage() {
       {!input && (
         <div className="mx-auto mt-8 max-w-2xl">
           <DropZone onFile={(f) => void pick(f)} error={error} engineReady={worker.ready} />
-          <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">{KEEP_ORIGINAL}</p>
+          <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">
+            {KEEP_ORIGINAL} {ALSO_REMOVED}
+          </p>
         </div>
       )}
 

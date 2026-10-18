@@ -49,6 +49,16 @@ describe("redaction report", () => {
     ]);
   });
 
+  it("lists the pages where a box was widened over removed text, when the engine says", () => {
+    expect(reportLines(result())).not.toContainEqual(expect.stringMatching(/widened/));
+    expect(reportLines(result({ widenedPages: [] }))).toEqual(["1 page redacted."]);
+    expect(reportLines(result({ widenedPages: [3, 1] }))).toEqual([
+      "1 page redacted.",
+      "Box widened to cover removed text on page 1",
+      "Box widened to cover removed text on page 3",
+    ]);
+  });
+
   it("repeats the pages search did not cover", () => {
     expect(uncoveredNote([], [])).toBeNull();
     expect(uncoveredNote([4], [])).toBe("Search did not cover page 4; check it by hand.");

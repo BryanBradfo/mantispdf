@@ -46,6 +46,11 @@ export interface RedactResultWire {
   imagesRemoved: number;
   formsRedacted: number;
   annotationsRemoved: number;
+  /**
+   * Pages where the engine widened a box so it covers all the text it removed. Optional: absent
+   * from engines that do not report it.
+   */
+  widenedPages?: number[];
 }
 
 const normalized = ([x, y, w, h]: Rect): Rect => [Math.min(x, x + w), Math.min(y, y + h), Math.abs(w), Math.abs(h)];

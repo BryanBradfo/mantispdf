@@ -25,6 +25,7 @@ export function reportLines(r: RedactResultWire, uncovered: readonly number[] = 
   if (r.pathsRemoved > 0) lines.push(`${count(r.pathsRemoved, "drawing", "drawings")} removed.`);
   if (r.formsRedacted > 0) lines.push(`${count(r.formsRedacted, "shared graphic (form XObject)", "shared graphics (form XObjects)")} redacted.`);
   if (r.annotationsRemoved > 0) lines.push(`${count(r.annotationsRemoved, "annotation or link", "annotations or links")} removed.`);
+  for (const page of [...(r.widenedPages ?? [])].sort((a, b) => a - b)) lines.push(`Box widened to cover removed text on page ${page}`);
   if (r.pagesRasterized.length > 0) {
     lines.push(`Converted to images: ${r.pagesRasterized.length === 1 ? "page" : "pages"} ${r.pagesRasterized.join(", ")}.`);
   }
