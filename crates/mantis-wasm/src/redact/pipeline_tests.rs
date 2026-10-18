@@ -789,3 +789,70 @@ fn rasters_of_pages_with_a_user_unit_may_be_sized_either_way() {
     assert_eq!(with(1224, 1584), Ok(()));
     assert_eq!(with(900, 1100), Err("Invalid redact settings: raster".to_string()));
 }
+
+/// A soft-mask ExtGState whose group (small box, far away) has `content` and
+/// `resources` (none when None).
+fn soft_mask_gs(doc: &mut Document, content: &str, resources: Option<Dictionary>) -> Dictionary {
+    let mut dict = dictionary! {
+        "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 10, 10]),
+        "Group" => dictionary! { "S" => "Transparency" },
+    };
+    if let Some(res) = resources {
+        dict.set("Resources", res);
+    }
+    let group = doc.add_object(Stream::new(dict, content.as_bytes().to_vec()));
+    dictionary! { "Type" => "ExtGState", "SMask" => dictionary! { "S" => "Luminosity", "G" => group } }
+}
+
+/// A form drawing (SECRET) at (100, 700).
+fn secret_form(doc: &mut Document) -> ObjectId {
+    let font = doc.add_object(helvetica());
+    doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 612, 792]),
+            "Resources" => dictionary! { "Font" => dictionary! { "H" => font } },
+        },
+        b"BT /H 10 Tf 100 700 Td (SECRET) Tj ET".to_vec(),
+    ))
+}
+
+#[test]
+fn soft_masks_nested_in_soft_mask_groups_are_checked() {
+    let doc = one_page("q /GS1 gs 0 0 5 5 re f Q", |doc, page| {
+        let secret = secret_form(doc);
+        let inner = soft_mask_gs(doc, "/S Do", Some(dictionary! { "XObject" => dictionary! { "S" => secret } }));
+        let outer = soft_mask_gs(doc, "/GS2 gs 0 0 5 5 re f", Some(dictionary! { "ExtGState" => dictionary! { "GS2" => inner } }));
+        doc.get_dictionary_mut(page).unwrap().set("Resources", dictionary! { "ExtGState" => dictionary! { "GS1" => outer } });
+    });
+    let a = area(1, 95.0, 695.0, 60.0, 15.0);
+    assert!(raster_needed(doc.clone(), vec![a.clone()]));
+    assert_eq!(planted(doc, a), Err("Redaction verification failed on page 1".to_string()));
+}
+
+#[test]
+fn soft_mask_groups_are_read_with_the_resources_where_they_are_set() {
+    // The form sets the soft mask; its group has no /Resources, so /X is the
+    // form's (text under the area), not the page's (empty).
+    // The page draws its own (empty) /X too, so the name survives the rebuild.
+    let doc = one_page("/Fm Do /X Do", |doc, page| {
+        let secret = secret_form(doc);
+        let empty = doc.add_object(Stream::new(
+            dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 1, 1]) },
+            Vec::new(),
+        ));
+        let gs = soft_mask_gs(doc, "/X Do", None);
+        let form = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 612, 792]),
+                "Resources" => dictionary! { "ExtGState" => dictionary! { "GS1" => gs }, "XObject" => dictionary! { "X" => secret } },
+            },
+            b"q /GS1 gs 0 0 5 5 re f Q".to_vec(),
+        ));
+        doc.get_dictionary_mut(page)
+            .unwrap()
+            .set("Resources", dictionary! { "XObject" => dictionary! { "Fm" => form, "X" => empty } });
+    });
+    let a = area(1, 95.0, 695.0, 60.0, 15.0);
+    assert!(raster_needed(doc.clone(), vec![a.clone()]));
+    assert_eq!(planted(doc, a), Err("Redaction verification failed on page 1".to_string()));
+}

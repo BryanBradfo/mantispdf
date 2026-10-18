@@ -28,6 +28,9 @@ struct Seen {
     top: bool,
     /// An image XObject carrying this job's tag.
     tagged: bool,
+    /// For a soft mask: the resources in effect where it was set (its
+    /// group, without /Resources of its own, reads those).
+    context: Option<std::rc::Rc<Dictionary>>,
 }
 
 /// Every event of `page` (forms included, in user space) and the page's own
@@ -108,7 +111,8 @@ fn walk(
             walk(doc, &decode_ops(&content)?, inner, f.matrix, f.paint, forms, budget, tag, out)?;
             forms.pop();
         }
-        out.push(Seen { event, top, tagged });
+        let context = matches!(event, Event::SoftMask(_)).then(|| std::rc::Rc::new(resources.clone()));
+        out.push(Seen { event, top, tagged, context });
     }
     Ok(())
 }
@@ -138,11 +142,10 @@ pub(crate) fn verify_page(doc: &Document, page: ObjectId, rects: &[Rect], tag: &
     if unanalysed_paint(&events, rects).is_some() {
         return false;
     }
-    let resources = page_resources(doc, page);
     let mut budget = Budget::page(JOB_DECODED);
-    for event in &events {
-        if let Event::SoftMask(m) = event
-            && m.group.is_none_or(|(group, matrix)| group_meets(doc, group, matrix, &resources, rects, &mut budget))
+    for s in &seen {
+        if let (Event::SoftMask(m), context) = (&s.event, &s.context)
+            && soft_mask_meets(doc, m, context.as_deref(), rects, &mut budget, &mut Vec::new())
         {
             return false;
         }
@@ -177,11 +180,43 @@ pub(crate) fn verify_raster_page(doc: &Document, page: ObjectId, tag: &[u8]) -> 
 }
 
 /// True when the content of soft-mask group `group` (drawn with `matrix`;
-/// without its own /Resources it uses `resources`) puts a glyph, a painted
-/// path, a shading or an image under a rect, or paints anything we cannot
-/// analyse there, whatever its /BBox: such content is drawn into the mask.
-/// Unreadable content counts as meeting the rects.
+/// without its own /Resources it uses `resources`, those in effect where
+/// the mask was set) puts a glyph, a painted path, a shading or an image
+/// under a rect, or paints anything we cannot analyse there, whatever its
+/// /BBox: such content is drawn into the mask. Soft masks set inside it are
+/// followed the same way. Fails closed: unreadable content, a cycle or more
+/// than `MAX_FORM_DEPTH` levels count as meeting the rects.
 pub(crate) fn group_meets(doc: &Document, group: ObjectId, matrix: Matrix, resources: &Dictionary, rects: &[Rect], budget: &mut Budget) -> bool {
+    group_meets_within(doc, group, matrix, Some(resources), rects, budget, &mut Vec::new())
+}
+
+/// `group_meets` for soft mask `m` set where `context` was in effect.
+fn soft_mask_meets(
+    doc: &Document,
+    m: &super::interp::SoftMaskSet,
+    context: Option<&Dictionary>,
+    rects: &[Rect],
+    budget: &mut Budget,
+    groups: &mut Vec<ObjectId>,
+) -> bool {
+    match m.group {
+        Some((group, matrix)) => group_meets_within(doc, group, matrix, context, rects, budget, groups),
+        None => true,
+    }
+}
+
+fn group_meets_within(
+    doc: &Document,
+    group: ObjectId,
+    matrix: Matrix,
+    resources: Option<&Dictionary>,
+    rects: &[Rect],
+    budget: &mut Budget,
+    groups: &mut Vec<ObjectId>,
+) -> bool {
+    if groups.contains(&group) || groups.len() >= MAX_FORM_DEPTH {
+        return true;
+    }
     let Ok(Object::Stream(form)) = doc.get_object(group) else {
         return true;
     };
@@ -194,14 +229,25 @@ pub(crate) fn group_meets(doc: &Document, group: ObjectId, matrix: Matrix, resou
     let Ok(ops) = decode_ops(&content) else {
         return true;
     };
-    let inner = match form.dict.get(b"Resources") {
-        Ok(res) => owned_dict(doc, Some(res)),
-        Err(_) => resources.clone(),
+    let inner = match (form.dict.get(b"Resources"), resources) {
+        (Ok(res), _) => owned_dict(doc, Some(res)),
+        (Err(_), Some(context)) => context.clone(),
+        (Err(_), None) => return true,
     };
+    groups.push(group);
     let mut seen = Vec::new();
-    if walk(doc, &ops, inner, matrix, Paint::default(), &mut vec![group], budget, &[], &mut seen).is_err() {
-        return true;
+    let mut forms = groups.clone();
+    let mut meets = walk(doc, &ops, inner, matrix, Paint::default(), &mut forms, budget, &[], &mut seen).is_err();
+    if !meets {
+        let events: Vec<Event> = seen.iter().map(|s| s.event.clone()).collect();
+        meets = unanalysed_paint(&events, rects).is_some() || events.iter().any(|e| left_under(e, rects));
     }
-    let events: Vec<Event> = seen.into_iter().map(|s| s.event).collect();
-    unanalysed_paint(&events, rects).is_some() || events.iter().any(|e| left_under(e, rects))
+    if !meets {
+        meets = seen.iter().any(|s| match &s.event {
+            Event::SoftMask(m) => soft_mask_meets(doc, m, s.context.as_deref(), rects, budget, groups),
+            _ => false,
+        });
+    }
+    groups.pop();
+    meets
 }
