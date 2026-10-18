@@ -57,8 +57,42 @@ struct Char {
     glyph: Option<usize>,
 }
 
+/// The characters `c` reads as: ligatures (U+FB00..=U+FB06) as their
+/// letters, any whitespace as a space, lower case unless `case_sensitive`.
 fn fold(c: char, case_sensitive: bool) -> Vec<char> {
-    if case_sensitive { vec![c] } else { c.to_lowercase().collect() }
+    let letters: &str = match c {
+        '\u{FB00}' => "ff",
+        '\u{FB01}' => "fi",
+        '\u{FB02}' => "fl",
+        '\u{FB03}' => "ffi",
+        '\u{FB04}' => "ffl",
+        '\u{FB05}' | '\u{FB06}' => "st",
+        c if c.is_whitespace() => " ",
+        _ => "",
+    };
+    let chars: Vec<char> = if letters.is_empty() { vec![c] } else { letters.chars().collect() };
+    if case_sensitive { chars } else { chars.into_iter().flat_map(char::to_lowercase).collect() }
+}
+
+/// `query` as the page text reads: folded, whitespace runs as one space.
+fn needle(query: &str, case_sensitive: bool) -> Vec<char> {
+    let mut out: Vec<char> = Vec::new();
+    for c in query.chars().flat_map(|c| fold(c, case_sensitive)) {
+        if c == ' ' && out.last() == Some(&' ') {
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Add `ch` (from `glyph`) to the page text; a space after a space is
+/// dropped (whitespace runs read as one space).
+fn push(chars: &mut Vec<Char>, ch: char, glyph: Option<usize>) {
+    if ch == ' ' && chars.last().is_some_and(|c| c.ch == ' ') {
+        return;
+    }
+    chars.push(Char { ch, glyph });
 }
 
 /// The page text with assumed spaces and the line of each glyph; None past
@@ -79,15 +113,15 @@ fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> Option<(Vec<Char>, Vec<u
             let em = g.em.max(p.em).max(f64::MIN_POSITIVE);
             if across > 0.5 * em || along < -0.5 * em {
                 line += 1;
-                chars.push(Char { ch: ' ', glyph: None });
+                push(&mut chars, ' ', None);
             } else if along > 0.25 * em {
-                chars.push(Char { ch: ' ', glyph: None });
+                push(&mut chars, ' ', None);
             }
         }
         match &g.text {
             Some(text) => {
                 for c in text.chars().flat_map(|c| fold(c, case_sensitive)) {
-                    chars.push(Char { ch: c, glyph: Some(i) });
+                    push(&mut chars, c, Some(i));
                 }
             }
             // Unknown text: breaks any match across it.
@@ -144,7 +178,7 @@ pub(crate) fn redact_search(pdf: &[u8], query: &str, options: &SearchOptions) ->
         return Err(super::invalid("query"));
     }
     let doc = load_pdf(pdf)?;
-    let needle: Vec<char> = query.chars().flat_map(|c| fold(c, options.case_sensitive)).collect();
+    let needle = needle(query, options.case_sensitive);
     let mut result = SearchResult::default();
     let mut total = 0;
     let mut decoded = JOB_DECODED;

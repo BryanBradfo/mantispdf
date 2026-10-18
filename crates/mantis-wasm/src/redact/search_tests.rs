@@ -282,3 +282,35 @@ fn zero_size_matches_get_rects_redaction_accepts() {
         assert_eq!(search_and_redact(&pdf, "secret"), "", "{content}");
     }
 }
+
+/// A Helvetica font /H whose /ToUnicode is `cmap`.
+fn tounicode_font(doc: &mut Document, cmap: &str) -> Dictionary {
+    let tu = doc.add_object(Stream::new(dictionary! {}, cmap.as_bytes().to_vec()));
+    let font = doc.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "ToUnicode" => tu });
+    dictionary! { "Font" => dictionary! { "H" => font } }
+}
+
+fn hits(pdf: &[u8], query: &str) -> usize {
+    redact_search(pdf, query, &opts()).unwrap().pages.iter().map(|p| p.rects.len()).sum()
+}
+
+#[test]
+fn ligatures_read_as_their_letters() {
+    let cmap = "1 beginbfchar <01> <FB01> endbfchar 1 beginbfrange <20> <7E> <0020> endbfrange";
+    let pdf = bytes(one_page("BT /H 10 Tf 100 700 Td (con\\001dential) Tj ET", |d| tounicode_font(d, cmap)));
+    assert_eq!(hits(&pdf, "confidential"), 1);
+    assert_eq!(hits(&pdf, "con\u{FB01}dential"), 1, "the query is folded too");
+    // Removing the match takes the ligature glyph too.
+    let left = search_and_redact(&pdf, "fide");
+    // (Code 1 has no Helvetica width, so its box is wide: neighbours go too.)
+    assert!(!left.contains('\u{1}') && !left.contains("de") && left.starts_with('c') && left.ends_with("tial"), "{left:?}");
+}
+
+#[test]
+fn whitespace_runs_read_as_one_space() {
+    let pdf = bytes(one_page("BT /H 10 Tf 100 700 Td [(John ) -400 (Smith)] TJ ET", with_helvetica));
+    assert_eq!(hits(&pdf, "john smith"), 1);
+    assert_eq!(hits(&pdf, "john   smith"), 1);
+    let pdf = bytes(one_page("BT /H 10 Tf 100 700 Td (John   Smith) Tj ET", with_helvetica));
+    assert_eq!(hits(&pdf, "john smith"), 1);
+}
