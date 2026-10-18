@@ -270,3 +270,15 @@ fn unreadable_tounicode_makes_the_page_undecodable() {
     assert_eq!(found.undecodable_pages, vec![1]);
     assert!(found.pages.is_empty());
 }
+
+#[test]
+fn zero_size_matches_get_rects_redaction_accepts() {
+    for content in ["BT /H 0 Tf 100 700 Td (SECRET) Tj ET", "BT /H 10 Tf 0 Tz 100 700 Td (SECRET) Tj ET"] {
+        let pdf = bytes(one_page(content, with_helvetica));
+        let found = redact_search(&pdf, "secret", &opts()).unwrap();
+        for r in found.pages.iter().flat_map(|p| &p.rects) {
+            assert!(r[2] >= 1.0 && r[3] >= 1.0, "{content}: {r:?}");
+        }
+        assert_eq!(search_and_redact(&pdf, "secret"), "", "{content}");
+    }
+}

@@ -120,8 +120,16 @@ fn to_visible(vb: &VisibleBox, r: &Rect) -> [f64; 4] {
     let y0 = corners.iter().map(|c| c.1).fold(f64::INFINITY, f64::min);
     let x1 = corners.iter().map(|c| c.0).fold(f64::NEG_INFINITY, f64::max);
     let y1 = corners.iter().map(|c| c.1).fold(f64::NEG_INFINITY, f64::max);
-    [x0, y0, x1 - x0, y1 - y0]
+    // Zero-size text (font size or scaling 0) still gets an area redaction
+    // accepts: at least 1 pt each way, centred on it.
+    let grow = |lo: f64, len: f64| if len < MIN_SIDE { (lo - (MIN_SIDE - len) / 2.0, MIN_SIDE) } else { (lo, len) };
+    let (x, w) = grow(x0, x1 - x0);
+    let (y, h) = grow(y0, y1 - y0);
+    [x, y, w, h]
 }
+
+/// Smallest side of a match rect, in points.
+const MIN_SIDE: f64 = 1.0;
 
 fn union(quads: impl Iterator<Item = Quad>) -> Option<Rect> {
     quads.map(|q| q.bbox()).reduce(|a, b| Rect { x0: a.x0.min(b.x0), y0: a.y0.min(b.y0), x1: a.x1.max(b.x1), y1: a.y1.max(b.y1) })
