@@ -16,17 +16,32 @@ function watchOrigin(page: Page, origin: string): string[] {
   const foreign: string[] = [];
   page.on("request", (r) => {
     const u = r.url();
-    if (!u.startsWith(origin) && !u.startsWith("blob:") && !u.startsWith("data:")) foreign.push(u);
+    if (u.startsWith("blob:") || u.startsWith("data:")) return;
+    // Compare origins, not prefixes: "http://localhost:5181.evil" starts with the app origin.
+    if (new URL(u).origin !== origin) foreign.push(u);
   });
   return foreign;
 }
 
+/** Display-space baseline of a 16 pt Helvetica text box placed by a click at `top`. */
+const HELVETICA_ASCENT = 0.718;
+const baselineBelow = (top: number, size = 16) => top + HELVETICA_ASCENT * size;
+
 async function openEditor(page: Page, file: string, label: string) {
   await page.goto("/edit-pdf");
-  await expect(async () => {
-    await page.locator('input[type="file"]').first().setInputFiles(file);
-    await expect(page.getByText(label)).toBeVisible({ timeout: 3000 });
-  }).toPass({ timeout: 20000 });
+  const input = page.locator('input[type="file"]').first();
+  const opened = page.getByText(label);
+  const loading = page.getByText("Engine is still loading, please wait a moment.");
+  // The file is picked once; it is picked again only when the page says the engine was not
+  // ready for it (that pick was refused, nothing else is in flight).
+  await input.setInputFiles(file);
+  for (let attempt = 0; attempt < 40; attempt++) {
+    await expect(opened.or(loading).first()).toBeVisible({ timeout: 20000 });
+    if (await opened.isVisible()) break;
+    await page.waitForTimeout(250);
+    await input.setInputFiles(file);
+  }
+  await expect(opened).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId("editor-overlay")).toBeVisible();
 }
 
@@ -216,8 +231,17 @@ test("edit pdf: every tool, undo and redo, position and render of the saved page
   const undo = page.getByRole("button", { name: "Undo (Ctrl+Z)" });
   const redo = page.getByRole("button", { name: "Redo (Ctrl+Shift+Z)" });
   await expect(redo).toBeDisabled();
+  const overlay = page.getByTestId("editor-overlay");
+  await expect(overlay.locator("image")).toHaveCount(1);
   await undo.click();
   await expect(redo).toBeEnabled();
+  // Only the image went away: every other item is still drawn.
+  await expect(overlay.locator("image")).toHaveCount(0);
+  await expect(overlay.locator("text", { hasText: "Hello MantisPDF" })).toHaveCount(1);
+  await expect(overlay.locator('rect[stroke="rgb(0 0 0)"]')).toHaveCount(1);
+  await expect(overlay.locator("polyline")).toHaveCount(1);
+  await expect(overlay.locator("polygon")).toHaveCount(1);
+  await expect(overlay.locator('rect[style*="multiply"]')).toHaveCount(1);
   const [imgEdgeUndone] = (await render(page, await download(page), 1, [[425, 750]])).samples;
   expect(isWhite(imgEdgeUndone), "the undone image is not saved").toBe(true);
   await redo.click();
@@ -235,8 +259,7 @@ test("edit pdf: every tool, undo and redo, position and render of the saved page
   expect(Math.abs(hello!.x - previewX), "text x").toBeLessThanOrEqual(3);
   expect(Math.abs(hello!.y - previewY), "text baseline").toBeLessThanOrEqual(3);
   expect(Math.abs(hello!.x - 300), "text starts at the click").toBeLessThanOrEqual(3);
-  expect(hello!.y).toBeGreaterThan(100);
-  expect(hello!.y).toBeLessThan(100 + 16);
+  expect(Math.abs(hello!.y - baselineBelow(100)), "first baseline one ascent below the click").toBeLessThanOrEqual(3);
   expect(hello!.upright).toBe(true);
   // The page's own text is still there.
   expect(items.some((i) => i.str.includes("Page 1"))).toBe(true);
@@ -320,8 +343,7 @@ test("edit pdf: text on a rotated page is upright at the placed position", async
   expect(Math.abs(mine!.x - 100), "x at the click").toBeLessThanOrEqual(3);
   expect(Math.abs(mine!.x - previewX), "x as previewed").toBeLessThanOrEqual(3);
   expect(Math.abs(mine!.y - previewY), "baseline as previewed").toBeLessThanOrEqual(3);
-  expect(mine!.y).toBeGreaterThan(100);
-  expect(mine!.y).toBeLessThan(116);
+  expect(Math.abs(mine!.y - baselineBelow(100)), "first baseline one ascent below the click").toBeLessThanOrEqual(3);
   // The page's own rotated text is still where it was.
   const own = items.find((i) => i.str === "R90");
   expect(own).toBeTruthy();
@@ -410,6 +432,66 @@ test("edit pdf: holding Shift between arrow nudges keeps them one undo step", as
   expect(await x()).not.toBe(start);
   await page.keyboard.press("Control+z");
   await expect.poll(x).toBe(start);
+});
+
+test("edit pdf: five arrow nudges are one undo step", async ({ page }) => {
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  const box = page.getByTestId("editor-overlay").locator('rect[stroke="rgb(0 0 0)"]');
+  await canvas.tool("Rectangle (R)");
+  await canvas.drag([100, 100], [200, 200]);
+  const x = () => box.getAttribute("x");
+  const start = await x();
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
+  const moved = Number(await x());
+  expect(moved - Number(start)).toBeGreaterThan(4);
+  await page.keyboard.press("Control+z");
+  await expect.poll(x).toBe(start);
+  // The rectangle itself is still there: only the nudges were undone.
+  await expect(box).toHaveCount(1);
+});
+
+test("edit pdf: Escape during a drag puts the item back", async ({ page }) => {
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  const box = page.getByTestId("editor-overlay").locator('rect[stroke="rgb(0 0 0)"]');
+  await canvas.tool("Rectangle (R)");
+  await canvas.drag([100, 100], [200, 200]);
+  const before = [await box.getAttribute("x"), await box.getAttribute("y")];
+  // Grab the outline (an unfilled frame is hit on its edge) and drag it away.
+  const [px, py] = await canvas.at(100, 150);
+  await page.mouse.move(px, py);
+  await page.mouse.down();
+  const [qx, qy] = await canvas.at(300, 400);
+  await page.mouse.move(qx, qy, { steps: 6 });
+  expect(await box.getAttribute("x")).not.toBe(before[0]);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect([await box.getAttribute("x"), await box.getAttribute("y")]).toEqual(before);
+  // Nothing to undo but the rectangle itself.
+  await page.keyboard.press("Control+z");
+  await expect(box).toHaveCount(0);
+});
+
+test("edit pdf: duplicating past the image limit shows a notice instead", async ({ page }) => {
+  test.setTimeout(120_000);
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  const images = page.getByTestId("editor-overlay").locator("image");
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.getByRole("button", { name: "Image (I)" }).click()]);
+  await chooser.setFiles(fx("alpha.png"));
+  await canvas.click(100, 100);
+  await expect(images).toHaveCount(1);
+  // Each duplicate is selected, so Ctrl+D keeps duplicating the newest copy.
+  for (let i = 1; i < 200; i++) await page.keyboard.press("Control+d");
+  await expect(images).toHaveCount(200);
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await page.keyboard.press("Control+d");
+  await expect(page.getByRole("status")).toHaveText("A document can hold at most 200 images.");
+  await expect(images).toHaveCount(200);
+  // The 200 placements share one image: the download still works.
+  const bytes = await download(page);
+  expect(bytes.length).toBeGreaterThan(0);
 });
 
 test("edit pdf: /edit still redirects to /organize and the home page lists the tool", async ({ page }) => {
