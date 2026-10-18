@@ -345,3 +345,28 @@ fn fonts_whose_text_cannot_be_trusted_flag_the_page() {
     let garbage = bytes(one_page("BT /H 10 Tf 100 700 Td (SECRET) Tj ET", |d| tounicode_font(d, "<<<< garbage ) ( [")));
     assert_eq!(undecodable(&garbage), vec![1]);
 }
+
+#[test]
+fn queries_with_a_replacement_character_are_refused() {
+    let pdf = bytes(one_page("BT /H 10 Tf 100 700 Td (abc) Tj ET", with_helvetica));
+    assert_eq!(redact_search(&pdf, "a\u{FFFD}", &opts()).unwrap_err(), "Invalid redact settings: query");
+}
+
+#[test]
+fn matching_is_linear_and_non_overlapping() {
+    let pdf = bytes(one_page("BT /H 10 Tf 0.01 Tz 100 700 Td (aaab ababab aaaa) Tj ET", with_helvetica));
+    assert_eq!(hits(&pdf, "aab"), 1);
+    assert_eq!(hits(&pdf, "abab"), 1);
+    assert_eq!(hits(&pdf, "aa"), 3);
+    let found = redact_search(&pdf, "ab", &SearchOptions { whole_word: true, case_sensitive: false }).unwrap();
+    assert!(found.pages.is_empty());
+}
+
+#[test]
+fn pages_past_the_job_character_budget_are_unsearched() {
+    let doc = two_pages("BT /H 10 Tf 100 700 Td (SECRET page text here) Tj ET");
+    let found = super::search::redact_search_within(&bytes(doc), "secret", &opts(), 30).unwrap();
+    assert_eq!(found.pages.iter().map(|p| p.page).collect::<Vec<_>>(), vec![1]);
+    assert!(found.truncated);
+    assert_eq!(found.unsearched_pages, vec![2]);
+}

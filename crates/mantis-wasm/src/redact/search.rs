@@ -174,13 +174,67 @@ fn union(quads: impl Iterator<Item = Quad>) -> Option<Rect> {
 /// saying so (`truncated`; that page and every later one in
 /// `unsearched_pages`).
 pub(crate) fn redact_search(pdf: &[u8], query: &str, options: &SearchOptions) -> Result<SearchResult, String> {
-    if query.chars().count() > MAX_QUERY_CHARS {
+    redact_search_within(pdf, query, options, MAX_JOB_CHARS)
+}
+
+/// Characters of page text one search job reads at most; later pages are
+/// reported unsearched.
+const MAX_JOB_CHARS: usize = 20_000_000;
+
+/// The start of every non-overlapping match of `needle` in `text` (whole
+/// words only when asked), left to right, in linear time (Knuth-Morris-Pratt).
+fn find_starts(text: &[Char], needle: &[char], whole_word: bool) -> Vec<usize> {
+    let m = needle.len();
+    if m == 0 {
+        return Vec::new();
+    }
+    // fail[i]: length of the longest proper border of needle[..=i].
+    let mut fail = vec![0usize; m];
+    let mut k = 0;
+    for i in 1..m {
+        while k > 0 && needle[i] != needle[k] {
+            k = fail[k - 1];
+        }
+        if needle[i] == needle[k] {
+            k += 1;
+        }
+        fail[i] = k;
+    }
+    let mut starts = Vec::new();
+    let mut k = 0;
+    for (i, c) in text.iter().enumerate() {
+        while k > 0 && c.ch != needle[k] {
+            k = fail[k - 1];
+        }
+        if c.ch == needle[k] {
+            k += 1;
+        }
+        if k == m {
+            let start = i + 1 - m;
+            let bounded = !whole_word
+                || ((start == 0 || !is_word(text[start - 1].ch)) && text.get(i + 1).is_none_or(|c| !is_word(c.ch)));
+            if bounded {
+                starts.push(start);
+                // Non-overlapping: start afresh after a match.
+                k = 0;
+            } else {
+                k = fail[k - 1];
+            }
+        }
+    }
+    starts
+}
+
+/// `redact_search` reading at most `max_chars` characters of page text.
+pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOptions, max_chars: usize) -> Result<SearchResult, String> {
+    if query.chars().count() > MAX_QUERY_CHARS || query.contains('\u{FFFD}') {
         return Err(super::invalid("query"));
     }
     let doc = load_pdf(pdf)?;
     let needle = needle(query, options.case_sensitive);
     let mut result = SearchResult::default();
     let mut total = 0;
+    let mut read = 0usize;
     let mut decoded = JOB_DECODED;
     // Fonts' text maps, shared by every page of the job.
     let cache = Rc::new(RefCell::new(TextCache::new(decoded)));
@@ -210,17 +264,15 @@ pub(crate) fn redact_search(pdf: &[u8], query: &str, options: &SearchOptions) ->
         if needle.is_empty() {
             continue;
         }
+        read += chars.len();
+        if read > max_chars {
+            result.truncated = true;
+            result.unsearched_pages.push(number);
+            continue;
+        }
         let vb = VisibleBox::of_page(&doc, page);
         let mut rects = Vec::new();
-        let mut at = 0;
-        while at + needle.len() <= chars.len() {
-            let hit = chars[at..at + needle.len()].iter().zip(&needle).all(|(c, n)| c.ch == *n);
-            let bounded = !options.whole_word
-                || ((at == 0 || !is_word(chars[at - 1].ch)) && chars.get(at + needle.len()).is_none_or(|c| !is_word(c.ch)));
-            if !(hit && bounded) {
-                at += 1;
-                continue;
-            }
+        for at in find_starts(&chars, &needle, options.whole_word) {
             let mut matched: Vec<usize> = chars[at..at + needle.len()].iter().filter_map(|c| c.glyph).collect();
             matched.dedup();
             let mut by_line: Vec<(usize, Vec<usize>)> = Vec::new();
@@ -242,7 +294,6 @@ pub(crate) fn redact_search(pdf: &[u8], query: &str, options: &SearchOptions) ->
                 break;
             }
             rects.extend(found);
-            at += needle.len();
         }
         if !rects.is_empty() {
             total += rects.len();
