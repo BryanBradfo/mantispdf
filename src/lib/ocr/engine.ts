@@ -3,7 +3,7 @@
  * and the language models are the files `scripts/copy-ocr-assets.mjs` puts under `/ocr/`
  * (absolute URLs, no blob: worker), so no request leaves the origin.
  */
-import { OEM, createScheduler, createWorker, type Block, type Scheduler } from "tesseract.js";
+import { OEM, createWorker, type Block, type LoggerMessage, type Worker } from "tesseract.js";
 import { OCR_BASE, OCR_WORKER_FILE } from "./assets";
 import type { OcrLanguage } from "./languages";
 
@@ -67,13 +67,43 @@ export interface OcrProgress {
   progress: number;
 }
 
-/** A pool of tesseract workers for `langs`. `terminate` stops everything; pending pages reject. */
+/** How long `OcrEngine.create` may take (worker, core and model downloads) before giving up. */
+export const CREATE_TIMEOUT_MS = 120_000;
+const CANCELLED = "OCR cancelled";
+const NOT_STARTED = "OCR engine could not start";
+
+export interface OcrEngineOptions {
+  workers: number;
+  /** The app origin the runtime files are served from. */
+  origin: string;
+  /** Aborting stops the start (workers terminated) with "OCR cancelled". */
+  signal?: AbortSignal;
+  /** Start progress (core and model loading), from every worker. */
+  onProgress?: (p: OcrProgress) => void;
+  timeoutMs?: number;
+}
+
+/**
+ * A pool of tesseract workers for `langs`, one page per worker at a time. `terminate` stops
+ * everything; running, queued and later pages reject with "OCR cancelled".
+ *
+ * Image bytes are not transferred: tesseract.js copies the given bytes (`new Uint8Array(data)`)
+ * and posts them to its worker without a transfer list (worker/browser/send.js), so callers
+ * should drop their reference to a page image once `recognize` has been called.
+ */
 export class OcrEngine {
   private terminated = false;
   private readonly cancelled: Promise<never>;
   private cancel: (e: Error) => void = () => {};
+  private readonly idle: Worker[];
+  private readonly waiting: ((w: Worker) => void)[] = [];
+  private jobs = 0;
 
-  private constructor(private readonly scheduler: Scheduler) {
+  private constructor(
+    private readonly workers: Worker[],
+    private readonly pageProgress: Map<string, (progress: number) => void>,
+  ) {
+    this.idle = [...workers];
     this.cancelled = new Promise<never>((_, reject) => {
       this.cancel = reject;
     });
@@ -81,39 +111,101 @@ export class OcrEngine {
     this.cancelled.catch(() => {});
   }
 
-  static async create(langs: readonly OcrLanguage[], options: { workers: number; origin: string; onProgress?: (p: OcrProgress) => void }): Promise<OcrEngine> {
-    const scheduler = createScheduler();
+  /**
+   * Starts `options.workers` workers with `langs` loaded. Workers are created bare and load the
+   * languages through `reinitialize`, because tesseract.js 7 never rejects `createWorker` when
+   * a language fails to load or initialise. Any failure, abort or the timeout terminates every
+   * worker started so far (and any that starts later).
+   */
+  static async create(langs: readonly OcrLanguage[], options: OcrEngineOptions): Promise<OcrEngine> {
+    if (options.signal?.aborted) throw new Error(CANCELLED);
+    const urls = ocrAssetUrls(options.origin);
+    const pageProgress = new Map<string, (progress: number) => void>();
+    const logger = (m: LoggerMessage) => {
+      const page = m.userJobId ? pageProgress.get(m.userJobId) : undefined;
+      if (page) page(m.progress);
+      else options.onProgress?.({ status: m.status, progress: m.progress });
+    };
+    const started: Worker[] = [];
+    let failed = false;
+    const stopAll = () => {
+      failed = true;
+      for (const w of started) void w.terminate();
+    };
+    const start = async () => {
+      const w = await createWorker([], OEM.LSTM_ONLY, {
+        ...urls,
+        workerBlobURL: false,
+        gzip: true,
+        logger,
+        // The failing job's promise rejects; this only stops tesseract.js throwing it again.
+        errorHandler: () => {},
+      });
+      started.push(w);
+      if (failed) {
+        void w.terminate();
+        throw new Error(CANCELLED);
+      }
+      await w.reinitialize(langs.join("+"), OEM.LSTM_ONLY);
+      return w;
+    };
+
+    let onAbort = () => {};
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stop = new Promise<never>((_, reject) => {
+      onAbort = () => reject(new Error(CANCELLED));
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      timer = setTimeout(() => reject(new Error(NOT_STARTED)), options.timeoutMs ?? CREATE_TIMEOUT_MS);
+    });
+    const all = Promise.all(Array.from({ length: options.workers }, start));
+    all.catch(() => {});
     try {
-      const urls = ocrAssetUrls(options.origin);
-      const workers = await Promise.all(
-        Array.from({ length: options.workers }, () =>
-          createWorker([...langs], OEM.LSTM_ONLY, {
-            ...urls,
-            workerBlobURL: false,
-            gzip: true,
-            logger: (m) => options.onProgress?.({ status: m.status, progress: m.progress }),
-          }),
-        ),
-      );
-      for (const w of workers) scheduler.addWorker(w);
+      const workers = await Promise.race([all, stop]);
+      return new OcrEngine(workers, pageProgress);
     } catch (e) {
-      await scheduler.terminate();
-      throw e;
+      stopAll();
+      if (e instanceof Error && (e.message === CANCELLED || e.message === NOT_STARTED)) throw e;
+      throw Object.assign(new Error(NOT_STARTED), { cause: e });
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
     }
-    return new OcrEngine(scheduler);
+  }
+
+  private acquire(): Promise<Worker> {
+    const w = this.idle.pop();
+    return w ? Promise.resolve(w) : new Promise((resolve) => this.waiting.push(resolve));
+  }
+
+  private release(w: Worker) {
+    const next = this.waiting.shift();
+    if (next) next(w);
+    else this.idle.push(w);
   }
 
   /**
-   * Recognise one page image (PGM, PNG or any format leptonica reads). Rejects with "OCR
-   * cancelled" once `terminate` is called.
+   * Recognise one page image (PGM, PNG or any format leptonica reads). `onProgress` receives
+   * this page's recognition progress (0 to 1). Rejects with "OCR cancelled" once `terminate`
+   * is called.
    */
-  async recognize(image: Uint8Array): Promise<RecognizedPage> {
-    if (this.terminated) throw new Error("OCR cancelled");
-    // tesseract.js types its inputs as DOM images or Node Buffers; a Uint8Array is read as bytes.
-    const job = this.scheduler.addJob("recognize", image as unknown as Blob, {}, { text: true, blocks: true });
-    // A job cut off by terminate may reject later, or never settle: it is abandoned.
-    job.catch(() => {});
-    const { data } = await Promise.race([job, this.cancelled]);
+  async recognize(image: Uint8Array, onProgress?: (progress: number) => void): Promise<RecognizedPage> {
+    if (this.terminated) throw new Error(CANCELLED);
+    const run = (async () => {
+      const w = await this.acquire();
+      if (this.terminated) throw new Error(CANCELLED);
+      const jobId = `ocr-page-${++this.jobs}`;
+      if (onProgress) this.pageProgress.set(jobId, onProgress);
+      try {
+        // tesseract.js types its inputs as DOM images or Node Buffers; a Uint8Array is read as bytes.
+        return await w.recognize(image as unknown as Blob, {}, { text: true, blocks: true }, jobId);
+      } finally {
+        this.pageProgress.delete(jobId);
+        if (!this.terminated) this.release(w);
+      }
+    })();
+    // A page cut off by terminate may reject later, or never settle: it is abandoned.
+    run.catch(() => {});
+    const { data } = await Promise.race([run, this.cancelled]);
     const words = wordsFromBlocks(data.blocks);
     const confidence = words.length ? words.reduce((s, w) => s + w.confidence, 0) / words.length : 0;
     return { words, text: data.text, confidence };
@@ -122,7 +214,9 @@ export class OcrEngine {
   async terminate(): Promise<void> {
     if (this.terminated) return;
     this.terminated = true;
-    this.cancel(new Error("OCR cancelled"));
-    await this.scheduler.terminate();
+    this.cancel(new Error(CANCELLED));
+    this.waiting.length = 0;
+    this.pageProgress.clear();
+    await Promise.all(this.workers.map((w) => w.terminate()));
   }
 }

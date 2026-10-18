@@ -1,0 +1,168 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * tesseract.js mocked: each created worker is recorded with its options; tests script how
+ * `createWorker`, `reinitialize` and `recognize` behave.
+ */
+interface FakeWorker {
+  id: string;
+  options: Record<string, unknown>;
+  langs: unknown;
+  reinitialize: ReturnType<typeof vi.fn>;
+  recognize: ReturnType<typeof vi.fn>;
+  terminate: ReturnType<typeof vi.fn>;
+}
+const workers: FakeWorker[] = [];
+let createBehaviour: (w: FakeWorker) => Promise<FakeWorker> = async (w) => w;
+let reinitBehaviour: () => Promise<unknown> = async () => ({});
+let recognizeBehaviour: (w: FakeWorker, jobId: string) => Promise<unknown> = async () => ({ data: { text: "", blocks: [] } });
+
+vi.mock("tesseract.js", () => ({
+  OEM: { LSTM_ONLY: 1 },
+  createWorker: vi.fn((langs: unknown, _oem: unknown, options: Record<string, unknown>) => {
+    const w: FakeWorker = {
+      id: `w${workers.length + 1}`,
+      options,
+      langs,
+      reinitialize: vi.fn(() => reinitBehaviour()),
+      recognize: vi.fn((_img: unknown, _o: unknown, _out: unknown, jobId: string) => recognizeBehaviour(w, jobId)),
+      terminate: vi.fn(async () => {}),
+    };
+    workers.push(w);
+    return createBehaviour(w);
+  }),
+}));
+
+const { OcrEngine } = await import("./engine");
+const ORIGIN = "https://app.test";
+const never = () => new Promise<never>(() => {});
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+afterEach(() => {
+  workers.length = 0;
+  createBehaviour = async (w) => w;
+  reinitBehaviour = async () => ({});
+  recognizeBehaviour = async () => ({ data: { text: "", blocks: [] } });
+  vi.useRealTimers();
+});
+
+describe("OcrEngine.create", () => {
+  it("creates bare LSTM workers on the origin, then loads the languages with reinitialize", async () => {
+    await OcrEngine.create(["eng", "fra"], { workers: 2, origin: ORIGIN });
+    expect(workers).toHaveLength(2);
+    for (const w of workers) {
+      expect(w.langs).toEqual([]);
+      expect(w.options).toMatchObject({
+        workerPath: `${ORIGIN}/ocr/worker.min.js`,
+        corePath: `${ORIGIN}/ocr/core`,
+        langPath: `${ORIGIN}/ocr/lang`,
+        workerBlobURL: false,
+        gzip: true,
+      });
+      // Without an errorHandler, tesseract.js throws worker rejections as uncaught errors.
+      expect(typeof w.options.errorHandler).toBe("function");
+      expect(w.reinitialize).toHaveBeenCalledWith("eng+fra", 1);
+    }
+  });
+
+  it("a language that fails to load rejects and terminates every worker", async () => {
+    reinitBehaviour = async () => {
+      throw new Error("Network error while fetching fra.traineddata.gz");
+    };
+    await expect(OcrEngine.create(["eng", "fra"], { workers: 2, origin: ORIGIN })).rejects.toThrow("OCR engine could not start");
+    expect(workers).toHaveLength(2);
+    for (const w of workers) expect(w.terminate).toHaveBeenCalled();
+  });
+
+  it("aborting while a worker never starts rejects as cancelled and terminates the others", async () => {
+    let n = 0;
+    createBehaviour = (w) => (++n === 1 ? Promise.resolve(w) : never());
+    reinitBehaviour = never; // model download in progress
+    const abort = new AbortController();
+    const created = OcrEngine.create(["eng"], { workers: 2, origin: ORIGIN, signal: abort.signal });
+    await tick();
+    abort.abort();
+    await expect(created).rejects.toThrow("OCR cancelled");
+    expect(workers[0].terminate).toHaveBeenCalled();
+  });
+
+  it("a worker that starts after the failure is terminated too", async () => {
+    let release: (w: FakeWorker) => void = () => {};
+    let n = 0;
+    createBehaviour = (w) => (++n === 2 ? new Promise((r) => (release = () => r(w))) : Promise.resolve(w));
+    const abort = new AbortController();
+    const created = OcrEngine.create(["eng"], { workers: 2, origin: ORIGIN, signal: abort.signal });
+    await tick();
+    abort.abort();
+    await expect(created).rejects.toThrow("OCR cancelled");
+    release(workers[1]);
+    await tick();
+    expect(workers[1].terminate).toHaveBeenCalled();
+    expect(workers[1].reinitialize).not.toHaveBeenCalled();
+  });
+
+  it("an already aborted signal starts nothing", async () => {
+    const abort = new AbortController();
+    abort.abort();
+    await expect(OcrEngine.create(["eng"], { workers: 2, origin: ORIGIN, signal: abort.signal })).rejects.toThrow("OCR cancelled");
+    expect(workers).toHaveLength(0);
+  });
+
+  it("gives up after 120 s by default", async () => {
+    vi.useFakeTimers();
+    reinitBehaviour = never;
+    const created = OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN });
+    const outcome = created.then(() => "started", (e: Error) => e.message);
+    await vi.advanceTimersByTimeAsync(119_999);
+    expect(workers[0].terminate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await outcome).toBe("OCR engine could not start");
+    expect(workers[0].terminate).toHaveBeenCalled();
+  });
+});
+
+describe("OcrEngine.recognize", () => {
+  it("reports each page's progress to its own callback", async () => {
+    recognizeBehaviour = async (w, jobId) => {
+      const logger = w.options.logger as (m: object) => void;
+      logger({ workerId: w.id, jobId, userJobId: jobId, status: "recognizing text", progress: 0.5 });
+      return { data: { text: "x", blocks: [] } };
+    };
+    const engine = await OcrEngine.create(["eng"], { workers: 2, origin: ORIGIN });
+    const a: number[] = [];
+    const b: number[] = [];
+    await Promise.all([engine.recognize(new Uint8Array([1]), (p) => a.push(p)), engine.recognize(new Uint8Array([2]), (p) => b.push(p))]);
+    expect(a).toEqual([0.5]);
+    expect(b).toEqual([0.5]);
+  });
+
+  it("runs one page per worker at a time", async () => {
+    const releases: (() => void)[] = [];
+    recognizeBehaviour = () => new Promise((r) => releases.push(() => r({ data: { text: "", blocks: [] } })));
+    const engine = await OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN });
+    const first = engine.recognize(new Uint8Array([1]));
+    const second = engine.recognize(new Uint8Array([2]));
+    await tick();
+    expect(workers[0].recognize).toHaveBeenCalledTimes(1);
+    releases[0]();
+    await first;
+    await tick();
+    expect(workers[0].recognize).toHaveBeenCalledTimes(2);
+    releases[1]();
+    await second;
+  });
+
+  it("terminate rejects running and queued pages and every later one", async () => {
+    recognizeBehaviour = never;
+    const engine = await OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN });
+    const running = engine.recognize(new Uint8Array([1]));
+    const queued = engine.recognize(new Uint8Array([2]));
+    await engine.terminate();
+    await expect(running).rejects.toThrow("OCR cancelled");
+    await expect(queued).rejects.toThrow("OCR cancelled");
+    await expect(engine.recognize(new Uint8Array([3]))).rejects.toThrow("OCR cancelled");
+    expect(workers[0].terminate).toHaveBeenCalledTimes(1);
+    await engine.terminate();
+    expect(workers[0].terminate).toHaveBeenCalledTimes(1);
+  });
+});
