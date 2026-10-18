@@ -24,7 +24,7 @@ import {
   type Rect,
 } from "../lib/redact/model";
 import { formatPageRanges, parsePageRanges } from "../lib/pagePlan";
-import { numberEntries, repeatTargets } from "../lib/redact/marking";
+import { fallbackRects, repeatTargets, searchEntries, type SearchEntry } from "../lib/redact/marking";
 import { chooseDpi, renderRaster } from "../lib/redact/raster";
 import { REPORT_TITLE, TOO_LARGE_REASON, neededRasters, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
 import { findMatches, type TextRun } from "../lib/redact/search";
@@ -41,6 +41,9 @@ import {
 } from "../lib/redact/toJob";
 import ToolShell, { primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
+
+/** How long a shown search match stays highlighted. */
+const FLASH_MS = 1500;
 
 const KEEP_ORIGINAL = "Redaction permanently removes the marked content. Keep your original file.";
 const ALSO_REMOVED = "Comments are removed from the whole document, and form fields are flattened.";
@@ -160,19 +163,18 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     if (lockedRef.current) return;
     setSearching(true);
     try {
-      // The engine finds the exact glyph boxes, one rect per line of each match.
+      // The engine finds every match with its exact glyph boxes (one rect per line) and context.
       const result = await worker.redactSearch(input.bytes, query, { wholeWord, caseSensitive: false });
-      const found: MarkInput[] = [];
-      const pages = new Set<number>();
-      for (const { page: n, quads } of result.pages) {
-        if (quads.length > 0) pages.add(n);
-        for (const rect of quads) found.push({ kind: "search", page: n, rect, query });
-      }
-      // Pages whose text the engine cannot decode: pdf.js may still read it. Whole items, since
-      // its per-character split is approximate (a whole item never misses a glyph).
+      // Text the engine cannot read: pdf.js may still read it. Its matches mark whole items (its
+      // per-character split is approximate), kept only where they meet the engine's unknown-text
+      // boxes, so text the engine did read is never over-marked a line at a time.
+      const fallback: { page: number; rects: Rect[] }[] = [];
+      const unknownByPage = new Map(result.unknownBoxes.map((u) => [u.page, u.rects] as const));
       if (result.undecodablePages.length > 0) {
         const doc = await openDoc();
         for (const n of result.undecodablePages) {
+          const unknown = unknownByPage.get(n) ?? [];
+          if (unknown.length === 0) continue;
           const p = await doc.getPage(n);
           const content = await p.getTextContent();
           const runs: TextRun[] = [];
@@ -181,18 +183,18 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           }
           const view = p.view as [number, number, number, number];
           for (const m of findMatches(runs, { view, rotate: p.rotate }, query, { wholeWord })) {
-            // One mark per line of a match, never their union (which would cover the lines between).
-            for (const rect of m.rects) found.push({ kind: "search", page: n, rect, query });
-            pages.add(n);
+            const rects = fallbackRects(m.rects, unknown);
+            if (rects.length > 0) fallback.push({ page: n, rects });
           }
         }
       }
+      const entries = searchEntries(result.matches, fallback, query);
       setCoverage({ undecodable: result.undecodablePages, unsearched: result.unsearchedPages });
       setSearch({
         query,
-        count: found.length,
-        pages: [...pages].sort((a, b) => a - b),
-        entries: numberEntries(found),
+        count: entries.length,
+        pages: [...new Set(entries.map((e) => e.page))].sort((a, b) => a - b),
+        entries,
         truncated: result.truncated,
       });
     } catch (err) {
@@ -200,6 +202,18 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     } finally {
       setSearching(false);
     }
+  };
+
+  // A shown search match, highlighted for a moment.
+  const [flash, setFlash] = useState<{ page: number; rects: Rect[] } | null>(null);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), FLASH_MS);
+    return () => clearTimeout(t);
+  }, [flash]);
+  const show = (entry: SearchEntry) => {
+    setPage(entry.page);
+    setFlash({ page: entry.page, rects: entry.marks.flatMap((m) => (m.kind === "page" ? [] : [m.rect])) });
   };
 
   /** Copy `rect` from this page to the pages of `text` ("all", or ranges like "2-5, 8"). */
@@ -420,6 +434,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
               fill={fill}
               locked={locked}
               selectedId={selectedId}
+              flash={flash && flash.page === page ? flash.rects : undefined}
               onSelect={setSelectedId}
               onAdd={(rect) => change((s) => addMarks(s, [{ kind: "area", page, rect }]))}
               onUpdate={(id, rect) => change((s) => updateMark(s, id, rect))}
@@ -467,7 +482,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
             result={search}
             onFind={(q, w) => void find(q, w)}
             onMark={markFound}
-            onShowPage={setPage}
+            onShow={show}
             locked={locked}
           />
           {search && search.truncated && (

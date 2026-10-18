@@ -131,7 +131,7 @@ test("redacts an area, a search match and a whole page, rasterizing what it must
   // Engine search, then "Mark all".
   await page.getByRole("searchbox", { name: "Text to find" }).fill("SMITH");
   await page.getByRole("button", { name: "Find", exact: true }).click();
-  await expect(page.getByText(/1 area .* for "SMITH" on page 1/)).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText(/1 match for "SMITH" on page 1/)).toBeVisible({ timeout: 20000 });
   await page.getByRole("button", { name: "Mark all" }).click();
 
   // The whole of page 3, and an area on the Type3 page.

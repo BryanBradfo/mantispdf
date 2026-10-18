@@ -51,6 +51,8 @@ interface Props {
   /** A redaction is running or waiting for its go-ahead: marks are shown but cannot change. */
   locked: boolean;
   selectedId: string | null;
+  /** Rects to highlight briefly (a search match being shown). */
+  flash?: readonly Rect[];
   onSelect: (id: string | null) => void;
   onAdd: (rect: Rect) => void;
   onUpdate: (id: string, rect: Rect) => void;
@@ -68,7 +70,7 @@ function handlePoint([x, y, w, h]: Rect, handle: BoxHandle): [number, number] {
  * The page with its redaction marks as hatched boxes: drag on the page to mark an area, drag a
  * mark to move it, its handles to resize it (search matches too, to widen them).
  */
-export default function RedactCanvas({ source, page, pageSize, marks, fill, locked, selectedId, onSelect, onAdd, onUpdate, onDelete }: Props) {
+export default function RedactCanvas({ source, page, pageSize, marks, fill, locked, selectedId, flash = [], onSelect, onAdd, onUpdate, onDelete }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -266,6 +268,25 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
               >
                 <title>{m.kind === "search" ? `Search match: ${m.query}` : "Marked area"}</title>
               </rect>
+            );
+          })}
+          {flash.map((r, i) => {
+            const b = box(r);
+            return (
+              <rect
+                key={`flash-${i}`}
+                data-flash="true"
+                x={b.left - 3}
+                y={b.top - 3}
+                width={b.width + 6}
+                height={b.height + 6}
+                fill="rgba(250, 204, 21, 0.35)"
+                stroke="#ca8a04"
+                strokeWidth={2}
+                rx={2}
+                pointerEvents="none"
+                className="motion-safe:animate-pulse"
+              />
             );
           })}
           {draft && draft.id === null && (() => {

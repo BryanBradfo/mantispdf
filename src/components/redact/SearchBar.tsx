@@ -1,14 +1,14 @@
 import { useEffect, useId, useState } from "react";
-import { entryLabel, selectedMarks, type SearchEntry } from "../../lib/redact/marking";
+import { entryText, selectedMarks, type SearchEntry } from "../../lib/redact/marking";
 import type { MarkInput } from "../../lib/redact/model";
 
 export interface SearchResult {
   query: string;
-  /** Areas found: one per line of each match. */
+  /** Matches found (a match across lines counts once). */
   count: number;
   /** Pages with at least one match, ascending. */
   pages: number[];
-  /** The areas, numbered per page, for the review list. */
+  /** The matches, for the review list. */
   entries: SearchEntry[];
 }
 
@@ -19,8 +19,8 @@ interface Props {
   onFind: (query: string, wholeWord: boolean) => void;
   /** Mark the given areas (the checked ones, or all of them). */
   onMark: (marks: MarkInput[]) => void;
-  /** Show a page in the canvas. */
-  onShowPage: (page: number) => void;
+  /** Show a match on its page. */
+  onShow: (entry: SearchEntry) => void;
   /** A redaction runs or waits for its go-ahead: "Find" and marking wait. */
   locked: boolean;
 }
@@ -34,7 +34,7 @@ const buttonClass =
  * "Find text": every case-insensitive match on every page, reviewed in a list (all checked at
  * first), then "Mark selected" or the "Mark all" shortcut.
  */
-export default function SearchBar({ searching, result, onFind, onMark, onShowPage, locked }: Props) {
+export default function SearchBar({ searching, result, onFind, onMark, onShow, locked }: Props) {
   const [query, setQuery] = useState("");
   const [wholeWord, setWholeWord] = useState(false);
   const [checked, setChecked] = useState<ReadonlySet<number>>(new Set());
@@ -97,7 +97,7 @@ export default function SearchBar({ searching, result, onFind, onMark, onShowPag
           ) : (
             <>
               <p className="text-sm text-gray-800 dark:text-[#ccc]">
-                {result.count} {result.count === 1 ? "area" : "areas"} (one per line of each match) for "{result.query}" on{" "}
+                {result.count} {result.count === 1 ? "match" : "matches"} for "{result.query}" on{" "}
                 {result.pages.length === 1 ? "page" : "pages"} {pagesLabel(result.pages)}.
               </p>
               <ul aria-label="Search results" className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
@@ -111,9 +111,18 @@ export default function SearchBar({ searching, result, onFind, onMark, onShowPag
                         onChange={() => toggle(e.id)}
                         className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
                       />
-                      {entryLabel(e)}
+                      {(() => {
+                        const t = entryText(e);
+                        return (
+                          <span>
+                            Page {t.page}: {t.before}
+                            <strong>{t.text}</strong>
+                            {t.after}
+                          </span>
+                        );
+                      })()}
                     </label>
-                    <button type="button" onClick={() => onShowPage(e.page)} className="text-xs text-gray-500 underline dark:text-[#888]">
+                    <button type="button" onClick={() => onShow(e)} className="text-xs text-gray-500 underline dark:text-[#888]">
                       Show
                     </button>
                   </li>
@@ -128,7 +137,7 @@ export default function SearchBar({ searching, result, onFind, onMark, onShowPag
                 >
                   Mark selected ({checked.size})
                 </button>
-                <button type="button" onClick={() => onMark(result.entries.map((e) => e.mark))} disabled={locked} className={buttonClass}>
+                <button type="button" onClick={() => onMark(result.entries.flatMap((e) => e.marks))} disabled={locked} className={buttonClass}>
                   Mark all
                 </button>
               </div>
