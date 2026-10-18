@@ -296,7 +296,7 @@ const END_SENTINEL: &str = "MantisScanEnd";
 /// it, which would make later resource uses invisible. A sentinel operator at
 /// the very end only comes back (with no stray operands) when every byte
 /// before it was consumed.
-fn decode_complete(bytes: &[u8]) -> Option<Vec<Operation>> {
+pub(crate) fn decode_complete(bytes: &[u8]) -> Option<Vec<Operation>> {
     let mut buf = Vec::with_capacity(bytes.len() + END_SENTINEL.len() + 2);
     buf.extend_from_slice(bytes);
     buf.push(b'\n');
@@ -310,7 +310,7 @@ fn decode_complete(bytes: &[u8]) -> Option<Vec<Operation>> {
 }
 
 /// Parse the key/value tokens between `BI` and `ID` as a dictionary.
-fn decode_inline_dict(tokens: &[u8]) -> Option<Dictionary> {
+pub(crate) fn decode_inline_dict(tokens: &[u8]) -> Option<Dictionary> {
     let mut buf = Vec::with_capacity(tokens.len() + 8);
     buf.extend_from_slice(b"<<");
     buf.extend_from_slice(tokens);
@@ -330,7 +330,7 @@ fn is_pdf_delimiter(c: u8) -> bool {
     b"()<>[]{}/%".contains(&c)
 }
 
-fn is_pdf_regular(c: u8) -> bool {
+pub(crate) fn is_pdf_regular(c: u8) -> bool {
     !is_pdf_whitespace(c) && !is_pdf_delimiter(c)
 }
 
@@ -443,7 +443,7 @@ pub(crate) fn count_inline_images(content: &[u8]) -> Option<usize> {
 /// turn the real remainder of the line into a "comment" and hide operators
 /// that use resources. So a `%` anywhere on the rest of that line makes the
 /// end ambiguous and the whole scan gives up (None).
-fn inline_image_extent(c: &[u8], mut i: usize) -> Option<(&[u8], usize)> {
+pub(crate) fn inline_image_extent(c: &[u8], mut i: usize) -> Option<(&[u8], usize)> {
     let dict_start = i;
     let mut nesting = Nesting::default();
     // Find the ID token, skipping strings and names inside the dictionary.
@@ -506,7 +506,7 @@ fn inline_image_extent(c: &[u8], mut i: usize) -> Option<(&[u8], usize)> {
 
 /// Index just past the literal string starting at `c[i] == b'('` (nested
 /// parentheses and backslash escapes honored).
-fn skip_literal_string(c: &[u8], mut i: usize) -> usize {
+pub(crate) fn skip_literal_string(c: &[u8], mut i: usize) -> usize {
     let mut depth = 0usize;
     while i < c.len() {
         match c[i] {

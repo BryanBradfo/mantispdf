@@ -14,6 +14,7 @@ mod page_content;
 mod page_plan;
 mod pdf_util;
 mod rebuild;
+mod redact;
 mod rotate;
 mod split;
 mod stamp;
