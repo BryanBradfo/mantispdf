@@ -119,13 +119,13 @@ fn number(n: f64) -> Result<Option<Object>, Unsupported> {
 }
 
 /// True when a show operator after `index` continues from the text position
-/// `ops[index]` leaves (no `Td`, `TD`, `Tm`, `T*`, `'`, `"`, `BT` or `ET`
-/// in between).
+/// `ops[index]` leaves (no `Td`, `TD`, `Tm`, `T*`, `'`, `"` or `BT` in
+/// between; `ET` keeps the position).
 pub(crate) fn later_text_depends(ops: &[Operation], index: usize) -> bool {
     for op in ops.iter().skip(index + 1) {
         match op.operator.as_str() {
             "Tj" | "TJ" => return true,
-            "Td" | "TD" | "Tm" | "T*" | "'" | "\"" | "BT" | "ET" => return false,
+            "Td" | "TD" | "Tm" | "T*" | "'" | "\"" | "BT" => return false,
             _ => {}
         }
     }

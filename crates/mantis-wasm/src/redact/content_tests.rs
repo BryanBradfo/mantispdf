@@ -528,3 +528,10 @@ fn dropping_a_zero_size_show_that_later_text_depends_on_is_unsupported() {
     assert!(try_redact(b"BT /F1 0 Tf 10 10 Td (AB) Tj /F1 10 Tf 20 0 Td (C) Tj ET", &rects).is_ok());
     assert!(try_redact(b"BT /F1 0 Tf 10 10 Td (AB) Tj /F1 10 Tf (C) Tj ET", &rects).is_ok());
 }
+
+#[test]
+fn et_is_not_a_position_barrier() {
+    let ops = decode_ops(b"BT (A) Tj ET (B) Tj BT (C) Tj ET").unwrap();
+    assert!(super::text::later_text_depends(&ops, 1), "ET does not reset the text position");
+    assert!(!super::text::later_text_depends(&ops, 3), "BT does");
+}

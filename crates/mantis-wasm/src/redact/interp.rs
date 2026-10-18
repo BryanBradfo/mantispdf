@@ -617,6 +617,8 @@ struct Run<'b> {
     budget: &'b mut Budget,
     /// Open marked-content sequences (op indices of their `BDC`/`BMC`).
     marks: Vec<usize>,
+    /// Between `BT` and `ET`.
+    in_text: bool,
 }
 
 impl Run<'_> {
@@ -812,6 +814,7 @@ impl<'d> Interp<'d> {
             events: Vec::new(),
             budget,
             marks: Vec::new(),
+            in_text: false,
         };
         for (i, op) in ops.iter().enumerate() {
             run.budget.take_op()?;
@@ -869,7 +872,15 @@ impl<'d> Interp<'d> {
                     path.clip = true;
                 }
             }
-            "BT" => run.text = TextPos { tm: IDENTITY, tlm: IDENTITY },
+            "BT" => {
+                run.text = TextPos { tm: IDENTITY, tlm: IDENTITY };
+                run.in_text = true;
+            }
+            "ET" => run.in_text = false,
+            // Viewers differ on text shown outside a text object.
+            "Tj" | "TJ" | "'" | "\"" if !run.in_text => {
+                return Err(Unsupported::new("text shown outside BT/ET"));
+            }
             "Tc" => run.gs.char_spacing = nums::<1>(o, args)?[0],
             "Tw" => run.gs.word_spacing = nums::<1>(o, args)?[0],
             "Tz" => run.gs.h_scale = nums::<1>(o, args)?[0] / 100.0,
@@ -1404,6 +1415,13 @@ mod tests {
         assert_eq!(marked, vec![Some(0), Some(5), Some(11), None]);
         assert!(events("/Span 1 BDC").is_err());
         assert!(events("BMC").is_err());
+    }
+
+    #[test]
+    fn text_shown_outside_bt_is_unsupported() {
+        for content in ["BT /F1 10 Tf (AB) Tj ET (C) Tj", "BT /F1 10 Tf ET [(C)] TJ", "BT /F1 10 Tf ET 12 TL (C) '", "BT /F1 10 Tf ET 1 2 (C) \""] {
+            assert!(unsupported(content).contains("outside"), "{content}");
+        }
     }
 
     #[test]
