@@ -251,7 +251,7 @@ fn covered_inline_images_are_removed_others_written_back_unchanged() {
     let images: Vec<&Stream> = ops
         .iter()
         .filter_map(|o| match (o.operator.as_str(), o.operands.as_slice()) {
-            ("BI", [Object::Stream(s)]) => Some(s),
+            ("BI", [Object::Stream(s), ..]) => Some(s),
             _ => None,
         })
         .collect();

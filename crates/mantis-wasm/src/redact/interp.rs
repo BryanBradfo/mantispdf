@@ -243,9 +243,53 @@ fn unparsable() -> Unsupported {
     Unsupported::new("content cannot be parsed")
 }
 
+/// True when unfiltered inline image data is exactly `H * ceil(W * BPC *
+/// components / 8)` bytes (anything else could hide where the image ends).
+/// Filtered data cannot be measured before decoding and passes.
+fn inline_data_fits(dict: &Dictionary, len: usize) -> bool {
+    let get = |abbr: &[u8], full: &[u8]| dict.get(abbr).or_else(|_| dict.get(full)).ok();
+    if get(b"F", b"Filter").is_some() {
+        return true;
+    }
+    let positive = |o: Option<&Object>| o.and_then(|o| o.as_i64().ok()).filter(|v| *v > 0).map(|v| v as u64);
+    let mask = matches!(get(b"IM", b"ImageMask"), Some(Object::Boolean(true)));
+    let components = if mask {
+        Some(1)
+    } else {
+        match get(b"CS", b"ColorSpace") {
+            Some(Object::Name(n)) => match n.as_slice() {
+                b"G" | b"DeviceGray" | b"I" | b"Indexed" => Some(1),
+                b"RGB" | b"DeviceRGB" => Some(3),
+                b"CMYK" | b"DeviceCMYK" => Some(4),
+                _ => None,
+            },
+            Some(Object::Array(items)) => match items.first() {
+                Some(Object::Name(n)) if n == b"I" || n == b"Indexed" => Some(1),
+                _ => None,
+            },
+            _ => None,
+        }
+    };
+    let bpc = match get(b"BPC", b"BitsPerComponent") {
+        None if mask => Some(1),
+        other => positive(other),
+    };
+    let (Some(w), Some(h), Some(bpc), Some(n)) = (positive(get(b"W", b"Width")), positive(get(b"H", b"Height")), bpc, components) else {
+        return false;
+    };
+    let expected = w
+        .checked_mul(bpc)
+        .and_then(|bits| bits.checked_mul(n))
+        .map(|bits| bits.div_ceil(8))
+        .and_then(|row| row.checked_mul(h));
+    expected == Some(len as u64)
+}
+
 /// Decode content into operations; inline images become one `BI` operation
-/// whose single operand is a stream (dictionary + raw data). Errors when
-/// any byte cannot be parsed or `[` / `<<` nest too deep.
+/// whose operands are a stream (dictionary + data) and the original
+/// `BI ... EI` bytes (written back verbatim). Errors when any byte cannot be
+/// parsed, `[` / `<<` nest too deep, or unfiltered inline image data does
+/// not have the length its dictionary implies.
 pub(crate) fn decode_ops(c: &[u8]) -> Result<Vec<Operation>, Unsupported> {
     let mut ops = Vec::new();
     let mut segment_start = 0;
@@ -302,9 +346,14 @@ pub(crate) fn decode_ops(c: &[u8]) -> Result<Vec<Operation>, Unsupported> {
                     let dict = decode_inline_dict(dict_tokens).ok_or_else(unparsable)?;
                     // `ID`, one whitespace byte, data, whitespace, `EI`.
                     let data_start = i + dict_tokens.len() + 3;
-                    let mut image = Stream::new(dict, c[data_start..end - 3].to_vec());
+                    let data = &c[data_start..end - 3];
+                    if !inline_data_fits(&dict, data.len()) {
+                        return Err(Unsupported::new("inline image data of unexpected length"));
+                    }
+                    let mut image = Stream::new(dict, data.to_vec());
                     image.dict.remove(b"Length");
-                    ops.push(Operation::new("BI", vec![Object::Stream(image)]));
+                    let raw = Object::String(c[start..end].to_vec(), lopdf::StringFormat::Literal);
+                    ops.push(Operation::new("BI", vec![Object::Stream(image), raw]));
                     segment_start = end;
                     i = end;
                 }
@@ -330,6 +379,11 @@ pub(crate) fn encode_ops(ops: &[Operation]) -> Vec<u8> {
     };
     for op in ops {
         match (op.operator.as_str(), op.operands.as_slice()) {
+            ("BI", [Object::Stream(_), Object::String(raw, _)]) => {
+                flush(&mut run, &mut out);
+                out.extend_from_slice(raw);
+                out.push(b'\n');
+            }
             ("BI", [Object::Stream(image)]) => {
                 flush(&mut run, &mut out);
                 out.extend_from_slice(b"BI\n");
@@ -1233,6 +1287,39 @@ mod tests {
         let [Event::Image(img)] = ev.as_slice() else { panic!("{ev:?}") };
         assert_eq!((img.op_index, &img.source), (2, &ImageSource::Inline));
         assert_quad(&img.quad_user, [(5.0, 5.0), (15.0, 5.0), (15.0, 25.0), (5.0, 25.0)]);
+    }
+
+    #[test]
+    fn unfiltered_inline_image_data_must_have_the_exact_length() {
+        let image = |dict: &str, data: &[u8]| {
+            let mut c = format!("BI {dict} ID ").into_bytes();
+            c.extend_from_slice(data);
+            c.extend_from_slice(b" EI");
+            decode_ops(&c)
+        };
+        assert!(image("/W 2 /H 2 /CS /G /BPC 8", b"abcd").is_ok());
+        assert!(image("/W 2 /H 2 /CS /G /BPC 8", b"abc").is_err());
+        assert!(image("/W 2 /H 2 /CS /G /BPC 8", b"abcde").is_err());
+        assert!(image("/W 1 /H 1 /CS /RGB /BPC 8", b"abc").is_ok());
+        assert!(image("/Width 1 /Height 2 /ColorSpace /DeviceCMYK /BitsPerComponent 8", b"abcdefgh").is_ok());
+        assert!(image("/W 9 /H 2 /CS /G /BPC 1", b"abcd").is_ok());
+        assert!(image("/W 8 /H 1 /IM true", b"a").is_ok());
+        assert!(image("/W 3 /H 1 /CS [/I /RGB 1 <000000FFFFFF>] /BPC 8", b"abc").is_ok());
+        assert!(image("/W 3 /H 1 /CS /I /BPC 4", b"ab").is_ok());
+        // Named colour spaces, a missing size or depth: length unknown.
+        assert!(image("/W 1 /H 1 /CS /CS0 /BPC 8", b"a").is_err());
+        assert!(image("/W 1 /CS /G /BPC 8", b"a").is_err());
+        assert!(image("/W 1 /H 1 /CS /G", b"a").is_err());
+        // Filtered data cannot be measured before decoding.
+        assert!(image("/W 9 /H 9 /CS /G /BPC 8 /F /AHx", b"00>").is_ok());
+    }
+
+    #[test]
+    fn inline_images_are_written_back_byte_for_byte() {
+        let raw: &[u8] = b"BI /W 2 /H 1 /CS /G /BPC 8 /D [1 0] ID \x00\xff EI";
+        let content = [&b"q "[..], raw, b" Q"].concat();
+        let encoded = encode_ops(&decode_ops(&content).unwrap());
+        assert!(encoded.windows(raw.len()).any(|w| w == raw), "{}", String::from_utf8_lossy(&encoded));
     }
 
     #[test]
