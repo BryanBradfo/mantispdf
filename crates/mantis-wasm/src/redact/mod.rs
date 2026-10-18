@@ -142,9 +142,20 @@ fn redact_pages(
     out
 }
 
+/// `pdf` parsed and prepared for redaction and search: every visible
+/// widget's appearance flattened into its page (hidden ones dropped), as
+/// the output would flatten them anyway. The engine then sees, finds and
+/// removes form field content like any other, and the fill boxes stay the
+/// last thing each page draws.
+pub(crate) fn load_prepared(pdf: &[u8]) -> Result<Document, String> {
+    let mut doc = load_pdf(pdf)?;
+    crate::forms::flatten::flatten_document(&mut doc)?;
+    Ok(doc)
+}
+
 /// Which pages with areas can be redacted in place.
 pub(crate) fn redact_plan(pdf: &[u8], rects: &[RedactRect]) -> Result<Vec<PageStatus>, String> {
-    let mut doc = load_pdf(pdf)?;
+    let mut doc = load_prepared(pdf)?;
     let by_page = areas_by_page(rects, doc.get_pages().len())?;
     Ok(redact_pages(&mut doc, &by_page, Fill::Black, true)
         .into_iter()
@@ -155,7 +166,7 @@ pub(crate) fn redact_plan(pdf: &[u8], rects: &[RedactRect]) -> Result<Vec<PageSt
 /// Redact `job.rects` from `pdf`: remove the content under them, rebuild
 /// the document without hidden data, verify, and return the new bytes.
 pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactSummary), String> {
-    let mut doc = load_pdf(pdf)?;
+    let mut doc = load_prepared(pdf)?;
     let by_page = areas_by_page(&job.rects, doc.get_pages().len())?;
     let mut summary = RedactSummary::default();
     let mut checks = Vec::new();

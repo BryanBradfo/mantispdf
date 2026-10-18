@@ -14,7 +14,6 @@ use super::verify::page_text_glyphs;
 use std::cell::RefCell;
 use std::rc::Rc;
 use super::{Budget, JOB_DECODED, MAX_RECTS};
-use crate::pdf_util::load_pdf;
 use crate::stamp::geometry::VisibleBox;
 
 /// Longest query, in characters.
@@ -230,7 +229,7 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
     if query.chars().count() > MAX_QUERY_CHARS || query.contains('\u{FFFD}') {
         return Err(super::invalid("query"));
     }
-    let doc = load_pdf(pdf)?;
+    let doc = super::load_prepared(pdf)?;
     let needle = needle(query, options.case_sensitive);
     let mut result = SearchResult::default();
     let mut total = 0;

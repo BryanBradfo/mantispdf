@@ -370,3 +370,45 @@ fn pages_past_the_job_character_budget_are_unsearched() {
     assert!(found.truncated);
     assert_eq!(found.unsearched_pages, vec![2]);
 }
+
+/// A page with "Name:" and a text field widget whose appearance shows
+/// `value` in /Rect `rect`.
+fn widget_page(value: &str, rect: [i64; 4]) -> Document {
+    let mut doc = one_page("BT /H 10 Tf 100 600 Td (Name:) Tj ET", with_helvetica);
+    let page: ObjectId = doc.get_pages()[&1];
+    let font = doc.add_object(helvetica());
+    let ap = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, rect[2] - rect[0], rect[3] - rect[1]]),
+            "Resources" => dictionary! { "Font" => dictionary! { "H" => font } },
+        },
+        format!("/Tx BMC BT /H 10 Tf 2 5 Td ({value}) Tj ET EMC").into_bytes(),
+    ));
+    let widget = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx", "T" => Object::String(b"name".to_vec(), StringFormat::Literal),
+        "V" => Object::String(value.as_bytes().to_vec(), StringFormat::Literal), "Rect" => rect_array(rect),
+        "AP" => dictionary! { "N" => ap }, "P" => page,
+    });
+    doc.get_dictionary_mut(page).unwrap().set("Annots", vec![widget.into()]);
+    let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+    doc.get_dictionary_mut(root).unwrap().set("AcroForm", dictionary! { "Fields" => vec![widget.into()] });
+    doc
+}
+
+#[test]
+fn field_values_are_found_and_redacted() {
+    let pdf = bytes(widget_page("John Smith", [150, 595, 350, 615]));
+    assert_eq!(hits(&pdf, "john smith"), 1);
+    let left = search_and_redact(&pdf, "john smith");
+    assert!(!left.contains("John") && !left.contains("Smith") && left.contains("Name"), "{left:?}");
+}
+
+#[test]
+fn a_page_with_a_far_away_widget_passes_verification() {
+    let pdf = bytes(widget_page("Other", [300, 300, 500, 320]));
+    let job = RedactJob { rects: vec![RedactRect { page: 1, rect: [95.0, 595.0, 40.0, 15.0] }], fill: Fill::Black, remove_metadata: true, rasters: Vec::new() };
+    let (out, _) = redact(&pdf, job).unwrap();
+    let out = load_pdf(&out).unwrap();
+    let text: String = page_glyphs(&out, out.get_pages()[&1]).unwrap().iter().map(|g| char::from_u32(g.code).unwrap()).collect();
+    assert!(text.contains("Other") && !text.contains("Name"), "{text:?}");
+}
