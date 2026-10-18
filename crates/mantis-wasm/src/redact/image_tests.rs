@@ -5,7 +5,7 @@ use super::images::{covered_pixels, inline_as_xobject};
 use super::interp::{IDENTITY, Interp, Quad, decode_ops, encode_ops};
 use super::*;
 use crate::images::extract::ImageDecoder;
-use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
+use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat, dictionary};
 
 /// A `w` x `h` uncompressed DeviceRGB image with pixel colours `f(x, y)`.
 fn rgb_image(w: usize, h: usize, f: impl Fn(usize, usize) -> [u8; 3]) -> Stream {
@@ -496,4 +496,39 @@ fn calibrated_jpeg_colour_spaces_are_kept() {
         let new = xobject(&out, &drawn(&out.content)[0]);
         assert_eq!(new.dict.get(b"ColorSpace").unwrap(), &space, "{family}");
     }
+}
+
+/// A 4 x 1 image with `extra` dictionary entries, drawn 40 x 10, left half
+/// covered; returns the redacted RGBA.
+fn redact_row(extra: Dictionary, data: Vec<u8>) -> Vec<u8> {
+    let mut dict = dictionary! { "Type" => "XObject", "Subtype" => "Image", "Width" => 4, "Height" => 1 };
+    for (k, v) in extra.iter() {
+        dict.set(k.clone(), v.clone());
+    }
+    let out = redact(page_with(Stream::new(dict, data)), b"q 40 0 0 10 0 0 cm /Im1 Do Q", &[rect(0.0, 0.0, 20.0, 10.0)]);
+    assert_eq!(out.report.images_redacted, 1);
+    rgba_of(&out, xobject(&out, &drawn(&out.content)[0])).2
+}
+
+#[test]
+fn indexed_decode_and_16_bit_images_keep_their_uncovered_colours() {
+    let indexed = redact_row(
+        dictionary! {
+            "ColorSpace" => vec![Object::Name(b"Indexed".to_vec()), Object::Name(b"DeviceRGB".to_vec()), 1.into(),
+                Object::String(vec![255, 0, 0, 0, 255, 0], StringFormat::Hexadecimal)],
+            "BitsPerComponent" => 8,
+        },
+        vec![0, 1, 0, 1],
+    );
+    assert_eq!(indexed, vec![0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255]);
+    let inverted = redact_row(
+        dictionary! { "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8, "Decode" => vec![1.into(), 0.into()] },
+        vec![0, 255, 0, 255],
+    );
+    assert_eq!(inverted, vec![0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255]);
+    let deep = redact_row(
+        dictionary! { "ColorSpace" => "DeviceGray", "BitsPerComponent" => 16 },
+        vec![0x12, 0x34, 0xAB, 0xCD, 0x80, 0x00, 0xFF, 0xFF],
+    );
+    assert_eq!(deep, vec![0, 0, 0, 255, 0, 0, 0, 255, 0x80, 0x80, 0x80, 255, 0xFF, 0xFF, 0xFF, 255]);
 }
