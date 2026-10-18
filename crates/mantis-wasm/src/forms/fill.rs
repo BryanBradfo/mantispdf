@@ -91,6 +91,16 @@ pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Resu
         if field.value == Value::None {
             continue;
         }
+        if matches!(field.kind, FieldKind::Text { password: true, .. }) {
+            // A stored password is dropped, and its appearance with it.
+            if let Ok(dict) = doc.get_dictionary_mut(field_ref.obj) {
+                dict.remove(b"V");
+                dict.remove(b"RV");
+            }
+            let all: Vec<usize> = (0..field.widgets.len()).collect();
+            draw_field(doc, field, field_ref, &Shown::Text(String::new()), &all, &mut fonts);
+            continue;
+        }
         let Some(shown) = current_shown(field) else {
             continue;
         };
@@ -154,7 +164,7 @@ fn has_normal_appearance(doc: &Document, widget: ObjectId) -> bool {
 fn current_shown(field: &Field) -> Option<Shown> {
     match (&field.kind, &field.value) {
         (FieldKind::Text { password, .. }, Value::Text(t)) => {
-            Some(Shown::Text(if *password { "*".repeat(t.chars().count()) } else { drawn_text(t) }))
+            Some(Shown::Text(if *password { String::new() } else { drawn_text(t) }))
         }
         (FieldKind::Combo { .. }, Value::Text(t)) => Some(Shown::Text(
             field.options.iter().find(|(e, _)| e == t).map_or_else(|| t.clone(), |(_, d)| d.clone()),
@@ -228,7 +238,8 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option
             if max_len.is_some_and(|m| text.chars().count() > m as usize) {
                 return Err(invalid("max-length"));
             }
-            let shown = if *password { "*".repeat(text.chars().count()) } else { drawn_text(&text) };
+            // A password is never stored (ISO 32000, as Acrobat): no /V, an empty appearance.
+            let shown = if *password { String::new() } else { drawn_text(&text) };
             Change::Text { value: text, shown, combo: false }
         }
         FieldKind::Combo { editable } => {
@@ -316,8 +327,13 @@ fn apply(doc: &mut Document, field: &Field, field_ref: &FieldRef, change: Change
     let all: Vec<usize> = (0..field_ref.widgets.len()).collect();
     match change {
         Change::Text { value, shown, combo } => {
+            let password = matches!(field.kind, FieldKind::Text { password: true, .. });
             if let Ok(dict) = doc.get_dictionary_mut(field_ref.obj) {
-                dict.set("V", text_string(&value));
+                if password {
+                    dict.remove(b"V");
+                } else {
+                    dict.set("V", text_string(&value));
+                }
                 dict.remove(b"RV");
                 if combo {
                     dict.remove(b"I");
@@ -611,8 +627,9 @@ mod tests {
         let content = |w| String::from_utf8(normal_ap(&doc, w).1.content.clone()).unwrap();
         assert_eq!(content(comb).matches(" Tm\n(").count(), 3);
         assert!(content(multi).contains("(one) Tj") && content(multi).contains("(two) Tj"));
-        assert!(content(password).contains("(******) Tj"));
-        assert_eq!(dict(&doc, password).get(b"V").unwrap(), &Object::string_literal("secret"));
+        // Passwords are never stored or drawn (see password_values_are_never_stored).
+        assert!(!content(password).contains(" Tj"));
+        assert!(!dict(&doc, password).has(b"V"));
     }
 
     #[test]
@@ -1094,5 +1111,26 @@ mod tests {
         assert!(String::from_utf8_lossy(&normal_ap(&doc, list).1.content).contains("(Red apple) Tj"));
         fill_document(&mut doc, &[(0, Value::Names(vec!["b".into()]))]).unwrap();
         assert!(String::from_utf8_lossy(&normal_ap(&doc, list).1.content).contains("(Red apple) Tj"));
+    }
+
+    #[test]
+    fn password_values_are_never_stored() {
+        let (mut doc, page) = base(0);
+        let typed = text_field(&mut doc, page, "pw", vec![("Ff", (1i64 << 13).into())]);
+        let stored = text_field(&mut doc, page, "old", vec![("Ff", (1i64 << 13).into()), ("V", Object::string_literal("old-secret"))]);
+        finish(&mut doc, page, &[typed, stored], &[typed, stored], vec![]);
+        let pdf = crate::pdf_util::save_pdf(&mut doc).unwrap();
+        for flatten in [false, true] {
+            let out = fill_form(&pdf, &[(0, Value::Text("s3cret-Pw".into()))], flatten).unwrap();
+            let has = |needle: &[u8]| out.windows(needle.len()).any(|w| w == needle);
+            assert!(!has(b"s3cret") && !has(b"old-secret"), "flatten {flatten}");
+            assert!(!has(b"*****"), "flatten {flatten}: no masked text drawn either");
+        }
+        fill_document(&mut doc, &[(0, Value::Text("s3cret-Pw".into()))]).unwrap();
+        for w in [typed, stored] {
+            assert!(!dict(&doc, w).has(b"V"));
+            let content = String::from_utf8_lossy(&normal_ap(&doc, w).1.content).into_owned();
+            assert!(!content.contains(" Tj"), "{content}");
+        }
     }
 }
