@@ -492,3 +492,15 @@ fn verification_fails_on_soft_masks_and_patterns_under_an_area() {
         assert_eq!(result.unwrap_err(), "Redaction verification failed on page 1");
     }
 }
+
+#[test]
+fn optional_content_groups_carrying_replacement_text_need_a_raster() {
+    let doc = one_page("/OC /L0 BDC BT /H 10 Tf 100 700 Td (Hello World) Tj ET EMC", |doc, page| {
+        let font = doc.add_object(helvetica());
+        let ocg = doc.add_object(dictionary! { "Type" => "OCG", "Name" => text("Layer"), "Alt" => text("World") });
+        doc.get_dictionary_mut(page)
+            .unwrap()
+            .set("Resources", dictionary! { "Font" => dictionary! { "H" => font }, "Properties" => dictionary! { "L0" => ocg } });
+    });
+    assert!(raster_needed(doc, vec![area(1, 127.0, 700.0, 30.0, 5.0)]));
+}

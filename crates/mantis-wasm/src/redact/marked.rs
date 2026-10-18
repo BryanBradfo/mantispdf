@@ -1,6 +1,7 @@
 //! Marked content around removed content: /ActualText, /Alt and /E can
 //! repeat what was removed, so they go from every enclosing sequence.
 
+use super::Unsupported;
 use super::interp::{Event, page_resources_dict};
 use crate::rebuild::{deref, name_of};
 use lopdf::{Dictionary, Document, Object};
@@ -62,12 +63,12 @@ pub(crate) fn strip_replacement_text(ops: &[Operation], events: &[Event], touche
 }
 
 /// Give `resources` private copies of the /Properties entries `names`
-/// without /ActualText, /Alt and /E. Optional-content groups (and their
-/// membership dictionaries) are left as they are: their identity matters
-/// and they carry no replacement text. Originals are never changed.
-pub(crate) fn strip_named_properties(doc: &mut Document, resources: &mut Dictionary, names: &BTreeSet<Vec<u8>>) {
+/// without /ActualText, /Alt and /E. Originals are never changed.
+/// Optional-content groups (and membership dictionaries) keep their
+/// identity, so one that carries such a key is Unsupported instead.
+pub(crate) fn strip_named_properties(doc: &mut Document, resources: &mut Dictionary, names: &BTreeSet<Vec<u8>>) -> Result<(), Unsupported> {
     if names.is_empty() {
-        return;
+        return Ok(());
     }
     let mut properties = page_resources_dict(doc, resources, b"Properties");
     let mut changed = false;
@@ -75,8 +76,11 @@ pub(crate) fn strip_named_properties(doc: &mut Document, resources: &mut Diction
         let Some(Object::Dictionary(dict)) = properties.get(name).ok().and_then(|o| deref(doc, o)) else {
             continue;
         };
-        if matches!(name_of(dict, b"Type"), Some(b"OCG" | b"OCMD")) || !REPLACEMENT_TEXT_KEYS.iter().any(|k| dict.has(k)) {
+        if !REPLACEMENT_TEXT_KEYS.iter().any(|k| dict.has(k)) {
             continue;
+        }
+        if matches!(name_of(dict, b"Type"), Some(b"OCG" | b"OCMD")) {
+            return Err(Unsupported::new("optional content with replacement text around redacted content"));
         }
         let mut copy = dict.clone();
         for key in REPLACEMENT_TEXT_KEYS {
@@ -89,4 +93,5 @@ pub(crate) fn strip_named_properties(doc: &mut Document, resources: &mut Diction
     if changed {
         resources.set("Properties", properties);
     }
+    Ok(())
 }

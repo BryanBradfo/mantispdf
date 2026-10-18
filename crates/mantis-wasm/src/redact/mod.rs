@@ -462,7 +462,7 @@ pub(crate) fn redact_content(
         }
     }
     prune_resources(page, ops, &out)?;
-    marked::strip_named_properties(page.doc, page.resources, &report.named_properties);
+    marked::strip_named_properties(page.doc, page.resources, &report.named_properties)?;
     Ok((out, report))
 }
 
