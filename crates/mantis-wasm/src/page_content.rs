@@ -58,6 +58,7 @@ impl BalanceScanner {
 
     /// Undecodable or oversized content, or content past the job's budget,
     /// counts as balanced.
+    #[cfg(test)]
     pub(crate) fn unbalanced(&mut self, doc: &Document, items: &[Object]) -> usize {
         self.balance(doc, items).0
     }
