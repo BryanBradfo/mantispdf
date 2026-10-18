@@ -18,10 +18,13 @@ test.use({ viewport: { width: 1600, height: 1500 } });
  */
 const PAGE_HEIGHT = 841.89;
 
-/** Collects requests that leave the app origin (blob: and data: stay local). */
+/**
+ * Collects requests that leave the app origin from every page and worker of the context
+ * (blob: and data: stay local).
+ */
 function watchOrigin(page: Page, origin: string): string[] {
   const foreign: string[] = [];
-  page.on("request", (r) => {
+  page.context().on("request", (r) => {
     const u = r.url();
     if (u.startsWith("blob:") || u.startsWith("data:")) return;
     // Compare origins, not prefixes: "http://localhost:5181.evil" starts with the app origin.
@@ -67,14 +70,30 @@ async function fieldObjects(bytes: Uint8Array): Promise<FieldObjects | null> {
   return fields;
 }
 
-/** Every value of each field widget on page `n` (getFieldObjects keeps only the first of a list box). */
-async function widgetValues(bytes: Uint8Array, n: number): Promise<Record<string, unknown>> {
+interface Annotation {
+  subtype?: string;
+  fieldName?: string;
+  fieldValue?: unknown;
+  buttonValue?: unknown;
+  radioButton?: boolean;
+}
+
+async function annotations(bytes: Uint8Array, n: number): Promise<Annotation[]> {
   const { getDocument } = (await import(PDFJS_NODE)) as Pdfjs;
   const doc = await getDocument({ data: bytes.slice() }).promise;
-  const annots = (await (await doc.getPage(n)).getAnnotations()) as { fieldName?: string; fieldValue?: unknown }[];
+  const annots = (await (await doc.getPage(n)).getAnnotations()) as Annotation[];
   await doc.destroy();
+  return annots;
+}
+
+/** Every value of each field widget on page `n` (getFieldObjects keeps only the first of a list box). */
+async function widgetValues(bytes: Uint8Array, n: number): Promise<Record<string, unknown>> {
+  const annots = await annotations(bytes, n);
   return Object.fromEntries(annots.filter((a) => a.fieldName).map((a) => [a.fieldName, a.fieldValue]));
 }
+
+/** Whether `bytes` contain `text` (latin1). */
+const contains = (bytes: Uint8Array, text: string) => Buffer.from(bytes).includes(Buffer.from(text, "latin1"));
 
 async function pageText(bytes: Uint8Array, n: number): Promise<string> {
   const { getDocument } = (await import(PDFJS_NODE)) as Pdfjs;
@@ -137,7 +156,7 @@ const COMMENTS: [number, number, number, number] = [150, 755, 450, 777];
 
 test("fill form: every kind on the page and in the list, editable download", async ({ page, baseURL }) => {
   const foreign = watchOrigin(page, new URL(baseURL ?? "").origin);
-  await openForm(page, fx("form.pdf"), "form.pdf (10 fields, 2 pages)");
+  await openForm(page, fx("form.pdf"), "form.pdf (11 fields, 2 pages)");
   const canvas = page.getByTestId("form-canvas");
   const list = page.getByRole("list", { name: "Form fields" });
 
@@ -156,9 +175,10 @@ test("fill form: every kind on the page and in the list, editable download", asy
   // In the side list: the list box, and the page 2 field.
   await list.getByRole("listbox", { name: "Fruits" }).selectOption(["Apple", "Cherry"]);
   await list.getByRole("textbox", { name: "Comments" }).fill("Page two");
+  await list.getByLabel("Password").fill("hunter2-secret");
   // Both places show the same values.
   await expect(list.getByRole("textbox", { name: "Full name" })).toHaveValue("Ada Lovelace");
-  await page.getByRole("button", { name: "Show page 2" }).click();
+  await list.getByRole("listitem").filter({ hasText: "Comments" }).getByRole("button", { name: "Show page 2" }).click();
   await expect(canvas.getByLabel("Comments")).toHaveValue("Page two");
 
   const { bytes, name } = await download(page);
@@ -178,6 +198,17 @@ test("fill form: every kind on the page and in the list, editable download", asy
   expect(value("ref_code")).toBe("MP-2026");
   expect(value("vertical")).toBe("Up");
   expect(value("comments")).toBe("Page two");
+  // A password is never stored.
+  expect(value("secret") ?? "").toBe("");
+  expect(contains(bytes, "hunter2")).toBe(false);
+
+  // Radio: pdf.js sees the group value on the green widget only, and the file turns that one on.
+  const radios = (await annotations(bytes, 1)).filter((a) => a.fieldName === "color");
+  expect(radios.map((a) => a.buttonValue)).toEqual(["red", "green", "blue"]);
+  expect(radios.every((a) => a.fieldValue === "green")).toBe(true);
+  const states = Buffer.from(bytes).toString("latin1").match(/\/AS\s*\/(red|green|blue|Off)\b/g) ?? [];
+  expect(states.filter((x) => /green/.test(x))).toHaveLength(1);
+  expect(states.some((x) => /red|blue/.test(x))).toBe(false);
 
   // The typed text is drawn: dark pixels where the empty fixture field was white.
   const original = new Uint8Array(await readFile(fx("form.pdf")));
@@ -193,16 +224,21 @@ test("fill form: every kind on the page and in the list, editable download", asy
 });
 
 test("fill form: flattened download has no fields and keeps the text", async ({ page }) => {
-  await openForm(page, fx("form.pdf"), "form.pdf (10 fields, 2 pages)");
+  await openForm(page, fx("form.pdf"), "form.pdf (11 fields, 2 pages)");
   const canvas = page.getByTestId("form-canvas");
   await canvas.getByLabel("Full name").fill("Flat Ada");
+  // Both required fields filled: no "download anyway" question.
   await canvas.getByLabel("I agree").check();
+  await canvas.getByLabel("Colour: blue").check();
   await page.getByLabel(/^Flatten/).check();
   const { bytes, name } = await download(page);
   expect(name).toBe("form_flattened.pdf");
 
   const fields = await fieldObjects(bytes);
   expect(fields === null || Object.keys(fields).length === 0).toBe(true);
+  for (const n of [1, 2]) {
+    expect((await annotations(bytes, n)).filter((a) => a.subtype === "Widget"), `page ${n}`).toEqual([]);
+  }
   const text = await pageText(bytes, 1);
   expect(text).toContain("Flat Ada");
   expect(text).toContain("MP-2026");
@@ -221,4 +257,6 @@ test("fill form: pure XFA is refused, hybrid XFA is filled with a note", async (
   const { bytes } = await download(page);
   const fields = await fieldObjects(bytes);
   expect(fields?.name?.[0]?.value).toBe("Hybrid");
+  expect(contains(new Uint8Array(await readFile(fx("xfa-hybrid.pdf"))), "/XFA")).toBe(true);
+  expect(contains(bytes, "/XFA")).toBe(false);
 });

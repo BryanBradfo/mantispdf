@@ -9,7 +9,7 @@ Helvetica: reportlab writes a second /Font key into /DR otherwise.
                             green, blue), country (combo, "France"), fruits
                             (multi-select list, "Banana" selected), ref_code (read-only, value "MP-2026"),
                             vertical (text, widget /MK /R 90)
-                    page 2: comments (text)
+                    page 2: comments (text), secret (password)
   xfa-pure.pdf    1 page, /AcroForm with /XFA and empty /Fields (stdlib)
   xfa-hybrid.pdf  1 page, /AcroForm with /XFA and one text field "name" (stdlib)
 
@@ -84,6 +84,9 @@ def form_pdf() -> bytes:
     label(c, 50, 765, "Comments")
     f.textfield(**free, name="comments", tooltip="Comments", x=150, y=755, width=300, height=22, fontName="Helvetica",
                 fontSize=12, **common)
+    label(c, 50, 725, "Password")
+    f.textfield(**free, name="secret", tooltip="Password", x=150, y=715, width=150, height=22, fontName="Helvetica",
+                fontSize=12, fieldFlags="password", **common)
     c.showPage()
     c.save()
 

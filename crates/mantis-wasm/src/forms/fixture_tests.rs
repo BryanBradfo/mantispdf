@@ -29,6 +29,7 @@ fn form_fixture_fields() {
         (7, "ref_code", "Reference", 1),
         (8, "vertical", "Vertical", 1),
         (9, "comments", "Comments", 2),
+        (10, "secret", "Password", 2),
     ]);
     let kinds: Vec<&FieldKind> = info.fields.iter().map(|f| &f.kind).collect();
     assert_eq!(kinds, vec![
@@ -42,6 +43,7 @@ fn form_fixture_fields() {
         &FieldKind::Text { multiline: false, comb: false, max_len: None, password: false },
         &FieldKind::Text { multiline: false, comb: false, max_len: None, password: false },
         &FieldKind::Text { multiline: false, comb: false, max_len: None, password: false },
+        &FieldKind::Text { multiline: false, comb: false, max_len: None, password: true },
     ]);
     let f = &info.fields;
     assert_eq!(f[3].on_states, vec!["Yes"]);
@@ -74,11 +76,16 @@ fn form_fixture_fills_and_flattens() {
         (6, Value::Names(vec!["Apple".into(), "Cherry".into()])),
         (8, Value::Text("Up".into())),
         (9, Value::Text("Page two".into())),
+        (10, Value::Text("hunter2-secret".into())),
     ];
-    let filled = list_form(&fill_form(&pdf, &values, false).unwrap()).unwrap();
-    for (id, value) in &values {
+    let out = fill_form(&pdf, &values, false).unwrap();
+    let filled = list_form(&out).unwrap();
+    for (id, value) in &values[..values.len() - 1] {
         assert_eq!(&filled.fields[*id as usize].value, value, "field {id}");
     }
+    // The password is not stored.
+    assert_eq!(filled.fields[10].value, Value::None);
+    assert!(!out.windows(6).any(|w| w == b"hunter"));
     assert!(list_form(&fill_form(&pdf, &values, true).unwrap()).unwrap().fields.is_empty());
 }
 
