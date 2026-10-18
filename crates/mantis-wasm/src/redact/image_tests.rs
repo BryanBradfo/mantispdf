@@ -465,3 +465,19 @@ fn jpeg_image_masks_are_removed() {
     assert!(drawn(&out.content).is_empty());
     assert_eq!(out.report.images_removed, vec!["jpeg mask"]);
 }
+
+#[test]
+fn alias_names_of_a_replaced_image_go_too() {
+    let mut page = page_with(rgb_image(4, 4, gradient));
+    let original = page.image;
+    page.resources.set("XObject", dictionary! { "Im1" => original, "Alias" => original });
+    let out = redact(page, DRAW_4X4, &[rect(0.0, 0.0, 20.0, 40.0)]);
+    let mut seen = std::collections::HashSet::new();
+    reachable(&out.doc, &Object::Dictionary(out.resources.clone()), &mut seen);
+    assert!(!seen.contains(&original), "an alias name still reaches the original image");
+    // An alias the new content still draws stays (it is drawn outside the areas).
+    let mut page = page_with(rgb_image(4, 4, gradient));
+    page.resources.set("XObject", dictionary! { "Im1" => page.image, "Alias" => page.image });
+    let out = redact(page, b"q 40 0 0 40 0 0 cm /Im1 Do Q q 1 0 0 1 200 200 cm /Alias Do Q", &[rect(0.0, 0.0, 20.0, 40.0)]);
+    assert!(super::interp::page_resources_dict(&out.doc, &out.resources, b"XObject").has(b"Alias"));
+}

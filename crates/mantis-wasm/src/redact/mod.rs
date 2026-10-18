@@ -466,8 +466,9 @@ pub(crate) fn redact_content(
 const PRUNED: [&[u8]; 4] = [b"XObject", b"Font", b"Shading", b"Pattern"];
 
 /// Remove from the page's resources every name the original content used
-/// and the redacted content no longer does: a replaced image must not stay
-/// reachable under its old name. Names the content never used stay (a form
+/// and the redacted content no longer does, and every other unused name for
+/// the same objects: a replaced image must not stay reachable under its old
+/// name or an alias. Names the content never used stay (a form
 /// without /Resources may draw from them). Shared dictionaries are copied,
 /// never changed.
 fn prune_resources(page: &mut PageEdit, before: &[Operation], after: &[Operation]) -> Result<(), Unsupported> {
@@ -487,10 +488,32 @@ fn prune_resources(page: &mut PageEdit, before: &[Operation], after: &[Operation
             continue;
         }
         let mut entries = interp::page_resources_dict(page.doc, page.resources, category);
-        for name in gone {
+        // Objects the dropped names led to: another name for the same object
+        // (an alias) would keep the original reachable.
+        let targets: HashSet<lopdf::ObjectId> =
+            gone.iter().filter_map(|name| entries.get(name).ok()).filter_map(|o| terminal_id(page.doc, o)).collect();
+        let aliases: Vec<Vec<u8>> = entries
+            .iter()
+            .filter(|(name, value)| !new.contains(category, name) && terminal_id(page.doc, value).is_some_and(|id| targets.contains(&id)))
+            .map(|(name, _)| name.clone())
+            .collect();
+        for name in gone.into_iter().chain(&aliases) {
             entries.remove(name);
         }
         page.resources.set(category.to_vec(), entries);
     }
     Ok(())
+}
+
+/// The id of the object a reference chain starting at `obj` ends on.
+fn terminal_id(doc: &Document, obj: &Object) -> Option<lopdf::ObjectId> {
+    let mut id = obj.as_reference().ok()?;
+    for _ in 0..32 {
+        match doc.get_object(id) {
+            Ok(Object::Reference(next)) => id = *next,
+            Ok(_) => return Some(id),
+            Err(_) => return None,
+        }
+    }
+    None
 }
