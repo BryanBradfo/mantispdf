@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addMarks, initialMarks, togglePage } from "./model";
-import { marksToRects, pagesWithMarks, sameRun, takeRun } from "./toJob";
+import { marksToRects, sameRun, takeRun } from "./toJob";
 
 describe("marks to engine rects", () => {
   it("normalizes areas, expands pages to their visible size and keeps page order", () => {
@@ -15,7 +15,6 @@ describe("marks to engine rects", () => {
       { page: 1, rect: [0, 0, 600, 800] },
       { page: 2, rect: [40, 40, 10, 20] },
     ]);
-    expect(pagesWithMarks(s.marks)).toEqual([1, 2]);
   });
 
   it("skips pages it has no size for", () => {

@@ -24,7 +24,7 @@ import {
   type Rect,
 } from "../lib/redact/model";
 import { chooseDpi, renderRaster } from "../lib/redact/raster";
-import { REPORT_TITLE, reportLines, uncoveredNote } from "../lib/redact/report";
+import { REPORT_TITLE, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
 import { findMatches, type TextRun } from "../lib/redact/search";
 import {
   marksToRects,
@@ -174,7 +174,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
             if ("str" in item) runs.push({ str: item.str, transform: item.transform, width: item.width, hasEOL: item.hasEOL });
           }
           const view = p.view as [number, number, number, number];
-          for (const m of findMatches(runs, { view, rotate: p.rotate }, query, { wholeWord, wholeItem: true })) {
+          for (const m of findMatches(runs, { view, rotate: p.rotate }, query, { wholeWord })) {
             // One mark per line of a match, never their union (which would cover the lines between).
             for (const rect of m.rects) found.push({ kind: "search", page: n, rect, query });
             pages.add(n);
@@ -328,7 +328,11 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           <ul className="mt-1 list-disc pl-5 text-sm text-amber-900 dark:text-amber-200">
             {confirm.pages.map((p) => (
               <li key={p.page}>
-                Page {p.page} will be converted to an image ({p.reason}).
+                Page {p.page} will be converted to an image: it {plainReason(p.reason ?? "")}.{" "}
+                <details className="inline">
+                  <summary className="inline cursor-pointer text-xs underline">Details</summary>
+                  <span className="ml-1 text-xs">{p.reason}</span>
+                </details>
               </li>
             ))}
           </ul>

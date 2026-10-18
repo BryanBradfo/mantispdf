@@ -69,11 +69,6 @@ export function marksToRects(marks: readonly Mark[], pageSizes: [number, number]
   return out.sort((a, b) => a.page - b.page);
 }
 
-/** The pages with at least one mark, ascending. */
-export function pagesWithMarks(marks: readonly Mark[]): number[] {
-  return [...new Set(marks.map((m) => m.page))].sort((a, b) => a - b);
-}
-
 export function toJob(
   marks: readonly Mark[],
   pageSizes: [number, number][],

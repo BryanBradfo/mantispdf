@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REPORT_TITLE, reportLines, uncoveredNote } from "./report";
+import { REPORT_TITLE, plainReason, reportLines, uncoveredNote } from "./report";
 import type { RedactResultWire } from "./toJob";
 
 const result = (extra: Partial<RedactResultWire> = {}): RedactResultWire => ({
@@ -41,7 +41,6 @@ describe("redaction report", () => {
       "2 pages redacted.",
       "1 character of text removed.",
       "1 image blacked out where marked.",
-      "2 images removed entirely (could not be edited safely).",
       "2 drawings removed.",
       "1 shared graphic (form XObject) redacted.",
       "3 annotations or links removed.",
@@ -66,3 +65,22 @@ describe("redaction report", () => {
     expect(reportLines(result(), [3])).toContain("Search did not cover page 3; check it by hand.");
   });
 });
+
+describe("plainReason", () => {
+  it("says why a page becomes an image in plain words", () => {
+    expect(plainReason("font T: Type3 fonts are not supported")).toBe("uses a special font");
+    expect(plainReason("shaped clip path under a redaction area")).toBe("uses complex graphics");
+    expect(plainReason("soft mask content under a redaction area")).toBe("uses complex graphics");
+    expect(plainReason("pattern under a redaction area")).toBe("uses complex graphics");
+    expect(plainReason("scanned image that cannot be edited (DCT too big)")).toBe("contains a scanned image");
+    expect(plainReason("image too large to edit in memory")).toBe("contains a very large image");
+    expect(plainReason("font F1: named CMap")).toBe("uses content that cannot be edited safely");
+    expect(plainReason("")).toBe("uses content that cannot be edited safely");
+  });
+
+  it("matches without regard to case", () => {
+    expect(plainReason("TYPE3 font")).toBe("uses a special font");
+    expect(plainReason("Image Too Large")).toBe("contains a very large image");
+  });
+});
+

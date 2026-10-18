@@ -1,11 +1,10 @@
 /**
  * Fallback text search for pages the engine cannot read (`redact_search` reports them as
  * `undecodablePages`; it searches every other page itself with the exact glyph boxes). This one
- * works from pdf.js text content items, which carry no per-glyph advances, so by default it
- * marks every item a match touches entirely (`wholeItem`). With `wholeItem: false` a match's
- * position is the item width split by character count, padded by 1 pt, which can leave part of
- * a word uncovered with proportional fonts. Heights run from 0.25 em below the baseline to 1 em
- * above (em from the item transform).
+ * works from pdf.js text content items, which carry no per-glyph advances, so it marks every
+ * item a match touches entirely (a split by character count could leave part of a word uncovered
+ * with proportional fonts), padded by 1 pt along the text. Heights run from 0.25 em below the
+ * baseline to 1 em above (em from the item transform).
  */
 import type { Rect } from "./model";
 
@@ -27,8 +26,6 @@ export interface PageGeometry {
 
 export interface SearchOptions {
   wholeWord?: boolean;
-  /** Mark whole items (default true); false splits items by character count. */
-  wholeItem?: boolean;
 }
 
 export interface Match {
@@ -57,16 +54,15 @@ export function toVisible({ view, rotate }: PageGeometry, x: number, y: number):
   }
 }
 
-/** Visible-space bounding box of characters `from..to` of `run` (all of it with `whole`). */
-function runRect(run: TextRun, from: number, to: number, geometry: PageGeometry): Rect {
+/** Visible-space bounding box of the whole of `run`, padded along the text. */
+function runRect(run: TextRun, geometry: PageGeometry): Rect {
   const [a, b, c, d, e, f] = run.transform;
   const along = Math.hypot(a, b) || 1;
   const size = Math.hypot(c, d);
   const [ux, uy] = [a / along, b / along];
   const [vx, vy] = size > 0 ? [c / size, d / size] : [-uy, ux];
-  const total = Math.max(1, run.str.length);
-  const s0 = (run.width * from) / total - PAD;
-  const s1 = (run.width * to) / total + PAD;
+  const s0 = -PAD;
+  const s1 = run.width + PAD;
   const corners = [
     [s0, -DESCENT * size],
     [s1, -DESCENT * size],
@@ -118,17 +114,10 @@ export function findMatches(runs: TextRun[], geometry: PageGeometry, query: stri
   for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) {
     const end = at + needle.length;
     if (options.wholeWord && ((at > 0 && WORD.test(text[at - 1])) || (end < text.length && WORD.test(text[end])))) continue;
-    // Group the matched characters by item.
-    const spans = new Map<number, [number, number]>();
-    for (const slot of slots.slice(at, end)) {
-      if (slot.item < 0) continue;
-      const span = spans.get(slot.item);
-      spans.set(slot.item, span ? [Math.min(span[0], slot.offset), Math.max(span[1], slot.offset + 1)] : [slot.offset, slot.offset + 1]);
-    }
-    const rects = [...spans].map(([item, [from, to]]) => {
-      const run = runs[item];
-      return (options.wholeItem ?? true) ? runRect(run, 0, run.str.length, geometry) : runRect(run, from, to, geometry);
-    });
+    // The items the matched characters come from, each marked whole.
+    const items = new Set<number>();
+    for (const slot of slots.slice(at, end)) if (slot.item >= 0) items.add(slot.item);
+    const rects = [...items].map((item) => runRect(runs[item], geometry));
     if (rects.length > 0) matches.push({ rects, rect: union(rects) });
   }
   return matches;
