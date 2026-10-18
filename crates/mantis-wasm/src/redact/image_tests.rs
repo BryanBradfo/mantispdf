@@ -455,3 +455,13 @@ fn huge_images_are_removed_before_any_large_allocation() {
     assert_eq!(out.report.images_redacted, 1);
     assert!(budget.decoded <= (1 << 20) - 4 * 4 * 8);
 }
+
+#[test]
+fn jpeg_image_masks_are_removed() {
+    let mut mask = jpeg_image(jpeg(8, 8, &[90], jpeg_encoder::ColorType::Luma), 8, 8, "DeviceGray");
+    mask.dict.remove(b"ColorSpace");
+    mask.dict.set("ImageMask", true);
+    let out = redact(page_with(mask), b"q 8 0 0 8 0 0 cm /Im1 Do Q", &[rect(0.0, 0.0, 4.0, 8.0)]);
+    assert!(drawn(&out.content).is_empty());
+    assert_eq!(out.report.images_removed, vec!["jpeg mask"]);
+}

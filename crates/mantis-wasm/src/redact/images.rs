@@ -200,8 +200,8 @@ fn redact_samples(
 }
 
 /// A JPEG: decoded, painted and re-encoded as a JPEG in its own (Gray or
-/// RGB) colour space. CMYK, inverted (/Decode) or filtered-twice JPEGs are
-/// removed. Its pixels are already charged to the budget.
+/// RGB) colour space. CMYK, inverted (/Decode), stencil (/ImageMask) or
+/// filtered-twice JPEGs are removed. Its pixels are already charged to the budget.
 fn redact_jpeg(
     doc: &Document,
     stream: &Stream,
@@ -216,6 +216,10 @@ fn redact_jpeg(
     }
     if stream.dict.has(b"Decode") {
         return Err("inverted jpeg");
+    }
+    if matches!(stream.dict.get(b"ImageMask").ok().and_then(|o| deref(doc, o)), Some(Object::Boolean(true))) {
+        // A JPEG stencil paints in the fill colour: not a picture to repaint.
+        return Err("jpeg mask");
     }
     let info = jpeg_info(&stream.content).map_err(|_| "corrupt")?;
     let (kind, space, components) = match info.components {
