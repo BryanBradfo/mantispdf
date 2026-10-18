@@ -2,6 +2,7 @@
 
 pub(crate) mod appearance;
 pub(crate) mod fill;
+pub(crate) mod flatten;
 pub(crate) mod tree;
 
 pub use fill::fill_form;

@@ -475,6 +475,19 @@ fn flatten_widget(
     annot: &Dictionary,
 ) -> Option<(Object, [f64; 6])> {
     let doc = copier.source(src);
+    let (appearance, cm) = widget_placement(doc, annot)?;
+    let copied = copier.copy(out, src, appearance);
+    match copied {
+        Object::Reference(_) => Some((copied, cm)),
+        _ => None,
+    }
+}
+
+/// The normal appearance a visible widget shows (the /AS state of a state
+/// dictionary) as it is held in the widget, and the `cm` matrix that maps
+/// the appearance's transformed BBox onto /Rect. None when the widget is
+/// hidden or has nothing to draw.
+pub(crate) fn widget_placement<'a>(doc: &'a Document, annot: &'a Dictionary) -> Option<(&'a Object, [f64; 6])> {
     let flags = annot
         .get(b"F")
         .ok()
@@ -530,13 +543,7 @@ fn flatten_widget(
     }
     let a = (rx1 - rx0) / (x1 - x0);
     let d = (ry1 - ry0) / (y1 - y0);
-    let cm = [a, 0.0, 0.0, d, rx0 - a * x0, ry0 - d * y0];
-
-    let copied = copier.copy(out, src, appearance);
-    match copied {
-        Object::Reference(_) => Some((copied, cm)),
-        _ => None,
-    }
+    Some((appearance, [a, 0.0, 0.0, d, rx0 - a * x0, ry0 - d * y0]))
 }
 
 /// True when a URI string (PDF text: UTF-16BE with BOM, UTF-8 with BOM, or

@@ -116,7 +116,12 @@ impl PageWriter {
 
     /// A fresh page-local name for the XObject `id`.
     pub(crate) fn xobject(&mut self, id: ObjectId) -> Vec<u8> {
-        let name = free_name(&self.xobject_dict, "MStIm");
+        self.xobject_with_prefix(id, "MStIm")
+    }
+
+    /// Page-local name `<prefix><k>` of XObject `id`.
+    pub(crate) fn xobject_with_prefix(&mut self, id: ObjectId, prefix: &str) -> Vec<u8> {
+        let name = free_name(&self.xobject_dict, prefix);
         self.xobject_dict.set(name.clone(), Object::Reference(id));
         name
     }

@@ -20,13 +20,13 @@ use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat, dictio
 use std::collections::{HashMap, HashSet};
 
 /// Fill `values` (field id from `list_form`, new value) and return the saved
-/// PDF. `flatten` is not supported yet.
+/// PDF, with the fields baked into the pages when `flatten` is set.
 pub fn fill_form(pdf: &[u8], values: &[(u32, Value)], flatten: bool) -> Result<Vec<u8>, String> {
-    if flatten {
-        return Err(invalid("flatten"));
-    }
     let mut doc = load_pdf(pdf)?;
     fill_document(&mut doc, values)?;
+    if flatten {
+        super::flatten::flatten_document(&mut doc)?;
+    }
     save_pdf(&mut doc)
 }
 
@@ -697,7 +697,6 @@ mod tests {
         assert_eq!(info.fields[1].value, Value::Names(vec!["b".into()]));
         let (_, ap) = normal_ap(&reloaded, read_form(&reloaded).unwrap().refs[0].widgets[0].obj);
         assert!(ap.decompressed_content().unwrap_or_else(|_| ap.content.clone()).windows(2).any(|w| w == b"\xFC\xDF"));
-        assert_eq!(fill_form(&pdf, &[], true).unwrap_err(), "Invalid form settings: flatten");
     }
 
     #[test]
