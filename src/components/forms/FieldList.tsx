@@ -2,7 +2,7 @@ import { useId } from "react";
 import { Link } from "react-router-dom";
 import { unsupportedMessage } from "../../lib/editor/afm";
 import { NO_VALUE, isDirty, isDrawn, valueOf, type FormField, type FormState, type FormValue } from "../../lib/forms/model";
-import { namesOf, textOf, toggled, unsupportedIn } from "./FieldControl";
+import { choiceOptions, lengthLimit, lengthWarning, namesOf, selection, textOf, toggled, unsupportedIn } from "../../lib/forms/values";
 
 const KIND_LABEL: Record<FormField["kind"]["kind"], string> = {
   text: "Text",
@@ -27,14 +27,17 @@ export const listedFields = (fields: readonly FormField[]): FormField[] =>
 function PanelControl({ field, value, onChange, labelId }: { field: FormField; value: FormValue; onChange: (v: FormValue) => void; labelId: string }) {
   const disabled = field.readOnly;
   const kind = field.kind;
+  const label = field.label || field.name;
+  const required = field.required || undefined;
   switch (kind.kind) {
     case "text":
       return kind.multiline ? (
         <textarea
           aria-labelledby={labelId}
+          aria-required={required}
           disabled={disabled}
           rows={3}
-          maxLength={kind.maxLen ?? undefined}
+          maxLength={lengthLimit(field)}
           value={textOf(value)}
           onChange={(e) => onChange({ kind: "text", text: e.target.value })}
           className={fieldClass}
@@ -42,10 +45,11 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
       ) : (
         <input
           aria-labelledby={labelId}
+          aria-required={required}
           type={kind.password ? "password" : "text"}
           autoComplete="off"
           disabled={disabled}
-          maxLength={kind.maxLen ?? undefined}
+          maxLength={lengthLimit(field)}
           value={textOf(value)}
           onChange={(e) => onChange({ kind: "text", text: e.target.value })}
           className={`${fieldClass} ${kind.comb ? "font-mono tracking-widest" : ""}`}
@@ -59,6 +63,8 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
             <label key={state} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-[#bbb]">
               <input
                 type="checkbox"
+                aria-label={states.length === 1 ? label : `${label}: ${state}`}
+                aria-required={required}
                 disabled={disabled}
                 checked={namesOf(value).includes(state)}
                 onChange={() => onChange(toggled(value, state))}
@@ -72,11 +78,12 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
     }
     case "radio":
       return (
-        <div className="mt-1 flex flex-wrap gap-3" role="radiogroup" aria-labelledby={labelId}>
+        <div className="mt-1 flex flex-wrap gap-3" role="radiogroup" aria-labelledby={labelId} aria-required={required}>
           {field.onStates.map((state) => (
             <label key={state} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-[#bbb]">
               <input
                 type="radio"
+                aria-label={`${label}: ${state}`}
                 name={`list-field-${field.id}`}
                 disabled={disabled}
                 checked={namesOf(value).includes(state)}
@@ -98,29 +105,32 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
         <>
           <input
             aria-labelledby={labelId}
+            aria-required={required}
             list={`list-field-${field.id}-options`}
             disabled={disabled}
+            maxLength={lengthLimit(field)}
             value={textOf(value)}
             onChange={(e) => onChange({ kind: "text", text: e.target.value })}
             className={fieldClass}
           />
           <datalist id={`list-field-${field.id}-options`}>
-            {field.options.map((o) => (
-              <option key={o.exportValue} value={o.exportValue}>{o.display}</option>
+            {field.options.map((o, i) => (
+              <option key={i} value={o.exportValue}>{o.display}</option>
             ))}
           </datalist>
         </>
       ) : (
         <select
           aria-labelledby={labelId}
+          aria-required={required}
           disabled={disabled}
           value={textOf(value)}
           onChange={(e) => onChange(e.target.value === "" ? NO_VALUE : { kind: "text", text: e.target.value })}
           className={fieldClass}
         >
           <option value="">(none)</option>
-          {field.options.map((o) => (
-            <option key={o.exportValue} value={o.exportValue}>{o.display}</option>
+          {choiceOptions(field, value).map((o, i) => (
+            <option key={i} value={o.exportValue}>{o.display}</option>
           ))}
         </select>
       );
@@ -128,26 +138,25 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
       return (
         <select
           aria-labelledby={labelId}
+          aria-required={required}
           multiple={kind.multi}
           size={Math.min(6, Math.max(2, field.options.length))}
           disabled={disabled}
           value={kind.multi ? namesOf(value) : (namesOf(value)[0] ?? "")}
-          onChange={(e) => {
-            const picked = Array.from(e.target.selectedOptions, (o) => o.value);
-            onChange(picked.length === 0 ? NO_VALUE : { kind: "names", names: picked });
-          }}
+          onChange={(e) => onChange(selection(Array.from(e.target.selectedOptions, (o) => o.value)))}
           className={fieldClass}
         >
-          {field.options.map((o) => (
-            <option key={o.exportValue} value={o.exportValue}>{o.display}</option>
+          {choiceOptions(field, value).map((o, i) => (
+            <option key={i} value={o.exportValue}>{o.display}</option>
           ))}
         </select>
       );
     case "signature":
       return (
         <p className="mt-1 text-sm text-gray-600 dark:text-[#999]">
-          Signature field: use{" "}
-          <Link to="/sign" className="font-medium text-mantis-700 underline dark:text-mantis-400">
+          Download the filled form, then sign it with{" "}
+          {/* A new tab: leaving this page would lose the values typed so far. */}
+          <Link to="/sign" target="_blank" rel="noopener" className="font-medium text-mantis-700 underline dark:text-mantis-400">
             Sign PDF
           </Link>
           .
@@ -178,6 +187,7 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
         const value = valueOf(state, field.id);
         const fieldPage = pageOf(field);
         const bad = unsupportedIn(field, value);
+        const tooLong = lengthWarning(field, value);
         return (
           <li
             key={field.id}
@@ -189,9 +199,12 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
               <span id={labelId} className="text-sm font-medium text-gray-900 dark:text-[#ddd]" title={field.name}>
                 {field.label || field.name}
                 {field.required && (
-                  <span className="ml-0.5 text-red-600" aria-label="required">
-                    *
-                  </span>
+                  <>
+                    <span className="ml-0.5 text-red-600" aria-hidden="true">
+                      *
+                    </span>
+                    <span className="sr-only"> (required)</span>
+                  </>
                 )}
                 {isDirty(state, field.id) && <span className="sr-only"> (changed)</span>}
               </span>
@@ -216,6 +229,7 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
                 {unsupportedMessage(bad)}
               </p>
             )}
+            {tooLong && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{tooLong}</p>}
           </li>
         );
       })}

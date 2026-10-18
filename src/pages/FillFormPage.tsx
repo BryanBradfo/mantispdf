@@ -7,10 +7,10 @@ import ErrorAlert from "../components/common/ErrorAlert";
 import PageStrip from "../components/editor/PageStrip";
 import FieldList, { listedFields } from "../components/forms/FieldList";
 import FormCanvas from "../components/forms/FormCanvas";
-import { unsupportedIn } from "../components/forms/FieldControl";
 import { unsupportedMessage } from "../lib/editor/afm";
 import { dirtyIds, initialFormState, isDrawn, resetForm, setValue, valueOf, type FormInfo, type FormState, type FormValue } from "../lib/forms/model";
 import { tabOrder } from "../lib/forms/tabOrder";
+import { unsupportedIn } from "../lib/forms/values";
 import { toWire } from "../lib/forms/toWire";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
@@ -26,12 +26,14 @@ interface WorkspaceProps {
   input: PdfInput<Prepared>;
   busy: boolean;
   run: <R>(work: () => Promise<R>, done: (result: R) => void) => Promise<void>;
+  /** Download errors, shown under the button row that caused them. */
+  error: string | null;
   setError: (error: string | null) => void;
   fillForm: ReturnType<typeof usePdfWorker>["fillForm"];
   onStartOver: () => void;
 }
 
-function Workspace({ input, busy, run, setError, fillForm, onStartOver }: WorkspaceProps) {
+function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }: WorkspaceProps) {
   const { sizes, form } = input.data;
   const ordered = useMemo(() => listedFields(tabOrder(form.fields)), [form.fields]);
   const [state, setState] = useState<FormState>(() => initialFormState(form));
@@ -109,6 +111,8 @@ function Workspace({ input, busy, run, setError, fillForm, onStartOver }: Worksp
         </div>
       </div>
 
+      <ErrorAlert error={error} onDismiss={() => setError(null)} />
+
       <p className="text-xs text-gray-500 dark:text-[#777]">
         Form scripts are not run: formatting, calculations and checks built into the form do not happen here, and
         calculated fields keep their value unless you change them.
@@ -184,8 +188,7 @@ export default function FillFormPage() {
 
       {input && fillable && (
         <>
-          <Workspace input={input} busy={busy} run={run} setError={setError} fillForm={fillForm} onStartOver={reset} />
-          <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
+          <Workspace input={input} busy={busy} run={run} error={error} setError={setError} fillForm={fillForm} onStartOver={reset} />
         </>
       )}
     </ToolShell>

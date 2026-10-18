@@ -66,6 +66,7 @@ export default function FormCanvas({ source, page, pageSize, fields, state, onCh
                 key={`${field.id}-${i}`}
                 field={field}
                 widget={widget}
+                index={i}
                 value={valueOf(state, field.id)}
                 onChange={(v) => onChange(field.id, v)}
                 scale={scale}

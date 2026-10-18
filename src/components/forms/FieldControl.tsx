@@ -1,29 +1,22 @@
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import { unsupportedChars } from "../../lib/editor/afm";
 import { cssFont } from "../editor/svgStyle";
 import { PADDING, textFontSize, widgetFrame } from "../../lib/forms/layout";
 import { NO_VALUE, type FormField, type FormValue, type FormWidget } from "../../lib/forms/model";
+import { choiceOptions, lengthLimit, lengthWarning, namesOf, selection, textOf, toggled, unsupportedIn } from "../../lib/forms/values";
 
-export const textOf = (v: FormValue): string => (v.kind === "text" ? v.text : "");
-export const namesOf = (v: FormValue): string[] => (v.kind === "names" ? v.names : []);
-
-/** The text a field holds that the standard PDF fonts cannot save ("" when all is fine). */
-export function unsupportedIn(field: FormField, value: FormValue): string {
-  const k = field.kind.kind;
-  return k === "text" || k === "combo" ? unsupportedChars(textOf(value)) : "";
-}
-
-/** Checkbox widget clicked: on with its own state, or off when it was on. */
-export function toggled(value: FormValue, state: string): FormValue {
-  return namesOf(value).includes(state) ? NO_VALUE : { kind: "names", names: [state] };
-}
+/** Courier New's advance width, in em. */
+const MONO_ADVANCE = 0.6;
+/** Border of a control, in CSS pixels (Tailwind `border`). */
+const BORDER_PX = 1;
 
 const ALIGN: Record<0 | 1 | 2, CSSProperties["textAlign"]> = { 0: "left", 1: "center", 2: "right" };
 
 interface OverlayProps {
   field: FormField;
   widget: FormWidget;
+  /** Index of `widget` in `field.widgets` (keeps ids unique when a field is shown twice). */
+  index: number;
   value: FormValue;
   onChange: (value: FormValue) => void;
   /** Preview pixels per point. */
@@ -41,7 +34,7 @@ const controlClass = `h-full w-full rounded-none ${frameClass} text-gray-900 out
  * The HTML control drawn over one widget of the page: sized to the widget, its content turned
  * with the widget (/MK /R and page rotation), the text in the field's font size.
  */
-export default function FieldControl({ field, widget, value, onChange, scale, box }: OverlayProps) {
+export default function FieldControl({ field, widget, index, value, onChange, scale, box }: OverlayProps) {
   const { width, height } = widgetFrame(widget);
   const fw = width * scale;
   const fh = height * scale;
@@ -57,7 +50,9 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
   const disabled = field.readOnly;
   const label = field.label || field.name;
   const bad = unsupportedIn(field, value) !== "";
-  const invalid = bad ? " !border-red-600 !ring-2 !ring-red-500" : "";
+  const tooLong = lengthWarning(field, value);
+  const invalid = bad ? " !border-red-600 !ring-2 !ring-red-500" : tooLong ? " !border-amber-500 !ring-2 !ring-amber-400" : "";
+  const title = bad ? `${label}: characters the PDF fonts cannot save` : tooLong ? `${label}: ${tooLong}` : label;
   const kind = field.kind;
 
   // pdf.js still paints read-only text and choice fields into the preview (their appearance has
@@ -88,27 +83,59 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
         fontFamily: family,
         fontWeight: weight,
       };
+      let combClip = false;
       if (kind.comb && kind.maxLen !== null && kind.maxLen > 0) {
-        // One character per cell: a monospace font spaced to the cell width.
-        const cell = fw / kind.maxLen;
-        const glyph = 0.6 * fontPx;
+        // One character per cell, the cells of the PDF: maxLen equal cells inside the border, a
+        // monospace font spaced so each character advances by a cell, centred in it (half a gap
+        // of padding first). The last character still carries its full gap, half a gap more
+        // than the box holds: the input is that much wider than its frame, which clips it and
+        // draws the border, so a full field neither scrolls nor drifts.
+        const glyph = MONO_ADVANCE * fontPx;
+        const cell = (fw - 2 * BORDER_PX) / kind.maxLen;
+        const gap = cell - glyph;
         style.fontFamily = '"Courier New", Courier, monospace';
-        style.letterSpacing = cell - glyph;
-        style.paddingLeft = Math.max(0, (cell - glyph) / 2);
+        style.fontWeight = 400;
+        style.letterSpacing = gap;
+        // Longhands only: mixing them with the `padding` shorthand loses the left padding.
+        delete style.padding;
+        style.paddingTop = 0;
+        style.paddingBottom = 0;
         style.paddingRight = 0;
+        style.paddingLeft = gap / 2;
         style.textAlign = "left";
+        style.width = `calc(100% + ${Math.max(0, gap / 2) + 2}px)`;
+        style.maxWidth = "none";
+        combClip = true;
       }
       const common = {
         "aria-label": label,
         "aria-required": field.required || undefined,
-        "aria-invalid": bad || undefined,
+        "aria-invalid": bad || tooLong !== null || undefined,
         disabled,
         value: text,
-        maxLength: kind.maxLen ?? undefined,
+        maxLength: lengthLimit(field),
         className: controlClass + invalid,
         style,
-        title: bad ? `${label}: characters the PDF fonts cannot save` : label,
+        title,
       };
+      if (combClip) {
+        return (
+          <div
+            style={frame}
+            // `clip`, not `hidden`: a clipping box that is not a scroll container, so revealing
+            // the caret cannot shift the cells sideways.
+            className={`overflow-clip ${frameClass} focus-within:border-mantis-600 focus-within:ring-2 focus-within:ring-mantis-500${invalid}`}
+          >
+            <input
+              {...common}
+              className="h-full border-0 bg-transparent p-0 text-gray-900 outline-none focus:ring-0 disabled:cursor-not-allowed"
+              type={kind.password ? "password" : "text"}
+              autoComplete="off"
+              onChange={(e) => onChange({ kind: "text", text: e.target.value })}
+            />
+          </div>
+        );
+      }
       return (
         <div style={frame}>
           {kind.multiline ? (
@@ -131,9 +158,10 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
       const checked = namesOf(value).includes(state);
       return (
         <div style={frame} className={`flex items-center justify-center ${frameClass}`}>
+          {/* No shared `name`: a radio is checked by the value alone, so widgets sharing one
+              state (RadiosInUnison) all show checked. */}
           <input
             type={kind.kind}
-            name={kind.kind === "radio" ? `field-${field.id}` : undefined}
             aria-label={kind.kind === "radio" ? `${label}: ${state}` : label}
             aria-required={field.required || undefined}
             checked={checked}
@@ -156,23 +184,25 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
         textAlign: ALIGN[widget.align],
       };
       if (kind.editable) {
-        const listId = `field-${field.id}-options`;
+        const listId = `field-${field.id}-${index}-options`;
         return (
           <div style={frame}>
             <input
               list={listId}
               aria-label={label}
               aria-required={field.required || undefined}
-              aria-invalid={bad || undefined}
+              aria-invalid={bad || tooLong !== null || undefined}
+              title={title}
               disabled={disabled}
               value={text}
+              maxLength={lengthLimit(field)}
               onChange={(e) => onChange({ kind: "text", text: e.target.value })}
               className={controlClass + invalid}
               style={style}
             />
             <datalist id={listId}>
-              {field.options.map((o) => (
-                <option key={o.exportValue} value={o.exportValue}>{o.display}</option>
+              {field.options.map((o, i) => (
+                <option key={i} value={o.exportValue}>{o.display}</option>
               ))}
             </datalist>
           </div>
@@ -189,9 +219,9 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
             className={controlClass}
             style={{ ...style, padding: 0 }}
           >
-            <option value="">{" "}</option>
-            {field.options.map((o) => (
-              <option key={o.exportValue} value={o.exportValue}>{o.display}</option>
+            <option value="">{"\u00a0"}</option>
+            {choiceOptions(field, value).map((o, i) => (
+              <option key={i} value={o.exportValue}>{o.display}</option>
             ))}
           </select>
         </div>
@@ -209,15 +239,12 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
             aria-required={field.required || undefined}
             disabled={disabled}
             value={kind.multi ? names : (names[0] ?? "")}
-            onChange={(e) => {
-              const picked = Array.from(e.target.selectedOptions, (o) => o.value);
-              onChange(picked.length === 0 ? NO_VALUE : { kind: "names", names: picked });
-            }}
+            onChange={(e) => onChange(selection(Array.from(e.target.selectedOptions, (o) => o.value)))}
             className={controlClass}
             style={{ fontSize: fontPx, fontFamily: cssFont(widget.font).family, padding: 0 }}
           >
-            {field.options.map((o) => (
-              <option key={o.exportValue} value={o.exportValue}>{o.display}</option>
+            {choiceOptions(field, value).map((o, i) => (
+              <option key={i} value={o.exportValue}>{o.display}</option>
             ))}
           </select>
         </div>
@@ -226,8 +253,15 @@ export default function FieldControl({ field, widget, value, onChange, scale, bo
     case "signature":
       return (
         <div style={frame} className="flex items-center justify-center border border-dashed border-sky-500 bg-sky-50/60 text-center">
-          <Link to="/sign" className="px-1 text-[11px] font-medium leading-tight text-sky-800 underline">
-            Sign with Sign PDF
+          {/* A new tab: leaving this page would lose the values typed so far. */}
+          <Link
+            to="/sign"
+            target="_blank"
+            rel="noopener"
+            title="Download the filled form, then sign it with Sign PDF."
+            className="px-1 text-[11px] font-medium leading-tight text-sky-800 underline"
+          >
+            Sign PDF (new tab)
           </Link>
         </div>
       );
