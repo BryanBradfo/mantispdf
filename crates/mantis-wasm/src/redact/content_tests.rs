@@ -584,3 +584,15 @@ fn unpainted_paths_under_a_rect_are_dropped() {
     assert_eq!(kept.len(), 1);
     assert_eq!(kept[0].bbox_user, Some(rect(0.0, 0.0, 10.0, 10.0)));
 }
+
+#[test]
+fn removing_clipping_text_is_unsupported() {
+    let rects = [rect(6.0, 0.0, 10.0, 5.0)];
+    for mode in 4..=7 {
+        let content = format!("BT /F1 10 Tf {mode} Tr (AB) Tj ET");
+        let err = try_redact(content.as_bytes(), &rects).unwrap_err();
+        assert!(err.0.contains("clip"), "Tr {mode}: {err:?}");
+    }
+    // Clipping text away from the rects stays.
+    assert!(try_redact(b"BT /F1 10 Tf 7 Tr 100 100 Td (AB) Tj ET", &rects).is_ok());
+}

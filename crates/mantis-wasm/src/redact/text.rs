@@ -34,6 +34,11 @@ fn repositions(op: &str) -> bool {
 /// Rewrite the show operators of `ops` so the glyphs flagged `true` in
 /// `glyphs` (every glyph event, in content order) disappear.
 pub(crate) fn rewrite_text(ops: &[Operation], glyphs: &[(&Glyph, bool)]) -> Result<TextEdits, Unsupported> {
+    if glyphs.iter().any(|(g, removed)| *removed && g.render_mode >= 4) {
+        // Clipping text (Tr 4-7) shapes what is drawn after it: removing a
+        // glyph would change the clip, keeping it keeps its outline.
+        return Err(Unsupported::new("clipping text under a redaction area"));
+    }
     let mut by_op: BTreeMap<usize, Vec<(&Glyph, bool)>> = BTreeMap::new();
     for &(g, removed) in glyphs {
         by_op.entry(g.op_index).or_default().push((g, removed));
