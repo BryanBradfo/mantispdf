@@ -66,13 +66,16 @@ fn paint(obj: &JsValue, key: &str, path: &str) -> Result<RawPaint, String> {
     }
 }
 
-/// Image data of the job read so far, to recognise a buffer placed again.
-struct ImageReader {
+/// Running totals of the job read so far: image placements and data (to recognise a buffer
+/// placed again) and freehand points.
+struct JobTotals {
     placements: usize,
     /// What the job may still carry, counted once per distinct buffer.
     budget: u64,
     /// Data buffers already read and the index of the item that read them.
     seen: Vec<(JsValue, usize)>,
+    /// Freehand points of the strokes read so far.
+    points: usize,
 }
 
 /// The `Uint8Array` at `obj[key]`, not copied yet.
@@ -97,7 +100,7 @@ fn copy(arr: &Uint8Array, budget: &mut u64) -> Result<Vec<u8>, String> {
 /// The image of item `index`. A data buffer already read by an earlier item (the same picked
 /// image placed again: `buildEditJob` shares it) is neither copied nor charged again; the engine
 /// then embeds it once.
-fn image(v: &JsValue, index: usize, path: &str, reader: &mut ImageReader) -> Result<RawImageData, String> {
+fn image(v: &JsValue, index: usize, path: &str, reader: &mut JobTotals) -> Result<RawImageData, String> {
     let img = get(v, "image", path)?;
     let ipath = format!("{path}.image");
     let kind = string(&img, "kind", &ipath)?;
@@ -123,7 +126,7 @@ fn image(v: &JsValue, index: usize, path: &str, reader: &mut ImageReader) -> Res
     Ok(out)
 }
 
-fn item(v: &JsValue, index: usize, path: &str, reader: &mut ImageReader) -> Result<RawItem, String> {
+fn item(v: &JsValue, index: usize, path: &str, reader: &mut JobTotals) -> Result<RawItem, String> {
     let page = num(v, "page", path)?;
     Ok(match string(v, "kind", path)?.as_str() {
         "text" => RawItem::Text {
@@ -184,8 +187,10 @@ fn item(v: &JsValue, index: usize, path: &str, reader: &mut ImageReader) -> Resu
         },
         "freehand" => {
             let pts = array(v, "points", path)?;
-            // Re-checked by the engine; checking here keeps a huge array from being copied.
-            if pts.length() as usize > MAX_FREEHAND_POINTS {
+            // Re-checked by the engine; checking the running total here keeps the job from
+            // copying more points than all strokes together may have.
+            reader.points = reader.points.saturating_add(pts.length() as usize);
+            if reader.points > MAX_FREEHAND_POINTS {
                 return Err(invalid("points"));
             }
             let mut points = Vec::with_capacity(pts.length() as usize);
@@ -210,7 +215,7 @@ pub(crate) fn read_job(job: &JsValue) -> Result<RawJob, String> {
     if list.length() as usize > MAX_ITEMS {
         return Err(invalid("items"));
     }
-    let mut reader = ImageReader { placements: 0, budget: MAX_IMAGE_BYTES, seen: Vec::new() };
+    let mut reader = JobTotals { placements: 0, budget: MAX_IMAGE_BYTES, seen: Vec::new(), points: 0 };
     let mut items = Vec::with_capacity(list.length() as usize);
     for i in 0..list.length() {
         items.push(item(&list.get(i), i as usize, &format!("items[{i}]"), &mut reader)?);
