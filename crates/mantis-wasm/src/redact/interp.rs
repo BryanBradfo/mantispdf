@@ -148,6 +148,15 @@ pub(crate) enum Event {
     Image(ImagePlacement),
     Shading(ShadingPaint),
     Form(FormPlacement),
+    /// A `BDC` or `BMC` opening a marked-content sequence.
+    Marked(MarkedSequence),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct MarkedSequence {
+    pub(crate) op_index: usize,
+    /// Op index of the enclosing sequence, if any.
+    pub(crate) parent: Option<usize>,
 }
 
 /// One shown character code.
@@ -174,6 +183,8 @@ pub(crate) struct Glyph {
     pub(crate) char_spacing: f64,
     /// Tw when it applies to this code (single-byte 32), else 0.
     pub(crate) word_spacing: f64,
+    /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
+    pub(crate) marked: Option<usize>,
 }
 
 impl Glyph {
@@ -207,6 +218,8 @@ pub(crate) struct PathPaint {
     pub(crate) clip: bool,
     /// Built from `re` (and `h`) only: as a clip it carries no glyph shape.
     pub(crate) rects_only: bool,
+    /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
+    pub(crate) marked: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -223,6 +236,8 @@ pub(crate) struct ImagePlacement {
     pub(crate) source: ImageSource,
     /// The image's unit square in user space.
     pub(crate) quad_user: Quad,
+    /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
+    pub(crate) marked: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -232,6 +247,8 @@ pub(crate) struct ShadingPaint {
     /// The shading's /BBox in user space; None when it has none (it then
     /// fills the whole clip region).
     pub(crate) bbox_user: Option<Rect>,
+    /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
+    pub(crate) marked: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -240,6 +257,8 @@ pub(crate) struct FormPlacement {
     pub(crate) name: Vec<u8>,
     /// Form space to user space (/Matrix x CTM).
     pub(crate) matrix: Matrix,
+    /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
+    pub(crate) marked: Option<usize>,
 }
 
 fn unparsable() -> Unsupported {
@@ -533,6 +552,7 @@ fn check_event(event: &Event) -> Result<(), Unsupported> {
         Event::Image(i) => in_range(quad_values(&i.quad_user)),
         Event::Shading(s) => in_range(rect_values(&s.bbox_user)),
         Event::Form(f) => in_range(f.matrix),
+        Event::Marked(_) => Ok(()),
     }
 }
 
@@ -589,9 +609,15 @@ struct Run<'b> {
     path: Option<PathBuild>,
     events: Vec<Event>,
     budget: &'b mut Budget,
+    /// Open marked-content sequences (op indices of their `BDC`/`BMC`).
+    marks: Vec<usize>,
 }
 
 impl Run<'_> {
+    fn marked(&self) -> Option<usize> {
+        self.marks.last().copied()
+    }
+
     fn emit(&mut self, event: Event) -> Result<(), Unsupported> {
         self.budget.take_event()?;
         check_event(&event)?;
@@ -623,6 +649,7 @@ impl Run<'_> {
             painted,
             clip: path.clip,
             rects_only: path.rects_only,
+            marked: self.marked(),
         }))
     }
 
@@ -656,6 +683,7 @@ impl Run<'_> {
                 h_scale: self.gs.h_scale,
                 char_spacing: self.gs.char_spacing,
                 word_spacing,
+                marked: self.marked(),
             };
             self.text.tm = concat(&translate(glyph.advance(), 0.0), &self.text.tm);
             self.emit(Event::Glyph(glyph))?;
@@ -739,10 +767,12 @@ impl<'d> Interp<'d> {
                 op_index,
                 source: ImageSource::XObject(name.to_vec()),
                 quad_user: Quad::of_box(&ctm, [0.0, 0.0, 1.0, 1.0]),
+                marked: run.marked(),
             })),
             Some(b"Form") => {
                 let form = self.matrix_of(stream.dict.get(b"Matrix").ok()).ok_or_else(|| malformed("Do"))?;
-                run.emit(Event::Form(FormPlacement { op_index, name: name.to_vec(), matrix: concat(&form, &ctm) }))
+                let marked = run.marked();
+                run.emit(Event::Form(FormPlacement { op_index, name: name.to_vec(), matrix: concat(&form, &ctm), marked }))
             }
             Some(b"PS") => Ok(()),
             _ => Err(Unsupported(format!("XObject {} of unknown type", String::from_utf8_lossy(name)))),
@@ -762,7 +792,8 @@ impl<'d> Interp<'d> {
             }
             _ => None,
         };
-        run.emit(Event::Shading(ShadingPaint { op_index, name: name.to_vec(), bbox_user: bbox }))
+        let marked = run.marked();
+        run.emit(Event::Shading(ShadingPaint { op_index, name: name.to_vec(), bbox_user: bbox, marked }))
     }
 
     /// Events of `ops` drawn with the initial CTM `ctm`.
@@ -774,6 +805,7 @@ impl<'d> Interp<'d> {
             path: None,
             events: Vec::new(),
             budget,
+            marks: Vec::new(),
         };
         for (i, op) in ops.iter().enumerate() {
             run.budget.take_op()?;
@@ -904,11 +936,28 @@ impl<'d> Interp<'d> {
                     }
                 }
             }
+            "BMC" | "BDC" => {
+                let well_formed = match args {
+                    [Object::Name(_)] => o == "BMC",
+                    [Object::Name(_), Object::Dictionary(_) | Object::Name(_)] => o == "BDC",
+                    _ => false,
+                };
+                if !well_formed {
+                    return Err(malformed(o));
+                }
+                let parent = run.marked();
+                run.emit(Event::Marked(MarkedSequence { op_index: i, parent }))?;
+                run.marks.push(i);
+            }
+            "EMC" => {
+                run.marks.pop();
+            }
             "Do" => self.xobject(run, i, one_name(o, args)?)?,
             "sh" => self.shading(run, i, one_name(o, args)?)?,
             "BI" => {
                 let quad_user = Quad::of_box(&run.gs.ctm, [0.0, 0.0, 1.0, 1.0]);
-                run.emit(Event::Image(ImagePlacement { op_index: i, source: ImageSource::Inline, quad_user }))?;
+                let marked = run.marked();
+                run.emit(Event::Image(ImagePlacement { op_index: i, source: ImageSource::Inline, quad_user, marked }))?;
             }
             _ => {
                 if let Some((painted, stroked)) = paint_kind(o) {
@@ -1322,6 +1371,32 @@ mod tests {
         assert!(page_resources(&doc, own).has(b"XObject"));
         assert!(!page_resources(&doc, own).has(b"Font"));
         assert!(page_resources(&doc, (999, 0)).is_empty());
+    }
+
+    #[test]
+    fn marked_content_sequences_enclose_what_they_mark() {
+        let ev = events("/Span <</MCID 0>> BDC BT /F1 10 Tf (A) Tj ET /Inner /P0 BDC 0 0 m 1 1 l S EMC EMC /X BMC /Sh2 sh EMC /Sh2 sh EMC")
+            .unwrap();
+        let marks: Vec<(usize, Option<usize>)> = ev
+            .iter()
+            .filter_map(|e| match e {
+                Event::Marked(m) => Some((m.op_index, m.parent)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marks, vec![(0, None), (5, Some(0)), (11, None)]);
+        let marked: Vec<Option<usize>> = ev
+            .iter()
+            .filter_map(|e| match e {
+                Event::Glyph(g) => Some(g.marked),
+                Event::Path(p) => Some(p.marked),
+                Event::Shading(s) => Some(s.marked),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marked, vec![Some(0), Some(5), Some(11), None]);
+        assert!(events("/Span 1 BDC").is_err());
+        assert!(events("BMC").is_err());
     }
 
     #[test]

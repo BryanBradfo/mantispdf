@@ -467,3 +467,44 @@ fn trailing_removals_leave_no_number_unless_later_text_depends_on_it() {
     // Original numbers next to a removed run merge into it.
     assert_eq!(numbers(b"BT /H 10 Tf 100 700 Td [(AB ) -10 (SECRET) 20 ( CD)] TJ ET"), vec![1]);
 }
+
+fn bdc_properties(content: &[u8]) -> Vec<Object> {
+    decode_ops(content)
+        .unwrap()
+        .into_iter()
+        .filter(|op| op.operator == "BDC")
+        .map(|op| op.operands[1].clone())
+        .collect()
+}
+
+#[test]
+fn marked_content_around_removed_text_loses_its_replacement_text() {
+    let rects = [rect(127.0, 700.0, 170.0, 705.0)];
+    let content = b"/Span <</ActualText (Hello World) /Lang (en)>> BDC /P <</Alt (World) /MCID 3>> BDC \
+        /Span <</E (W.)>> BDC BT /H 10 Tf 100 700 Td (Hello World) Tj ET EMC EMC EMC \
+        /Span <</ActualText (Kept)>> BDC BT /H 10 Tf 100 600 Td (Kept) Tj ET EMC";
+    let out = redact(content, &rects);
+    let props = bdc_properties(&out.content);
+    let dicts: Vec<&lopdf::Dictionary> = props.iter().map(|p| p.as_dict().unwrap()).collect();
+    assert_eq!(dicts.len(), 4);
+    assert!(!dicts[0].has(b"ActualText") && dicts[0].has(b"Lang"));
+    assert!(!dicts[1].has(b"Alt") && dicts[1].has(b"MCID"));
+    assert!(!dicts[2].has(b"E"));
+    assert!(dicts[3].has(b"ActualText"), "a sequence without removals keeps its text");
+    assert!(out.report.named_properties.is_empty());
+}
+
+#[test]
+fn marked_content_around_removed_graphics_loses_its_alt_text() {
+    let rects = [rect(40.0, 40.0, 55.0, 55.0)];
+    let out = redact(b"/Figure <</Alt (A chart of secrets)>> BDC 42 42 5 5 re f EMC", &rects);
+    assert!(!bdc_properties(&out.content)[0].as_dict().unwrap().has(b"Alt"));
+}
+
+#[test]
+fn named_properties_around_removals_are_reported() {
+    let rects = [rect(127.0, 700.0, 170.0, 705.0)];
+    let out = redact(b"/Span /MC0 BDC /Span /MC1 BDC BT /H 10 Tf 100 700 Td (Hello World) Tj ET EMC EMC /Span /MC2 BDC EMC", &rects);
+    let names: Vec<&[u8]> = out.report.named_properties.iter().map(|n| n.as_slice()).collect();
+    assert_eq!(names, vec![&b"MC0"[..], b"MC1"]);
+}
