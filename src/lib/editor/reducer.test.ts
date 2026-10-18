@@ -290,4 +290,48 @@ describe("editorReducer", () => {
     s = editorReducer(s, { type: "undo" });
     expect(s.items).toEqual([]);
   });
+
+  describe("editingId", () => {
+    const text = (): NewItem => ({
+      kind: "text",
+      page: 1,
+      rect: [10, 10, 200, 20],
+      text: "",
+      font: "Helvetica",
+      size: 16,
+      color: [0, 0, 0],
+      opacity: 1,
+      align: "left",
+      lineHeight: 1.2,
+    });
+
+    it("a new text box is in edit mode in the same update that adds it", () => {
+      const s = editorReducer(initialEditorState(), { type: "add", item: text() });
+      expect(s.editingId).toBe("item-1");
+    });
+
+    it("other kinds and duplicates of a text box do not enter edit mode", () => {
+      let s = run([{ type: "add", item: rect() }]);
+      expect(s.editingId).toBeNull();
+      s = run([{ type: "add", item: text() }, { type: "editText", id: null }, { type: "duplicate", id: "item-2" }], s);
+      expect(s.editingId).toBeNull();
+    });
+
+    it("editText opens an existing text box only, and closes with null", () => {
+      let s = run([{ type: "add", item: rect() }, { type: "add", item: text() }, { type: "editText", id: null }]);
+      expect(editorReducer(s, { type: "editText", id: "item-1" }).editingId).toBeNull();
+      s = editorReducer(s, { type: "editText", id: "item-2" });
+      expect(s.editingId).toBe("item-2");
+      expect(editorReducer(s, { type: "editText", id: null }).editingId).toBeNull();
+    });
+
+    it("edit mode ends when its box goes away (cancelled creation, undo, page switch)", () => {
+      let s = run([{ type: "beginGesture" }, { type: "add", item: text() }, { type: "cancelGesture" }]);
+      expect(s.editingId).toBeNull();
+      s = run([{ type: "add", item: text() }]);
+      expect(editorReducer(s, { type: "undo" }).editingId).toBeNull();
+      expect(editorReducer(s, { type: "setPage", page: 2 }).editingId).toBeNull();
+      expect(editorReducer(s, { type: "delete", id: s.editingId ?? "" }).editingId).toBeNull();
+    });
+  });
 });

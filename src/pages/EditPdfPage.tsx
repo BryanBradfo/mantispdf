@@ -89,16 +89,15 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
   const [state, dispatch] = useReducer(editorReducer, undefined, () => initialEditorState());
   const [tool, setTool] = useState<Tool>("select");
   const [pendingImage, setPendingImage] = useState<ImageSource | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const editNewText = useRef(false);
-  // Id of a text box created by a click and still being typed into for the first time. Its
-  // creation and first text form one gesture, so they are a single undo step.
-  const newTextId = useRef<string | null>(null);
+  // True from a text box's creation to the commit of its first text: both are one gesture, so
+  // they make a single undo step.
+  const newTextGesture = useRef(false);
   const urls = useRef(new Map<Blob, string>());
 
-  const { items, page, selectedId } = state;
+  const { items, page, selectedId, editingId } = state;
+  const setEditingId = (id: string | null) => dispatch({ type: "editText", id });
   const pageSize = sizes[page - 1] ?? null;
   const selected = items.find((it) => it.id === selectedId && it.page === page) ?? null;
   const edited = useMemo(() => new Set(items.map((it) => it.page)), [items]);
@@ -120,16 +119,14 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
     };
   }, []);
 
-  // A text box created by a click is typed into right away.
+  // Guard: if a new text box stops being edited without a commit (it was removed some other
+  // way), close its creation gesture so later changes are undoable again.
   useEffect(() => {
-    if (!editNewText.current) return;
-    editNewText.current = false;
-    const it = items.find((i) => i.id === selectedId);
-    if (it?.kind === "text") {
-      newTextId.current = it.id;
-      setEditingId(it.id);
+    if (newTextGesture.current && editingId === null) {
+      newTextGesture.current = false;
+      dispatch({ type: "endGesture" });
     }
-  }, [items, selectedId]);
+  }, [editingId]);
 
   // Edits live only in memory: warn before the tab is closed or reloaded.
   const hasEdits = items.length > 0;
@@ -159,8 +156,9 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
     if (!allowAdd(item)) return false;
     if (item.kind === "image") setPendingImage(null);
     if (item.kind === "text") {
-      editNewText.current = true;
-      // Closed by onCommitText: the box and its first text become one undo step.
+      // Closed by onCommitText. The `add` itself puts the box in edit mode (reducer), so keys
+      // typed right after the click already go to its textarea.
+      newTextGesture.current = true;
       dispatch({ type: "beginGesture" });
     }
     dispatch({ type: "add", item });
@@ -173,11 +171,14 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
   };
 
   const onCommitText = (id: string, text: string) => {
+    const isNew = newTextGesture.current;
+    newTextGesture.current = false;
     setEditingId(null);
-    const isNew = newTextId.current === id;
-    newTextId.current = null;
     const it = items.find((i) => i.id === id);
-    if (!it || it.kind !== "text") return;
+    if (!it || it.kind !== "text") {
+      if (isNew) dispatch({ type: "endGesture" });
+      return;
+    }
     // An empty text box draws nothing: a new one is undone as if never created, an existing
     // one is deleted.
     if (text.trim() === "") {

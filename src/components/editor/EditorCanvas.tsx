@@ -302,6 +302,8 @@ export default function EditorCanvas(props: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isTyping(e.target)) return;
+      // A text box is being typed into (its textarea may not have focus yet): keys are text.
+      if (editingId !== null) return;
       // Mid-drag only Escape applies: no tool switch, undo or redo under the pointer.
       if (gesture.current && e.key !== "Escape") return;
       if (nudging.current && !e.key.startsWith("Arrow")) endNudge();

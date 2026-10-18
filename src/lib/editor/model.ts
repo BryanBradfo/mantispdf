@@ -135,6 +135,11 @@ export interface EditorState {
   /** Every page's items; array order is paint order (last on top). */
   items: Item[];
   selectedId: string | null;
+  /**
+   * Text box whose content is being typed. Set by the same `add` that creates a text box, so no
+   * key typed right after the click can reach the editor shortcuts.
+   */
+  editingId: string | null;
   /** Snapshots of `items` before each committed change, oldest first, at most `HISTORY_LIMIT`. */
   past: Item[][];
   future: Item[][];
@@ -225,7 +230,7 @@ export const NO_PAINT: Paint = { kind: "none" };
 export const rgbPaint = (color: Rgb): Paint => ({ kind: "rgb", color });
 
 export function initialEditorState(page = 1): EditorState {
-  return { items: [], selectedId: null, past: [], future: [], page, nextId: 1, gestureBase: null };
+  return { items: [], selectedId: null, editingId: null, past: [], future: [], page, nextId: 1, gestureBase: null };
 }
 
 export function isRectBased(item: Item): item is RectBasedItem {

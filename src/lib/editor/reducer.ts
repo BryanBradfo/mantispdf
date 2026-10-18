@@ -20,6 +20,8 @@ export type EditorAction =
   | { type: "forward"; id?: string }
   | { type: "backward"; id?: string }
   | { type: "select"; id: string | null }
+  /** Start (an existing text box) or stop typing into a text box. */
+  | { type: "editText"; id: string | null }
   | { type: "setPage"; page: number }
   | { type: "undo" }
   | { type: "redo" }
@@ -104,11 +106,19 @@ function endGesture(state: EditorState): EditorState {
 }
 
 export function editorReducer(state: EditorState, action: EditorAction): EditorState {
+  const next = reduce(state, action);
+  // Edit mode never outlives its text box (deleted, undone, cancelled creation).
+  if (next.editingId !== null && !next.items.some((it) => it.id === next.editingId)) return { ...next, editingId: null };
+  return next;
+}
+
+function reduce(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
     case "add": {
       const id = `item-${state.nextId}`;
       const item = { ...action.item, id } as Item;
-      return commit(state, [...state.items, item], { selectedId: id, nextId: state.nextId + 1 });
+      const editingId = item.kind === "text" ? id : state.editingId;
+      return commit(state, [...state.items, item], { selectedId: id, editingId, nextId: state.nextId + 1 });
     }
     case "update":
       return replaceItem(state, action.id, (it) => mergeProps(it, action.props));
@@ -153,7 +163,13 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     }
     case "setPage": {
       if (action.page === state.page) return state;
-      return { ...endGesture(state), page: action.page, selectedId: null };
+      return { ...endGesture(state), page: action.page, selectedId: null, editingId: null };
+    }
+    case "editText": {
+      if (action.id === state.editingId) return state;
+      if (action.id === null) return { ...state, editingId: null };
+      const it = state.items.find((i) => i.id === action.id);
+      return it?.kind === "text" ? { ...state, editingId: it.id, selectedId: it.id } : state;
     }
     case "undo": {
       const s = endGesture(state);

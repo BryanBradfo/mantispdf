@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { unsupportedChars, unsupportedMessage } from "../../lib/editor/afm";
 import { LIMITS, type TextItem } from "../../lib/editor/model";
 import { visibleToPreviewRect, type Size } from "../../lib/editor/geometry";
@@ -28,7 +28,9 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
   const committed = useRef(false);
   const messageId = useId();
 
-  useEffect(() => {
+  // Layout effect: focus before the browser handles the next key, so nothing typed right after
+  // the click goes to the page shortcuts.
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.focus();

@@ -346,6 +346,34 @@ test("edit pdf: a perfectly horizontal highlight drag still saves", async ({ pag
   await expect(page.getByText(/Invalid edit settings/)).toHaveCount(0);
 });
 
+test("edit pdf: keys typed right after placing a text box are all text", async ({ page }) => {
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  await canvas.tool("Text (T)");
+  const [x, y] = await canvas.at(100, 100);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  // The keys are sent right behind the release, before the page has rendered anything: "h" is
+  // the Highlight shortcut and Backspace would delete the box if they reached the editor.
+  const release = page.mouse.up();
+  const typing = (async () => {
+    await page.keyboard.type("hello");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.type("o world");
+  })();
+  await Promise.all([release, typing]);
+  const field = page.getByRole("textbox", { name: "Text box content" });
+  await expect(field).toHaveValue("hello world");
+  await expect(page.getByRole("button", { name: "Select (V)" })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(field).toHaveCount(0);
+  await expect(page.getByTestId("editor-overlay").locator("text", { hasText: "hello world" })).toHaveCount(1);
+  // The box and its text are one undo step.
+  await page.getByRole("button", { name: "Undo (Ctrl+Z)" }).click();
+  await expect(page.getByTestId("editor-overlay").locator("text")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Undo (Ctrl+Z)" })).toBeDisabled();
+});
+
 test("edit pdf: /edit still redirects to /organize and the home page lists the tool", async ({ page }) => {
   await page.goto("/edit");
   await expect(page).toHaveURL(/\/organize$/);
