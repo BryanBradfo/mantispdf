@@ -1288,6 +1288,8 @@ pub(crate) mod tests {
         let pages = doc.get_dictionary_mut(pages_id).unwrap();
         pages.set("Kids", vec![second.into(), page.into()]);
         pages.set("Count", 2);
+        assert_eq!(doc.get_pages()[&1], second);
+        // Listed on `second` (page 1) first; its /P names the other page.
         assert_eq!(tree(&doc).info.fields[0].widgets[0].page, 1);
     }
 

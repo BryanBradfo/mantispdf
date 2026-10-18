@@ -466,4 +466,23 @@ mod tests {
         assert!(!runs_javascript(&doc, &deep, &mut HashSet::new(), 0));
         assert!(runs_javascript(&doc, &Object::Array(vec![Object::Null, js("y")]), &mut HashSet::new(), 0));
     }
+
+    #[test]
+    fn rotated_widget_flattened_in_place() {
+        let (mut doc, page) = base(0);
+        let w = doc.add_object(with(widget(page, [100, 600, 120, 700]), vec![
+            ("FT", "Tx".into()), ("T", Object::string_literal("r")), ("DA", Object::string_literal("/Helv 10 Tf 0 g")),
+            ("MK", dictionary! { "R" => 90 }.into()),
+        ]));
+        finish(&mut doc, page, &[w], &[w], vec![]);
+        crate::forms::fill::fill_document(&mut doc, &[(0, Value::Text("Up".into()))]).unwrap();
+        flatten_document(&mut doc).unwrap();
+        let (ops, names) = drawing(&doc, page);
+        // The appearance's /Matrix turns its 100 x 20 box onto the 20 x 100 rect.
+        assert_eq!(ops, "q 1 0 0 1 100 600 cm /Fw1 Do Q\n");
+        let ap = doc.get_object(xobject(&names, "Fw1")).unwrap().as_stream().unwrap();
+        let m: Vec<f32> = ap.dict.get(b"Matrix").unwrap().as_array().unwrap().iter().map(|v| v.as_float().unwrap()).collect();
+        assert_eq!(m, vec![0.0, 1.0, -1.0, 0.0, 20.0, 0.0]);
+        assert!(String::from_utf8_lossy(&ap.content).contains("(Up) Tj"));
+    }
 }
