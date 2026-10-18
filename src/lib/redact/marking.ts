@@ -49,6 +49,16 @@ const meets = (a: Rect, b: Rect, pad: number) =>
   a[0] <= b[0] + b[2] + pad && a[0] + a[2] >= b[0] - pad && a[1] <= b[1] + b[3] + pad && a[1] + a[3] >= b[1] - pad;
 
 /**
+ * The pages whose fallback matches may be filtered by `keepFallback`: those the engine reports
+ * with complete unknown-text boxes, never one it did not fully search (fails closed even if it is
+ * listed as complete too).
+ */
+export function filteredPages(search: { unknownComplete?: readonly number[]; unsearchedPages: readonly number[] }): Set<number> {
+  const unsearched = new Set(search.unsearchedPages);
+  return new Set((search.unknownComplete ?? []).filter((p) => !unsearched.has(p)));
+}
+
+/**
  * Whether to keep a fallback (pdf.js) match, whose rects are `rects`, on a page the engine could
  * not fully read. Fails closed:
  * - only a page whose unknown-text boxes the engine reports as complete is filtered at all;

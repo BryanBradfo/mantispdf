@@ -24,7 +24,7 @@ import {
   type Rect,
 } from "../lib/redact/model";
 import { formatPageRanges, parsePageRanges } from "../lib/pagePlan";
-import { keepFallback, repeatTargets, searchEntries, type SearchEntry } from "../lib/redact/marking";
+import { filteredPages, keepFallback, repeatTargets, searchEntries, type SearchEntry } from "../lib/redact/marking";
 import { chooseDpi, renderRaster } from "../lib/redact/raster";
 import { REPORT_TITLE, TOO_LARGE_REASON, neededRasters, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
 import { findMatches, type TextRun } from "../lib/redact/search";
@@ -170,8 +170,9 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
       // boxes, so text the engine did read is never over-marked a line at a time.
       const fallback: { page: number; rects: Rect[] }[] = [];
       const unknownByPage = new Map(result.unknownBoxes.map((u) => [u.page, u.rects] as const));
-      // Fail closed: only pages whose unknown boxes the engine reports as complete are filtered.
-      const complete = new Set(result.unknownComplete ?? []);
+      // Fail closed: only pages whose unknown boxes the engine reports as complete, and that it
+      // fully searched, are filtered.
+      const complete = filteredPages(result);
       if (result.undecodablePages.length > 0) {
         const doc = await openDoc();
         for (const n of result.undecodablePages) {

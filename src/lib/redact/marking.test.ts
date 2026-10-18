@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entryText, keepFallback, repeatTargets, searchEntries, selectedMarks } from "./marking";
+import { entryText, filteredPages, keepFallback, repeatTargets, searchEntries, selectedMarks } from "./marking";
 import type { Rect } from "./model";
 import type { SearchMatchWire } from "./searchWire";
 
@@ -79,6 +79,12 @@ describe("fallback filter (fails closed)", () => {
   it("keeps every match on a page whose unknown boxes the engine does not vouch for", () => {
     expect(keepFallback([[400, 400, 10, 10]], unknown, false)).toBe(true);
     expect(keepFallback([[400, 400, 10, 10]], [], false)).toBe(true);
+  });
+
+  it("filters only pages the engine vouches for and has fully searched", () => {
+    expect([...filteredPages({ unknownComplete: [1, 2, 3], unsearchedPages: [2] })]).toEqual([1, 3]);
+    expect([...filteredPages({ unknownComplete: undefined, unsearchedPages: [] })]).toEqual([]);
+    expect([...filteredPages({ unknownComplete: [4], unsearchedPages: [4] })]).toEqual([]);
   });
 
   it("drops matches on a complete page without unknown text", () => {
