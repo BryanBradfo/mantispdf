@@ -25,6 +25,10 @@ pub(crate) const MAX_VALUE_CHARS: usize = 20_000;
 /// Options (/Opt entries) all fields of one form may list together
 /// (inherited /Opt arrays count once per field).
 pub(crate) const MAX_OPTIONS_TOTAL: usize = 200_000;
+/// Bytes of field names and labels one form may list together.
+pub(crate) const MAX_NAME_BYTES: usize = 8 << 20;
+/// Bytes kept of one partial name (/T) or tooltip (/TU).
+pub(crate) const MAX_NAME_PART: usize = 1024;
 /// Field tree depth: fields nested deeper are not listed.
 pub(crate) const MAX_DEPTH: usize = 32;
 

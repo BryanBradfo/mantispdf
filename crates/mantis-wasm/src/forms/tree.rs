@@ -3,8 +3,8 @@
 //! placement in visible page space.
 
 use super::{
-    Field, FieldKind, FormInfo, MAX_DEPTH, MAX_FIELDS, MAX_OPTIONS, MAX_OPTIONS_TOTAL, MAX_WIDGETS, Value, Widget,
-    Xfa, invalid,
+    Field, FieldKind, FormInfo, MAX_DEPTH, MAX_FIELDS, MAX_NAME_BYTES, MAX_NAME_PART, MAX_OPTIONS, MAX_OPTIONS_TOTAL,
+    MAX_WIDGETS, Value, Widget, Xfa, invalid,
 };
 use crate::annotations::parse_numbers;
 use crate::doc_tools::decode_text;
@@ -107,6 +107,26 @@ struct Walker<'a> {
     visited: HashSet<ObjectId>,
     terminals: Vec<Terminal>,
     widget_count: usize,
+    /// Bytes of the names built so far (`MAX_NAME_BYTES`).
+    name_bytes: usize,
+}
+
+/// A name part (/T, /TU) decoded from at most a few times `MAX_NAME_PART`
+/// bytes and cut to `MAX_NAME_PART` bytes (on a character boundary).
+fn name_part(doc: &Document, dict: &Dictionary, key: &[u8]) -> Option<String> {
+    let mut text = match deref(doc, dict.get(key).ok()?)? {
+        Object::String(bytes, _) => decode_text(&bytes[..bytes.len().min(4 * MAX_NAME_PART + 3)]),
+        Object::Name(bytes) => String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_NAME_PART)]).into_owned(),
+        _ => return None,
+    };
+    if text.len() > MAX_NAME_PART {
+        let mut end = MAX_NAME_PART;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    Some(text)
 }
 
 impl Walker<'_> {
@@ -118,7 +138,12 @@ impl Walker<'_> {
         let Ok(node) = self.doc.get_dictionary(id) else {
             return Ok(());
         };
-        let partial = text_of(self.doc, node, b"T").unwrap_or_default();
+        let partial = name_part(self.doc, node, b"T").unwrap_or_default();
+        // Charged before it is built: nested names grow with depth.
+        self.name_bytes += parent_name.len() + 1 + partial.len();
+        if self.name_bytes > MAX_NAME_BYTES {
+            return Err(invalid("names"));
+        }
         let name = match (parent_name.is_empty(), partial.is_empty()) {
             (true, _) => partial.clone(),
             (false, true) => parent_name.to_string(),
@@ -198,9 +223,6 @@ fn decode_object_text(obj: &Object) -> Option<String> {
     }
 }
 
-fn text_of(doc: &Document, dict: &Dictionary, key: &[u8]) -> Option<String> {
-    decode_object_text(deref(doc, dict.get(key).ok()?)?)
-}
 
 /// `key` on field `id` or the nearest ancestor that has it (bounded /Parent
 /// chain, so a cycle ends).
@@ -526,8 +548,9 @@ struct Context<'a> {
     /// Parsed /DA per source string (by address: fields inheriting one /DA
     /// share it).
     das: std::cell::RefCell<HashMap<usize, DefaultAppearance>>,
-    /// What is left of `MAX_OPTIONS_TOTAL`.
+    /// What is left of `MAX_OPTIONS_TOTAL` and `MAX_NAME_BYTES`.
     options_left: std::cell::Cell<usize>,
+    names_left: std::cell::Cell<usize>,
 }
 
 /// A /DA longer than this is not parsed: the default appearance is used.
@@ -538,6 +561,12 @@ impl<'a> Context<'a> {
         let left = self.options_left.get().checked_sub(options.len()).ok_or_else(|| invalid("options"))?;
         self.options_left.set(left);
         Ok(options)
+    }
+
+    fn charge_names(&self, bytes: usize) -> Result<(), String> {
+        let left = self.names_left.get().checked_sub(bytes).ok_or_else(|| invalid("names"))?;
+        self.names_left.set(left);
+        Ok(())
     }
 
     /// `key` on the widget itself, else inherited by the field, else the
@@ -607,10 +636,11 @@ impl<'a> Context<'a> {
             return Ok(None);
         };
         let dict = doc.get_dictionary(t.obj).map_err(|e| e.to_string())?;
-        let label = text_of(doc, dict, b"TU")
+        let label = name_part(doc, dict, b"TU")
             .filter(|s| !s.is_empty())
             .or_else(|| (!t.partial.is_empty()).then(|| t.partial.clone()))
             .unwrap_or_else(|| t.name.clone());
+        self.charge_names(label.len())?;
         let (mut widgets, mut widget_refs): (Vec<Widget>, Vec<WidgetRef>) =
             t.widgets.iter().filter_map(|&w| self.widget(w, t.obj, &kind)).unzip();
         let mut on_states: Vec<String> = Vec::new();
@@ -681,7 +711,7 @@ fn read_form_with(doc: &Document, streams: &mut StreamValues) -> Result<FormTree
     let Some(form) = acroform(doc) else {
         return Ok(FormTree { info: FormInfo { xfa: Xfa::None, fields: Vec::new() }, refs: Vec::new() });
     };
-    let mut walker = Walker { doc, visited: HashSet::new(), terminals: Vec::new(), widget_count: 0 };
+    let mut walker = Walker { doc, visited: HashSet::new(), terminals: Vec::new(), widget_count: 0, name_bytes: 0 };
     let (claimed, top): (Vec<ObjectId>, Vec<ObjectId>) =
         references(doc, form.get(b"Fields").ok()).into_iter().partition(|&id| claimed_by_parent(doc, id));
     // Nodes their parent claims go last: the visited set skips those taken.
@@ -695,6 +725,7 @@ fn read_form_with(doc: &Document, streams: &mut StreamValues) -> Result<FormTree
         pages: Pages::new(doc),
         das: std::cell::RefCell::new(HashMap::new()),
         options_left: std::cell::Cell::new(MAX_OPTIONS_TOTAL),
+        names_left: std::cell::Cell::new(MAX_NAME_BYTES.saturating_sub(walker.name_bytes)),
     };
     let mut fields = Vec::new();
     let mut refs = Vec::new();
@@ -1482,6 +1513,7 @@ pub(crate) mod tests {
         assert_eq!(t.refs[0].widgets[0].da, DefaultAppearance::default());
         assert_eq!(t.refs[2000].widgets[0].da.font, StdFont::Courier);
     }
+
     #[test]
     fn inherited_options_share_one_document_budget() {
         let build = |kids_count: usize| {
@@ -1501,5 +1533,38 @@ pub(crate) mod tests {
         };
         assert_eq!(read_form(&build(MAX_OPTIONS_TOTAL / MAX_OPTIONS)).unwrap().info.fields.len(), 20);
         assert_eq!(read_form(&build(MAX_OPTIONS_TOTAL / MAX_OPTIONS + 1)).unwrap_err(), "Invalid form settings: options");
+    }
+
+    #[test]
+    fn names_are_cut_and_share_one_budget() {
+        let long = "n".repeat(5000);
+        let (mut doc, page) = base(0);
+        let f = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("FT", "Tx".into()), ("T", Object::string_literal(long.clone())), ("TU", Object::string_literal([&[0xE9u8][..], long.as_bytes()].concat())),
+        ]));
+        finish(&mut doc, page, &[f], &[f], vec![]);
+        let field = &tree(&doc).info.fields[0];
+        assert_eq!(field.name.len(), MAX_NAME_PART);
+        // Cut on a character boundary: "é" is 2 bytes, then 1022 "n".
+        assert_eq!(field.label.len(), MAX_NAME_PART);
+        assert!(field.label.starts_with('é'));
+
+        // 20 nested 1 KiB parts over `leaves` fields: about 20 KiB of name each.
+        let nested = |leaves: usize| {
+            let (mut doc, page) = base(0);
+            let kids: Vec<Object> = (0..leaves)
+                .map(|i| doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+                    ("FT", "Tx".into()), ("T", Object::string_literal(format!("k{i}"))),
+                ])).into())
+                .collect();
+            let mut top = doc.add_object(dictionary! { "T" => Object::string_literal("a".repeat(1024)), "Kids" => kids });
+            for _ in 0..19 {
+                top = doc.add_object(dictionary! { "T" => Object::string_literal("a".repeat(1024)), "Kids" => vec![top.into()] });
+            }
+            finish(&mut doc, page, &[top], &[], vec![]);
+            doc
+        };
+        assert_eq!(tree(&nested(100)).info.fields.len(), 100);
+        assert_eq!(read_form(&nested(500)).unwrap_err(), "Invalid form settings: names");
     }
 }
