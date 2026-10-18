@@ -5,8 +5,8 @@
 //! `Invalid form settings: <path>`.
 
 use super::job::{RawEntry, RawValue};
-use super::{Field, FieldKind, FormInfo, MAX_FIELDS, MAX_OPTIONS, Value, Widget, Xfa, invalid};
-use js_sys::{Array, Object, Reflect};
+use super::{Field, FieldKind, FormInfo, MAX_FIELDS, MAX_OPTIONS, MAX_VALUE_CHARS, Value, Widget, Xfa, invalid};
+use js_sys::{Array, JsString, Object, Reflect};
 use wasm_bindgen::{JsCast, JsValue};
 
 fn get(obj: &JsValue, key: &str, path: &str) -> Result<JsValue, String> {
@@ -33,11 +33,23 @@ fn array(obj: &JsValue, key: &str, path: &str) -> Result<Array, String> {
     if Array::is_array(&v) { Ok(v.unchecked_into()) } else { Err(invalid(&format!("{path}.{key}"))) }
 }
 
+/// UTF-16 units a value string may have (two per character at most): checked
+/// on the JS length before the string is copied.
+const MAX_STRING_UNITS: u32 = 2 * MAX_VALUE_CHARS as u32;
+
+/// A JS string of at most `MAX_STRING_UNITS` units.
+fn bounded(v: &JsValue, path: &str) -> Result<String, String> {
+    match v.dyn_ref::<JsString>() {
+        Some(s) if s.length() <= MAX_STRING_UNITS => s.as_string().ok_or_else(|| invalid(path)),
+        _ => Err(invalid(path)),
+    }
+}
+
 fn value(entry: &JsValue, path: &str) -> Result<RawValue, String> {
     let v = get(entry, "value", path)?;
     let p = format!("{path}.value");
     match string(&v, "kind", &p)?.as_str() {
-        "text" => Ok(RawValue::Text(string(&v, "text", &p)?)),
+        "text" => Ok(RawValue::Text(bounded(&get(&v, "text", &p)?, &format!("{p}.text"))?)),
         "names" => {
             let list = array(&v, "names", &p)?;
             // Checked before copying; `fill_form` re-checks against the field.
@@ -46,7 +58,7 @@ fn value(entry: &JsValue, path: &str) -> Result<RawValue, String> {
             }
             let mut names = Vec::with_capacity(list.length() as usize);
             for i in 0..list.length() {
-                names.push(list.get(i).as_string().ok_or_else(|| invalid(&format!("{p}.names[{i}]")))?);
+                names.push(bounded(&list.get(i), &format!("{p}.names[{i}]"))?);
             }
             Ok(RawValue::Names(names))
         }

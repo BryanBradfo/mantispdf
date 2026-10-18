@@ -49,6 +49,7 @@ enum Shown {
     List(Vec<usize>),
 }
 
+#[cfg(test)]
 pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Result<(), String> {
     fill(doc, values, false)
 }

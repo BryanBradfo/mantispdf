@@ -1167,7 +1167,7 @@ pub(crate) mod tests {
 
     #[test]
     fn on_screen_rotation_is_r_minus_page_rotate() {
-        for (page_rotate, r, expected) in [(0, 0, 0), (0, 90, 90), (90, 0, 270), (90, 90, 0), (270, 0, 90), (270, 90, 180)] {
+        for (page_rotate, r, expected) in [(0, 0, 0), (0, 90, 90), (90, 0, 270), (90, 90, 0), (270, 0, 90), (270, 90, 180), (180, 90, 270), (90, 270, 180)] {
             let (mut doc, page) = base(page_rotate);
             let field = doc.add_object(with(widget(page, [100, 200, 150, 220]), vec![
                 ("FT", "Tx".into()), ("T", Object::string_literal("x")), ("MK", dictionary! { "R" => r }.into()),

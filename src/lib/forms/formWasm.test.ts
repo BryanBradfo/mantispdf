@@ -122,6 +122,12 @@ describe.skipIf(!built)("list_form / fill_form bindings", () => {
     expect(() => wasm.fill_form(FORM, [{ id: 0, value: { kind: "bold" } }], false)).toThrow("Invalid form settings: values[0].value.kind");
     expect(() => wasm.fill_form(FORM, [{ id: 0.5, value: { kind: "none" } }], false)).toThrow("Invalid form settings: values[0].id");
     expect(() => wasm.fill_form(FORM, { id: 0 }, false)).toThrow("Invalid form settings: values");
+    // Over-long strings are refused before they are copied out of JS.
+    const huge = "x".repeat(40001);
+    expect(() => wasm.fill_form(FORM, [{ id: 0, value: { kind: "text", text: huge } }], false)).toThrow("Invalid form settings: values[0].value.text");
+    expect(() => wasm.fill_form(FORM, [{ id: 3, value: { kind: "names", names: ["a", huge] } }], false)).toThrow(
+      "Invalid form settings: values[0].value.names[1]",
+    );
     expect(() => wasm.fill_form(FORM, [{ id: 0, value: { kind: "text", text: "日本" } }], false)).toThrow(
       "Characters not supported by the standard PDF fonts: 日本",
     );
