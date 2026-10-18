@@ -77,10 +77,18 @@ pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Resu
     // We own every appearance (/NeedAppearances false): refresh unchanged
     // text and choice fields that have a value when the source asked for a
     // rebuild or a visible widget has no normal appearance. Buttons keep
-    // theirs; /AS already picks the state.
+    // theirs (/AS already picks the state); those without any get generated
+    // states.
     let mut viewers_must_rebuild = false;
     for (index, (field, field_ref)) in tree.info.fields.iter().zip(&tree.refs).enumerate() {
-        if changed.contains(&index) || field.value == Value::None {
+        if changed.contains(&index) {
+            continue;
+        }
+        if matches!(field.kind, FieldKind::Checkbox | FieldKind::Radio) {
+            draw_bare_buttons(doc, field, field_ref);
+            continue;
+        }
+        if field.value == Value::None {
             continue;
         }
         let Some(shown) = current_shown(field) else {
@@ -102,6 +110,22 @@ pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Resu
     }
     mark_form(doc, viewers_must_rebuild);
     Ok(())
+}
+
+/// Unchanged button widgets without any appearance would be invisible with
+/// /NeedAppearances false: give them their generated states, /AS from the
+/// current /V.
+fn draw_bare_buttons(doc: &mut Document, field: &Field, field_ref: &FieldRef) {
+    for wref in &field_ref.widgets {
+        let Some(generated) = &wref.generated_state else {
+            continue;
+        };
+        add_button_states(doc, wref.obj, &wref.da, generated.as_bytes(), field.kind == FieldKind::Radio);
+        let on = field_ref.value_name.as_deref() == Some(generated.as_bytes());
+        if let Ok(dict) = doc.get_dictionary_mut(wref.obj) {
+            dict.set("AS", Object::Name(if on { generated.as_bytes().to_vec() } else { b"Off".to_vec() }));
+        }
+    }
 }
 
 /// Every character the widgets would show is WinAnsi (line breaks aside).
@@ -967,5 +991,32 @@ mod tests {
         assert!(!dict(&doc, bare).has(b"AP"));
         assert_eq!(acroform(&doc).get(b"NeedAppearances").unwrap(), &Object::Boolean(true));
         assert!(String::from_utf8_lossy(&normal_ap(&doc, other).1.content).contains("(ok) Tj"));
+    }
+
+    #[test]
+    fn unchanged_bare_buttons_get_appearances_from_their_value() {
+        let (mut doc, page) = base(0);
+        let checked = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("FT", "Btn".into()), ("T", Object::string_literal("c1")), ("V", "Yes".into()),
+        ]));
+        let unchecked = doc.add_object(with(widget(page, [0, 20, 10, 30]), vec![("FT", "Btn".into()), ("T", Object::string_literal("c2"))]));
+        let field = doc.new_object_id();
+        let k1 = doc.add_object(with(widget(page, [20, 0, 30, 10]), vec![("Parent", field.into())]));
+        let k2 = doc.add_object(with(widget(page, [40, 0, 50, 10]), vec![("Parent", field.into())]));
+        doc.objects.insert(field, Object::Dictionary(dictionary! {
+            "FT" => "Btn", "Ff" => FF_RADIO, "T" => Object::string_literal("r"), "V" => "On2",
+            "Kids" => vec![k1.into(), k2.into()],
+        }));
+        let other = text_field(&mut doc, page, "t", vec![]);
+        finish(&mut doc, page, &[checked, unchecked, field, other], &[checked, unchecked, k1, k2, other], vec![]);
+        fill_document(&mut doc, &[(3, Value::Text("x".into()))]).unwrap();
+        assert_eq!(as_states(&doc, &[checked, unchecked, k1, k2]), vec!["Yes", "Off", "Off", "On2"]);
+        for (w, on) in [(checked, "Yes"), (unchecked, "Yes"), (k1, "On"), (k2, "On2")] {
+            let n = dict(&doc, w).get(b"AP").unwrap().as_dict().unwrap().get(b"N").unwrap().as_dict().unwrap();
+            assert!(n.has(on.as_bytes()) && n.has(b"Off"), "{w:?}");
+        }
+        // The field values are untouched.
+        assert_eq!(dict(&doc, field).get(b"V").unwrap(), &Object::Name(b"On2".to_vec()));
+        assert!(!dict(&doc, unchecked).has(b"V"));
     }
 }
