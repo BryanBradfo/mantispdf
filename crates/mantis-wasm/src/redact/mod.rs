@@ -475,7 +475,11 @@ fn prune_resources(page: &mut PageEdit, before: &[Operation], after: &[Operation
     let scan = |ops: &[Operation]| {
         rebuild::scan_content(&interp::encode_ops(ops)).ok_or_else(|| Unsupported::new("redacted content cannot be scanned"))
     };
-    let (old, new) = (scan(before)?, scan(after)?);
+    let (old, mut new) = (scan(before)?, scan(after)?);
+    // Forms without /Resources draw from these: what they use stays.
+    if let Some(inherited) = forms::inherited_usage(page, &new)? {
+        new.merge(inherited);
+    }
     for category in PRUNED {
         let gone: Vec<&Vec<u8>> = old
             .by_category

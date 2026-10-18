@@ -212,7 +212,7 @@ impl UsedNames {
             .is_some_and(|s| s.contains(name))
     }
 
-    fn merge(&mut self, other: UsedNames) {
+    pub(crate) fn merge(&mut self, other: UsedNames) {
         for (category, names) in other.by_category {
             self.by_category.entry(category).or_default().extend(names);
         }

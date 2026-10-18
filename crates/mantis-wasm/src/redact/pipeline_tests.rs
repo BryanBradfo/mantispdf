@@ -362,3 +362,31 @@ fn form_cycles_and_depth_are_unsupported() {
     let err = redact_page(&mut doc, page2, &rects, Fill::Black, &mut Budget::page(64 << 20)).unwrap_err();
     assert!(err.0.contains("cycle") || err.0.contains("deep"), "{err:?}");
 }
+
+#[test]
+fn names_used_by_resource_less_forms_are_not_pruned() {
+    let mut doc = fixture();
+    let page1 = page_ids(&doc)[0];
+    let image = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 1, "Height" => 1,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        vec![100],
+    ));
+    // The form has no /Resources: it draws /Im from the page's, far away.
+    let form = doc.add_object(Stream::new(
+        dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 612, 792]) },
+        b"q 10 0 0 10 300 300 cm /Im Do Q".to_vec(),
+    ));
+    let c = doc.add_object(stream("q 10 0 0 10 100 700 cm /Im Do Q /Fm Do"));
+    let d = doc.get_dictionary_mut(page1).unwrap();
+    d.set("Contents", c);
+    d.set("Resources", dictionary! { "XObject" => dictionary! { "Im" => image, "Fm" => form } });
+    let rects = page_rects_user(&doc, page1, &[area(1, 95.0, 695.0, 20.0, 20.0)]);
+    let report = redact_page(&mut doc, page1, &rects, Fill::Black, &mut Budget::page(64 << 20)).unwrap();
+    assert_eq!((report.images_redacted, report.forms_redacted), (1, 0));
+    let res = doc.get_dictionary(page1).unwrap().get(b"Resources").unwrap().as_dict().unwrap().clone();
+    let xobjects = super::interp::page_resources_dict(&doc, &res, b"XObject");
+    assert_eq!(xobjects.get(b"Im").unwrap(), &Object::Reference(image), "the unchanged form still draws /Im");
+}

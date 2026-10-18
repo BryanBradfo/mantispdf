@@ -5,7 +5,8 @@ use super::interp::{FormPlacement, Interp, Rect, decode_ops, encode_ops, page_re
 use super::page::flate_stream;
 use super::{PageEdit, Report, Unsupported, add_xobject, redact_content};
 use crate::page_content::owned_dict;
-use crate::rebuild::{Decoded, MAX_STREAM_DECODED, deref, strict_content_in};
+use crate::rebuild::{Decoded, MAX_STREAM_DECODED, UsedNames, deref, name_of, scan_content, strict_content_in};
+use std::collections::HashSet;
 use lopdf::content::Operation;
 use lopdf::{Object, Stream};
 
@@ -64,4 +65,37 @@ pub(crate) fn redact_form(page: &mut PageEdit, placement: &FormPlacement, rects:
     dict.set("Resources", Object::Dictionary(resources));
     let name = add_xobject(page, flate_stream(dict, &encode_ops(&new_ops)), "RedactedFm");
     Ok((Some(name), report))
+}
+
+/// Resource names used by the forms without /Resources that content with
+/// usage `used` draws from `page.resources` (recursively: such a form may
+/// draw another). None when there is none. Their content is charged to the
+/// page budget; content that cannot be read is Unsupported.
+pub(crate) fn inherited_usage(page: &mut PageEdit, used: &UsedNames) -> Result<Option<UsedNames>, Unsupported> {
+    let xobjects = page_resources_dict(page.doc, page.resources, b"XObject");
+    let mut pending: Vec<Vec<u8>> = used.by_category.get(&b"XObject"[..]).into_iter().flatten().cloned().collect();
+    let mut seen: HashSet<Vec<u8>> = pending.iter().cloned().collect();
+    let mut found: Option<UsedNames> = None;
+    while let Some(name) = pending.pop() {
+        let Some(Object::Stream(form)) = xobjects.get(&name).ok().and_then(|o| deref(page.doc, o)) else {
+            continue;
+        };
+        if name_of(&form.dict, b"Subtype") != Some(b"Form") || form.dict.has(b"Resources") {
+            continue;
+        }
+        let mut charged = 0;
+        let decoded = strict_content_in(Some(page.doc), form, MAX_STREAM_DECODED.min(page.budget.decoded), &mut charged);
+        page.budget.decoded = page.budget.decoded.saturating_sub(charged);
+        let Decoded::Content(content) = decoded else {
+            return Err(Unsupported::new("form content cannot be decoded"));
+        };
+        let usage = scan_content(&content).ok_or_else(|| Unsupported::new("form content cannot be parsed"))?;
+        for next in usage.by_category.get(&b"XObject"[..]).into_iter().flatten() {
+            if seen.insert(next.clone()) {
+                pending.push(next.clone());
+            }
+        }
+        found.get_or_insert_with(UsedNames::default).merge(usage);
+    }
+    Ok(found)
 }
