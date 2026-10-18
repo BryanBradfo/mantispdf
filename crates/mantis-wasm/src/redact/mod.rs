@@ -367,6 +367,10 @@ pub(crate) fn redact_content(
     events: &[Event],
     rects: &[Rect],
 ) -> Result<(Vec<Operation>, Report), Unsupported> {
+    if page::leak_planted() {
+        return Ok((ops.to_vec(), Report::default()));
+    }
+    graphics::check_unanalysed_paint(events, rects)?;
     let mut report = Report::default();
     let mut dropped: HashSet<usize> = HashSet::new();
     let mut replaced: HashMap<usize, Vec<Operation>> = HashMap::new();
@@ -381,7 +385,7 @@ pub(crate) fn redact_content(
         }
         match event {
             Event::Glyph(g) => {
-                let removed = graphics::quad_hit(&g.box_user, rects) && !page::leak_planted();
+                let removed = graphics::quad_hit(&g.box_user, rects);
                 if removed {
                     cut_shows.insert(g.op_index);
                 }
@@ -463,7 +467,7 @@ pub(crate) fn redact_content(
 }
 
 /// Resource categories whose names removed operators may have used.
-const PRUNED: [&[u8]; 4] = [b"XObject", b"Font", b"Shading", b"Pattern"];
+const PRUNED: [&[u8]; 5] = [b"XObject", b"Font", b"Shading", b"Pattern", b"ExtGState"];
 
 /// Remove from the page's resources every name the original content used
 /// and the redacted content no longer does, and every other unused name for

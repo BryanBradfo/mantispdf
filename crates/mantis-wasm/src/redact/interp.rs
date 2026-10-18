@@ -150,6 +150,29 @@ pub(crate) enum Event {
     Form(FormPlacement),
     /// A `BDC` or `BMC` opening a marked-content sequence.
     Marked(MarkedSequence),
+    /// A `gs` installing a soft mask: its group's content is drawn into the
+    /// mask wherever its box lies.
+    SoftMask(SoftMaskSet),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SoftMaskSet {
+    pub(crate) op_index: usize,
+    /// The group's /BBox in user space; None when unknown (anywhere).
+    pub(crate) bbox_user: Option<Rect>,
+}
+
+/// Colour spaces in effect that paint with a Pattern.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct Paint {
+    pub(crate) fill_pattern: bool,
+    pub(crate) stroke_pattern: bool,
+}
+
+impl Paint {
+    pub(crate) fn pattern(self) -> bool {
+        self.fill_pattern || self.stroke_pattern
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -183,6 +206,9 @@ pub(crate) struct Glyph {
     pub(crate) char_spacing: f64,
     /// Tw when it applies to this code (single-byte 32), else 0.
     pub(crate) word_spacing: f64,
+    /// Painted with a Pattern colour (fill or stroke): its look comes from
+    /// content we do not analyse.
+    pub(crate) pattern: bool,
     /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
     pub(crate) marked: Option<usize>,
 }
@@ -219,6 +245,9 @@ pub(crate) struct PathPaint {
     /// One `re` (and maybe `h`) and nothing else: as a clip it carries no
     /// glyph shape (several rectangles can spell letters).
     pub(crate) single_rect: bool,
+    /// Painted with a Pattern colour (fill or stroke): its look comes from
+    /// content we do not analyse.
+    pub(crate) pattern: bool,
     /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
     pub(crate) marked: Option<usize>,
 }
@@ -237,6 +266,9 @@ pub(crate) struct ImagePlacement {
     pub(crate) source: ImageSource,
     /// The image's unit square in user space.
     pub(crate) quad_user: Quad,
+    /// Painted with a Pattern colour (fill or stroke): its look comes from
+    /// content we do not analyse.
+    pub(crate) pattern: bool,
     /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
     pub(crate) marked: Option<usize>,
 }
@@ -258,6 +290,8 @@ pub(crate) struct FormPlacement {
     pub(crate) name: Vec<u8>,
     /// Form space to user space (/Matrix x CTM).
     pub(crate) matrix: Matrix,
+    /// Pattern colours the form inherits.
+    pub(crate) paint: Paint,
     /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
     pub(crate) marked: Option<usize>,
 }
@@ -464,6 +498,7 @@ struct GState {
     line_width: f64,
     miter_limit: f64,
     line_join: i64,
+    paint: Paint,
 }
 
 impl GState {
@@ -481,6 +516,7 @@ impl GState {
             line_width: 1.0,
             miter_limit: 10.0,
             line_join: 0,
+            paint: Paint::default(),
         }
     }
 
@@ -557,6 +593,7 @@ fn check_event(event: &Event) -> Result<(), Unsupported> {
         Event::Shading(s) => in_range(rect_values(&s.bbox_user)),
         Event::Form(f) => in_range(f.matrix),
         Event::Marked(_) => Ok(()),
+        Event::SoftMask(m) => in_range(rect_values(&m.bbox_user)),
     }
 }
 
@@ -665,6 +702,7 @@ impl Run<'_> {
             painted,
             clip: path.clip,
             single_rect: !path.shaped && path.rects == 1,
+            pattern: self.gs.paint.pattern(),
             marked: self.marked(),
         }))
     }
@@ -699,6 +737,7 @@ impl Run<'_> {
                 h_scale: self.gs.h_scale,
                 char_spacing: self.gs.char_spacing,
                 word_spacing,
+                pattern: self.gs.paint.pattern(),
                 marked: self.marked(),
             };
             self.text.tm = concat(&translate(glyph.advance(), 0.0), &self.text.tm);
@@ -735,10 +774,30 @@ impl<'d> Interp<'d> {
         Ok(font)
     }
 
-    fn ext_gstate(&self, name: &[u8], gs: &mut GState) -> Result<(), Unsupported> {
+    /// True when colour space `name` (a family or a /ColorSpace resource)
+    /// is a Pattern space.
+    fn is_pattern_space(&self, name: &[u8]) -> bool {
+        if name == b"Pattern" {
+            return true;
+        }
+        match self.resource(b"ColorSpace", name) {
+            Some(Object::Name(n)) => n == b"Pattern",
+            Some(Object::Array(items)) => items.first().and_then(|o| o.as_name().ok()) == Some(b"Pattern"),
+            _ => false,
+        }
+    }
+
+    fn ext_gstate(&self, run: &mut Run, op_index: usize, name: &[u8]) -> Result<(), Unsupported> {
         let Some(Object::Dictionary(dict)) = self.resource(b"ExtGState", name) else {
             return Ok(());
         };
+        if let Ok(smask) = dict.get(b"SMask")
+            && deref(self.doc, smask).and_then(|o| o.as_name().ok()) != Some(b"None")
+        {
+            let bbox_user = self.soft_mask_box(smask, &run.gs.ctm);
+            run.emit(Event::SoftMask(SoftMaskSet { op_index, bbox_user }))?;
+        }
+        let gs = &mut run.gs;
         let value = |key: &[u8]| -> Result<Option<f64>, Unsupported> {
             match dict.get(key) {
                 Ok(obj) => deref(self.doc, obj).and_then(number).map(Some).ok_or_else(|| malformed("gs")),
@@ -758,6 +817,24 @@ impl<'d> Interp<'d> {
             gs.line_join = j as i64;
         }
         Ok(())
+    }
+
+    /// The user-space box of a soft mask's group (/G form /BBox through its
+    /// /Matrix and `ctm`); None when it cannot be read.
+    fn soft_mask_box(&self, smask: &Object, ctm: &Matrix) -> Option<Rect> {
+        let Object::Dictionary(mask) = deref(self.doc, smask)? else {
+            return None;
+        };
+        let Object::Stream(group) = deref(self.doc, mask.get(b"G").ok()?)? else {
+            return None;
+        };
+        let Object::Array(items) = deref(self.doc, group.dict.get(b"BBox").ok()?)? else {
+            return None;
+        };
+        let v: Vec<f64> = items.iter().map(|o| deref(self.doc, o).and_then(number)).collect::<Option<_>>()?;
+        let [x0, y0, x1, y1] = <[f64; 4]>::try_from(v).ok()?;
+        let matrix = concat(&self.matrix_of(group.dict.get(b"Matrix").ok())?, ctm);
+        Some(Quad::of_box(&matrix, [x0, y0, x1, y1]).bbox())
     }
 
     fn matrix_of(&self, obj: Option<&Object>) -> Option<Matrix> {
@@ -783,12 +860,14 @@ impl<'d> Interp<'d> {
                 op_index,
                 source: ImageSource::XObject(name.to_vec()),
                 quad_user: Quad::of_box(&ctm, [0.0, 0.0, 1.0, 1.0]),
+                pattern: run.gs.paint.pattern(),
                 marked: run.marked(),
             })),
             Some(b"Form") => {
                 let form = self.matrix_of(stream.dict.get(b"Matrix").ok()).ok_or_else(|| malformed("Do"))?;
                 let marked = run.marked();
-                run.emit(Event::Form(FormPlacement { op_index, name: name.to_vec(), matrix: concat(&form, &ctm), marked }))
+                let paint = run.gs.paint;
+                run.emit(Event::Form(FormPlacement { op_index, name: name.to_vec(), matrix: concat(&form, &ctm), paint, marked }))
             }
             Some(b"PS") => Ok(()),
             _ => Err(Unsupported(format!("XObject {} of unknown type", String::from_utf8_lossy(name)))),
@@ -814,8 +893,16 @@ impl<'d> Interp<'d> {
 
     /// Events of `ops` drawn with the initial CTM `ctm`.
     pub(crate) fn run(&mut self, ops: &[Operation], ctm: Matrix, budget: &mut Budget) -> Result<Vec<Event>, Unsupported> {
+        self.run_inherited(ops, ctm, Paint::default(), budget)
+    }
+
+    /// `run` for a form's content: it starts with the pattern colours of
+    /// its placement.
+    pub(crate) fn run_inherited(&mut self, ops: &[Operation], ctm: Matrix, paint: Paint, budget: &mut Budget) -> Result<Vec<Event>, Unsupported> {
+        let mut gs = GState::new(ctm);
+        gs.paint = paint;
         let mut run = Run {
-            gs: GState::new(ctm),
+            gs,
             stack: Vec::new(),
             text: TextPos { tm: IDENTITY, tlm: IDENTITY },
             path: None,
@@ -857,7 +944,20 @@ impl<'d> Interp<'d> {
             "w" => run.gs.line_width = nums::<1>(o, args)?[0],
             "M" => run.gs.miter_limit = nums::<1>(o, args)?[0],
             "j" => run.gs.line_join = nums::<1>(o, args)?[0] as i64,
-            "gs" => self.ext_gstate(one_name(o, args)?, &mut run.gs)?,
+            "gs" => self.ext_gstate(run, i, one_name(o, args)?)?,
+            "cs" | "CS" => {
+                let pattern = self.is_pattern_space(one_name(o, args)?);
+                if o == "cs" {
+                    run.gs.paint.fill_pattern = pattern;
+                } else {
+                    run.gs.paint.stroke_pattern = pattern;
+                }
+            }
+            // A name operand selects a pattern.
+            "scn" if matches!(args.last(), Some(Object::Name(_))) => run.gs.paint.fill_pattern = true,
+            "SCN" if matches!(args.last(), Some(Object::Name(_))) => run.gs.paint.stroke_pattern = true,
+            "g" | "rg" | "k" => run.gs.paint.fill_pattern = false,
+            "G" | "RG" | "K" => run.gs.paint.stroke_pattern = false,
             "m" | "l" => {
                 let [x, y] = nums::<2>(o, args)?;
                 run.add_points(i, &[(x, y)], false);
@@ -982,7 +1082,8 @@ impl<'d> Interp<'d> {
             "BI" => {
                 let quad_user = Quad::of_box(&run.gs.ctm, [0.0, 0.0, 1.0, 1.0]);
                 let marked = run.marked();
-                run.emit(Event::Image(ImagePlacement { op_index: i, source: ImageSource::Inline, quad_user, marked }))?;
+                let pattern = run.gs.paint.pattern();
+                run.emit(Event::Image(ImagePlacement { op_index: i, source: ImageSource::Inline, quad_user, pattern, marked }))?;
             }
             _ => {
                 if let Some((painted, stroked)) = paint_kind(o) {

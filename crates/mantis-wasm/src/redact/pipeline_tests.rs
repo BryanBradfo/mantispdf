@@ -390,3 +390,105 @@ fn names_used_by_resource_less_forms_are_not_pruned() {
     let xobjects = super::interp::page_resources_dict(&doc, &res, b"XObject");
     assert_eq!(xobjects.get(b"Im").unwrap(), &Object::Reference(image), "the unchanged form still draws /Im");
 }
+
+fn one_page(content: &str, extra: impl FnOnce(&mut Document, ObjectId)) -> Document {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let c = doc.add_object(stream(content));
+    let page = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages_id, "Contents" => c });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1, "MediaBox" => rect_array([0, 0, 612, 792]),
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    extra(&mut doc, page);
+    doc
+}
+
+/// A page whose soft mask group draws (SECRETMASK) at (100, 700), its form
+/// /BBox `bbox`; the visible text is at (100, 600).
+fn soft_mask_page(bbox: [i64; 4]) -> Document {
+    one_page("q /GS1 gs 0 g 0 0 612 792 re f Q BT /H 10 Tf 100 600 Td (Visible) Tj ET", |doc, page| {
+        let font = doc.add_object(helvetica());
+        let group = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array(bbox),
+                "Group" => dictionary! { "S" => "Transparency", "CS" => "DeviceGray" },
+                "Resources" => dictionary! { "Font" => dictionary! { "H" => font } },
+            },
+            b"BT /H 10 Tf 100 700 Td (SECRETMASK) Tj ET".to_vec(),
+        ));
+        let gs = dictionary! { "Type" => "ExtGState", "SMask" => dictionary! { "Type" => "Mask", "S" => "Luminosity", "G" => group } };
+        doc.get_dictionary_mut(page)
+            .unwrap()
+            .set("Resources", dictionary! { "ExtGState" => dictionary! { "GS1" => gs }, "Font" => dictionary! { "H" => font } });
+    })
+}
+
+/// A page painting with tiling pattern /P1, whose cell shows (SECRETTILE).
+fn pattern_page(content: &str) -> Document {
+    one_page(content, |doc, page| {
+        let font = doc.add_object(helvetica());
+        let pattern = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "Pattern", "PatternType" => 1, "PaintType" => 1, "TilingType" => 1,
+                "BBox" => rect_array([0, 0, 200, 50]), "XStep" => 200, "YStep" => 50,
+                "Resources" => dictionary! { "Font" => dictionary! { "H" => font } },
+            },
+            b"BT /H 10 Tf 5 20 Td (SECRETTILE) Tj ET".to_vec(),
+        ));
+        doc.get_dictionary_mut(page)
+            .unwrap()
+            .set("Resources", dictionary! { "Pattern" => dictionary! { "P1" => pattern }, "Font" => dictionary! { "H" => font } });
+    })
+}
+
+fn raster_needed(doc: Document, rects: Vec<RedactRect>) -> bool {
+    matches!(redact(&bytes(doc), &job(rects)), Err(e) if e.starts_with("Invalid redact settings: raster"))
+}
+
+#[test]
+fn soft_mask_groups_under_an_area_need_a_raster() {
+    assert!(raster_needed(soft_mask_page([0, 0, 612, 792]), vec![area(1, 95.0, 695.0, 80.0, 15.0)]));
+    // A group whose box misses every area is fine.
+    assert!(!raster_needed(soft_mask_page([0, 0, 50, 50]), vec![area(1, 95.0, 695.0, 80.0, 15.0)]));
+}
+
+#[test]
+fn pattern_painting_under_an_area_needs_a_raster() {
+    assert!(raster_needed(pattern_page("/Pattern cs /P1 scn 0 0 612 792 re f"), vec![area(1, 0.0, 0.0, 612.0, 792.0)]));
+    let text = "BT /Pattern cs /P1 scn /H 30 Tf 100 700 Td (BIG) Tj ET";
+    assert!(raster_needed(pattern_page(text), vec![area(1, 95.0, 690.0, 100.0, 40.0)]));
+    // Painting with it away from the areas is fine; so is painting after
+    // switching back to a device colour.
+    assert!(!raster_needed(pattern_page("/Pattern cs /P1 scn 0 0 50 50 re f"), vec![area(1, 300.0, 300.0, 10.0, 10.0)]));
+    let back = "/Pattern cs /P1 scn 0 g 300 300 20 20 re f";
+    assert!(!raster_needed(pattern_page(back), vec![area(1, 300.0, 300.0, 10.0, 10.0)]));
+    // A form inherits the pattern colour of its placement.
+    let mut doc = pattern_page("/Pattern cs /P1 scn /Fm Do");
+    let form = doc.add_object(Stream::new(
+        dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 612, 792]) },
+        b"300 300 20 20 re f".to_vec(),
+    ));
+    let page = page_ids(&doc)[0];
+    let res = doc.get_dictionary_mut(page).unwrap().get_mut(b"Resources").unwrap().as_dict_mut().unwrap();
+    res.set("XObject", dictionary! { "Fm" => form });
+    assert!(raster_needed(doc, vec![area(1, 300.0, 300.0, 10.0, 10.0)]));
+}
+
+#[test]
+fn verification_fails_on_soft_masks_and_patterns_under_an_area() {
+    let cases = [
+        (soft_mask_page([0, 0, 612, 792]), area(1, 95.0, 695.0, 80.0, 15.0)),
+        (pattern_page("/Pattern cs /P1 scn 300 300 20 20 re f"), area(1, 300.0, 300.0, 10.0, 10.0)),
+    ];
+    for (doc, a) in cases {
+        plant_leak_for_tests(true);
+        let result = redact(&bytes(doc), &job(vec![a]));
+        plant_leak_for_tests(false);
+        assert_eq!(result.unwrap_err(), "Redaction verification failed on page 1");
+    }
+}

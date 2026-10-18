@@ -50,7 +50,7 @@ pub(crate) fn redact_form(page: &mut PageEdit, placement: &FormPlacement, rects:
         Ok(res) => owned_dict(page.doc, Some(res)),
         Err(_) => page.resources.clone(),
     };
-    let events = Interp::new(page.doc, resources.clone()).run(&ops, placement.matrix, page.budget)?;
+    let events = Interp::new(page.doc, resources.clone()).run_inherited(&ops, placement.matrix, placement.paint, page.budget)?;
     let mut forms = page.forms.clone();
     forms.extend(id);
     let mut inner = PageEdit { doc: &mut *page.doc, resources: &mut resources, fill: page.fill, budget: &mut *page.budget, forms };
