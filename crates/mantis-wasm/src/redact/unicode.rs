@@ -4,8 +4,9 @@
 
 use crate::rebuild::{Decoded, deref, name_of, strict_content_in};
 use lopdf::content::Content;
-use lopdf::{Dictionary, Document, Object};
+use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Decoded bytes of a /ToUnicode CMap read.
 const MAX_CMAP_BYTES: usize = 1 << 20;
@@ -13,25 +14,80 @@ const MAX_CMAP_BYTES: usize = 1 << 20;
 const MAX_ENTRIES: usize = 1 << 17;
 /// Codes one bfrange may cover.
 const MAX_RANGE: u32 = 1 << 16;
+/// Codes one CMap may make us process (kept or not).
+const MAX_WORK: usize = 70_000;
+/// Longest text of one code, in UTF-16 units.
+const MAX_TEXT_UNITS: usize = 32;
 
 /// Code to text.
-pub(crate) type TextMap = HashMap<u32, String>;
+pub(crate) type TextMap = HashMap<u32, Rc<str>>;
+
+/// The text maps of one search job, per font object, with the bytes their
+/// CMaps decoded charged against what the job has left.
+pub(crate) struct TextCache {
+    maps: HashMap<ObjectId, Rc<TextMap>>,
+    limit: usize,
+    charged: usize,
+}
+
+impl TextCache {
+    /// A cache that may decode `limit` bytes of CMaps.
+    pub(crate) fn new(limit: usize) -> TextCache {
+        TextCache { maps: HashMap::new(), limit, charged: 0 }
+    }
+
+    /// CMap bytes decoded so far.
+    pub(crate) fn charged(&self) -> usize {
+        self.charged
+    }
+
+    /// Allow `limit` bytes in all (the job's budget may have shrunk).
+    pub(crate) fn set_limit(&mut self, limit: usize) {
+        self.limit = limit;
+    }
+
+    /// The text map of font dictionary `font` (object `id` when it is one).
+    pub(crate) fn map_for(&mut self, doc: &Document, id: Option<ObjectId>, font: &Dictionary) -> Rc<TextMap> {
+        if let Some(map) = id.and_then(|id| self.maps.get(&id)) {
+            return map.clone();
+        }
+        let left = self.limit.saturating_sub(self.charged);
+        let map = Rc::new(text_map(doc, font, left, &mut self.charged));
+        if let Some(id) = id {
+            self.maps.insert(id, map.clone());
+        }
+        map
+    }
+}
 
 /// The text of every code of font dictionary `font` we can tell: its
-/// /ToUnicode entries over (for simple fonts) its encoding.
-pub(crate) fn text_map(doc: &Document, font: &Dictionary) -> TextMap {
+/// /ToUnicode entries over (for simple fonts) its encoding. CMap decoding
+/// may take `left` bytes and is added to `charged`.
+fn text_map(doc: &Document, font: &Dictionary, left: usize, charged: &mut usize) -> TextMap {
     let mut map = TextMap::new();
     let simple = !matches!(name_of(font, b"Subtype"), Some(b"Type0"));
     if simple {
         encoding_map(doc, font, &mut map);
     }
-    if let Some(Object::Stream(cmap)) = font.get(b"ToUnicode").ok().and_then(|o| deref(doc, o)) {
-        let mut charged = 0;
-        if let Decoded::Content(bytes) = strict_content_in(Some(doc), cmap, MAX_CMAP_BYTES, &mut charged) {
-            read_cmap(&bytes, &mut map);
-        }
+    if let Some(Object::Stream(cmap)) = font.get(b"ToUnicode").ok().and_then(|o| deref(doc, o))
+        && let Decoded::Content(bytes) = strict_content_in(Some(doc), cmap, MAX_CMAP_BYTES.min(left), charged)
+    {
+        read_cmap(&bytes, &mut map);
     }
     map
+}
+
+/// `text` cut to at most `MAX_TEXT_UNITS` UTF-16 units.
+fn capped(text: String) -> Rc<str> {
+    let mut units = 0;
+    let end = text
+        .char_indices()
+        .find(|(_, c)| {
+            units += c.len_utf16();
+            units > MAX_TEXT_UNITS
+        })
+        .map_or(text.len(), |(i, _)| i);
+    Rc::from(&text[..end])
 }
 
 /// UTF-16BE bytes as text (None when they are not valid UTF-16).
@@ -52,8 +108,9 @@ fn code(bytes: &[u8]) -> Option<u32> {
 }
 
 /// `bfchar` and `bfrange` entries of a CMap (parsed as content: operands
-/// then the `endbfchar` / `endbfrange` keyword). Bounded; whatever does not
-/// parse is ignored.
+/// then the `endbfchar` / `endbfrange` keyword). Every code processed counts
+/// against `MAX_WORK`, kept or not; reading stops there or when the map is
+/// full. Whatever does not parse is ignored.
 fn read_cmap(bytes: &[u8], map: &mut TextMap) {
     let Ok(content) = Content::decode(bytes) else {
         return;
@@ -62,12 +119,17 @@ fn read_cmap(bytes: &[u8], map: &mut TextMap) {
         Object::String(b, _) => Some(b.clone()),
         _ => None,
     };
+    let mut work = 0usize;
     for op in content.operations {
         match op.operator.as_str() {
             "endbfchar" => {
                 for pair in op.operands.chunks_exact(2) {
+                    work += 1;
+                    if work > MAX_WORK || map.len() >= MAX_ENTRIES {
+                        return;
+                    }
                     if let (Some(src), Some(dst)) = (string(&pair[0]).and_then(|b| code(&b)), string(&pair[1]).and_then(|b| utf16(&b))) {
-                        insert(map, src, dst);
+                        map.insert(src, capped(dst));
                     }
                 }
             }
@@ -79,10 +141,14 @@ fn read_cmap(bytes: &[u8], map: &mut TextMap) {
                     if hi < lo || hi - lo >= MAX_RANGE {
                         continue;
                     }
+                    work += (hi - lo + 1) as usize;
+                    if work > MAX_WORK || map.len() >= MAX_ENTRIES {
+                        return;
+                    }
                     match &triple[2] {
                         Object::String(dst, _) => {
                             // Incrementing form: the last UTF-16 unit counts up.
-                            if dst.len() < 2 || dst.len() % 2 != 0 {
+                            if dst.len() < 2 || !dst.len().is_multiple_of(2) {
                                 continue;
                             }
                             let mut units: Vec<u16> = dst.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
@@ -91,14 +157,14 @@ fn read_cmap(bytes: &[u8], map: &mut TextMap) {
                             for (k, c) in (lo..=hi).enumerate() {
                                 units[last] = first.wrapping_add(k as u16);
                                 if let Ok(text) = String::from_utf16(&units) {
-                                    insert(map, c, text);
+                                    map.insert(c, capped(text));
                                 }
                             }
                         }
                         Object::Array(items) => {
                             for (c, item) in (lo..=hi).zip(items) {
                                 if let Some(text) = string(item).and_then(|b| utf16(&b)) {
-                                    insert(map, c, text);
+                                    map.insert(c, capped(text));
                                 }
                             }
                         }
@@ -108,12 +174,6 @@ fn read_cmap(bytes: &[u8], map: &mut TextMap) {
             }
             _ => {}
         }
-    }
-}
-
-fn insert(map: &mut TextMap, code: u32, text: String) {
-    if map.len() < MAX_ENTRIES || map.contains_key(&code) {
-        map.insert(code, text);
     }
 }
 
@@ -138,7 +198,7 @@ fn encoding_map(doc: &Document, font: &Dictionary, map: &mut TextMap) {
             _ => standard(b),
         };
         if let Some(ch) = ch {
-            map.insert(u32::from(b), ch.to_string());
+            map.insert(u32::from(b), Rc::from(ch.to_string()));
         }
     }
     if let Some(Object::Dictionary(d)) = encoding
@@ -152,7 +212,7 @@ fn encoding_map(doc: &Document, font: &Dictionary, map: &mut TextMap) {
                     if let Some(c) = code.filter(|c| *c <= 255) {
                         match glyph_text(name) {
                             Some(text) => {
-                                map.insert(c, text);
+                                map.insert(c, capped(text));
                             }
                             None => {
                                 map.remove(&c);
@@ -270,11 +330,50 @@ mod tests {
     }
 
     #[test]
+    fn cmap_work_is_counted_even_for_codes_not_kept() {
+        // 70000 codes of ranges (each mapping the same few codes again),
+        // then one more entry: past the work cap, it is not read.
+        let mut cmap = String::from("1 beginbfrange ");
+        for _ in 0..70 {
+            cmap.push_str("<0000> <03E7> <0041> ");
+        }
+        cmap.push_str("endbfrange 1 beginbfchar <FFFF> <0042> endbfchar");
+        let mut map = TextMap::new();
+        read_cmap(cmap.as_bytes(), &mut map);
+        assert!(!map.contains_key(&0xFFFF));
+    }
+
+    #[test]
+    fn mapped_strings_are_capped_at_32_units() {
+        let mut map = TextMap::new();
+        let long = "0041".repeat(40);
+        read_cmap(format!("1 beginbfchar <01> <{long}> endbfchar").as_bytes(), &mut map);
+        assert_eq!(map.get(&1).map(|t| t.encode_utf16().count()), Some(32));
+    }
+
+    #[test]
+    fn text_maps_are_cached_per_font_and_charged_to_the_budget() {
+        let mut doc = Document::with_version("1.7");
+        let cmap = doc.add_object(lopdf::Stream::new(lopdf::dictionary! {}, b"1 beginbfchar <01> <0041> endbfchar".to_vec()));
+        let font = doc.add_object(lopdf::dictionary! { "Type" => "Font", "Subtype" => "Type1", "ToUnicode" => cmap });
+        let dict = doc.get_dictionary(font).unwrap().clone();
+        let mut cache = TextCache::new(1 << 20);
+        let a = cache.map_for(&doc, Some(font), &dict);
+        let b = cache.map_for(&doc, Some(font), &dict);
+        assert!(std::rc::Rc::ptr_eq(&a, &b));
+        assert_eq!(cache.charged(), 35, "decoded once");
+        assert_eq!(a.get(&1).map(|t| &**t), Some("A"));
+        // Without budget left the CMap is not read.
+        let mut poor = TextCache::new(10);
+        assert!(poor.map_for(&doc, Some(font), &dict).get(&1).is_none());
+    }
+
+    #[test]
     fn cmap_ranges_are_bounded() {
         let mut map = TextMap::new();
         read_cmap(b"1 beginbfrange <0000> <FFFFFF> <0041> endbfrange", &mut map);
         assert!(map.is_empty());
         read_cmap(b"1 beginbfrange <0041> <0043> <0061> endbfrange", &mut map);
-        assert_eq!(map.get(&0x42).map(String::as_str), Some("b"));
+        assert_eq!(map.get(&0x42).map(|t| &**t), Some("b"));
     }
 }

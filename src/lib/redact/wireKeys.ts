@@ -22,5 +22,5 @@ export const RESULT_KEYS = [
 ] as const;
 /** `redact_search`: its options and what it returns. */
 export const SEARCH_OPTION_KEYS = ["wholeWord", "caseSensitive"] as const;
-export const SEARCH_KEYS = ["pages", "undecodablePages"] as const;
+export const SEARCH_KEYS = ["pages", "undecodablePages", "truncated", "unsearchedPages"] as const;
 export const SEARCH_PAGE_KEYS = ["page", "quads"] as const;

@@ -89,4 +89,10 @@ export interface RedactSearchWire {
   pages: { page: number; quads: Rect[] }[];
   /** Pages with text the engine cannot read: search may miss text there (see `search.ts`). */
   undecodablePages: number[];
+  /**
+   * The engine stopped at its match limit (10000 rects): the UI says "Too many matches; showing
+   * the first N. Refine the search." `unsearchedPages` were not (fully) searched.
+   */
+  truncated: boolean;
+  unsearchedPages: number[];
 }

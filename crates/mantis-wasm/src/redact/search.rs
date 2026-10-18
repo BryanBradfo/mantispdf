@@ -9,7 +9,10 @@
 //! leaves part of itself behind.
 
 use super::interp::{Glyph, Quad, Rect};
+use super::unicode::TextCache;
 use super::verify::page_text_glyphs;
+use std::cell::RefCell;
+use std::rc::Rc;
 use super::{Budget, JOB_DECODED, MAX_RECTS};
 use crate::pdf_util::load_pdf;
 use crate::stamp::geometry::VisibleBox;
@@ -36,9 +39,16 @@ pub(crate) struct PageHits {
 pub(crate) struct SearchResult {
     pub(crate) pages: Vec<PageHits>,
     /// Pages with text whose characters cannot be known (or that cannot be
-    /// read at all): search may miss text there.
+    /// read at all, or have too much text): search may miss text there.
     pub(crate) undecodable_pages: Vec<u32>,
+    /// Matches stopped at `MAX_RECTS` rects.
+    pub(crate) truncated: bool,
+    /// Pages not fully searched because of that.
+    pub(crate) unsearched_pages: Vec<u32>,
 }
+
+/// Characters of one page's text searched at most.
+const MAX_PAGE_CHARS: usize = 2_000_000;
 
 /// One character of a page's text: the glyph it comes from (None for an
 /// assumed space) and its line.
@@ -51,8 +61,9 @@ fn fold(c: char, case_sensitive: bool) -> Vec<char> {
     if case_sensitive { vec![c] } else { c.to_lowercase().collect() }
 }
 
-/// The page text with assumed spaces and the line of each glyph.
-fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> (Vec<Char>, Vec<usize>) {
+/// The page text with assumed spaces and the line of each glyph; None past
+/// `MAX_PAGE_CHARS` characters.
+fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> Option<(Vec<Char>, Vec<usize>)> {
     let mut chars = Vec::new();
     let mut lines = Vec::with_capacity(glyphs.len());
     let mut line = 0;
@@ -84,8 +95,11 @@ fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> (Vec<Char>, Vec<usize>) 
         }
         lines.push(line);
         previous = Some(g);
+        if chars.len() > MAX_PAGE_CHARS {
+            return None;
+        }
     }
-    (chars, lines)
+    Some((chars, lines))
 }
 
 fn is_word(c: char) -> bool {
@@ -113,7 +127,8 @@ fn union(quads: impl Iterator<Item = Quad>) -> Option<Rect> {
     quads.map(|q| q.bbox()).reduce(|a, b| Rect { x0: a.x0.min(b.x0), y0: a.y0.min(b.y0), x1: a.x1.max(b.x1), y1: a.y1.max(b.y1) })
 }
 
-/// Every match of `query` in `pdf`, page by page (at most `MAX_RECTS` rects).
+/// Every match of `query` in `pdf`, page by page. Past `MAX_RECTS` rects
+/// the search stops and says so (`truncated`, `unsearched_pages`).
 pub(crate) fn redact_search(pdf: &[u8], query: &str, options: &SearchOptions) -> Result<SearchResult, String> {
     if query.chars().count() > MAX_QUERY_CHARS {
         return Err(super::invalid("query"));
@@ -123,21 +138,32 @@ pub(crate) fn redact_search(pdf: &[u8], query: &str, options: &SearchOptions) ->
     let mut result = SearchResult::default();
     let mut total = 0;
     let mut decoded = JOB_DECODED;
+    // Fonts' text maps, shared by every page of the job.
+    let cache = Rc::new(RefCell::new(TextCache::new(decoded)));
     for (number, page) in doc.get_pages() {
+        if result.truncated {
+            result.unsearched_pages.push(number);
+            continue;
+        }
+        cache.borrow_mut().set_limit(decoded);
+        let before = cache.borrow().charged();
         let mut budget = Budget::page(decoded);
-        let glyphs = page_text_glyphs(&doc, page, &mut budget);
-        decoded = budget.decoded;
+        let glyphs = page_text_glyphs(&doc, page, &mut budget, &cache);
+        decoded = budget.decoded.saturating_sub(cache.borrow().charged() - before);
         let Ok(glyphs) = glyphs else {
+            result.undecodable_pages.push(number);
+            continue;
+        };
+        let Some((chars, lines)) = page_text(&glyphs, options.case_sensitive) else {
             result.undecodable_pages.push(number);
             continue;
         };
         if glyphs.iter().any(|g| g.text.is_none()) {
             result.undecodable_pages.push(number);
         }
-        if needle.is_empty() || total >= MAX_RECTS {
+        if needle.is_empty() {
             continue;
         }
-        let (chars, lines) = page_text(&glyphs, options.case_sensitive);
         let vb = VisibleBox::of_page(&doc, page);
         let mut rects = Vec::new();
         let mut at = 0;
@@ -165,6 +191,12 @@ pub(crate) fn redact_search(pdf: &[u8], query: &str, options: &SearchOptions) ->
             }
             at += needle.len();
             if total + rects.len() >= MAX_RECTS {
+                rects.truncate(MAX_RECTS - total);
+                // More text left to search on this page: it was cut short.
+                if at < chars.len() {
+                    result.truncated = true;
+                    result.unsearched_pages.push(number);
+                }
                 break;
             }
         }

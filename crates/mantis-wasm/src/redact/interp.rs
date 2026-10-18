@@ -211,7 +211,7 @@ pub(crate) struct Glyph {
     pub(crate) word_spacing: f64,
     /// The glyph's text, when the interpreter reports text and the font
     /// tells it.
-    pub(crate) text: Option<String>,
+    pub(crate) text: Option<Rc<str>>,
     /// Where the glyph starts and where its advance ends on the baseline,
     /// and the font size, all in user space.
     pub(crate) origin: (f64, f64),
@@ -659,8 +659,8 @@ pub(crate) struct Interp<'d> {
     doc: &'d Document,
     resources: Dictionary,
     fonts: HashMap<Vec<u8>, Rc<Font>>,
-    /// Report each glyph's text (for search).
-    text: bool,
+    /// Report each glyph's text (for search), through the job's cache.
+    text: Option<Rc<std::cell::RefCell<super::unicode::TextCache>>>,
 }
 
 /// Per-run state.
@@ -754,7 +754,7 @@ impl Run<'_> {
                 h_scale: self.gs.h_scale,
                 char_spacing: self.gs.char_spacing,
                 word_spacing,
-                text: font.text(code).map(String::from),
+                text: font.text(code),
                 origin,
                 end: origin,
                 em: (top.0 - origin.0).hypot(top.1 - origin.1),
@@ -775,12 +775,13 @@ impl Run<'_> {
 
 impl<'d> Interp<'d> {
     pub(crate) fn new(doc: &'d Document, resources: Dictionary) -> Interp<'d> {
-        Interp { doc, resources, fonts: HashMap::new(), text: false }
+        Interp { doc, resources, fonts: HashMap::new(), text: None }
     }
 
-    /// Also report what each glyph means as text (`Glyph::text`).
-    pub(crate) fn with_text(mut self) -> Self {
-        self.text = true;
+    /// Also report what each glyph means as text (`Glyph::text`), with the
+    /// fonts' text maps from `cache`.
+    pub(crate) fn with_text(mut self, cache: Rc<std::cell::RefCell<super::unicode::TextCache>>) -> Self {
+        self.text = Some(cache);
         self
     }
 
@@ -794,10 +795,20 @@ impl<'d> Interp<'d> {
         if let Some(font) = self.fonts.get(name) {
             return Ok(font.clone());
         }
+        // The entry itself (a reference keys the text cache).
         let obj = self
-            .resource(b"Font", name)
+            .resources
+            .get(b"Font")
+            .ok()
+            .and_then(|f| deref(self.doc, f))
+            .and_then(|d| d.as_dict().ok())
+            .and_then(|d| d.get(name).ok())
             .ok_or_else(|| Unsupported(format!("font {} not found", String::from_utf8_lossy(name))))?;
-        let font = Rc::new(Font::load_with(self.doc, name, obj, self.text)?);
+        let font = match &self.text {
+            Some(cache) => Font::load_with(self.doc, name, obj, Some(&mut cache.borrow_mut()))?,
+            None => Font::load(self.doc, name, obj)?,
+        };
+        let font = Rc::new(font);
         self.fonts.insert(name.to_vec(), font.clone());
         Ok(font)
     }

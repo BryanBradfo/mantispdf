@@ -37,7 +37,7 @@ pub(crate) struct Font {
     /// Descriptor /FontBBox (em), when it has one.
     bbox: Option<[f64; 4]>,
     /// Code to text, when loaded for search.
-    text: Option<super::unicode::TextMap>,
+    text: Option<std::rc::Rc<super::unicode::TextMap>>,
 }
 
 #[derive(Debug, Clone)]
@@ -149,13 +149,19 @@ fn standard_metrics(base: &[u8]) -> Option<StdFont> {
 impl Font {
     /// Load the font dictionary `obj` (direct or by reference); `name` only
     /// labels errors.
-    #[cfg(test)]
     pub(crate) fn load(doc: &Document, name_bytes: &[u8], obj: &Object) -> Result<Font, Unsupported> {
-        Self::load_with(doc, name_bytes, obj, false)
+        Self::load_with(doc, name_bytes, obj, None)
     }
 
-    /// `load`, reading what the codes mean as text too when `text` is set.
-    pub(crate) fn load_with(doc: &Document, name_bytes: &[u8], obj: &Object, text: bool) -> Result<Font, Unsupported> {
+    /// `load`, reading what the codes mean as text too (through `text`, the
+    /// job's cache) when given. `obj` may be a reference: its id keys the
+    /// cache.
+    pub(crate) fn load_with(
+        doc: &Document,
+        name_bytes: &[u8],
+        obj: &Object,
+        text: Option<&mut super::unicode::TextCache>,
+    ) -> Result<Font, Unsupported> {
         let label = String::from_utf8_lossy(name_bytes).into_owned();
         let err = |what: &str| Unsupported(format!("font {label}: {what}"));
         let Some(font) = deref(doc, obj).and_then(|o| o.as_dict().ok()) else {
@@ -183,7 +189,7 @@ impl Font {
             b"Type3" => return Err(err("Type3 fonts are not supported")),
             other => return Err(err(&format!("unsupported font type {}", String::from_utf8_lossy(other)))),
         };
-        let text = text.then(|| super::unicode::text_map(doc, font));
+        let text = text.map(|cache| cache.map_for(doc, obj.as_reference().ok(), font));
         Ok(Font { label, kind, ascent, descent, bbox, text })
     }
 
@@ -368,8 +374,8 @@ impl Font {
     }
 
     /// The text of `code`, when the font was loaded with text and knows it.
-    pub(crate) fn text(&self, code: u32) -> Option<&str> {
-        self.text.as_ref()?.get(&code).map(String::as_str)
+    pub(crate) fn text(&self, code: u32) -> Option<std::rc::Rc<str>> {
+        self.text.as_ref()?.get(&code).cloned()
     }
 
     /// True when word spacing (Tw) applies to `code` spanning `len` bytes:

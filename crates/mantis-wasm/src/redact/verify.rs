@@ -10,6 +10,9 @@ use crate::rebuild::{Decoded, MAX_STREAM_DECODED, deref, strict_content_in};
 use lopdf::content::Operation;
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
+/// A search job's shared text map cache.
+pub(crate) type TextCacheRef = std::rc::Rc<std::cell::RefCell<super::unicode::TextCache>>;
+
 /// Dictionary key carrying the job's tag on the images it drew (removed
 /// from the delivered file).
 pub(crate) const TAG_KEY: &str = "MantisRedactionTag";
@@ -41,17 +44,17 @@ fn page_seen(doc: &Document, page: ObjectId, tag: &[u8]) -> Result<(Vec<Seen>, V
     let ops = content_ops(doc, &original_contents(doc, contents), &mut budget)?;
     let mut seen = Vec::new();
     let resources = page_resources(doc, page);
-    walk(doc, &ops, resources, IDENTITY, Paint::default(), &mut Vec::new(), &mut budget, tag, false, &mut seen)?;
+    walk(doc, &ops, resources, IDENTITY, Paint::default(), &mut Vec::new(), &mut budget, tag, None, &mut seen)?;
     Ok((seen, ops))
 }
 
 /// Every glyph `page` draws (forms included, in drawing order), with its
 /// text when the font tells it.
-pub(crate) fn page_text_glyphs(doc: &Document, page: ObjectId, budget: &mut Budget) -> Result<Vec<super::interp::Glyph>, Unsupported> {
+pub(crate) fn page_text_glyphs(doc: &Document, page: ObjectId, budget: &mut Budget, cache: &TextCacheRef) -> Result<Vec<super::interp::Glyph>, Unsupported> {
     let contents = doc.get_dictionary(page).ok().and_then(|d| d.get(b"Contents").ok());
     let ops = content_ops(doc, &original_contents(doc, contents), budget)?;
     let mut seen = Vec::new();
-    walk(doc, &ops, page_resources(doc, page), IDENTITY, Paint::default(), &mut Vec::new(), budget, &[], true, &mut seen)?;
+    walk(doc, &ops, page_resources(doc, page), IDENTITY, Paint::default(), &mut Vec::new(), budget, &[], Some(cache), &mut seen)?;
     Ok(seen
         .into_iter()
         .filter_map(|s| match s.event {
@@ -89,12 +92,12 @@ fn walk(
     forms: &mut Vec<ObjectId>,
     budget: &mut Budget,
     tag: &[u8],
-    text: bool,
+    text: Option<&TextCacheRef>,
     out: &mut Vec<Seen>,
 ) -> Result<(), Unsupported> {
     let mut interp = Interp::new(doc, resources.clone());
-    if text {
-        interp = interp.with_text();
+    if let Some(cache) = text {
+        interp = interp.with_text(cache.clone());
     }
     let events = interp.run_inherited(ops, ctm, paint, budget)?;
     let xobjects = page_resources_dict(doc, &resources, b"XObject");
@@ -258,7 +261,7 @@ fn group_meets_within(
     groups.push(group);
     let mut seen = Vec::new();
     let mut forms = groups.clone();
-    let mut meets = walk(doc, &ops, inner, matrix, Paint::default(), &mut forms, budget, &[], false, &mut seen).is_err();
+    let mut meets = walk(doc, &ops, inner, matrix, Paint::default(), &mut forms, budget, &[], None, &mut seen).is_err();
     if !meets {
         let events: Vec<Event> = seen.iter().map(|s| s.event.clone()).collect();
         meets = unanalysed_paint(&events, rects).is_some() || events.iter().any(|e| left_under(e, rects));

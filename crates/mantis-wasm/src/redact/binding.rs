@@ -161,7 +161,7 @@ pub(crate) fn read_search_options(options: &JsValue) -> Result<SearchOptions, St
     Ok(SearchOptions { whole_word: flag("wholeWord")?, case_sensitive: flag("caseSensitive")? })
 }
 
-/// `{ pages: [{ page, quads: [[x, y, w, h]] }], undecodablePages }`.
+/// `{ pages: [{ page, quads: [[x, y, w, h]] }], undecodablePages, truncated, unsearchedPages }`.
 pub(crate) fn search_to_js(result: &SearchResult) -> JsValue {
     let pages: Array = result
         .pages
@@ -181,5 +181,7 @@ pub(crate) fn search_to_js(result: &SearchResult) -> JsValue {
     let obj = Object::new();
     set(&obj, "pages", &pages.into());
     set(&obj, "undecodablePages", &numbers(&result.undecodable_pages));
+    set(&obj, "truncated", &JsValue::from_bool(result.truncated));
+    set(&obj, "unsearchedPages", &numbers(&result.unsearched_pages));
     obj.into()
 }

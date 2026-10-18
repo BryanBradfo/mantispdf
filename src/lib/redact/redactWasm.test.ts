@@ -99,7 +99,11 @@ describe.skipIf(!built)("redact_plan / redact bindings", () => {
 });
 
 describe.skipIf(!built)("redact_search binding", () => {
-  type Search = (pdf: Uint8Array, query: string, options: unknown) => { pages: { page: number; quads: number[][] }[]; undecodablePages: number[] };
+  type Search = (
+    pdf: Uint8Array,
+    query: string,
+    options: unknown,
+  ) => { pages: { page: number; quads: number[][] }[]; undecodablePages: number[]; truncated: boolean; unsearchedPages: number[] };
   it("finds text as the exact glyph boxes, and reports pages it cannot read", () => {
     const search = (wasm as unknown as { redact_search: Search }).redact_search;
     const found = search(PDF, "world", { wholeWord: false, caseSensitive: false });
@@ -112,6 +116,8 @@ describe.skipIf(!built)("redact_search binding", () => {
     expect(y).toBeLessThan(700);
     expect(y + h).toBeGreaterThan(705);
     expect(found.undecodablePages).toEqual([2]);
+    expect(found.truncated).toBe(false);
+    expect(found.unsearchedPages).toEqual([]);
     expect(() => search(PDF, "x", { wholeWord: false })).toThrow("Invalid redact settings: options.caseSensitive");
   });
 });

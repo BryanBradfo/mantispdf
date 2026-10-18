@@ -184,3 +184,38 @@ fn pages_whose_text_cannot_be_read_are_reported() {
     assert_eq!(redact_search(&bytes(doc), "x", &opts()).unwrap().undecodable_pages, vec![1]);
     let _ = StringFormat::Literal;
 }
+
+#[test]
+fn too_many_matches_are_reported_as_truncated() {
+    let many = "a ".repeat(MAX_RECTS + 5);
+    let mut doc = one_page(&format!("BT /H 10 Tf 0.01 Tz 10 700 Td ({many}) Tj ET"), with_helvetica);
+    // A second page, never searched.
+    let pages_id = doc.catalog().unwrap().get(b"Pages").unwrap().as_reference().unwrap();
+    let first = doc.get_pages()[&1];
+    let second = doc.add_object(doc.get_dictionary(first).unwrap().clone());
+    let pages = doc.get_dictionary_mut(pages_id).unwrap();
+    pages.set("Kids", vec![first.into(), second.into()]);
+    pages.set("Count", 2);
+    let found = redact_search(&bytes(doc), "a", &opts()).unwrap();
+    assert!(found.truncated);
+    assert_eq!(found.unsearched_pages, vec![1, 2]);
+    assert_eq!(found.pages.iter().map(|p| p.rects.len()).sum::<usize>(), MAX_RECTS);
+}
+
+#[test]
+fn pages_with_too_much_text_are_undecodable() {
+    // 70000 glyphs of 32 characters each: past 2 M characters.
+    let codes = "01".repeat(70_000);
+    let doc = one_page(&format!("BT /F 1 Tf <{codes}> Tj ET"), |doc| {
+        let long = "0041".repeat(32);
+        let cmap = doc.add_object(Stream::new(dictionary! {}, format!("1 beginbfchar <01> <{long}> endbfchar").into_bytes()));
+        let font = doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "TrueType", "BaseFont" => "X", "FirstChar" => 1, "LastChar" => 1,
+            "Widths" => vec![500.into()], "ToUnicode" => cmap,
+        });
+        dictionary! { "Font" => dictionary! { "F" => font } }
+    });
+    let found = redact_search(&bytes(doc), "aaaa", &opts()).unwrap();
+    assert_eq!(found.undecodable_pages, vec![1]);
+    assert!(found.pages.is_empty());
+}
