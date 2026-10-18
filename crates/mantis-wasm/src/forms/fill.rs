@@ -1,8 +1,11 @@
 //! Fill form fields: set /V (and /I, /AS), give every changed text and
-//! choice widget a new appearance stream, set /NeedAppearances and drop
+//! choice widget a new appearance stream, set /NeedAppearances false (our
+//! appearances are authoritative) and drop
 //! /XFA. All values are validated before the document is touched.
 
-use super::appearance::{Frame, Layout, check_appearance, font_resource, frame_content, list_appearance, text_appearance};
+use super::appearance::{
+    Frame, Layout, check_appearance, font_resource, frame_content, list_appearance, radio_appearance, text_appearance,
+};
 use super::tree::{FF_RADIOS_IN_UNISON, FieldRef, inherited, integer, read_form};
 use super::{Field, FieldKind, MAX_VALUE_CHARS, Value, invalid};
 use crate::annotations::parse_numbers;
@@ -38,6 +41,16 @@ enum Change {
 
 /// On state name used for a checkbox whose widgets have no "on" appearance.
 const DEFAULT_ON: &str = "Yes";
+
+/// On state name for radio widgets without an "on" appearance: /On, or
+/// /On2, /On3, ... when the group already uses it.
+pub(crate) fn generated_radio_state(on_states: &[String]) -> String {
+    let taken = |name: &str| on_states.iter().any(|s| s == name);
+    (1u32..)
+        .map(|k| if k == 1 { "On".to_string() } else { format!("On{k}") })
+        .find(|name| !taken(name))
+        .unwrap_or_default()
+}
 
 pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Result<(), String> {
     let tree = read_form(doc)?;
@@ -166,6 +179,12 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option
                         {
                             Change::Button { state: Some(DEFAULT_ON.as_bytes().to_vec()), generate: true }
                         }
+                        None if field.kind == FieldKind::Radio
+                            && field.widgets.iter().any(|w| w.on_state.is_none())
+                            && *name == generated_radio_state(&field.on_states) =>
+                        {
+                            Change::Button { state: Some(name.as_bytes().to_vec()), generate: true }
+                        }
                         None => return Err(invalid("value")),
                     }
                 }
@@ -256,8 +275,10 @@ fn apply(doc: &mut Document, field: &Field, field_ref: &FieldRef, change: Change
                     && (wref.on_state == state || (generate && wref.on_state.is_none()));
                 let on = matches && (unison || !turned_on);
                 turned_on |= on;
-                if generate && wref.on_state.is_none() {
-                    add_check_states(doc, wref.obj, &wref.da);
+                if generate && wref.on_state.is_none()
+                    && let Some(name) = &state
+                {
+                    add_button_states(doc, wref.obj, &wref.da, name, field.kind == FieldKind::Radio);
                 }
                 if let Ok(dict) = doc.get_dictionary_mut(wref.obj) {
                     let as_name = if on { state.clone().unwrap_or_else(|| off.clone()) } else { off.clone() };
@@ -345,21 +366,31 @@ fn set_appearance(
     }
 }
 
-/// New /AP for a checkbox widget without an "on" appearance: a check mark
-/// for /Yes and the bare frame for /Off.
-fn add_check_states(doc: &mut Document, widget: ObjectId, da: &super::tree::DefaultAppearance) {
+/// New /AP for a button widget without an "on" appearance. Checkbox: a
+/// check mark for `on_name`, the bare frame for /Off. Radio: a filled dot
+/// for `on_name`, an empty /Off.
+fn add_button_states(doc: &mut Document, widget: ObjectId, da: &super::tree::DefaultAppearance, on_name: &[u8], radio: bool) {
     let Some((frame, matrix)) = doc.get_dictionary(widget).ok().and_then(|w| widget_frame(doc, w)) else {
         return;
     };
     let mut no_fonts = HashMap::new();
-    let on = form_xobject(doc, &frame, matrix, None, &mut no_fonts, check_appearance(&frame, da));
-    let off = form_xobject(doc, &frame, matrix, None, &mut no_fonts, frame_content(&frame));
+    let (on_content, off_content) = if radio {
+        (radio_appearance(&frame, da), Vec::new())
+    } else {
+        (check_appearance(&frame, da), frame_content(&frame))
+    };
+    let on = form_xobject(doc, &frame, matrix, None, &mut no_fonts, on_content);
+    let off = form_xobject(doc, &frame, matrix, None, &mut no_fonts, off_content);
+    let mut states = Dictionary::new();
+    states.set(on_name.to_vec(), on);
+    states.set("Off", off);
     if let Ok(dict) = doc.get_dictionary_mut(widget) {
-        dict.set("AP", dictionary! { "N" => dictionary! { DEFAULT_ON => on, "Off" => off } });
+        dict.set("AP", dictionary! { "N" => states });
     }
 }
 
-/// /NeedAppearances true and no /XFA on the AcroForm.
+/// /NeedAppearances false (every changed widget has our appearance, the
+/// others keep theirs) and no /XFA on the AcroForm.
 fn mark_form(doc: &mut Document) {
     let Some(root) = doc.trailer.get(b"Root").ok().and_then(|r| r.as_reference().ok()) else {
         return;
@@ -378,7 +409,7 @@ fn mark_form(doc: &mut Document) {
             .and_then(|f| f.as_dict_mut().ok()),
     };
     if let Some(form) = form {
-        form.set("NeedAppearances", true);
+        form.set("NeedAppearances", false);
         form.remove(b"XFA");
     }
 }
@@ -435,7 +466,7 @@ mod tests {
         assert_eq!(font.get(b"BaseFont").unwrap(), &Object::Name(b"Helvetica".to_vec()));
         assert_eq!(font.get(b"Encoding").unwrap(), &Object::Name(b"WinAnsiEncoding".to_vec()));
         assert!(Content::decode(&ap.content).is_ok());
-        assert_eq!(acroform(&doc).get(b"NeedAppearances").unwrap(), &Object::Boolean(true));
+        assert_eq!(acroform(&doc).get(b"NeedAppearances").unwrap(), &Object::Boolean(false));
     }
 
     #[test]
@@ -626,11 +657,40 @@ mod tests {
         let a = text_field(&mut doc, page, "a", vec![]);
         let b = text_field(&mut doc, page, "b", vec![("V", Object::string_literal("keep"))]);
         let xfa = doc.add_object(Stream::new(dictionary! {}, b"<xdp/>".to_vec()));
-        finish(&mut doc, page, &[a, b], &[a, b], vec![("XFA", xfa.into())]);
+        finish(&mut doc, page, &[a, b], &[a, b], vec![("XFA", xfa.into()), ("NeedAppearances", true.into())]);
         let before = dict(&doc, b).clone();
         fill_document(&mut doc, &[(0, Value::Text("x".into()))]).unwrap();
         assert_eq!(dict(&doc, b), &before);
         assert!(!acroform(&doc).has(b"XFA"));
+        assert_eq!(acroform(&doc).get(b"NeedAppearances").unwrap(), &Object::Boolean(false));
+    }
+
+    #[test]
+    fn radio_widget_without_on_appearance_gets_a_dot() {
+        let (mut doc, page) = base(0);
+        let field = doc.new_object_id();
+        let ap = states(&mut doc, &["Off", "On"]);
+        let with_ap = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![("Parent", field.into()), ("AP", ap)]));
+        let bare = doc.add_object(with(widget(page, [20, 0, 40, 10]), vec![("Parent", field.into())]));
+        doc.objects.insert(field, Object::Dictionary(dictionary! {
+            "FT" => "Btn", "Ff" => FF_RADIO, "T" => Object::string_literal("r"),
+            "DA" => Object::string_literal("/Helv 0 Tf 0 0 1 rg"),
+            "Kids" => vec![with_ap.into(), bare.into()],
+        }));
+        finish(&mut doc, page, &[field], &[with_ap, bare], vec![]);
+        assert_eq!(generated_radio_state(&["On".into()]), "On2");
+        assert_eq!(generated_radio_state(&[]), "On");
+        fill_document(&mut doc, &[(0, Value::Names(vec!["On2".into()]))]).unwrap();
+        assert_eq!(dict(&doc, field).get(b"V").unwrap(), &Object::Name(b"On2".to_vec()));
+        assert_eq!(as_states(&doc, &[with_ap, bare]), vec!["Off", "On2"]);
+        let n = dict(&doc, bare).get(b"AP").unwrap().as_dict().unwrap().get(b"N").unwrap().as_dict().unwrap();
+        let stream = |key: &[u8]| doc.get_object(n.get(key).unwrap().as_reference().unwrap()).unwrap().as_stream().unwrap();
+        let on = String::from_utf8(stream(b"On2").content.clone()).unwrap();
+        assert!(on.starts_with("q\n0 0 1 rg\n12.5 5 m\n") && on.ends_with("f\nQ\n"), "{on}");
+        assert!(stream(b"Off").content.is_empty());
+        // The widget that has its own appearance keeps it.
+        assert!(dict(&doc, with_ap).get(b"AP").unwrap().as_dict().unwrap().get(b"N").unwrap().as_dict().unwrap().has(b"On"));
+        assert_eq!(fill_document(&mut doc, &[(0, Value::Names(vec!["On3".into()]))]).unwrap_err(), "Invalid form settings: value");
     }
 
     #[test]

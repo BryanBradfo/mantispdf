@@ -283,6 +283,28 @@ pub(crate) fn check_appearance(frame: &Frame, da: &DefaultAppearance) -> Vec<u8>
     out
 }
 
+/// Bezier control distance for a quarter circle of radius 1.
+const KAPPA: f64 = 0.5523;
+
+/// "On" appearance of a radio button that has none: a dot filled in the
+/// /DA colour, centred, its diameter half the smaller widget side.
+pub(crate) fn radio_appearance(frame: &Frame, da: &DefaultAppearance) -> Vec<u8> {
+    let (cx, cy) = (frame.width / 2.0, frame.height / 2.0);
+    let r = frame.width.min(frame.height) / 4.0;
+    let k = r * KAPPA;
+    let p = |x: f64, y: f64| format!("{} {}", fmt_num(x), fmt_num(y));
+    let color = color_op(&da_components(da.color), false).unwrap_or_else(|| "0 g".into());
+    format!(
+        "q\n{color}\n{} m\n{} {} {} c\n{} {} {} c\n{} {} {} c\n{} {} {} c\nf\nQ\n",
+        p(cx + r, cy),
+        p(cx + r, cy + k), p(cx + k, cy + r), p(cx, cy + r),
+        p(cx - k, cy + r), p(cx - r, cy + k), p(cx - r, cy),
+        p(cx - r, cy - k), p(cx - k, cy - r), p(cx, cy - r),
+        p(cx + k, cy - r), p(cx + r, cy - k), p(cx + r, cy),
+    )
+    .into_bytes()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,5 +419,17 @@ mod tests {
     fn check_mark_path() {
         let got = s(check_appearance(&frame(20.0, 10.0), &helv(0.0)));
         assert_eq!(got, "q\n0 G\n1 w\n1 J\n1 j\n7 5 m\n9 2.5 l\n13 7.5 l\nS\nQ\n");
+    }
+
+    #[test]
+    fn radio_dot_path() {
+        // 20 x 10: radius 2.5 around (10, 5); control offset 2.5 * 0.5523.
+        let got = s(radio_appearance(&frame(20.0, 10.0), &helv(0.0)));
+        assert_eq!(got, "q\n0 g\n12.5 5 m\n\
+            12.5 6.38075 11.38075 7.5 10 7.5 c\n\
+            8.61925 7.5 7.5 6.38075 7.5 5 c\n\
+            7.5 3.61925 8.61925 2.5 10 2.5 c\n\
+            11.38075 2.5 12.5 3.61925 12.5 5 c\n\
+            f\nQ\n");
     }
 }
