@@ -200,11 +200,16 @@ fn text_of(doc: &Document, dict: &Dictionary, key: &[u8]) -> Option<String> {
 /// `key` on field `id` or the nearest ancestor that has it (bounded /Parent
 /// chain, so a cycle ends).
 pub(crate) fn inherited<'a>(doc: &'a Document, id: ObjectId, key: &[u8]) -> Option<&'a Object> {
+    deref(doc, inherited_entry(doc, id, key)?)
+}
+
+/// `inherited`, without following a reference held by the entry.
+fn inherited_entry<'a>(doc: &'a Document, id: ObjectId, key: &[u8]) -> Option<&'a Object> {
     let mut current = id;
     for _ in 0..=MAX_DEPTH {
         let dict = doc.get_dictionary(current).ok()?;
         if let Ok(value) = dict.get(key) {
-            return deref(doc, value);
+            return Some(value);
         }
         current = dict.get(b"Parent").ok()?.as_reference().ok()?;
     }
@@ -248,13 +253,53 @@ fn non_empty_text(s: String) -> Value {
 /// Text values held in a stream (allowed for text fields) are read up to
 /// this many decoded bytes; a longer one reads as no value.
 const MAX_STREAM_VALUE: usize = 64 * 1024;
+/// Decoded bytes all stream values of one document may take together; once
+/// spent, further stream values read as no value.
+const MAX_STREAM_VALUES_TOTAL: usize = 8 << 20;
 
-fn read_value(doc: &Document, value: Option<&Object>, kind: &FieldKind) -> Value {
-    let Some(value) = value else {
+/// Stream /V values of one traversal: one decode budget for the document
+/// and each stream decoded once (fields may share a /V stream).
+pub(crate) struct StreamValues {
+    spent: usize,
+    decodes: usize,
+    cache: HashMap<ObjectId, Option<String>>,
+}
+
+impl StreamValues {
+    pub(crate) fn new() -> StreamValues {
+        StreamValues { spent: 0, decodes: 0, cache: HashMap::new() }
+    }
+
+    fn text(&mut self, id: ObjectId, stream: &lopdf::Stream) -> Option<String> {
+        if let Some(cached) = self.cache.get(&id) {
+            return cached.clone();
+        }
+        let left = MAX_STREAM_VALUES_TOTAL.saturating_sub(self.spent);
+        let text = if left == 0 {
+            None
+        } else {
+            self.decodes += 1;
+            crate::rebuild::bounded_content(stream, MAX_STREAM_VALUE.min(left), &mut self.spent)
+                .map(|b| decode_text(&b))
+        };
+        self.cache.insert(id, text.clone());
+        text
+    }
+}
+
+/// `value` is the raw /V entry (a stream value is always indirect).
+fn read_value(doc: &Document, value: Option<&Object>, kind: &FieldKind, streams: &mut StreamValues) -> Value {
+    let Some(raw) = value else {
+        return Value::None;
+    };
+    let Some(value) = deref(doc, raw) else {
         return Value::None;
     };
     if let (Object::Stream(stream), FieldKind::Text { .. } | FieldKind::Combo { .. }) = (value, kind) {
-        let text = crate::rebuild::bounded_content(stream, MAX_STREAM_VALUE, &mut 0).map(|b| decode_text(&b));
+        let text = match raw {
+            Object::Reference(id) => streams.text(*id, stream),
+            _ => None,
+        };
         return non_empty_text(text.unwrap_or_default());
     }
     let strings = |o: &Object| -> Vec<String> {
@@ -514,7 +559,7 @@ impl<'a> Context<'a> {
         Some((widget, WidgetRef { obj: id, da, on_state }))
     }
 
-    fn field(&self, index: usize, t: &Terminal) -> Result<Option<(Field, FieldRef)>, String> {
+    fn field(&self, index: usize, t: &Terminal, streams: &mut StreamValues) -> Result<Option<(Field, FieldRef)>, String> {
         let doc = self.doc;
         let flags = integer(inherited(doc, t.obj, b"Ff")).unwrap_or(0);
         let Some(kind) = kind_of(doc, t.obj, flags) else {
@@ -534,8 +579,8 @@ impl<'a> Context<'a> {
                 on_states.push(state.to_string());
             }
         }
-        let value = inherited(doc, t.obj, b"V");
-        let value_name = match (&kind, value) {
+        let value = inherited_entry(doc, t.obj, b"V");
+        let value_name = match (&kind, value.and_then(|v| deref(doc, v))) {
             (FieldKind::Checkbox | FieldKind::Radio, Some(Object::Name(n))) => Some(n.clone()),
             _ => None,
         };
@@ -545,7 +590,7 @@ impl<'a> Context<'a> {
             label,
             read_only: flags & FF_READ_ONLY != 0,
             required: flags & FF_REQUIRED != 0,
-            value: read_value(doc, value, &kind),
+            value: read_value(doc, value, &kind, streams),
             options: read_options(doc, inherited(doc, t.obj, b"Opt"))?,
             kind,
             on_states,
@@ -558,6 +603,10 @@ impl<'a> Context<'a> {
 /// Read the form of a loaded document. Field ids are indices in this
 /// traversal; fields of an unknown type are skipped.
 pub(crate) fn read_form(doc: &Document) -> Result<FormTree, String> {
+    read_form_with(doc, &mut StreamValues::new())
+}
+
+fn read_form_with(doc: &Document, streams: &mut StreamValues) -> Result<FormTree, String> {
     let Some(form) = acroform(doc) else {
         return Ok(FormTree { info: FormInfo { xfa: Xfa::None, fields: Vec::new() }, refs: Vec::new() });
     };
@@ -577,7 +626,7 @@ pub(crate) fn read_form(doc: &Document) -> Result<FormTree, String> {
     let mut fields = Vec::new();
     let mut refs = Vec::new();
     for terminal in &walker.terminals {
-        if let Some((field, field_ref)) = ctx.field(fields.len(), terminal)? {
+        if let Some((field, field_ref)) = ctx.field(fields.len(), terminal, streams)? {
             fields.push(field);
             refs.push(field_ref);
         }
@@ -1218,5 +1267,43 @@ mod tests {
         finish(&mut doc, page, &[a, b], &[a, b], vec![]);
         let values: Vec<Value> = tree(&doc).info.fields.into_iter().map(|f| f.value).collect();
         assert_eq!(values, vec![Value::Text("hello".into()), Value::None]);
+    }
+
+    #[test]
+    fn shared_value_stream_is_decoded_once() {
+        let (mut doc, page) = base(0);
+        let shared = doc.add_object(Stream::new(dictionary! {}, vec![b'x'; MAX_STREAM_VALUE]));
+        let ids: Vec<ObjectId> = (0..2000)
+            .map(|i| doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+                ("FT", "Tx".into()), ("T", Object::string_literal(format!("f{i}"))), ("V", shared.into()),
+            ])))
+            .collect();
+        finish(&mut doc, page, &ids, &[], vec![]);
+        let mut streams = StreamValues::new();
+        let info = read_form_with(&doc, &mut streams).unwrap().info;
+        assert_eq!(streams.decodes, 1);
+        assert_eq!(streams.spent, MAX_STREAM_VALUE);
+        assert!(info.fields.iter().all(|f| matches!(&f.value, Value::Text(t) if t.len() == MAX_STREAM_VALUE)));
+    }
+
+    #[test]
+    fn stream_values_share_one_document_budget() {
+        let (mut doc, page) = base(0);
+        let count = MAX_STREAM_VALUES_TOTAL / MAX_STREAM_VALUE + 2;
+        let ids: Vec<ObjectId> = (0..count)
+            .map(|i| {
+                let v = doc.add_object(Stream::new(dictionary! {}, vec![b'x'; MAX_STREAM_VALUE]));
+                doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+                    ("FT", "Tx".into()), ("T", Object::string_literal(format!("f{i}"))), ("V", v.into()),
+                ]))
+            })
+            .collect();
+        finish(&mut doc, page, &ids, &[], vec![]);
+        let mut streams = StreamValues::new();
+        let info = read_form_with(&doc, &mut streams).unwrap().info;
+        assert!(streams.spent <= MAX_STREAM_VALUES_TOTAL, "{}", streams.spent);
+        let read = info.fields.iter().filter(|f| f.value != Value::None).count();
+        assert_eq!(read, MAX_STREAM_VALUES_TOTAL / MAX_STREAM_VALUE);
+        assert_eq!(info.fields.last().unwrap().value, Value::None);
     }
 }
