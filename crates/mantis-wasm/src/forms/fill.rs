@@ -116,12 +116,16 @@ pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Resu
 /// /NeedAppearances false: give them their generated states, /AS from the
 /// current /V.
 fn draw_bare_buttons(doc: &mut Document, field: &Field, field_ref: &FieldRef) {
-    for wref in &field_ref.widgets {
+    for (widget, wref) in field.widgets.iter().zip(&field_ref.widgets) {
         let Some(generated) = &wref.generated_state else {
             continue;
         };
-        add_button_states(doc, wref.obj, &wref.da, generated.as_bytes(), field.kind == FieldKind::Radio);
-        let on = field_ref.value_name.as_deref() == Some(generated.as_bytes());
+        if widget.hidden {
+            continue;
+        }
+        let drawn = add_button_states(doc, wref.obj, &wref.da, generated.as_bytes(), field.kind == FieldKind::Radio);
+        // Never name a state that has no appearance.
+        let on = drawn && field_ref.value_name.as_deref() == Some(generated.as_bytes());
         if let Ok(dict) = doc.get_dictionary_mut(wref.obj) {
             dict.set("AS", Object::Name(if on { generated.as_bytes().to_vec() } else { b"Off".to_vec() }));
         }
@@ -343,8 +347,8 @@ fn apply(doc: &mut Document, field: &Field, field_ref: &FieldRef, change: Change
             for wref in &field_ref.widgets {
                 let matches = if let Some(generated) = &wref.generated_state {
                     // Every widget without an on appearance gets its states, on or off.
-                    add_button_states(doc, wref.obj, &wref.da, generated.as_bytes(), field.kind == FieldKind::Radio);
-                    state.as_deref() == Some(generated.as_bytes())
+                    let drawn = add_button_states(doc, wref.obj, &wref.da, generated.as_bytes(), field.kind == FieldKind::Radio);
+                    drawn && state.as_deref() == Some(generated.as_bytes())
                 } else {
                     state.is_some() && wref.on_state == state
                 };
@@ -475,9 +479,10 @@ fn set_appearance(
 /// New /AP for a button widget without an "on" appearance: the frame
 /// (/MK /BG and /BC) in both states, plus a check mark (checkbox) or a
 /// filled dot (radio) for `on_name`.
-fn add_button_states(doc: &mut Document, widget: ObjectId, da: &DefaultAppearance, on_name: &[u8], radio: bool) {
+/// False (nothing written) when the widget has no usable /Rect.
+fn add_button_states(doc: &mut Document, widget: ObjectId, da: &DefaultAppearance, on_name: &[u8], radio: bool) -> bool {
     let Some((frame, matrix)) = doc.get_dictionary(widget).ok().and_then(|w| widget_frame(doc, w)) else {
-        return;
+        return false;
     };
     let mut no_fonts = HashMap::new();
     let on_content = if radio {
@@ -496,6 +501,7 @@ fn add_button_states(doc: &mut Document, widget: ObjectId, da: &DefaultAppearanc
     if let Ok(dict) = doc.get_dictionary_mut(widget) {
         dict.set("AP", dictionary! { "N" => states });
     }
+    true
 }
 
 /// /NeedAppearances false (every changed widget has our appearance, the
@@ -1018,5 +1024,25 @@ mod tests {
         // The field values are untouched.
         assert_eq!(dict(&doc, field).get(b"V").unwrap(), &Object::Name(b"On2".to_vec()));
         assert!(!dict(&doc, unchecked).has(b"V"));
+    }
+
+    #[test]
+    fn bare_buttons_hidden_or_without_rect_get_no_state() {
+        let (mut doc, page) = base(0);
+        let hidden = doc.add_object(with(widget(page, [0, 0, 10, 10]), vec![
+            ("FT", "Btn".into()), ("T", Object::string_literal("h")), ("V", "Yes".into()), ("F", 2.into()),
+        ]));
+        let flat = doc.add_object(with(widget(page, [0, 0, 0, 10]), vec![
+            ("FT", "Btn".into()), ("T", Object::string_literal("flat")), ("V", "Yes".into()),
+        ]));
+        let changed = doc.add_object(with(widget(page, [5, 5, 5, 20]), vec![("FT", "Btn".into()), ("T", Object::string_literal("c"))]));
+        finish(&mut doc, page, &[hidden, flat, changed], &[hidden, flat, changed], vec![]);
+        let hidden_before = dict(&doc, hidden).clone();
+        fill_document(&mut doc, &[(2, Value::Names(vec!["Yes".into()]))]).unwrap();
+        assert_eq!(dict(&doc, hidden), &hidden_before);
+        for w in [flat, changed] {
+            assert!(!dict(&doc, w).has(b"AP"));
+            assert_eq!(dict(&doc, w).get(b"AS").unwrap(), &Object::Name(b"Off".to_vec()));
+        }
     }
 }

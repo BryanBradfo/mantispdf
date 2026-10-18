@@ -79,10 +79,11 @@ fn form_objects(doc: &Document) -> Result<HashSet<ObjectId>, String> {
 }
 
 /// An action, or a chain of them (/Next: one action or an array), that runs
-/// JavaScript somewhere. Bounded and cycle-safe.
+/// JavaScript somewhere. Cycle-safe; a chain deeper than `MAX_DEPTH` counts
+/// as running JavaScript (it cannot be cleared).
 fn runs_javascript(doc: &Document, action: &Object, seen: &mut HashSet<ObjectId>, depth: usize) -> bool {
     if depth > MAX_DEPTH {
-        return false;
+        return true;
     }
     if let Object::Reference(id) = action
         && !seen.insert(*id)
@@ -170,7 +171,7 @@ pub(crate) fn flatten_document(doc: &mut Document) -> Result<(), String> {
             .ok()
             .and_then(|c| c.get(b"AcroForm").ok())
             .and_then(|f| f.as_reference().ok());
-        if let Some(id) = form_ref {
+        if let Some(id) = form_ref.filter(|id| !structure.contains(id)) {
             doc.objects.remove(&id);
         }
         if let Ok(catalog) = doc.get_dictionary_mut(root) {
@@ -463,7 +464,18 @@ mod tests {
         for _ in 0..40 {
             deep = Object::Dictionary(dictionary! { "S" => "GoTo", "Next" => deep });
         }
-        assert!(!runs_javascript(&doc, &deep, &mut HashSet::new(), 0));
+        // Too deep to clear: treated as a script.
+        assert!(runs_javascript(&doc, &deep, &mut HashSet::new(), 0));
+        let mut plain = Object::Dictionary(dictionary! { "S" => "GoTo" });
+        for _ in 0..40 {
+            plain = Object::Dictionary(dictionary! { "S" => "GoTo", "Next" => plain });
+        }
+        assert!(runs_javascript(&doc, &plain, &mut HashSet::new(), 0));
+        let mut shallow = Object::Dictionary(dictionary! { "S" => "GoTo" });
+        for _ in 0..10 {
+            shallow = Object::Dictionary(dictionary! { "S" => "GoTo", "Next" => shallow });
+        }
+        assert!(!runs_javascript(&doc, &shallow, &mut HashSet::new(), 0));
         assert!(runs_javascript(&doc, &Object::Array(vec![Object::Null, js("y")]), &mut HashSet::new(), 0));
     }
 
@@ -484,5 +496,24 @@ mod tests {
         let m: Vec<f32> = ap.dict.get(b"Matrix").unwrap().as_array().unwrap().iter().map(|v| v.as_float().unwrap()).collect();
         assert_eq!(m, vec![0.0, 1.0, -1.0, 0.0, 20.0, 0.0]);
         assert!(String::from_utf8_lossy(&ap.content).contains("(Up) Tj"));
+    }
+
+    #[test]
+    fn acroform_pointing_at_the_structure_never_deletes_it() {
+        for target in ["pages", "catalog"] {
+            let (mut doc, page) = base(0);
+            let ap = ap_stream(&mut doc, [0, 0, 10, 10], None, b"");
+            let w = text_widget(&mut doc, page, "a", [0, 0, 10, 10], ap, vec![]);
+            finish(&mut doc, page, &[w], &[w], vec![]);
+            let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+            let pages_id = page_dict(&doc, page).get(b"Parent").unwrap().as_reference().unwrap();
+            let id = if target == "pages" { pages_id } else { root };
+            doc.get_dictionary_mut(root).unwrap().set("AcroForm", id);
+            flatten_document(&mut doc).unwrap();
+            assert!(doc.get_object(root).is_ok() && doc.get_object(pages_id).is_ok(), "{target}");
+            assert!(!doc.get_dictionary(root).unwrap().has(b"AcroForm"), "{target}");
+            let saved = save_pdf(&mut doc).unwrap();
+            assert_eq!(load_pdf(&saved).unwrap().get_pages().len(), 1, "{target}");
+        }
     }
 }
