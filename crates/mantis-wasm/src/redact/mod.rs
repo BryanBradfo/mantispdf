@@ -69,6 +69,9 @@ pub(crate) struct RedactSummary {
     pub(crate) pages_redacted: Vec<u32>,
     /// Pages replaced by their raster.
     pub(crate) pages_rasterized: Vec<u32>,
+    /// Pages whose fill was widened to cover removed text reaching past an
+    /// area ("Box widened to cover removed text on page N").
+    pub(crate) pages_widened: Vec<u32>,
     pub(crate) glyphs_removed: usize,
     pub(crate) paths_removed: usize,
     pub(crate) images_redacted: usize,
@@ -185,7 +188,7 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
                 let page = doc.get_pages()[&number];
                 created.push(raster::rasterize_page(&mut doc, page, raster, &by_page[&number], job.fill)?);
                 summary.pages_rasterized.push(number);
-                checks.push((number, rects, true));
+                checks.push((number, rects, 0, true));
                 continue;
             }
         };
@@ -197,7 +200,10 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
         summary.forms_redacted += report.forms_redacted;
         summary.annotations_removed += report.annotations_removed;
         created.extend(report.created_images);
-        checks.push((number, rects, false));
+        if !report.uncovered.is_empty() {
+            summary.pages_widened.push(number);
+        }
+        checks.push((number, rects, report.uncovered.len(), false));
     }
     // Images this job drew carry a random tag through the rebuild, so
     // verification can tell them from any source image by identity.
@@ -219,12 +225,12 @@ pub(crate) fn redact(pdf: &[u8], mut job: RedactJob) -> Result<(Vec<u8>, RedactS
     // Verify what a reader will see: the saved file, parsed again.
     let saved = load_pdf(&bytes)?;
     let saved_pages = saved.get_pages();
-    for (number, rects, rasterized) in checks {
+    for (number, rects, extra_boxes, rasterized) in checks {
         let ok = saved_pages.get(&number).is_some_and(|&page| {
             if rasterized {
                 verify::verify_raster_page(&saved, page, &tag)
             } else {
-                verify::verify_page(&saved, page, &rects, &tag)
+                verify::verify_page(&saved, page, &rects, rects.len() + extra_boxes, &tag)
             }
         });
         if !ok {
@@ -359,7 +365,7 @@ impl<'a> PageEdit<'a> {
 }
 
 /// What `redact_content` removed.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Report {
     pub(crate) glyphs_removed: usize,
     pub(crate) paths_removed: usize,
@@ -375,11 +381,20 @@ pub(crate) struct Report {
     pub(crate) annotations_removed: usize,
     /// Image objects this redaction drew (verification knows them by id).
     pub(crate) created_images: Vec<lopdf::ObjectId>,
+    /// Boxes (user space) of removed text not entirely inside an area: the
+    /// fill must cover them too.
+    pub(crate) uncovered: Vec<Rect>,
     /// /Properties names of marked-content sequences around removed content:
     /// the page needs private copies of them without /ActualText, /Alt and
     /// /E (page assembly does that; inline property lists are rewritten
     /// here).
     pub(crate) named_properties: BTreeSet<Vec<u8>>,
+}
+
+/// True when `inner` lies inside `outer` (up to rounding).
+fn contains(outer: &Rect, inner: &Rect) -> bool {
+    const EPS: f64 = 1e-6;
+    inner.x0 >= outer.x0 - EPS && inner.y0 >= outer.y0 - EPS && inner.x1 <= outer.x1 + EPS && inner.y1 <= outer.y1 + EPS
 }
 
 /// The edit for an image placement under a rect.
@@ -442,6 +457,7 @@ impl Report {
         self.forms_redacted += other.forms_redacted;
         self.annotations_removed += other.annotations_removed;
         self.created_images.extend(other.created_images);
+        self.uncovered.extend(other.uncovered);
     }
 }
 
@@ -553,6 +569,8 @@ pub(crate) fn redact_content(
     }
     let edits = text::rewrite_text(ops, &glyphs)?;
     report.glyphs_removed += edits.removed;
+    // Removed text must never be left without a box over it.
+    report.uncovered.extend(edits.removed_boxes.iter().copied().filter(|b| !rects.iter().any(|r| contains(r, b))));
     replaced.extend(edits.replaced);
     // Every glyph of a cut show counts as touched (a whole show may go).
     touched.extend(glyphs.iter().filter(|(g, _)| cut_shows.contains(&g.op_index)).filter_map(|(g, _)| g.marked));

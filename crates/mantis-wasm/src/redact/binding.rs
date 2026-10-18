@@ -139,12 +139,13 @@ pub(crate) fn plan_to_js(plan: &[PageStatus]) -> JsValue {
         .into()
 }
 
-/// `{ bytes, pagesRedacted, pagesRasterized, glyphsRemoved, ... }`.
+/// `{ bytes, pagesRedacted, pagesRasterized, widenedPages, glyphsRemoved, ... }`.
 pub(crate) fn result_to_js(bytes: &[u8], summary: &RedactSummary) -> JsValue {
     let obj = Object::new();
     set(&obj, "bytes", &Uint8Array::from(bytes).into());
     set(&obj, "pagesRedacted", &numbers(&summary.pages_redacted));
     set(&obj, "pagesRasterized", &numbers(&summary.pages_rasterized));
+    set(&obj, "widenedPages", &numbers(&summary.pages_widened));
     let count = |n: usize| JsValue::from_f64(n as f64);
     set(&obj, "glyphsRemoved", &count(summary.glyphs_removed));
     set(&obj, "pathsRemoved", &count(summary.paths_removed));

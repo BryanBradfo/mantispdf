@@ -51,6 +51,7 @@ declare module "mantis-wasm" {
   export function fill_form(pdf_bytes: Uint8Array, values: object, flatten: boolean): Uint8Array;
   /** Per page with areas: null reason, or why it needs a raster. Shapes in `lib/redact/toJob`. */
   export function redact_plan(pdf_bytes: Uint8Array, rects: object): import("./lib/redact/toJob").PageStatusWire[];
+  /** The redacted bytes and summary, `widenedPages` included (pages whose fill box was widened). */
   export function redact(pdf_bytes: Uint8Array, job: object): import("./lib/redact/toJob").RedactResultWire;
   export function redact_search(pdf_bytes: Uint8Array, query: string, options: object): import("./lib/redact/toJob").RedactSearchWire;
   export function crop_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;

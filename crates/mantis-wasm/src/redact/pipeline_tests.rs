@@ -870,3 +870,45 @@ fn the_delivered_file_is_checked_again() {
     doc.get_dictionary_mut(page).unwrap().set("Thumb", tagged);
     assert!(check_delivered(&bytes(doc), 3).is_err(), "tag left");
 }
+
+/// The painted paths of `page`'s output (fill boxes and anything else).
+fn painted_boxes(out: &Document, page: ObjectId) -> Vec<Rect> {
+    super::verify::page_events(out, page)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| match e {
+            super::interp::Event::Path(p) if p.painted => p.bbox_user,
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn removed_text_poking_out_of_its_area_gets_a_wider_box() {
+    // "World" is at x 125.56..151.67 (Helvetica 10 at y 700): an area over
+    // its middle only removes W..d but covers them only in part.
+    let (out, summary) = run(fixture(), vec![area(1, 130.0, 700.0, 10.0, 3.0)]);
+    let page = page_ids(&out)[0];
+    assert_eq!(summary.pages_widened, vec![1]);
+    let source = bytes_doc(fixture());
+    let first = page_ids(&source)[0];
+    let removed: Vec<Glyph> = super::verify::page_glyphs(&source, first).unwrap().into_iter().filter(|g| {
+        let b = g.box_user.bbox();
+        b.x1 > 130.0 && b.x0 < 140.0 && b.y1 > 700.0 && b.y0 < 703.0
+    }).collect();
+    assert!(!removed.is_empty());
+    let boxes = painted_boxes(&out, page);
+    for g in removed {
+        let b = g.box_user.bbox();
+        let covered = boxes.iter().any(|r| r.x0 <= b.x0 + 1e-3 && r.y0 <= b.y0 + 1e-3 && r.x1 >= b.x1 - 1e-3 && r.y1 >= b.y1 - 1e-3);
+        assert!(covered, "glyph {} at {b:?} has no box over it: {boxes:?}", g.code);
+    }
+    // An area that covers whole glyphs is not widened.
+    let (_, summary) = run(fixture(), vec![area(1, 90.0, 690.0, 110.0, 25.0)]);
+    assert!(summary.pages_widened.is_empty());
+}
+
+/// Glyphs of page `n` (1-based) of a document, read through a save.
+fn bytes_doc(doc: Document) -> Document {
+    load_pdf(&bytes(doc)).unwrap()
+}

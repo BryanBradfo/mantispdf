@@ -157,8 +157,9 @@ fn box_ops(ops: &[Operation], boxes: usize) -> Option<std::ops::Range<usize>> {
 /// content lies under any of `rects`: no glyph, painted path, shading or
 /// image, no Pattern painting, no soft mask group. Only what this job drew
 /// is exempt, by identity: the fill boxes at the end of the page content
-/// and the images carrying `tag`. Content that cannot be interpreted fails.
-pub(crate) fn verify_page(doc: &Document, page: ObjectId, rects: &[Rect], tag: &[u8]) -> bool {
+/// (`boxes` of them: one per area, plus any widened) and the images
+/// carrying `tag`. Content that cannot be interpreted fails.
+pub(crate) fn verify_page(doc: &Document, page: ObjectId, rects: &[Rect], boxes: usize, tag: &[u8]) -> bool {
     let Ok((seen, ops)) = page_seen(doc, page, tag) else {
         return false;
     };
@@ -174,7 +175,7 @@ pub(crate) fn verify_page(doc: &Document, page: ObjectId, rects: &[Rect], tag: &
             return false;
         }
     }
-    let boxes = box_ops(&ops, rects.len());
+    let boxes = box_ops(&ops, boxes);
     let is_box = |s: &Seen| match (&s.event, &boxes) {
         (Event::Path(p), Some(range)) => s.top && range.contains(&p.op_range.start) && p.op_range.end <= range.end && p.op_range.len() == 2,
         _ => false,

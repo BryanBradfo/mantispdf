@@ -68,7 +68,11 @@ fn edit_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, bud
     edit.pixels = pixels;
     let (new_ops, mut report) = redact_content(&mut edit, &ops, &events, rects)?;
     report.annotations_removed = drop_annotations(doc, page, rects);
-    let content = doc.add_object(flate_stream(Dictionary::new(), &with_boxes(new_ops, rects, fill)));
+    // Removed text reaching past its area gets its own box too: the reader
+    // must never lose text with no box over it.
+    report.uncovered = merge_boxes(std::mem::take(&mut report.uncovered));
+    let boxes: Vec<Rect> = rects.iter().chain(&report.uncovered).copied().collect();
+    let content = doc.add_object(flate_stream(Dictionary::new(), &with_boxes(new_ops, &boxes, fill)));
     let dict = doc.get_dictionary_mut(page).map_err(|_| Unsupported::new("page not found"))?;
     dict.set("Contents", content);
     dict.set("Resources", Object::Dictionary(resources));
@@ -76,6 +80,28 @@ fn edit_page(doc: &mut Document, page: ObjectId, rects: &[Rect], fill: Fill, bud
         dict.remove(key);
     }
     Ok(report)
+}
+
+/// `boxes` with every two that overlap or touch joined into their union,
+/// repeatedly (few in practice: the glyphs at the edges of areas).
+fn merge_boxes(mut boxes: Vec<Rect>) -> Vec<Rect> {
+    let touch = |a: &Rect, b: &Rect| a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1;
+    let mut merged = true;
+    while merged {
+        merged = false;
+        let mut out: Vec<Rect> = Vec::with_capacity(boxes.len());
+        for b in boxes {
+            match out.iter_mut().find(|o| touch(o, &b)) {
+                Some(o) => {
+                    *o = Rect { x0: o.x0.min(b.x0), y0: o.y0.min(b.y0), x1: o.x1.max(b.x1), y1: o.y1.max(b.y1) };
+                    merged = true;
+                }
+                None => out.push(b),
+            }
+        }
+        boxes = out;
+    }
+    boxes
 }
 
 /// Content bytes of `ops` followed by a box of the fill colour over each

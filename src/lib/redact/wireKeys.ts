@@ -13,6 +13,7 @@ export const RESULT_KEYS = [
   "bytes",
   "pagesRedacted",
   "pagesRasterized",
+  "widenedPages",
   "glyphsRemoved",
   "pathsRemoved",
   "imagesRedacted",
