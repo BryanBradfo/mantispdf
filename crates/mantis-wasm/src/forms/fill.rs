@@ -24,7 +24,7 @@ use std::collections::{HashMap, HashSet};
 /// PDF, with the fields baked into the pages when `flatten` is set.
 pub fn fill_form(pdf: &[u8], values: &[(u32, Value)], flatten: bool) -> Result<Vec<u8>, String> {
     let mut doc = load_pdf(pdf)?;
-    fill_document(&mut doc, values)?;
+    fill(&mut doc, values, flatten)?;
     if flatten {
         super::flatten::flatten_document(&mut doc)?;
     }
@@ -50,6 +50,12 @@ enum Shown {
 }
 
 pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Result<(), String> {
+    fill(doc, values, false)
+}
+
+/// `for_flatten`: a value our fonts cannot draw and that has no appearance
+/// to keep is an error (flattening would drop it).
+fn fill(doc: &mut Document, values: &[(u32, Value)], for_flatten: bool) -> Result<(), String> {
     let tree = read_form(doc)?;
     let mut seen = HashSet::new();
     let mut changes = Vec::new();
@@ -112,6 +118,12 @@ pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Resu
         if !shown_in_standard_fonts(field, &shown) {
             // Our fonts cannot show it: keep the file's appearances, and let
             // viewers build the missing ones with the field's own fonts.
+            if missing && for_flatten {
+                return Err(format!(
+                    "Cannot flatten field \"{}\": its value has characters the standard PDF fonts cannot show",
+                    field.label
+                ));
+            }
             viewers_must_rebuild |= missing;
             continue;
         }
@@ -1132,5 +1144,20 @@ mod tests {
             let content = String::from_utf8_lossy(&normal_ap(&doc, w).1.content).into_owned();
             assert!(!content.contains(" Tj"), "{content}");
         }
+    }
+
+    #[test]
+    fn flatten_refuses_a_value_it_cannot_draw() {
+        let (mut doc, page) = base(0);
+        let mut v = vec![0xFE, 0xFF];
+        for u in "日本".encode_utf16() {
+            v.extend_from_slice(&u.to_be_bytes());
+        }
+        let bare = text_field(&mut doc, page, "jp", vec![("V", Object::String(v, StringFormat::Literal)), ("TU", Object::string_literal("Japanese name"))]);
+        finish(&mut doc, page, &[bare], &[bare], vec![]);
+        let pdf = crate::pdf_util::save_pdf(&mut doc).unwrap();
+        assert!(fill_form(&pdf, &[], false).is_ok());
+        let err = fill_form(&pdf, &[], true).unwrap_err();
+        assert_eq!(err, "Cannot flatten field \"Japanese name\": its value has characters the standard PDF fonts cannot show");
     }
 }
