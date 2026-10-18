@@ -565,3 +565,26 @@ fn planning_skips_the_pixel_work() {
     let plan = redact_plan(&bytes(page_doc()), &a).unwrap();
     assert_eq!(plan, vec![PageStatus { page: 1, reason: None }]);
 }
+
+#[test]
+fn each_area_is_covered_by_a_box_of_the_fill_colour() {
+    // The page leaves a q open and a scaled CTM: the boxes must not inherit it.
+    let doc = one_page("q 2 0 0 2 0 0 cm 0 0 1 rg 10 10 5 5 re f", |_, _| {});
+    let mut j = job(vec![area(1, 300.0, 300.0, 10.0, 20.0), area(1, 100.0, 100.0, 5.0, 5.0)]);
+    j.fill = Fill::White;
+    let (out, _) = redact(&bytes(doc), &j).unwrap();
+    let out = load_pdf(&out).unwrap();
+    let page = page_ids(&out)[0];
+    let boxes: Vec<Rect> = super::verify::page_events(&out, page)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| match e {
+            super::interp::Event::Path(p) if p.painted => p.bbox_user,
+            _ => None,
+        })
+        .collect();
+    assert!(boxes.contains(&Rect { x0: 300.0, y0: 300.0, x1: 310.0, y1: 320.0 }), "{boxes:?}");
+    assert!(boxes.contains(&Rect { x0: 100.0, y0: 100.0, x1: 105.0, y1: 105.0 }), "{boxes:?}");
+    let content = String::from_utf8_lossy(&out.get_page_content(page).unwrap()).into_owned();
+    assert!(content.contains("1 1 1 rg"), "{content}");
+}

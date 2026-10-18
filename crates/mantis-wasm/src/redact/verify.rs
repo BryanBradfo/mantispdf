@@ -89,6 +89,13 @@ pub(crate) fn verify_page(doc: &Document, page: ObjectId, rects: &[Rect]) -> boo
     !events.iter().any(|e| left_under(e, rects))
 }
 
+/// True when path bounds `b` are the redaction box drawn over `r` (its
+/// coordinates went through single precision).
+fn is_box(b: &Rect, r: &Rect) -> bool {
+    let close = |a: f64, c: f64| (a - c).abs() <= 1e-4 + c.abs() * 1e-6;
+    close(b.x0, r.x0) && close(b.y0, r.y0) && close(b.x1, r.x1) && close(b.y1, r.y1)
+}
+
 /// Prefix of the names redacted images are drawn under.
 pub(crate) const REDACTED_IMAGE_PREFIX: &str = "RedactedIm";
 const REDACTED_IMAGE: &[u8] = REDACTED_IMAGE_PREFIX.as_bytes();
@@ -98,7 +105,9 @@ const REDACTED_IMAGE: &[u8] = REDACTED_IMAGE_PREFIX.as_bytes();
 fn left_under(event: &Event, rects: &[Rect]) -> bool {
     match event {
         Event::Glyph(g) => quad_hit(&g.box_user, rects),
-        Event::Path(p) => p.painted && p.bbox_user.is_some_and(|b| rects.iter().any(|r| b.overlaps(r))),
+        Event::Path(p) => {
+            p.painted && p.bbox_user.is_some_and(|b| rects.iter().any(|r| b.overlaps(r)) && !rects.iter().any(|r| is_box(&b, r)))
+        }
         Event::Shading(s) => shading_hit(s, rects),
         Event::Image(i) => {
             let redacted = matches!(&i.source, ImageSource::XObject(name) if name.starts_with(REDACTED_IMAGE));
