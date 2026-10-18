@@ -59,6 +59,8 @@ export type ToWorker =
 export type SuccessPayload =
   | { kind: "split"; parts: PdfPart[] }
   | { kind: "merge"; bytes: Uint8Array }
+  /** Bytes that are not a merge result (`redact-prepare`). */
+  | { kind: "bytes"; bytes: Uint8Array }
   | { kind: "count"; count: number }
   | { kind: "buffer"; result: ArrayBuffer }
   | { kind: "sanitized"; bytes: Uint8Array; report: number[] }

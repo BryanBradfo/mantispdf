@@ -69,6 +69,10 @@ const asBytes = (p: SuccessPayload): Uint8Array => {
   if (p.kind !== "merge") throw new Error("Unexpected worker payload");
   return p.bytes;
 };
+const asPlainBytes = (p: SuccessPayload): Uint8Array => {
+  if (p.kind !== "bytes") throw new Error("Unexpected worker payload");
+  return p.bytes;
+};
 const asCount = (p: SuccessPayload): number => {
   if (p.kind !== "count") throw new Error("Unexpected worker payload");
   return p.count;
@@ -343,7 +347,7 @@ export function usePdfWorker() {
    * bytes rasters must be rendered from.
    */
   const redactPrepare = useCallback(
-    (pdfBytes: Uint8Array): Promise<Uint8Array> => run(null, (id) => ({ type: "redact-prepare", id, pdfBytes }), asBytes),
+    (pdfBytes: Uint8Array): Promise<Uint8Array> => run(null, (id) => ({ type: "redact-prepare", id, pdfBytes }), asPlainBytes),
     [run],
   );
 

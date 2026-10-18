@@ -164,7 +164,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       case "redact-prepare": {
         const bytes = redact_prepare(msg.pdfBytes);
         // A fresh copy out of WASM memory: hand it over instead of cloning.
-        postSuccess(msg.id, { kind: "merge", bytes }, [bytes.buffer as ArrayBuffer]);
+        postSuccess(msg.id, { kind: "bytes", bytes }, [bytes.buffer as ArrayBuffer]);
         break;
       }
 
