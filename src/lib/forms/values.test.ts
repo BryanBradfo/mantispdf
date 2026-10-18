@@ -5,7 +5,6 @@ import {
   blockingProblem,
   choiceOptions,
   comboValueFor,
-  hasFilledSignature,
   isEmpty,
   missingRequired,
   radioLabel,
@@ -187,24 +186,40 @@ describe("download checks", () => {
     expect(missingRequired(fields, s).map((f) => f.label)).toEqual(["A"]);
   });
 
-  it("names the first field the engine would refuse", () => {
-    const fields = [
-      named(0, "Name"),
-      named(1, "Code", { kind: { kind: "text", multiline: false, comb: false, maxLen: 2, password: false } }),
-    ];
-    expect(blockingProblem(fields, state([[0, text("ok")], [1, text("ok")]]))).toBeNull();
-    expect(blockingProblem(fields, state([[0, text("日")], [1, text("long")]]))).toBe(
+  /** The file's values, then the edits on top. */
+  const edited = (original: [number, FormValue][], changes: [number, FormValue][]) => {
+    const base = new Map(original);
+    return { original: base, values: new Map([...base, ...changes]) };
+  };
+  const fields = [
+    named(0, "Name"),
+    named(1, "Code", { kind: { kind: "text", multiline: false, comb: false, maxLen: 2, password: false } }),
+  ];
+  const file: [number, FormValue][] = [
+    [0, text("")],
+    [1, text("")],
+  ];
+
+  it("names the first changed field the engine would refuse", () => {
+    expect(blockingProblem(fields, edited(file, [[0, text("ok")], [1, text("ok")]]))).toBeNull();
+    expect(blockingProblem(fields, edited(file, [[0, text("日")], [1, text("long")]]))).toBe(
       'Characters not supported by the standard PDF fonts: 日 (field "Name").',
     );
-    expect(blockingProblem(fields, state([[0, text("ok")], [1, text("long")]]))).toBe(
+    expect(blockingProblem(fields, edited(file, [[0, text("ok")], [1, text("long")]]))).toBe(
       'This value is longer than the field allows (2 characters). (field "Code")',
     );
   });
 
-  it("spots a signed signature field", () => {
-    const sig = (value: FormValue) => named(0, "Sig", { kind: { kind: "signature" }, value });
-    expect(hasFilledSignature([sig({ kind: "none" })])).toBe(false);
-    expect(hasFilledSignature([sig(text("signed"))])).toBe(true);
+  it("ignores values left as the file has them (the engine keeps them as they are)", () => {
+    const fromFile: [number, FormValue][] = [
+      [0, text("日本語")],
+      [1, text("too long")],
+    ];
+    expect(blockingProblem(fields, edited(fromFile, []))).toBeNull();
+    // Editing one of them makes it count again.
+    expect(blockingProblem(fields, edited(fromFile, [[1, text("still long")]]))).toBe(
+      'This value is longer than the field allows (2 characters). (field "Code")',
+    );
   });
 });
 

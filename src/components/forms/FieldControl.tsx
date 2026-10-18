@@ -307,6 +307,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
         <div style={frame} className="flex items-center justify-center border border-dashed border-sky-500 bg-sky-50/60 text-center">
           {/* A new tab: leaving this page would lose the values typed so far. */}
           <Link
+            {...focusTarget}
             to="/sign"
             target="_blank"
             rel="noopener"

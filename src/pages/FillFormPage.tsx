@@ -9,7 +9,7 @@ import FieldList, { listedFields } from "../components/forms/FieldList";
 import FormCanvas, { canvasControls } from "../components/forms/FormCanvas";
 import { dirtyIds, initialFormState, isDrawn, resetForm, setValue, type FormField, type FormInfo, type FormState, type FormValue } from "../lib/forms/model";
 import { tabOrder } from "../lib/forms/tabOrder";
-import { blockingProblem, hasFilledSignature, missingRequired } from "../lib/forms/values";
+import { blockingProblem, missingRequired } from "../lib/forms/values";
 import { toWire } from "../lib/forms/toWire";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
@@ -50,8 +50,9 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
   const [missing, setMissing] = useState<FormField[] | null>(null);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
-  // The engine's flag covers signed fields and document-level signatures (/Perms UR3, DocMDP).
-  const signed = useMemo(() => form.signed || hasFilledSignature(form.fields), [form]);
+  // The engine's flag covers signed fields and document-level signatures (/Perms UR3, DocMDP);
+  // list_form never reports a signature field's value.
+  const signed = form.signed;
 
   const pageSize = sizes[page - 1] ?? null;
   const pagesWithFields = useMemo(
@@ -200,7 +201,7 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
 
       {signed && (
         <p role="note" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-[#1f1a0a] dark:text-amber-200">
-          Filling this form removes its digital signatures.
+          Filling this form invalidates its digital signatures and usage rights.
         </p>
       )}
 

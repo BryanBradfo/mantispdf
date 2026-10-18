@@ -1,6 +1,6 @@
 /** Reading and changing field values for the form controls (page overlay and side list). */
 import { unsupportedChars, unsupportedMessage } from "../editor/afm";
-import { NO_VALUE, valueOf, type FormField, type FormOption, type FormState, type FormValue } from "./model";
+import { NO_VALUE, isDirty, valueOf, type FormField, type FormOption, type FormState, type FormValue } from "./model";
 
 /** Engine limits the UI enforces (`MAX_VALUE_CHARS` in crates/mantis-wasm/src/forms/mod.rs). */
 export const FORM_LIMITS = { valueChars: 20000 } as const;
@@ -96,9 +96,14 @@ export function missingRequired(fields: readonly FormField[], state: FormState):
   );
 }
 
-/** The first value the engine would refuse, as a message naming its field, or null. */
+/**
+ * The first changed value the engine would refuse, as a message naming its field, or null.
+ * Values left as the file has them are not checked: a non-flattened fill keeps them untouched
+ * (flattening refuses them itself, and the engine's error names the field).
+ */
 export function blockingProblem(fields: readonly FormField[], state: FormState): string | null {
   for (const f of fields) {
+    if (!isDirty(state, f.id)) continue;
     const value = valueOf(state, f.id);
     const name = f.label || f.name;
     const bad = unsupportedIn(f, value);
@@ -108,7 +113,3 @@ export function blockingProblem(fields: readonly FormField[], state: FormState):
   }
   return null;
 }
-
-/** A signature field already signed: filling the form invalidates digital signatures. */
-export const hasFilledSignature = (fields: readonly FormField[]): boolean =>
-  fields.some((f) => f.kind.kind === "signature" && !isEmpty(f.value));
