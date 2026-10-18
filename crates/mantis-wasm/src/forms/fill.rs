@@ -134,7 +134,7 @@ fn draw_bare_buttons(doc: &mut Document, field: &Field, field_ref: &FieldRef) {
 
 /// Every character the widgets would show is WinAnsi (line breaks aside).
 fn shown_in_standard_fonts(field: &Field, shown: &Shown) -> bool {
-    let ok = |text: &str| text.chars().all(|c| matches!(c, '\r' | '\n') || winansi_byte(c).is_some());
+    let ok = |text: &str| text.chars().all(|c| matches!(c, '\r' | '\n' | '\t') || winansi_byte(c).is_some());
     match shown {
         Shown::Text(t) => ok(t),
         Shown::List(selected) => selected.iter().all(|&i| field.options.get(i).is_none_or(|(_, d)| ok(d))),
@@ -389,7 +389,7 @@ fn draw_field(
         _ => Layout::Single,
     };
     let displays: Vec<String> = match shown {
-        Shown::List(_) => field.options.iter().map(|(_, d)| d.clone()).collect(),
+        Shown::List(_) => field.options.iter().map(|(_, d)| drawn_text(d)).collect(),
         Shown::Text(_) => Vec::new(),
     };
     for &i in only {
@@ -1077,5 +1077,22 @@ mod tests {
         assert!(String::from_utf8_lossy(&normal_ap(&doc, combo).1.content).contains("(f g) Tj"));
         // An unchanged value with a tab gets an appearance too.
         assert!(String::from_utf8_lossy(&normal_ap(&doc, kept).1.content).contains("(x y) Tj"));
+    }
+
+    #[test]
+    fn list_option_tabs_are_drawn_as_spaces() {
+        let (mut doc, page) = base(0);
+        let opt = Object::Array(vec![
+            Object::Array(vec![Object::string_literal("a"), Object::string_literal("Red\tapple")]),
+            Object::string_literal("b"),
+        ]);
+        let list = doc.add_object(with(widget(page, [0, 0, 100, 60]), vec![
+            ("FT", "Ch".into()), ("T", Object::string_literal("l")), ("Opt", opt), ("V", Object::string_literal("a")),
+        ]));
+        finish(&mut doc, page, &[list], &[list], vec![]);
+        fill_document(&mut doc, &[]).unwrap();
+        assert!(String::from_utf8_lossy(&normal_ap(&doc, list).1.content).contains("(Red apple) Tj"));
+        fill_document(&mut doc, &[(0, Value::Names(vec!["b".into()]))]).unwrap();
+        assert!(String::from_utf8_lossy(&normal_ap(&doc, list).1.content).contains("(Red apple) Tj"));
     }
 }
