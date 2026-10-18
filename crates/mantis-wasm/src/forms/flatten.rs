@@ -1,6 +1,7 @@
 //! Flatten a form: every visible widget's normal appearance (the state its
 //! /AS names) becomes page content, then widgets, fields, /AcroForm and
-//! /XFA are removed. Other annotations stay.
+//! /XFA are removed, with the document scripts that drove the fields.
+//! Other annotations stay.
 
 use super::MAX_DEPTH;
 use super::tree::read_form;
@@ -77,6 +78,57 @@ fn form_objects(doc: &Document) -> Result<HashSet<ObjectId>, String> {
     Ok(objects)
 }
 
+/// An action, or a chain of them (/Next: one action or an array), that runs
+/// JavaScript somewhere. Bounded and cycle-safe.
+fn runs_javascript(doc: &Document, action: &Object, seen: &mut HashSet<ObjectId>, depth: usize) -> bool {
+    if depth > MAX_DEPTH {
+        return false;
+    }
+    if let Object::Reference(id) = action
+        && !seen.insert(*id)
+    {
+        return false;
+    }
+    match deref(doc, action) {
+        Some(Object::Dictionary(d)) => {
+            name_of(d, b"S") == Some(b"JavaScript")
+                || d.get(b"Next").is_ok_and(|next| runs_javascript(doc, next, seen, depth + 1))
+        }
+        Some(Object::Array(items)) => items.iter().any(|a| runs_javascript(doc, a, seen, depth + 1)),
+        _ => false,
+    }
+}
+
+/// Document scripts aimed at the fields that no longer exist: a JavaScript
+/// /OpenAction (or a chain holding one), /Names /JavaScript, catalog and
+/// page /AA. Everything else stays.
+fn remove_document_scripts(doc: &mut Document, root: ObjectId, pages: &[ObjectId]) {
+    let Ok(catalog) = doc.get_dictionary(root) else {
+        return;
+    };
+    let open_js = catalog.get(b"OpenAction").is_ok_and(|a| runs_javascript(doc, a, &mut HashSet::new(), 0));
+    let names_ref = catalog.get(b"Names").ok().and_then(|n| n.as_reference().ok());
+    if let Ok(catalog) = doc.get_dictionary_mut(root) {
+        if open_js {
+            catalog.remove(b"OpenAction");
+        }
+        catalog.remove(b"AA");
+        if let Ok(Object::Dictionary(names)) = catalog.get_mut(b"Names") {
+            names.remove(b"JavaScript");
+        }
+    }
+    if let Some(id) = names_ref
+        && let Ok(names) = doc.get_dictionary_mut(id)
+    {
+        names.remove(b"JavaScript");
+    }
+    for &page in pages {
+        if let Ok(dict) = doc.get_dictionary_mut(page) {
+            dict.remove(b"AA");
+        }
+    }
+}
+
 /// Flatten every widget of `doc` (filled or not) into its page.
 pub(crate) fn flatten_document(doc: &mut Document) -> Result<(), String> {
     let mut doomed = form_objects(doc)?;
@@ -125,6 +177,7 @@ pub(crate) fn flatten_document(doc: &mut Document) -> Result<(), String> {
             catalog.remove(b"AcroForm");
             catalog.remove(b"NeedsRendering");
         }
+        remove_document_scripts(doc, root, &pages);
     }
     for id in doomed.difference(&structure) {
         doc.objects.remove(id);
@@ -345,5 +398,72 @@ mod tests {
             Object::Dictionary(d) => !d.has(b"AA") && d.get(b"Subtype").ok() != Some(&Object::Name(b"Widget".to_vec())),
             _ => true,
         }));
+    }
+
+    fn js(code: &str) -> Object {
+        Object::Dictionary(dictionary! { "S" => "JavaScript", "JS" => Object::string_literal(code) })
+    }
+
+    /// A one-field form whose catalog and page carry scripts; `open` is the /OpenAction.
+    fn scripted(open: Object) -> (Document, ObjectId, ObjectId) {
+        let (mut doc, page) = base(0);
+        let ap = ap_stream(&mut doc, [0, 0, 10, 10], None, b"");
+        let w = text_widget(&mut doc, page, "a", [0, 0, 10, 10], ap, vec![]);
+        finish(&mut doc, page, &[w], &[w], vec![]);
+        let names = doc.add_object(dictionary! {
+            "JavaScript" => dictionary! { "Names" => vec![Object::string_literal("x"), js("this.getField('a')")] },
+            "Dests" => dictionary! {},
+        });
+        let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        let catalog = doc.get_dictionary_mut(root).unwrap();
+        catalog.set("OpenAction", open);
+        catalog.set("Names", names);
+        catalog.set("AA", dictionary! { "WC" => js("1") });
+        catalog.set("PageMode", "UseOutlines");
+        doc.get_dictionary_mut(page).unwrap().set("AA", dictionary! { "O" => js("2") });
+        (doc, root, page)
+    }
+
+    #[test]
+    fn flatten_removes_document_scripts_only() {
+        // Chain: GoTo then JavaScript through /Next.
+        let chain = Object::Dictionary(dictionary! {
+            "S" => "GoTo", "D" => vec![Object::Integer(0), "Fit".into()], "Next" => vec![js("app.alert(1)")],
+        });
+        let (mut doc, root, page) = scripted(chain);
+        let names = doc.get_dictionary(root).unwrap().get(b"Names").unwrap().as_reference().unwrap();
+        let mut unflattened = doc.clone();
+        flatten_document(&mut doc).unwrap();
+        let catalog = doc.get_dictionary(root).unwrap();
+        assert!(!catalog.has(b"OpenAction") && !catalog.has(b"AA"));
+        assert_eq!(catalog.get(b"PageMode").unwrap(), &Object::Name(b"UseOutlines".to_vec()));
+        let names = doc.get_dictionary(names).unwrap();
+        assert!(!names.has(b"JavaScript") && names.has(b"Dests"));
+        assert!(!page_dict(&doc, page).has(b"AA"));
+
+        // A plain destination /OpenAction stays.
+        let (mut doc, root, _) = scripted(Object::Array(vec![Object::Integer(0), "Fit".into()]));
+        flatten_document(&mut doc).unwrap();
+        assert!(doc.get_dictionary(root).unwrap().has(b"OpenAction"));
+
+        // Filling without flattening keeps them all.
+        crate::forms::fill::fill_document(&mut unflattened, &[]).unwrap();
+        let catalog = unflattened.get_dictionary(root).unwrap();
+        assert!(catalog.has(b"OpenAction") && catalog.has(b"AA"));
+        assert!(page_dict(&unflattened, page).has(b"AA"));
+    }
+
+    #[test]
+    fn script_chains_are_bounded() {
+        let (mut doc, _) = base(0);
+        let a = doc.new_object_id();
+        doc.objects.insert(a, Object::Dictionary(dictionary! { "S" => "GoTo", "Next" => a }));
+        assert!(!runs_javascript(&doc, &Object::Reference(a), &mut HashSet::new(), 0));
+        let mut deep = js("x");
+        for _ in 0..40 {
+            deep = Object::Dictionary(dictionary! { "S" => "GoTo", "Next" => deep });
+        }
+        assert!(!runs_javascript(&doc, &deep, &mut HashSet::new(), 0));
+        assert!(runs_javascript(&doc, &Object::Array(vec![Object::Null, js("y")]), &mut HashSet::new(), 0));
     }
 }
