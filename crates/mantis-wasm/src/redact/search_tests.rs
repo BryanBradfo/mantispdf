@@ -705,3 +705,46 @@ fn pages_not_fully_searched_are_never_complete() {
     assert_eq!(found.unsearched_pages, vec![1, 2]);
     assert_eq!(found.unknown_complete, Vec::<u32>::new());
 }
+
+/// Resources with a 1x1 gray image `Im1`.
+fn with_image(doc: &mut Document) -> Dictionary {
+    let image = doc.add_object(Stream::new(
+        dictionary! { "Type" => "XObject", "Subtype" => "Image", "Width" => 1, "Height" => 1, "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8 },
+        vec![0],
+    ));
+    let font = doc.add_object(helvetica());
+    dictionary! { "XObject" => dictionary! { "Im1" => image }, "Font" => dictionary! { "H" => font } }
+}
+
+#[test]
+fn pages_with_an_image_and_no_text_are_reported_textless() {
+    for (content, textless) in [
+        // A scan: an image, no glyph at all.
+        ("q 612 0 0 792 0 0 cm /Im1 Do Q", true),
+        // Text over the image: searchable.
+        ("q 612 0 0 792 0 0 cm /Im1 Do Q BT /H 12 Tf 72 700 Td (Hello) Tj ET", false),
+        // Invisible text (an OCR layer) counts as text.
+        ("q 612 0 0 792 0 0 cm /Im1 Do Q BT 3 Tr /H 12 Tf 72 700 Td (Hello) Tj ET", false),
+        // Neither: an empty page is not a scan.
+        ("0 0 10 10 re f", false),
+    ] {
+        let pdf = bytes(one_page(content, with_image));
+        for query in ["Hello", ""] {
+            let found = redact_search(&pdf, query, &opts()).unwrap();
+            assert_eq!(found.textless_pages, if textless { vec![1] } else { vec![] }, "{content} / {query:?}");
+        }
+    }
+}
+
+#[test]
+fn an_image_inside_a_form_makes_a_textless_page() {
+    let pdf = bytes(one_page("/Fm1 Do", |doc| {
+        let inner = with_image(doc);
+        let form = doc.add_object(Stream::new(
+            dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => rect_array([0, 0, 612, 792]), "Resources" => inner },
+            b"q 612 0 0 792 0 0 cm /Im1 Do Q".to_vec(),
+        ));
+        dictionary! { "XObject" => dictionary! { "Fm1" => form } }
+    }));
+    assert_eq!(redact_search(&pdf, "x", &opts()).unwrap().textless_pages, vec![1]);
+}

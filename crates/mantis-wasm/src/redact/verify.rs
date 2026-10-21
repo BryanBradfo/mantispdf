@@ -51,17 +51,29 @@ fn page_seen(doc: &Document, page: ObjectId, tag: &[u8]) -> Result<(Vec<Seen>, V
 /// Every glyph `page` draws (forms included, in drawing order), with its
 /// text when the font tells it.
 pub(crate) fn page_text_glyphs(doc: &Document, page: ObjectId, budget: &mut Budget, cache: &TextCacheRef) -> Result<Vec<super::interp::Glyph>, Unsupported> {
+    Ok(page_text_scan(doc, page, budget, cache)?.0)
+}
+
+/// `page_text_glyphs`, and whether the page (forms included) paints any image.
+pub(crate) fn page_text_scan(
+    doc: &Document,
+    page: ObjectId,
+    budget: &mut Budget,
+    cache: &TextCacheRef,
+) -> Result<(Vec<super::interp::Glyph>, bool), Unsupported> {
     let contents = doc.get_dictionary(page).ok().and_then(|d| d.get(b"Contents").ok());
     let ops = content_ops(doc, &original_contents(doc, contents), budget)?;
     let mut seen = Vec::new();
     walk(doc, &ops, page_resources(doc, page), IDENTITY, Paint::default(), &mut Vec::new(), budget, &[], Some(cache), &mut seen)?;
-    Ok(seen
+    let images = seen.iter().any(|s| matches!(s.event, Event::Image(_)));
+    let glyphs = seen
         .into_iter()
         .filter_map(|s| match s.event {
             Event::Glyph(g) => Some(g),
             _ => None,
         })
-        .collect())
+        .collect();
+    Ok((glyphs, images))
 }
 
 /// Every event of `page`, its forms included (form events in user space).

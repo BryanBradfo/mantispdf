@@ -11,7 +11,7 @@
 
 use super::interp::{Glyph, Quad, Rect};
 use super::unicode::TextCache;
-use super::verify::page_text_glyphs;
+use super::verify::page_text_scan;
 use std::cell::RefCell;
 use std::rc::Rc;
 use super::{Budget, JOB_DECODED, MAX_RECTS};
@@ -76,6 +76,9 @@ pub(crate) struct SearchResult {
     pub(crate) truncated: bool,
     /// Pages not fully searched because of that.
     pub(crate) unsearched_pages: Vec<u32>,
+    /// Pages that paint an image but no glyph at all (scans without a text
+    /// layer): search cannot find anything there; OCR can help.
+    pub(crate) textless_pages: Vec<u32>,
 }
 
 /// Characters of one page's text searched at most.
@@ -318,12 +321,15 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
         cache.borrow_mut().set_limit(decoded);
         let before = cache.borrow().charged();
         let mut budget = Budget::page(decoded);
-        let glyphs = page_text_glyphs(&doc, page, &mut budget, &cache);
+        let scanned = page_text_scan(&doc, page, &mut budget, &cache);
         decoded = budget.decoded.saturating_sub(cache.borrow().charged() - before);
-        let Ok(glyphs) = glyphs else {
+        let Ok((glyphs, images)) = scanned else {
             result.undecodable_pages.push(number);
             continue;
         };
+        if glyphs.is_empty() && images {
+            result.textless_pages.push(number);
+        }
         let Some((chars, lines)) = page_text(&glyphs, options.case_sensitive) else {
             result.undecodable_pages.push(number);
             continue;

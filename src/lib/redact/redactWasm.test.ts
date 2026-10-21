@@ -127,6 +127,16 @@ describe.skipIf(!built)("redact_search binding", () => {
     expect(found.undecodablePages).toEqual([2]);
     expect(found.truncated).toBe(false);
     expect(found.unsearchedPages).toEqual([]);
+    expect(found.textlessPages).toEqual([]);
     expect(() => search(PDF, "x", { wholeWord: false })).toThrow("Invalid redact settings: options.caseSensitive");
+  });
+
+  it("reports scanned pages without a text layer as textless", () => {
+    const search = (wasm as unknown as { redact_search: Search }).redact_search;
+    const scan = new Uint8Array(readFileSync(fileURLToPath(new URL("../../../e2e/fixtures/scan-mixed.pdf", import.meta.url))));
+    const found = search(scan, "MANTIS", { wholeWord: false, caseSensitive: false });
+    // Page 1 has real text, page 2 is only a scan image.
+    expect(found.matches).toEqual([]);
+    expect(found.textlessPages).toEqual([2]);
   });
 });

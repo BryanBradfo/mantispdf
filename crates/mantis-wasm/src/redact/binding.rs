@@ -208,5 +208,6 @@ pub(crate) fn search_to_js(result: &SearchResult) -> JsValue {
     set(&obj, "undecodablePages", &numbers(&result.undecodable_pages));
     set(&obj, "truncated", &JsValue::from_bool(result.truncated));
     set(&obj, "unsearchedPages", &numbers(&result.unsearched_pages));
+    set(&obj, "textlessPages", &numbers(&result.textless_pages));
     obj.into()
 }

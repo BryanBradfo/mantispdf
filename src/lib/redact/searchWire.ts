@@ -30,4 +30,9 @@ export interface RedactSearchResultWire extends RedactSearchWire {
    * filtered; absent (an older engine) means none.
    */
   unknownComplete?: number[];
+  /**
+   * Pages that paint an image but no glyph at all: scans without a text layer, where search
+   * cannot find anything (run OCR first).
+   */
+  textlessPages: number[];
 }
