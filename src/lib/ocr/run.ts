@@ -1,6 +1,7 @@
 /** The OCR page's pure parts: recognised words to the engine's wire, the summary, progress. */
 import type { RecognizedWord } from "./engine";
 import type { OcrLanguage } from "./languages";
+import type { PipelinePage } from "./pipeline";
 import type { OcrWordWire } from "./textLayerWire";
 
 /** Pages whose mean word confidence is below this are flagged as low quality scans. */
@@ -167,3 +168,43 @@ export function wholeDocumentText(
 ): { page: number; text: string }[] {
   return [...recognised, ...skipped].sort((a, b) => a.page - b.page);
 }
+
+/** What the page keeps of a pipeline run. */
+export interface OcrRunResult {
+  outcomes: PageOutcome[];
+  /** Pages with recognised words, for the text layer. */
+  layer: { page: number; words: OcrWordWire[] }[];
+  /** Recognised text per processed page. */
+  texts: { page: number; text: string }[];
+  /** pdf.js text of the pages skipped because they had text. */
+  skippedTexts: { page: number; text: string }[];
+  /** Pages that could not be read (render or recognition failed). */
+  failed: number[];
+}
+
+/** A pipeline run (`runPipeline`, in page order) as the page shows and downloads it. */
+export function fromPipeline(pages: readonly PipelinePage[]): OcrRunResult {
+  const r: OcrRunResult = { outcomes: [], layer: [], texts: [], skippedTexts: [], failed: [] };
+  for (const p of pages) {
+    if (p.skipped) {
+      r.outcomes.push({ page: p.page, skipped: true });
+      r.skippedTexts.push({ page: p.page, text: p.text });
+    } else if (p.failed) {
+      r.failed.push(p.page);
+    } else {
+      r.outcomes.push({ page: p.page, skipped: false, confidence: p.confidence, words: p.words.length });
+      if (p.words.length > 0) r.layer.push({ page: p.page, words: p.words });
+      r.texts.push({ page: p.page, text: p.text });
+    }
+  }
+  return r;
+}
+
+export const failedLine = (pages: readonly number[]): string =>
+  `Could not read: ${pages.length === 1 ? "page" : "pages"} ${pages.join(", ")}.`;
+
+/** Pages a second pass left alone because they already had an OCR text layer. */
+export const alreadyOcrLine = (pages: readonly number[]): string =>
+  pages.length === 1
+    ? `Page ${pages[0]} already had an OCR layer and was left as it was.`
+    : `Pages ${pages.join(", ")} already had an OCR layer and were left as they were.`;

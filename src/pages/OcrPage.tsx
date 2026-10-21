@@ -8,10 +8,24 @@ import ErrorAlert from "../components/common/ErrorAlert";
 import PageStrip from "../components/editor/PageStrip";
 import { OCR_CANCELLED, OCR_NOT_STARTED, OcrEngine, ocrWorkerCount } from "../lib/ocr/engine";
 import { OCR_LANGUAGES, defaultLanguages, type OcrLanguage } from "../lib/ocr/languages";
-import { renderPageImage, type OcrPageImage } from "../lib/ocr/render";
-import { estimateRemainingMs, formatEta, loadingLabel, pageTextFromItems, skippedLine, summarize, summaryHeadline, toggleLanguage, wholeDocumentText, wordLimitProblem, wordsToWire, type PageOutcome } from "../lib/ocr/run";
-import { exportText, hasText } from "../lib/ocr/text";
-import type { OcrPageWire } from "../lib/ocr/textLayerWire";
+import { runPipeline } from "../lib/ocr/pipeline";
+import { renderPageImage } from "../lib/ocr/render";
+import {
+  alreadyOcrLine,
+  estimateRemainingMs,
+  failedLine,
+  formatEta,
+  fromPipeline,
+  loadingLabel,
+  skippedLine,
+  summarize,
+  summaryHeadline,
+  toggleLanguage,
+  wholeDocumentText,
+  wordLimitProblem,
+  type OcrRunResult,
+} from "../lib/ocr/run";
+import { exportText } from "../lib/ocr/text";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 
@@ -34,15 +48,7 @@ interface Progress {
 }
 
 /** What one run produced. */
-interface OcrResult {
-  outcomes: PageOutcome[];
-  /** Pages with recognised words, for the text layer. */
-  layer: OcrPageWire[];
-  /** Recognised text per processed page, for the .txt export. */
-  texts: { page: number; text: string }[];
-  /** pdf.js text of the pages skipped because they had text: the .txt covers the whole document. */
-  skippedTexts: { page: number; text: string }[];
-}
+type OcrResult = OcrRunResult;
 
 interface WorkspaceProps {
   input: PdfInput<[number, number][]>;
@@ -65,6 +71,8 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
   const [result, setResult] = useState<OcrResult | null>(null);
   // After a download, leaving or starting over loses nothing (as in Compress, Merge, Split).
   const [downloaded, setDownloaded] = useState(false);
+  // Pages the text layer left alone because they already had one (a second pass).
+  const [alreadyOcr, setAlreadyOcr] = useState<number[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const engineRef = useRef<OcrEngine | null>(null);
   // Aborts the engine start too (core and model downloads).
@@ -116,6 +124,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
     abortRef.current = abort;
     const total = sizes.length;
     setDownloaded(false);
+    setAlreadyOcr([]);
     setProgress({ done: 0, recognised: 0, partial: 0, total, startedAt: Date.now(), status: loadingLabel(null) });
     const workers = ocrWorkerCount(typeof navigator === "undefined" ? undefined : navigator.hardwareConcurrency);
     let engine: OcrEngine | null = null;
@@ -130,16 +139,10 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       engineRef.current = engine;
       if (cancelledRef.current) throw new Error(CANCELLED);
       doc = await pdfjs.getDocument({ data: input.bytes.slice() }).promise;
-      const outcomes: PageOutcome[] = [];
-      const layer: OcrPageWire[] = [];
-      const texts: { page: number; text: string }[] = [];
-      const skippedTexts: { page: number; text: string }[] = [];
+      const pdf = doc;
       const startedAt = Date.now();
-      let next = 0;
       let done = 0;
       let recognisedPages = 0;
-      // One lane failing stops the others too.
-      let stop = false;
       setProgress({ done: 0, recognised: 0, partial: 0, total, startedAt, status: "Reading page 1" });
       // Progress of the pages in flight, by page number.
       const inFlight = new Map<number, number>();
@@ -148,61 +151,41 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
         for (const v of inFlight.values()) sum += v;
         setProgress((pr) => (pr ? { ...pr, partial: sum } : pr));
       };
-      const pdf = doc;
-      const eng = engine;
-      // One page at a time per worker: render, recognise, convert.
-      const lane = async () => {
-        try {
-          while (next < total && !cancelledRef.current && !stop) {
-            const n = ++next;
-            setProgress((p) => (p ? { ...p, status: `Reading page ${n}` } : p));
-            if (skipText) {
-              const p = await pdf.getPage(n);
-              const content = await p.getTextContent();
-              p.cleanup();
-              if (hasText(content.items)) {
-                outcomes.push({ page: n, skipped: true });
-                skippedTexts.push({ page: n, text: pageTextFromItems(content.items) });
-                done++;
-                setProgress((pr) => (pr ? { ...pr, done } : pr));
-                continue;
-              }
-            }
-            let image: OcrPageImage | null = await renderPageImage(pdf, n);
-            const imagePx: [number, number] = [image.width, image.height];
+      const pages = await runPipeline(
+        {
+          pageCount: total,
+          pageSize: (n) => sizes[n - 1],
+          textItems: async (n) => {
+            const p = await pdf.getPage(n);
+            const content = await p.getTextContent();
+            p.cleanup();
+            return content.items;
+          },
+          render: (n) => renderPageImage(pdf, n),
+        },
+        engine,
+        {
+          lanes: workers,
+          skipText,
+          isCancelled: () => cancelledRef.current,
+          onPageStart: (n) => {
             inFlight.set(n, 0);
-            // The render dpi (below 300 on pages capped at the pixel limit) tells tesseract the scale.
-            const job = eng.recognize(
-              image.pgm,
-              (fraction) => {
-                inFlight.set(n, fraction);
-                showPartial();
-              },
-              image.dpi,
-            );
-            // The engine copies the image: drop it now rather than hold it for the whole page.
-            image = null;
-            const recognised = await job;
-            inFlight.delete(n);
+            setProgress((pr) => (pr ? { ...pr, status: `Reading page ${n}` } : pr));
+          },
+          onPageProgress: (n, fraction) => {
+            inFlight.set(n, fraction);
             showPartial();
-            const size = sizes[n - 1];
-            const words = wordsToWire(recognised.words, imagePx, size);
-            outcomes.push({ page: n, skipped: false, confidence: recognised.confidence, words: words.length });
-            if (words.length > 0) layer.push({ page: n, words });
-            texts.push({ page: n, text: recognised.text });
+          },
+          onPageDone: (page) => {
+            inFlight.delete(page.page);
             done++;
-            recognisedPages++;
+            if (!page.skipped) recognisedPages++;
             setProgress((pr) => (pr ? { ...pr, done, recognised: recognisedPages } : pr));
-          }
-        } catch (e) {
-          stop = true;
-          throw e;
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(workers, total) }, lane));
-      if (cancelledRef.current) throw new Error(CANCELLED);
-      const byPage = (a: { page: number }, b: { page: number }) => a.page - b.page;
-      setResult({ outcomes: outcomes.sort(byPage), layer: layer.sort(byPage), texts: texts.sort(byPage), skippedTexts });
+            showPartial();
+          },
+        },
+      );
+      setResult(fromPipeline(pages));
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       if (cancelledRef.current || message === CANCELLED) return;
@@ -226,6 +209,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
 
   const downloadPdf = () => {
     if (!result) return;
+    setAlreadyOcr([]);
     const tooMany = wordLimitProblem(result.layer);
     if (tooMany) {
       setError(tooMany);
@@ -234,7 +218,8 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
     void run(
       () => addTextLayer(input.bytes, result.layer),
       (out) => {
-        downloadBlob(out, `${baseName(input.file)}_ocr.pdf`);
+        downloadBlob(out.bytes, `${baseName(input.file)}_ocr.pdf`);
+        setAlreadyOcr(out.alreadyOcrPages);
         setDownloaded(true);
       },
     );
@@ -367,6 +352,8 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
                 No text found: {summary.noText.length === 1 ? "page" : "pages"} {summary.noText.join(", ")}.
               </li>
             )}
+            {result.failed.length > 0 && <li>{failedLine(result.failed)}</li>}
+            {alreadyOcr.length > 0 && <li>{alreadyOcrLine(alreadyOcr)}</li>}
           </ul>
         </div>
       )}

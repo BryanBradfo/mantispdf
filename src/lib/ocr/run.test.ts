@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RecognizedWord } from "./engine";
-import { LOW_QUALITY, SKIP_HINT, loadingLabel, pageTextFromItems, skippedLine, summaryHeadline, wholeDocumentText, MAX_WORDS_PER_PAGE, MAX_WORDS_TOTAL, estimateRemainingMs, formatEta, summarize, toggleLanguage, wordLimitProblem, wordsToWire } from "./run";
+import { LOW_QUALITY, SKIP_HINT, alreadyOcrLine, failedLine, fromPipeline, loadingLabel, pageTextFromItems, skippedLine, summaryHeadline, wholeDocumentText, MAX_WORDS_PER_PAGE, MAX_WORDS_TOTAL, estimateRemainingMs, formatEta, summarize, toggleLanguage, wordLimitProblem, wordsToWire } from "./run";
 
 const word = (text: string, x0: number, y0: number, x1: number, y1: number, extra: Partial<RecognizedWord> = {}): RecognizedWord => ({
   text,
@@ -177,6 +177,39 @@ describe("text of the whole document", () => {
       { page: 2, text: "had text" },
       { page: 3, text: "ocr three" },
     ]);
+  });
+});
+
+describe("pipeline result", () => {
+  const w = { text: "a", x: 0, y: 0, w: 1, h: 1, baseline: null, spaceAfter: false };
+  const pages = [
+    { page: 1, skipped: true as const, text: "had text" },
+    { page: 2, skipped: false as const, failed: true as const, reason: "boom" },
+    { page: 3, skipped: false as const, failed: false as const, confidence: 88, words: [w, w], text: "two words" },
+    { page: 4, skipped: false as const, failed: false as const, confidence: 0, words: [], text: "" },
+  ];
+
+  it("splits into outcomes, the text layer, texts and failed pages", () => {
+    const r = fromPipeline(pages);
+    expect(r.outcomes).toEqual([
+      { page: 1, skipped: true },
+      { page: 3, skipped: false, confidence: 88, words: 2 },
+      { page: 4, skipped: false, confidence: 0, words: 0 },
+    ]);
+    expect(r.layer).toEqual([{ page: 3, words: [w, w] }]);
+    expect(r.texts).toEqual([
+      { page: 3, text: "two words" },
+      { page: 4, text: "" },
+    ]);
+    expect(r.skippedTexts).toEqual([{ page: 1, text: "had text" }]);
+    expect(r.failed).toEqual([2]);
+  });
+
+  it("words the failed and already-OCR'd pages", () => {
+    expect(failedLine([5])).toBe("Could not read: page 5.");
+    expect(failedLine([2, 9])).toBe("Could not read: pages 2, 9.");
+    expect(alreadyOcrLine([3])).toBe("Page 3 already had an OCR layer and was left as it was.");
+    expect(alreadyOcrLine([3, 4])).toBe("Pages 3, 4 already had an OCR layer and were left as they were.");
   });
 });
 

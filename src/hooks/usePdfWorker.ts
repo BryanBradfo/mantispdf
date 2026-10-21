@@ -359,8 +359,8 @@ export function usePdfWorker() {
 
   /** `pdfBytes` with the recognised words of `pages` added as an invisible, searchable text layer. */
   const addTextLayer = useCallback(
-    (pdfBytes: Uint8Array, pages: OcrPageWire[]): Promise<Uint8Array> =>
-      run(null, (id) => ({ type: "ocr-text-layer", id, pdfBytes, pages }), (p) => asTextLayer(p).bytes),
+    (pdfBytes: Uint8Array, pages: OcrPageWire[]): Promise<TextLayerResultWire> =>
+      run(null, (id) => ({ type: "ocr-text-layer", id, pdfBytes, pages }), asTextLayer),
     [run],
   );
 
