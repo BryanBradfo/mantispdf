@@ -103,13 +103,30 @@ describe("OCR pipeline", () => {
     expect(log).toEqual(["render 1", "render 2"]);
   });
 
-  it("is ended by the engine's cancel or stop, not by a page failure", async () => {
-    for (const fatal of [OCR_CANCELLED, OCR_ENGINE_STOPPED]) {
-      const log: string[] = [];
-      const run = runPipeline(source(6, [], log), recogniser({ fail: { 2: new Error(fatal) } }), { lanes: 1, skipText: false });
-      await expect(run).rejects.toThrow(fatal);
-      expect(log).toEqual(["render 1", "render 2"]);
-    }
+  it("is ended by the engine's cancel, not by a page failure", async () => {
+    const log: string[] = [];
+    const run = runPipeline(source(6, [], log), recogniser({ fail: { 2: new Error(OCR_CANCELLED) } }), { lanes: 1, skipText: false });
+    await expect(run).rejects.toThrow(OCR_CANCELLED);
+    expect(log).toEqual(["render 1", "render 2"]);
+  });
+
+  it("keeps what was read when the engine stops, and marks every other page failed", async () => {
+    const log: string[] = [];
+    const results = await runPipeline(source(5, [1], log), recogniser({ fail: { 3: new Error(OCR_ENGINE_STOPPED) } }), { lanes: 1, skipText: true });
+    expect(pagesOf(results)).toEqual(["1:skipped", "2:p2", "3:failed", "4:failed", "5:failed"]);
+    for (const r of results.slice(2)) expect(r).toEqual({ page: r.page, skipped: false, failed: true, reason: "The OCR engine stopped" });
+    // No page is started after the stop.
+    expect(log).toEqual(["text 1", "text 2", "render 2", "text 3", "render 3"]);
+  });
+
+  it("marks the other lanes' pages in flight failed too when the engine stops", async () => {
+    const rec = recogniser({ slow: [1], fail: { 1: new Error(OCR_ENGINE_STOPPED), 2: new Error(OCR_ENGINE_STOPPED) } });
+    const run = runPipeline(source(4), rec, { lanes: 2, skipText: false });
+    await tick();
+    await tick();
+    rec.releases.forEach((r) => r());
+    const results = await run;
+    expect(pagesOf(results)).toEqual(["1:failed", "2:failed", "3:failed", "4:failed"]);
   });
 
   it("reports each page's progress by page number", async () => {

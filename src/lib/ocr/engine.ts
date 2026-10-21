@@ -179,8 +179,9 @@ export const PAGES_PER_WORKER = 50;
 
 /**
  * A pool of tesseract workers for `langs`, one page per worker at a time. Each worker is replaced
- * by a fresh one after `pagesPerWorker` pages (a wasm heap never shrinks) and after a page fails
- * on it (the module may be broken). `terminate` stops everything; running, queued and later pages
+ * by a fresh one after `pagesPerWorker` pages (a wasm heap never shrinks; the new one starts
+ * before the old one stops, and the old one goes on if it cannot) and after a page fails on it
+ * (the module may be broken). `terminate` stops everything; running, queued and later pages
  * reject with "OCR cancelled". If a worker cannot be replaced the engine stops for good: pending
  * and later pages reject with "OCR engine stopped".
  *
@@ -197,6 +198,8 @@ export class OcrEngine {
   private readonly idle: Worker[];
   private readonly waiting: ((w: Worker) => void)[] = [];
   private readonly uses = new Map<Worker, number>();
+  /** Workers whose maintenance replacement could not start: they keep reading, unrecycled. */
+  private readonly keep = new Set<Worker>();
   private jobs = 0;
 
   private constructor(
@@ -328,7 +331,30 @@ export class OcrEngine {
     else this.idle.push(w);
   }
 
-  /** `old` terminated and a fresh worker in its place; the engine stops if none can start. */
+  /**
+   * Maintenance restart of a healthy worker: the fresh one is started first and `old` only
+   * stopped once it is ready. If none can start, `old` goes on (and is not recycled again).
+   */
+  private async recycle(old: Worker): Promise<Worker> {
+    let fresh: Worker;
+    try {
+      fresh = await this.spawn();
+    } catch {
+      this.keep.add(old);
+      return old;
+    }
+    if (this.terminated) {
+      void fresh.terminate();
+      throw new Error(this.stoppedWith?.message ?? CANCELLED);
+    }
+    this.live.delete(old);
+    this.uses.delete(old);
+    void old.terminate();
+    this.live.add(fresh);
+    return fresh;
+  }
+
+  /** `old` (broken) terminated and a fresh worker in its place; the engine stops if none can start. */
   private async replace(old: Worker): Promise<Worker> {
     this.live.delete(old);
     this.uses.delete(old);
@@ -375,7 +401,7 @@ export class OcrEngine {
     const run = (async () => {
       let w = await this.acquire();
       if (this.terminated) throw new Error(this.stoppedWith?.message ?? CANCELLED);
-      if ((this.uses.get(w) ?? 0) >= this.pagesPerWorker) w = await this.replace(w);
+      if ((this.uses.get(w) ?? 0) >= this.pagesPerWorker && !this.keep.has(w)) w = await this.recycle(w);
       this.uses.set(w, (this.uses.get(w) ?? 0) + 1);
       const jobId = `ocr-page-${++this.jobs}`;
       if (onProgress) this.pageProgress.set(jobId, onProgress);

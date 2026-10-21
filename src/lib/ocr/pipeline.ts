@@ -2,14 +2,15 @@
  * One OCR run over a document, without the UI: lanes (one per engine worker) take pages in
  * order; each page is skipped when it already has text (if asked), else rendered, recognised and
  * converted to the text layer's wire words. A page that fails at any of those steps is recorded
- * as failed and the run goes on; only a cancel (`isCancelled`, or the engine's "OCR cancelled")
- * or the engine stopping for good ends it, rejecting with that error.
+ * as failed and the run goes on. If the engine stops for good, the pages read so far are kept and
+ * every other page is recorded as failed ("The OCR engine stopped"). Only a cancel
+ * (`isCancelled`, or the engine's "OCR cancelled") rejects.
  *
  * Rendering and recognition are injected (`PipelineSource`, `PipelineRecogniser`), so the run is
  * tested without pdf.js or tesseract. Workers are replaced by the engine itself (`OcrEngine`,
  * every `PAGES_PER_WORKER` pages and after a failed page).
  */
-import { OCR_CANCELLED, isOcrFatal, type RecognizedPage } from "./engine";
+import { OCR_CANCELLED, OCR_ENGINE_STOPPED, isOcrFatal, type RecognizedPage } from "./engine";
 import type { OcrPageImage } from "./render";
 import { pageTextFromItems, wordsToWire } from "./run";
 import { hasText } from "./text";
@@ -55,6 +56,9 @@ export type PipelinePage =
   | { page: number; skipped: false; failed: false; confidence: number; words: OcrWordWire[]; text: string };
 
 const reasonOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** The reason recorded for the pages left when the engine stops. */
+export const ENGINE_STOPPED_REASON = "The OCR engine stopped";
+const isStopped = (e: unknown) => e instanceof Error && e.message === OCR_ENGINE_STOPPED;
 
 /** Runs OCR over every page of `source`; the results come in page order. */
 export async function runPipeline(source: PipelineSource, recogniser: PipelineRecogniser, options: PipelineOptions): Promise<PipelinePage[]> {
@@ -91,7 +95,15 @@ export async function runPipeline(source: PipelineSource, recogniser: PipelineRe
         if (cancelled()) throw new Error(OCR_CANCELLED);
         const n = ++next;
         options.onPageStart?.(n);
-        const result = await readPage(n);
+        let result: PipelinePage;
+        try {
+          result = await readPage(n);
+        } catch (e) {
+          if (!isStopped(e)) throw e;
+          // The engine is gone: this page and every page not started yet cannot be read.
+          stop = true;
+          result = { page: n, skipped: false, failed: true, reason: ENGINE_STOPPED_REASON };
+        }
         results.push(result);
         options.onPageDone?.(result);
       }
@@ -103,5 +115,11 @@ export async function runPipeline(source: PipelineSource, recogniser: PipelineRe
 
   await Promise.all(Array.from({ length: Math.max(1, Math.min(options.lanes, source.pageCount)) }, lane));
   if (cancelled()) throw new Error(OCR_CANCELLED);
+  // Pages never started because the engine stopped.
+  for (let n = next + 1; n <= source.pageCount; n++) {
+    const result: PipelinePage = { page: n, skipped: false, failed: true, reason: ENGINE_STOPPED_REASON };
+    results.push(result);
+    options.onPageDone?.(result);
+  }
   return results.sort((a, b) => a.page - b.page);
 }

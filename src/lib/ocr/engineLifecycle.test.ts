@@ -271,3 +271,36 @@ describe("OcrEngine worker recycling", () => {
     await expect(engine.recognize(img)).rejects.toThrow(OCR_ENGINE_STOPPED);
   });
 });
+
+describe("OcrEngine maintenance restart", () => {
+  const img = new Uint8Array([1]);
+
+  it("starts the new worker before stopping the old one", async () => {
+    const order: string[] = [];
+    const engine = await OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN, pagesPerWorker: 1 });
+    workers[0].terminate.mockImplementation(async () => {
+      order.push("terminate old");
+    });
+    const created = createBehaviour;
+    createBehaviour = async (w) => {
+      order.push("create new");
+      return created(w);
+    };
+    await engine.recognize(img);
+    await engine.recognize(img);
+    expect(order).toEqual(["create new", "terminate old"]);
+    expect(workers[1].recognize).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the old worker when the new one cannot start, and stops recycling it", async () => {
+    const engine = await OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN, pagesPerWorker: 1 });
+    createBehaviour = async () => {
+      throw new Error("could not load the core");
+    };
+    for (let i = 0; i < 4; i++) await engine.recognize(img);
+    // One attempt to replace it, then the old worker reads every page.
+    expect(workers).toHaveLength(2);
+    expect(workers[0].recognize).toHaveBeenCalledTimes(4);
+    expect(workers[0].terminate).not.toHaveBeenCalled();
+  });
+});
