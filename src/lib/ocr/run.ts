@@ -23,6 +23,26 @@ export function wordsToWire(words: readonly RecognizedWord[], imagePx: [number, 
   const sy = pagePt[1] / imagePx[1];
   const out: OcrWordWire[] = [];
   for (const word of words) {
+    if (word.turned) {
+      // A deskewed word: its own box from its turned bottom-left corner (page images have the
+      // same scale on both axes), the baseline in its own frame.
+      const t = word.turned;
+      const w = t.width * sx;
+      const h = t.height * sy;
+      if (!(w >= MIN_BOX_PT && h >= MIN_BOX_PT) || word.text.length > MAX_WORD_UNITS) continue;
+      const y = pagePt[1] - t.corner[1] * sy;
+      out.push({
+        text: word.text,
+        x: t.corner[0] * sx,
+        y,
+        w,
+        h,
+        baseline: t.rise === null ? null : y + t.rise * sy,
+        spaceAfter: !word.lineEnd,
+        angle: t.angle,
+      });
+      continue;
+    }
     const { x0, y0, x1, y1 } = word.bbox;
     const w = (x1 - x0) * sx;
     const h = (y1 - y0) * sy;

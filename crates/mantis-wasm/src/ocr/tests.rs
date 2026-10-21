@@ -54,7 +54,7 @@ fn letter() -> Vec<u8> {
 }
 
 fn word(text: &str, x: f64, y: f64, w: f64, h: f64) -> OcrWord {
-    OcrWord { text: text.into(), x, y, w, h, baseline: None, space_after: false }
+    OcrWord { text: text.into(), x, y, w, h, baseline: None, space_after: false, angle: None }
 }
 
 fn page(page: u32, words: Vec<OcrWord>) -> OcrPage {
@@ -589,4 +589,74 @@ fn page_listed_twice_gets_one_layer_with_both_entries_words() {
     assert_eq!(contents.len(), 3);
     let drawn: Vec<String> = words_drawn(&glyphs(&out, 1)).into_iter().map(|(_, t)| t).collect();
     assert_eq!(drawn, ["one", "two"]);
+}
+
+/// `word` turned `deg` degrees counter-clockwise about its box's bottom-left corner.
+fn turned(text: &str, x: f64, y: f64, w: f64, h: f64, deg: f64) -> OcrWord {
+    OcrWord { angle: Some(deg), ..word(text, x, y, w, h) }
+}
+
+#[test]
+fn a_turned_word_keeps_its_height_and_follows_its_angle() {
+    let (x, y, w, h, deg) = (100.0, 500.0, 120.0, 20.0, 2.0);
+    let out = add(&letter(), &[page(1, vec![turned("MANTIS", x, y, w, h, deg)])]);
+    let glyphs: Vec<Glyph> = glyphs(&out, 1).into_iter().filter(|g| g.render_mode == 3).collect();
+    assert_eq!(glyphs.len(), 6);
+    let (sin, cos) = deg.to_radians().sin_cos();
+    let at = |u: f64, v: f64| (x + u * cos - v * sin, y + u * sin + v * cos);
+    // The size is the word's height, not the height of its turned bounding box.
+    for g in &glyphs {
+        assert!((g.em - h).abs() < 1e-4, "em {}", g.em);
+    }
+    // The first glyph starts on the turned baseline (0.2 h up the box's left side).
+    let start = at(0.0, 0.2 * h);
+    assert!((glyphs[0].origin.0 - start.0).abs() < 1e-3 && (glyphs[0].origin.1 - start.1).abs() < 1e-3, "{:?} vs {start:?}", glyphs[0].origin);
+    // The last glyph ends at the far end of the baseline.
+    let end = at(w, 0.2 * h);
+    let last = glyphs.last().unwrap();
+    assert!((last.end.0 - end.0).abs() < 1e-3 && (last.end.1 - end.1).abs() < 1e-3, "{:?} vs {end:?}", last.end);
+    // Every glyph box corner lies in the turned word box.
+    for g in &glyphs {
+        for &(px, py) in &g.box_user.0 {
+            let (dx, dy) = (px - x, py - y);
+            let (u, v) = (dx * cos + dy * sin, -dx * sin + dy * cos);
+            assert!((-1e-3..=w + 1e-3).contains(&u) && (-1e-3..=h + 1e-3).contains(&v), "({u}, {v})");
+        }
+    }
+    // Search finds it too.
+    let found = redact_search(&add_text_layer(&letter(), &[page(1, vec![turned("MANTIS", x, y, w, h, deg)])]).unwrap(), "mantis", &SearchOptions::default()).unwrap();
+    assert_eq!(found.matches.len(), 1);
+}
+
+#[test]
+fn a_turned_word_on_a_rotated_page_is_turned_in_visible_space() {
+    let pdf = doc(1, [0.0, 0.0, 612.0, 792.0], 90);
+    let out = add(&pdf, &[page(1, vec![turned("MANTIS", 100.0, 300.0, 120.0, 20.0, 2.0)])]);
+    let g = glyphs(&out, 1).into_iter().find(|g| g.render_mode == 3).unwrap();
+    let vb = crate::stamp::geometry::VisibleBox::of_page(&out, page_id(&out, 1));
+    let (sin, cos) = 2f64.to_radians().sin_cos();
+    let start = vb.to_user(100.0 - 4.0 * sin, 300.0 + 4.0 * cos);
+    assert!((g.origin.0 - start.0).abs() < 1e-3 && (g.origin.1 - start.1).abs() < 1e-3, "{:?} vs {start:?}", g.origin);
+}
+
+#[test]
+fn the_space_after_a_turned_word_runs_along_its_baseline() {
+    let (sin, cos) = 2f64.to_radians().sin_cos();
+    // The next word starts 10 pt further along the same turned baseline.
+    let next = turned("OCR", 100.0 + 130.0 * cos, 500.0 + 130.0 * sin, 60.0, 20.0, 2.0);
+    let first = OcrWord { space_after: true, ..turned("MANTIS", 100.0, 500.0, 120.0, 20.0, 2.0) };
+    let out = add(&letter(), &[page(1, vec![first, next])]);
+    let s = spaces(&out);
+    assert_eq!(s.len(), 1);
+    let gap_end = (100.0 + 130.0 * cos - 4.0 * sin, 500.0 + 130.0 * sin + 4.0 * cos);
+    let space = glyphs(&out, 1).into_iter().find(|g| g.text.as_deref() == Some(" ")).unwrap();
+    assert!((space.end.0 - gap_end.0).abs() < 1e-3 && (space.end.1 - gap_end.1).abs() < 1e-3, "{:?} vs {gap_end:?}", space.end);
+}
+
+#[test]
+fn angles_are_checked() {
+    for bad in [f64::NAN, f64::INFINITY, 180.5, -181.0] {
+        assert_eq!(add_text_layer(&letter(), &[page(1, vec![turned("a", 1.0, 1.0, 1.0, 1.0, bad)])]).unwrap_err(), "Invalid OCR settings: angle");
+    }
+    assert!(add_text_layer(&letter(), &[page(1, vec![turned("a", 1.0, 1.0, 1.0, 1.0, -180.0)])]).is_ok());
 }

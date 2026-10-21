@@ -50,6 +50,11 @@ pub struct OcrWord {
     /// word's end to the next word's start (0.25 em when that gap is not
     /// known), so extractors and search read the words apart.
     pub space_after: bool,
+    /// The word's baseline is turned this many degrees counter-clockwise
+    /// (visible space) about its box's bottom-left corner `(x, y)`; the box
+    /// `w` x `h` is the word's own size along and across that baseline
+    /// (a deskewed word). None: upright.
+    pub angle: Option<f64>,
 }
 
 /// The words of one page (1-based).
@@ -135,6 +140,9 @@ fn validate(pages: &[OcrPage], total: usize) -> Result<(), String> {
             }
             if w.baseline.is_some_and(|b| !coord(b)) {
                 return Err(invalid("baseline"));
+            }
+            if w.angle.is_some_and(|a| !(a.is_finite() && (-180.0..=180.0).contains(&a))) {
+                return Err(invalid("angle"));
             }
         }
     }

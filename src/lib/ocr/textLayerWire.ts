@@ -16,6 +16,12 @@ export interface OcrWordWire {
   baseline: number | null;
   /** The next word follows on the same line: a space is drawn up to its start. */
   spaceAfter: boolean;
+  /**
+   * A deskewed word: its baseline is turned this many degrees counter-clockwise about the box's
+   * bottom-left corner `(x, y)`, and `w` x `h` (and `baseline`) are in the word's own frame.
+   * Absent or null: upright.
+   */
+  angle?: number | null;
 }
 
 export interface OcrPageWire {

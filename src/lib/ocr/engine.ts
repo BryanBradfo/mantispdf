@@ -16,6 +16,14 @@ export interface RecognizedWord {
   confidence: number;
   /** Last word of its line. */
   lineEnd: boolean;
+  /**
+   * Set when the page was deskewed: the word's own box, turned. `corner` is its bottom-left
+   * corner on the page image (px, y down), `width` and `height` its size along and across its
+   * baseline, `angle` the baseline's turn in degrees (counter-clockwise as seen), `rise` the
+   * baseline's height above the box's bottom edge (px; null when unknown). `bbox` and `baseline`
+   * above are then the upright approximations.
+   */
+  turned?: { corner: [number, number]; width: number; height: number; angle: number; rise: number | null };
 }
 
 export interface RecognizedPage {
@@ -83,8 +91,9 @@ export function imageSize(bytes: Uint8Array): [number, number] | null {
 /**
  * Words tesseract read on a page it deskewed by `angle` radians (`rotateRadians` of a
  * `rotateAuto` recognition), back on the page image of `size` pixels: tesseract rotates the
- * image about its centre, so each box is rotated back about it and replaced by the axis-aligned
- * box of its corners; the baseline is the one at the word's centre, rotated back the same way.
+ * image about its centre, so each box is rotated back about it: `turned` keeps the turned box
+ * (for a text layer that follows the skew), `bbox` becomes the axis-aligned box of its corners
+ * and `baseline` the one at the word's centre, rotated back the same way.
  */
 export function unskewWords(words: RecognizedWord[], angle: number, [width, height]: [number, number]): RecognizedWord[] {
   if (!angle) return words;
@@ -99,10 +108,18 @@ export function unskewWords(words: RecognizedWord[], angle: number, [width, heig
     const xs = corners.map((c) => c[0]);
     const ys = corners.map((c) => c[1]);
     const baseline = w.baseline === null ? null : round2(back((x0 + x1) / 2, w.baseline)[1]);
+    const corner = back(x0, y1);
     return {
       ...w,
       bbox: { x0: round2(Math.min(...xs)), y0: round2(Math.min(...ys)), x1: round2(Math.max(...xs)), y1: round2(Math.max(...ys)) },
       baseline,
+      turned: {
+        corner: [round2(corner[0]), round2(corner[1])],
+        width: x1 - x0,
+        height: y1 - y0,
+        angle: (angle * 180) / Math.PI,
+        rise: w.baseline === null ? null : round2(y1 - w.baseline),
+      },
     };
   });
 }

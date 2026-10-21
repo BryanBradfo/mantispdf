@@ -13,7 +13,7 @@ const keys = (o: object) => Object.keys(o).sort();
 
 describe("ocr text layer wire shape", () => {
   it("the wire types have exactly the documented keys", () => {
-    const word: OcrWordWire = { text: "MANTIS", x: 72, y: 700, w: 120, h: 20, baseline: null, spaceAfter: true };
+    const word: OcrWordWire = { text: "MANTIS", x: 72, y: 700, w: 120, h: 20, baseline: null, spaceAfter: true, angle: 2 };
     const page: OcrPageWire = { page: 1, words: [word] };
     expect(keys(page)).toEqual([...PAGE_KEYS].sort());
     expect(keys(word)).toEqual([...WORD_KEYS].sort());

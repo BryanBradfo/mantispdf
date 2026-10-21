@@ -4,7 +4,10 @@
 //! the glyph boxes (ascent 0.8, descent -0.2, see `font`) cover the box;
 //! `Tz` stretches the word's half-em glyphs to the box width. The text
 //! matrix is the visible-space placement composed with the page's
-//! visible-to-user matrix, so rotated and offset pages need no `cm`.
+//! visible-to-user matrix, so rotated and offset pages need no `cm`. A word
+//! with an `angle` (deskewed by the recogniser) is turned about its box's
+//! bottom-left corner: its size stays the word's height, not the height of
+//! its turned bounding box.
 //!
 //! A word followed by a space on its line gets a space glyph after it, in
 //! its own `Tj` with its own `Tz`: from the word's end to the next word's
@@ -44,9 +47,16 @@ pub(crate) fn place(word: &OcrWord, cids: Vec<u16>, next: Option<&OcrWord>, page
     let baseline = word.baseline.map_or(word.y + DESCENT_SHARE * word.h, |b| b.clamp(word.y, word.y + word.h));
     let glyph = GLYPH_WIDTH / 1000.0 * size;
     let tz = 100.0 * word.w / (cids.len().max(1) as f64 * glyph);
-    let tm = concat(&[1.0, 0.0, 0.0, 1.0, word.x, baseline], page);
+    // The baseline runs along the word's angle from its box's left side, `rise` above the corner.
+    let (sin, cos) = word.angle.unwrap_or(0.0).to_radians().sin_cos();
+    let rise = baseline - word.y;
+    let tm = concat(&[cos, sin, -sin, cos, word.x - rise * sin, word.y + rise * cos], page);
     let space_tz = word.space_after.then(|| {
-        let gap = next.map(|n| n.x - (word.x + word.w)).filter(|g| *g > 0.0).unwrap_or(DEFAULT_SPACE * size);
+        // From this word's end to the next word's start, measured along this baseline.
+        let gap = next
+            .map(|n| (n.x - word.x) * cos + (n.y - word.y) * sin - word.w)
+            .filter(|g| *g > 0.0)
+            .unwrap_or(DEFAULT_SPACE * size);
         100.0 * gap / glyph
     });
     Placed { size, tz, tm, cids, space_tz }
@@ -92,7 +102,7 @@ mod tests {
     const IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 
     fn w(x: f64, y: f64, w: f64, h: f64, baseline: Option<f64>) -> OcrWord {
-        OcrWord { text: String::new(), x, y, w, h, baseline, space_after: false }
+        OcrWord { text: String::new(), x, y, w, h, baseline, space_after: false, angle: None }
     }
 
     #[test]

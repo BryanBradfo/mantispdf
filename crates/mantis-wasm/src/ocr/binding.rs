@@ -44,11 +44,15 @@ fn text(word: &JsValue, path: &str) -> Result<String, String> {
     }
 }
 
-/// `{ text, x, y, w, h, baseline: number | null, spaceAfter }`.
+/// `{ text, x, y, w, h, baseline: number | null, spaceAfter, angle?: number | null }`.
 fn word(v: &JsValue, path: &str) -> Result<OcrWord, String> {
     let baseline = match get_any(v, "baseline", path)? {
         b if b.is_null() => None,
         b => Some(b.as_f64().ok_or_else(|| invalid(&format!("{path}.baseline")))?),
+    };
+    let angle = match get_any(v, "angle", path)? {
+        a if a.is_null() || a.is_undefined() => None,
+        a => Some(a.as_f64().ok_or_else(|| invalid(&format!("{path}.angle")))?),
     };
     Ok(OcrWord {
         text: text(v, path)?,
@@ -58,6 +62,7 @@ fn word(v: &JsValue, path: &str) -> Result<OcrWord, String> {
         h: num(v, "h", path)?,
         baseline,
         space_after: get(v, "spaceAfter", path)?.as_bool().ok_or_else(|| invalid(&format!("{path}.spaceAfter")))?,
+        angle,
     })
 }
 

@@ -71,6 +71,16 @@ describe.skipIf(!built)("add_text_layer binding", () => {
     expect(wasm.add_text_layer(PDF, [{ page: 1, words: [] }]).length).toBeGreaterThan(0);
   });
 
+  it("turns a word by its angle, and checks the angle", () => {
+    const turned = { ...word("MANTIS", 72, false), angle: 2 };
+    const out = wasm.add_text_layer(PDF, [{ page: 1, words: [turned] }]);
+    expect(wasm.redact_search(out, "mantis", SEARCH).matches).toHaveLength(1);
+    // Null or absent: upright.
+    expect(wasm.add_text_layer(PDF, [{ page: 1, words: [{ ...turned, angle: null }] }]).length).toBeGreaterThan(0);
+    expect(() => wasm.add_text_layer(PDF, [{ page: 1, words: [{ ...turned, angle: "2" }] }])).toThrow("Invalid OCR settings: pages[0].words[0].angle");
+    expect(() => wasm.add_text_layer(PDF, [{ page: 1, words: [{ ...turned, angle: 400 }] }])).toThrow("Invalid OCR settings: angle");
+  });
+
   it("refuses bad shapes with the engine's messages", () => {
     const bad = (pages: unknown) => () => wasm.add_text_layer(PDF, pages);
     expect(bad({ page: 1 })).toThrow("Invalid OCR settings: pages");

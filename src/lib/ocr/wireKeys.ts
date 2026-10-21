@@ -4,4 +4,4 @@
  * built engine). `read_pages` reads them all.
  */
 export const PAGE_KEYS = ["page", "words"] as const;
-export const WORD_KEYS = ["text", "x", "y", "w", "h", "baseline", "spaceAfter"] as const;
+export const WORD_KEYS = ["text", "x", "y", "w", "h", "baseline", "spaceAfter", "angle"] as const;

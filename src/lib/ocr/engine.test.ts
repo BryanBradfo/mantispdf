@@ -96,6 +96,25 @@ describe("words of a deskewed page back on the page image", () => {
     expect(w.baseline).toBeCloseTo(613.3, 0);
     expect(w.text).toBe("w");
   });
+
+  it("keeps the turned box: its bottom-left corner, own size, angle and baseline rise", () => {
+    const a = 0.03516174480319023;
+    const [w] = unskewWords([word(314, 481, 946, 594, 590)], a, [2550, 3300]);
+    const [cx, cy] = [1275, 1650];
+    const [dx, dy] = [314 - cx, 594 - cy];
+    expect(w.turned).toBeDefined();
+    const t = w.turned!;
+    expect(t.corner[0]).toBeCloseTo(cx + dx * Math.cos(a) + dy * Math.sin(a), 1);
+    expect(t.corner[1]).toBeCloseTo(cy - dx * Math.sin(a) + dy * Math.cos(a), 1);
+    expect(t.width).toBe(632);
+    expect(t.height).toBe(113);
+    expect(t.angle).toBeCloseTo((a * 180) / Math.PI, 6);
+    expect(t.rise).toBe(4);
+  });
+
+  it("does not turn words without rotation", () => {
+    expect(unskewWords([word(1, 2, 3, 4, 3.5)], 0, [100, 100])[0].turned).toBeUndefined();
+  });
 });
 
 describe("engine error messages", () => {
