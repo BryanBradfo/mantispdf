@@ -50,6 +50,7 @@ fn page_seen(doc: &Document, page: ObjectId, tag: &[u8]) -> Result<(Vec<Seen>, V
 
 /// Every glyph `page` draws (forms included, in drawing order), with its
 /// text when the font tells it.
+#[cfg(test)]
 pub(crate) fn page_text_glyphs(doc: &Document, page: ObjectId, budget: &mut Budget, cache: &TextCacheRef) -> Result<Vec<super::interp::Glyph>, Unsupported> {
     Ok(page_text_scan(doc, page, budget, cache)?.0)
 }
