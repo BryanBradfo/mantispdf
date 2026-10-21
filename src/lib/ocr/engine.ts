@@ -152,7 +152,11 @@ export interface OcrEngineOptions {
   origin: string;
   /** Aborting stops the start (workers terminated) with "OCR cancelled". */
   signal?: AbortSignal;
-  /** Start progress (core and model loading), from every worker. */
+  /**
+   * Start progress. Language loading ("loading language traineddata") comes as one figure for the
+   * whole pool, 0 to 1 and never going back; tesseract reports it per language file (each fetched,
+   * then written), not per byte. Other start-up messages pass through as tesseract sends them.
+   */
   onProgress?: (p: OcrProgress) => void;
   timeoutMs?: number;
 }
@@ -195,10 +199,25 @@ export class OcrEngine {
     if (options.signal?.aborted) throw new Error(CANCELLED);
     const urls = ocrAssetUrls(options.origin);
     const pageProgress = new Map<string, (progress: number) => void>();
+    // Language loading is reported by every worker: the pool's figure is their mean (workers not
+    // yet loading count 0), and it never goes back.
+    const languageProgress = new Map<string, number>();
+    let languageShown = 0;
     const logger = (m: LoggerMessage) => {
       const page = m.userJobId ? pageProgress.get(m.userJobId) : undefined;
-      if (page) page(m.progress);
-      else options.onProgress?.({ status: m.status, progress: m.progress });
+      if (page) {
+        page(m.progress);
+        return;
+      }
+      if (/language/i.test(m.status)) {
+        languageProgress.set(m.workerId, Math.max(languageProgress.get(m.workerId) ?? 0, m.progress));
+        let sum = 0;
+        for (const p of languageProgress.values()) sum += p;
+        languageShown = Math.max(languageShown, Math.min(1, sum / Math.max(1, options.workers)));
+        options.onProgress?.({ status: m.status, progress: languageShown });
+      } else {
+        options.onProgress?.({ status: m.status, progress: m.progress });
+      }
     };
     const started: Worker[] = [];
     let failed = false;

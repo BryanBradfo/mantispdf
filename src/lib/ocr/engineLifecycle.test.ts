@@ -126,6 +126,30 @@ describe("OcrEngine.create", () => {
   });
 });
 
+describe("OcrEngine start progress", () => {
+  it("is one language-loading figure for the whole pool, never going back", async () => {
+    const seen: { status: string; progress: number }[] = [];
+    const releases: (() => void)[] = [];
+    reinitBehaviour = () => new Promise((r) => releases.push(() => r({})));
+    const started = OcrEngine.create(["eng", "fra"], { workers: 2, origin: ORIGIN, onProgress: (p) => seen.push(p) });
+    await tick();
+    const log = workers[0].options.logger as (m: object) => void;
+    const lang = "loading language traineddata";
+    // Each worker reports its own progress; the pool's is their mean.
+    log({ workerId: "Worker-1", status: lang, progress: 0.5 });
+    log({ workerId: "Worker-1", status: lang, progress: 1 });
+    log({ workerId: "Worker-2", status: lang, progress: 0.5 });
+    log({ workerId: "Worker-2", status: lang, progress: 0 }); // a late, lower report
+    log({ workerId: "Worker-2", status: lang, progress: 1 });
+    expect(seen.filter((p) => p.status === lang).map((p) => p.progress)).toEqual([0.25, 0.5, 0.75, 0.75, 1]);
+    // Other start-up messages pass through.
+    log({ workerId: "Worker-1", status: "initializing api", progress: 1 });
+    expect(seen[seen.length - 1]).toEqual({ status: "initializing api", progress: 1 });
+    for (const r of releases) r();
+    await started;
+  });
+});
+
 describe("OcrEngine.recognize", () => {
   it("deskews automatically and puts the words back on the page image", async () => {
     const block = (bbox: object) => [{ paragraphs: [{ lines: [{ baseline: { x0: 0, y0: 0, x1: 0, y1: 0 }, words: [{ text: "MANTIS", bbox, confidence: 90 }] }] }] }];
