@@ -56,9 +56,9 @@ describe("OcrEngine.create", () => {
     for (const w of workers) {
       expect(w.langs).toEqual([]);
       expect(w.options).toMatchObject({
-        workerPath: `${ORIGIN}/ocr/worker.min.js`,
-        corePath: `${ORIGIN}/ocr/core`,
-        langPath: `${ORIGIN}/ocr/lang`,
+        workerPath: `${ORIGIN}/ocr-runtime/worker.min.js`,
+        corePath: `${ORIGIN}/ocr-runtime/core`,
+        langPath: `${ORIGIN}/ocr-runtime/lang`,
         workerBlobURL: false,
         gzip: true,
       });

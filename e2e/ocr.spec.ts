@@ -31,7 +31,7 @@ const TOLERANCE = 3;
 
 test.use({ viewport: { width: 1400, height: 1200 } });
 
-/** Requests that leave the app origin, and the /ocr/ responses, from every page and worker. */
+/** Requests that leave the app origin, and the /ocr-runtime/ responses, from every page and worker. */
 function watchNetwork(page: Page, origin: string) {
   const foreign: string[] = [];
   const ocrAssets: { path: string; status: number }[] = [];
@@ -42,7 +42,7 @@ function watchNetwork(page: Page, origin: string) {
   });
   page.context().on("response", (r) => {
     const u = new URL(r.url());
-    if (u.origin === origin && u.pathname.startsWith("/ocr/")) ocrAssets.push({ path: u.pathname, status: r.status() });
+    if (u.origin === origin && u.pathname.startsWith("/ocr-runtime/")) ocrAssets.push({ path: u.pathname, status: r.status() });
   });
   return { foreign, ocrAssets };
 }
@@ -172,7 +172,7 @@ function expectPopplerWordsAt(bytes: Uint8Array, pageNumber: number, visibleHeig
   });
 }
 
-const ocrWorkers = (page: Page) => page.workers().filter((w) => w.url().includes("/ocr/worker.min.js"));
+const ocrWorkers = (page: Page) => page.workers().filter((w) => w.url().includes("/ocr-runtime/worker.min.js"));
 /** Most tesseract workers the engine runs (min(2, cores - 1)). */
 const MAX_OCR_WORKERS = 2;
 
@@ -218,9 +218,9 @@ test("makes a scan searchable where the words are, exports the text, all from th
 
   // Worker, one core build and the English model, all served by this origin.
   const paths = net.ocrAssets.map((a) => a.path);
-  expect(paths).toContain("/ocr/worker.min.js");
-  expect(paths.some((p) => /^\/ocr\/core\/tesseract-core-[a-z-]*lstm\.wasm\.js$/.test(p))).toBe(true);
-  expect(paths).toContain("/ocr/lang/eng.traineddata.gz");
+  expect(paths).toContain("/ocr-runtime/worker.min.js");
+  expect(paths.some((p) => /^\/ocr-runtime\/core\/tesseract-core-[a-z-]*lstm\.wasm\.js$/.test(p))).toBe(true);
+  expect(paths).toContain("/ocr-runtime/lang/eng.traineddata.gz");
   expect(net.ocrAssets.every((a) => a.status === 200 || a.status === 304), JSON.stringify(net.ocrAssets)).toBe(true);
   expect(net.foreign).toEqual([]);
 });
@@ -244,7 +244,10 @@ test("skips a page that already has text and leaves it as it was", async ({ page
   expectPopplerWordsAt(bytes, 2, 792, (await expected())["scan-mixed.pdf"]["2"]);
 
   const text = await downloadOf(page, "Download text");
-  expect(new TextDecoder().decode(text.bytes)).toBe("--- Page 2 ---\nMANTIS OCR TEST 2026\n\nSEARCHABLE SCANNED PAGE\n");
+  // The whole document: the skipped page's own text, then the recognised page.
+  expect(new TextDecoder().decode(text.bytes)).toBe(
+    "--- Page 1 ---\nThis page already has real text on it.\n\f--- Page 2 ---\nMANTIS OCR TEST 2026\n\nSEARCHABLE SCANNED PAGE\n",
+  );
 });
 
 test("places words in visible space on a rotated, cropped page", async ({ page }) => {
@@ -267,7 +270,7 @@ test("cancel while the engine starts, and while pages are read, leaves no worker
 
   // During startup (worker, core and model loading; a fresh context has no cached models).
   await run.click();
-  await expect(page.getByText(/^Loading the OCR engine and languages/)).toBeVisible();
+  await expect(page.getByText(/^(Starting the OCR engine|Loading language data)/)).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(run).toBeEnabled();
   await expectNoOcrWorkers(page);

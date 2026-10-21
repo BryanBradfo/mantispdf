@@ -5,12 +5,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error: a plain Node script without type declarations.
-import { OCR_FILES, OCR_LICENSE_FILES, missingInDist, ocrLicenseSources, ocrSources } from "../../../scripts/copy-ocr-assets.mjs";
-import { ocrAssetFiles } from "./assets";
+import { OCR_FILES, OCR_LICENSE_FILES, RUNTIME_DIR, missingInDist, ocrLicenseSources, ocrSources } from "../../../scripts/copy-ocr-assets.mjs";
+import { OCR_BASE, ocrAssetFiles } from "./assets";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 describe("self-hosted OCR assets", () => {
+  it("are served from /ocr-runtime/, apart from the /ocr page route", () => {
+    expect(OCR_BASE).toBe("/ocr-runtime");
+    expect(`/${RUNTIME_DIR as string}`).toBe(OCR_BASE);
+  });
+
   it("the copy script copies exactly the files the engine requests", () => {
     expect([...(OCR_FILES as string[])].sort()).toEqual(ocrAssetFiles().sort());
   });
@@ -33,7 +38,7 @@ describe("self-hosted OCR assets", () => {
   it("the postbuild check requires the runtime, its licences and the pdf.js licence", () => {
     const dist = mkdtempSync(join(tmpdir(), "ocr-dist-"));
     try {
-      const all = ["pdf.worker.min.mjs.LICENSE", ...[...OCR_FILES, ...OCR_LICENSE_FILES].map((f: string) => `ocr/${f}`)];
+      const all = ["pdf.worker.min.mjs.LICENSE", ...[...OCR_FILES, ...OCR_LICENSE_FILES].map((f: string) => `ocr-runtime/${f}`)];
       expect([...(missingInDist(dist) as string[])].sort()).toEqual([...all].sort());
       for (const f of all) {
         mkdirSync(dirname(join(dist, f)), { recursive: true });

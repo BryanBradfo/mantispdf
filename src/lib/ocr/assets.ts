@@ -1,11 +1,12 @@
 /**
- * The OCR runtime files served from the app origin under `/ocr/`, copied there from
+ * The OCR runtime files served from the app origin under `/ocr-runtime/`, copied there from
  * node_modules by `scripts/copy-ocr-assets.mjs` (which keeps its own copy of this list;
  * assets.test.ts checks they agree). Nothing is ever fetched from a CDN.
  */
 import { OCR_LANGUAGES, type OcrLanguage } from "./languages";
 
-export const OCR_BASE = "/ocr";
+/** Not `/ocr`: that path is the OCR page's route. */
+export const OCR_BASE = "/ocr-runtime";
 /** tesseract.js worker script. */
 export const OCR_WORKER_FILE = "worker.min.js";
 /**
@@ -18,7 +19,7 @@ export function ocrLanguageFile(code: OcrLanguage): string {
   return `${code}.traineddata.gz`;
 }
 
-/** Every file under `/ocr/` the engine may request, relative to it. */
+/** Every file under `/ocr-runtime/` the engine may request, relative to it. */
 export function ocrAssetFiles(): string[] {
   return [OCR_WORKER_FILE, ...OCR_CORE_FILES.map((f) => `core/${f}`), ...OCR_LANGUAGES.map((l) => `lang/${ocrLanguageFile(l.code)}`)];
 }

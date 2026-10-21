@@ -1,6 +1,6 @@
 # OCR runtime notice
 
-The files under `/ocr/` are third-party software and data, served unmodified from the app
+The files under `/ocr-runtime/` are third-party software and data, served unmodified from the app
 origin so that text recognition runs entirely in the browser.
 
 | Path | Source | License |

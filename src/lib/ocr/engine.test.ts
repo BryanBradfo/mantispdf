@@ -6,9 +6,9 @@ import { encodePgm } from "./render";
 describe("OCR asset URLs", () => {
   it("are absolute on the app origin", () => {
     expect(ocrAssetUrls("https://mantispdf.app")).toEqual({
-      workerPath: "https://mantispdf.app/ocr/worker.min.js",
-      corePath: "https://mantispdf.app/ocr/core",
-      langPath: "https://mantispdf.app/ocr/lang",
+      workerPath: "https://mantispdf.app/ocr-runtime/worker.min.js",
+      corePath: "https://mantispdf.app/ocr-runtime/core",
+      langPath: "https://mantispdf.app/ocr-runtime/lang",
     });
   });
 });
