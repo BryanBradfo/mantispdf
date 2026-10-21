@@ -48,6 +48,8 @@ pub(crate) struct Font {
     plausible: f64,
     /// Code to text, when loaded for search.
     text: Option<std::rc::Rc<super::unicode::TextMap>>,
+    /// The font is Tesseract's "GlyphLessFont" (an OCR text layer's font; MantisPDF's OCR uses it too).
+    glyphless: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -177,6 +179,7 @@ impl Font {
             return Err(err("not a font dictionary"));
         };
         let subtype = name(doc, font.get(b"Subtype").ok()).unwrap_or(b"");
+        let glyphless = name(doc, font.get(b"BaseFont").ok()).is_some_and(|b| b == b"GlyphLessFont" || b.ends_with(b"+GlyphLessFont"));
         let (kind, (ascent, descent), plausible) = match subtype {
             b"Type1" | b"MMType1" | b"TrueType" => {
                 let descriptor = dict(doc, font.get(b"FontDescriptor").ok());
@@ -198,13 +201,18 @@ impl Font {
             // (their text is unknown, so the page is reported).
             b"Type3" if text.is_some() => {
                 let (kind, (ascent, descent), plausible) = Self::type3_for_search(doc, font, &err)?;
-                return Ok(Font { label, kind, ascent, descent, plausible, text: None });
+                return Ok(Font { label, kind, ascent, descent, plausible, text: None, glyphless });
             }
             b"Type3" => return Err(err("Type3 fonts are not supported")),
             other => return Err(err(&format!("unsupported font type {}", String::from_utf8_lossy(other)))),
         };
         let text = text.and_then(|cache| cache.map_for(doc, obj.as_reference().ok(), font));
-        Ok(Font { label, kind, ascent, descent, plausible, text })
+        Ok(Font { label, kind, ascent, descent, plausible, text, glyphless })
+    }
+
+    /// True for Tesseract's "GlyphLessFont", the font of OCR text layers.
+    pub(crate) fn is_glyphless(&self) -> bool {
+        self.glyphless
     }
 
     fn simple(

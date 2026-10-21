@@ -204,6 +204,16 @@ fn to_visible(vb: &VisibleBox, r: &Rect) -> [f64; 4] {
 /// Smallest side of a match rect, in points.
 const MIN_SIDE: f64 = 1.0;
 
+/// How far a match on an OCR text layer reaches past its glyphs: one 300 dpi render pixel. The
+/// recogniser's word box can stop a pixel short of the scan's ink, and a redaction that covers
+/// only the box would leave that sliver visible (measured: up to 1.5 px at 600 dpi on scan.pdf).
+pub(crate) const OCR_MARK_PAD: f64 = 72.0 / 300.0;
+
+/// Visible rect `[x, y, w, h]` grown by `pad` on every side.
+fn padded([x, y, w, h]: [f64; 4], pad: f64) -> [f64; 4] {
+    [x - pad, y - pad, w + 2.0 * pad, h + 2.0 * pad]
+}
+
 fn union(quads: impl Iterator<Item = Quad>) -> Option<Rect> {
     quads.map(|q| q.bbox()).reduce(|a, b| Rect { x0: a.x0.min(b.x0), y0: a.y0.min(b.y0), x1: a.x1.max(b.x1), y1: a.y1.max(b.y1) })
 }
@@ -373,8 +383,11 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
             }
             let found: Vec<[f64; 4]> = by_line
                 .into_iter()
-                .filter_map(|(_, list)| union(list.iter().map(|&g| glyphs[g].box_user)))
-                .map(|r| to_visible(&vb, &r))
+                .filter_map(|(_, list)| {
+                    let ocr = list.iter().any(|&g| glyphs[g].ocr_layer);
+                    union(list.iter().map(|&g| glyphs[g].box_user)).map(|r| (to_visible(&vb, &r), ocr))
+                })
+                .map(|(r, ocr)| if ocr { padded(r, OCR_MARK_PAD) } else { r })
                 .collect();
             // A match is marked whole or not at all.
             if total + rects.len() + found.len() > MAX_RECTS {

@@ -725,3 +725,33 @@ fn an_existing_layer_is_invisible_glyphless_text() {
         assert_eq!(report.already_ocr_pages, if already { vec![1] } else { vec![] }, "{base}: {content}");
     }
 }
+
+/// One 300 dpi render pixel, in points.
+const RENDER_PX: f64 = 72.0 / 300.0;
+
+#[test]
+fn search_marks_of_ocr_text_reach_one_render_pixel_past_the_word() {
+    // The recogniser's box can stop a pixel short of the scan's ink; the mark (and so the
+    // redaction of the image under it) is padded by one 300 dpi pixel.
+    let out = add_text_layer(&letter(), &[page(1, vec![word("MANTIS", 72.0, 700.0, 120.0, 20.0)])]).unwrap();
+    let r = redact_search(&out, "mantis", &SearchOptions::default()).unwrap().matches[0].rects[0];
+    let want = [72.0 - RENDER_PX, 700.0 - RENDER_PX, 120.0 + 2.0 * RENDER_PX, 20.0 + 2.0 * RENDER_PX];
+    for (got, want) in r.iter().zip(want) {
+        assert!((got - want).abs() < 1e-3, "{r:?} vs {want:?}");
+    }
+}
+
+#[test]
+fn other_invisible_text_is_not_padded() {
+    let doc = |content: &str| {
+        let mut d = load_pdf(&one_page(content.as_bytes(), dictionary! {})).unwrap();
+        let font = d.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding" });
+        let p = page_id(&d, 1);
+        d.get_dictionary_mut(p).unwrap().set("Resources", dictionary! { "Font" => dictionary! { "H" => font } });
+        save_pdf(&mut d).unwrap()
+    };
+    let visible = redact_search(&doc("BT /H 20 Tf 72 700 Td (MANTIS) Tj ET"), "mantis", &SearchOptions::default()).unwrap().matches[0].rects[0];
+    let hidden = redact_search(&doc("BT 3 Tr /H 20 Tf 72 700 Td (MANTIS) Tj ET"), "mantis", &SearchOptions::default()).unwrap().matches[0].rects[0];
+    assert_eq!(visible, hidden);
+    assert!((visible[0] - 72.0).abs() < 1e-6, "{visible:?}");
+}

@@ -222,6 +222,8 @@ pub(crate) struct Glyph {
     pub(crate) pattern: bool,
     /// Op index of the innermost enclosing `BDC`/`BMC`, if any.
     pub(crate) marked: Option<usize>,
+    /// Invisible text in a GlyphLessFont: an OCR text layer over a scan.
+    pub(crate) ocr_layer: bool,
 }
 
 impl Glyph {
@@ -580,6 +582,7 @@ impl Run<'_> {
                 em: (top.0 - origin.0).hypot(top.1 - origin.1),
                 pattern: self.gs.paint.pattern(),
                 marked: self.marked(),
+                ocr_layer: self.gs.render_mode == 3 && font.is_glyphless(),
             };
             self.text.tm = concat(&translate(glyph.advance(), 0.0), &self.text.tm);
             glyph.end = apply(&concat(&size, &concat(&self.text.tm, &self.gs.ctm)), 0.0, 0.0);
