@@ -357,15 +357,11 @@ export function usePdfWorker() {
     [run],
   );
 
-  /** `pdfBytes` with the recognised words of `pages` added as an invisible, searchable text layer. */
+  /**
+   * `pdfBytes` with the recognised words of `pages` added as an invisible, searchable text layer,
+   * and the pages left alone because they already had an OCR layer.
+   */
   const addTextLayer = useCallback(
-    (pdfBytes: Uint8Array, pages: OcrPageWire[]): Promise<TextLayerResultWire> =>
-      run(null, (id) => ({ type: "ocr-text-layer", id, pdfBytes, pages }), asTextLayer),
-    [run],
-  );
-
-  /** `addTextLayer`, also saying which pages were left alone because they already had an OCR layer. */
-  const addTextLayerReport = useCallback(
     (pdfBytes: Uint8Array, pages: OcrPageWire[]): Promise<TextLayerResultWire> =>
       run(null, (id) => ({ type: "ocr-text-layer", id, pdfBytes, pages }), asTextLayer),
     [run],
@@ -491,7 +487,6 @@ export function usePdfWorker() {
       redactPlan,
       redactPdf,
       addTextLayer,
-      addTextLayerReport,
       cropPdf,
       resizePdf,
       nupPdf,
@@ -523,7 +518,6 @@ export function usePdfWorker() {
       redactPlan,
       redactPdf,
       addTextLayer,
-      addTextLayerReport,
       cropPdf,
       resizePdf,
       nupPdf,
