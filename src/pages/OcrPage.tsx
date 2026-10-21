@@ -6,7 +6,7 @@ import { pdfjs } from "../lib/pdf";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import PageStrip from "../components/editor/PageStrip";
-import { OCR_CANCELLED, OCR_NOT_STARTED, OcrEngine, ocrWorkerCount } from "../lib/ocr/engine";
+import { OCR_CANCELLED, OCR_NOT_STARTED, OcrEngine, isOcrCancelled, ocrWorkerCount } from "../lib/ocr/engine";
 import { OCR_LANGUAGES, defaultLanguages, type OcrLanguage } from "../lib/ocr/languages";
 import { runPipeline } from "../lib/ocr/pipeline";
 import { renderPageImage } from "../lib/ocr/render";
@@ -31,8 +31,6 @@ import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 
 /** The engine's page limit (`add_text_layer`). */
 const MAX_PAGES = 2000;
-const CANCELLED = OCR_CANCELLED;
-const NOT_STARTED = OCR_NOT_STARTED;
 const linkClass = "font-medium text-mantis-700 underline dark:text-mantis-400";
 
 interface Progress {
@@ -69,7 +67,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
   const [page, setPage] = useState(1);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [result, setResult] = useState<OcrResult | null>(null);
-  // After a download, leaving or starting over loses nothing (as in Compress, Merge, Split).
+  // After the searchable PDF is downloaded, leaving or starting over loses nothing (as in Compress, Merge, Split).
   const [downloaded, setDownloaded] = useState(false);
   // Pages the text layer left alone because they already had one (a second pass).
   const [alreadyOcr, setAlreadyOcr] = useState<number[]>([]);
@@ -137,7 +135,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
         onProgress: (p) => setProgress((pr) => (pr && pr.done === 0 && pr.recognised === 0 ? { ...pr, status: loadingLabel(p) } : pr)),
       });
       engineRef.current = engine;
-      if (cancelledRef.current) throw new Error(CANCELLED);
+      if (cancelledRef.current) throw new Error(OCR_CANCELLED);
       doc = await pdfjs.getDocument({ data: input.bytes.slice() }).promise;
       const pdf = doc;
       const startedAt = Date.now();
@@ -187,10 +185,10 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       );
       setResult(fromPipeline(pages));
     } catch (e) {
+      if (cancelledRef.current || isOcrCancelled(e)) return;
       const message = e instanceof Error ? e.message : String(e);
-      if (cancelledRef.current || message === CANCELLED) return;
       setError(
-        message === NOT_STARTED ? "The OCR engine could not start. Check your connection to this site and try again." : message,
+        message === OCR_NOT_STARTED ? "The OCR engine could not start. Check your connection to this site and try again." : message,
       );
     } finally {
       engineRef.current = null;
@@ -227,8 +225,8 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
 
   const downloadText = () => {
     if (!result) return;
+    // The text alone is not the searchable PDF: leaving still warns until the PDF is downloaded.
     downloadBlob(new TextEncoder().encode(exportText(wholeDocumentText(result.texts, result.skippedTexts))), `${baseName(input.file)}_ocr.txt`);
-    setDownloaded(true);
   };
 
   const startOver = () => {
