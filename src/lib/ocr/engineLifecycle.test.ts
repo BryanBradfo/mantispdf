@@ -36,7 +36,7 @@ vi.mock("tesseract.js", () => ({
   }),
 }));
 
-const { OcrEngine } = await import("./engine");
+const { OCR_ENGINE_STOPPED, OcrEngine, isOcrFatal } = await import("./engine");
 const ORIGIN = "https://app.test";
 const never = () => new Promise<never>(() => {});
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -209,5 +209,65 @@ describe("OcrEngine.recognize", () => {
     expect(workers[0].terminate).toHaveBeenCalledTimes(1);
     await engine.terminate();
     expect(workers[0].terminate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("OcrEngine worker recycling", () => {
+  const img = new Uint8Array([1]);
+
+  it("replaces a worker after it has read pagesPerWorker pages", async () => {
+    const engine = await OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN, pagesPerWorker: 2 });
+    for (let i = 0; i < 5; i++) await engine.recognize(img);
+    // Pages 1-2 on the first worker, 3-4 on the second, 5 on the third.
+    expect(workers).toHaveLength(3);
+    expect(workers.map((w) => w.recognize.mock.calls.length)).toEqual([2, 2, 1]);
+    expect(workers[0].terminate).toHaveBeenCalled();
+    expect(workers[1].terminate).toHaveBeenCalled();
+    expect(workers[2].terminate).not.toHaveBeenCalled();
+    // A replacement is started like the first worker.
+    expect(workers[1].langs).toEqual([]);
+    expect(workers[1].reinitialize).toHaveBeenCalledWith("eng", 1);
+    expect(workers[1].setParameters).toHaveBeenCalledWith({ tessedit_pageseg_mode: "3" });
+    await engine.terminate();
+    expect(workers[2].terminate).toHaveBeenCalled();
+  });
+
+  it("recycles 50 pages per worker by default", async () => {
+    const engine = await OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN });
+    for (let i = 0; i < 51; i++) await engine.recognize(img);
+    expect(workers.map((w) => w.recognize.mock.calls.length)).toEqual([50, 1]);
+  });
+
+  it("a page that fails rejects with its reason, and its worker is replaced", async () => {
+    let n = 0;
+    recognizeBehaviour = async () => {
+      if (++n === 1) throw new Error("RuntimeError: memory access out of bounds");
+      return { data: { text: "", blocks: [] } };
+    };
+    const engine = await OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN });
+    const failed = await engine.recognize(img).then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(failed?.message).toContain("memory access out of bounds");
+    expect(isOcrFatal(failed)).toBe(false);
+    expect(workers[0].terminate).toHaveBeenCalled();
+    await engine.recognize(img);
+    expect(workers).toHaveLength(2);
+    expect(workers[1].recognize).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops for good when a worker cannot be replaced", async () => {
+    recognizeBehaviour = async () => {
+      throw new Error("worker crashed");
+    };
+    const engine = await OcrEngine.create(["eng"], { workers: 1, origin: ORIGIN });
+    createBehaviour = async () => {
+      throw new Error("could not load the core");
+    };
+    const first = await engine.recognize(img).then(() => null, (e: Error) => e);
+    expect(first?.message).toBe(OCR_ENGINE_STOPPED);
+    expect(isOcrFatal(first)).toBe(true);
+    await expect(engine.recognize(img)).rejects.toThrow(OCR_ENGINE_STOPPED);
   });
 });

@@ -141,6 +141,17 @@ export const OCR_NOT_STARTED = "OCR engine could not start";
 const CANCELLED = OCR_CANCELLED;
 const NOT_STARTED = OCR_NOT_STARTED;
 
+/**
+ * The message of every page and later call once the engine has stopped for good: a worker died
+ * and could not be replaced.
+ */
+export const OCR_ENGINE_STOPPED = "OCR engine stopped";
+
+/** Errors that end a run: a cancel, or the engine stopping. Anything else is one page failing. */
+export function isOcrFatal(e: unknown): boolean {
+  return e instanceof Error && (e.message === OCR_CANCELLED || e.message === OCR_ENGINE_STOPPED);
+}
+
 /** An error that only means OCR was cancelled. */
 export function isOcrCancelled(e: unknown): boolean {
   return e instanceof Error && e.message === OCR_CANCELLED;
@@ -159,11 +170,19 @@ export interface OcrEngineOptions {
    */
   onProgress?: (p: OcrProgress) => void;
   timeoutMs?: number;
+  /** Pages a worker reads before it is replaced by a fresh one (bounds the wasm heap). */
+  pagesPerWorker?: number;
 }
 
+/** Pages one tesseract worker reads before it is replaced: its wasm heap only grows. */
+export const PAGES_PER_WORKER = 50;
+
 /**
- * A pool of tesseract workers for `langs`, one page per worker at a time. `terminate` stops
- * everything; running, queued and later pages reject with "OCR cancelled".
+ * A pool of tesseract workers for `langs`, one page per worker at a time. Each worker is replaced
+ * by a fresh one after `pagesPerWorker` pages (a wasm heap never shrinks) and after a page fails
+ * on it (the module may be broken). `terminate` stops everything; running, queued and later pages
+ * reject with "OCR cancelled". If a worker cannot be replaced the engine stops for good: pending
+ * and later pages reject with "OCR engine stopped".
  *
  * Image bytes are not transferred: tesseract.js copies the given bytes (`new Uint8Array(data)`)
  * and posts them to its worker without a transfer list (worker/browser/send.js), so callers
@@ -171,22 +190,29 @@ export interface OcrEngineOptions {
  */
 export class OcrEngine {
   private terminated = false;
-  private readonly cancelled: Promise<never>;
-  private cancel: (e: Error) => void = () => {};
+  private readonly stopped: Promise<never>;
+  private stop: (e: Error) => void = () => {};
+  private stoppedWith: Error | null = null;
+  private readonly live: Set<Worker>;
   private readonly idle: Worker[];
   private readonly waiting: ((w: Worker) => void)[] = [];
+  private readonly uses = new Map<Worker, number>();
   private jobs = 0;
 
   private constructor(
-    private readonly workers: Worker[],
+    workers: Worker[],
     private readonly pageProgress: Map<string, (progress: number) => void>,
+    /** A fresh worker started like the first ones. */
+    private readonly spawn: () => Promise<Worker>,
+    private readonly pagesPerWorker: number,
   ) {
+    this.live = new Set(workers);
     this.idle = [...workers];
-    this.cancelled = new Promise<never>((_, reject) => {
-      this.cancel = reject;
+    this.stopped = new Promise<never>((_, reject) => {
+      this.stop = reject;
     });
-    // Rejected on terminate whether or not a page is pending.
-    this.cancelled.catch(() => {});
+    // Rejected on terminate (or when the engine stops) whether or not a page is pending.
+    this.stopped.catch(() => {});
   }
 
   /**
@@ -203,12 +229,15 @@ export class OcrEngine {
     // yet loading count 0), and it never goes back.
     const languageProgress = new Map<string, number>();
     let languageShown = 0;
+    let engineStarted = false;
     const logger = (m: LoggerMessage) => {
       const page = m.userJobId ? pageProgress.get(m.userJobId) : undefined;
       if (page) {
         page(m.progress);
         return;
       }
+      // Replacement workers start quietly: the start progress is over.
+      if (engineStarted) return;
       if (/language/i.test(m.status)) {
         languageProgress.set(m.workerId, Math.max(languageProgress.get(m.workerId) ?? 0, m.progress));
         let sum = 0;
@@ -225,7 +254,7 @@ export class OcrEngine {
       failed = true;
       for (const w of started) void w.terminate();
     };
-    const start = async () => {
+    const startWorker = async () => {
       const w = await createWorker([], OEM.LSTM_ONLY, {
         ...urls,
         workerBlobURL: false,
@@ -239,12 +268,29 @@ export class OcrEngine {
         void w.terminate();
         throw new Error(CANCELLED);
       }
-      await w.reinitialize(langs.join("+"), OEM.LSTM_ONLY);
-      // Automatic page segmentation, like the tesseract CLI (the library's own default is a
-      // single block, which reads tables and multi-column pages badly); it is also the mode
-      // rotateAuto measures the skew with.
-      await w.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
+      try {
+        await w.reinitialize(langs.join("+"), OEM.LSTM_ONLY);
+        // Automatic page segmentation, like the tesseract CLI (the library's own default is a
+        // single block, which reads tables and multi-column pages badly); it is also the mode
+        // rotateAuto measures the skew with.
+        await w.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
+      } catch (e) {
+        if (engineStarted) void w.terminate();
+        throw e;
+      }
       return w;
+    };
+    const timeoutMs = options.timeoutMs ?? CREATE_TIMEOUT_MS;
+    // A replacement worker: the same start, bounded by the same timeout.
+    const spawn = () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(NOT_STARTED)), timeoutMs);
+      });
+      const fresh = startWorker();
+      // One that starts after the timeout is not used.
+      fresh.then((w) => late.catch(() => void w.terminate()), () => {});
+      return Promise.race([fresh, late]).finally(() => clearTimeout(timer));
     };
 
     let onAbort = () => {};
@@ -252,13 +298,14 @@ export class OcrEngine {
     const stop = new Promise<never>((_, reject) => {
       onAbort = () => reject(new Error(CANCELLED));
       options.signal?.addEventListener("abort", onAbort, { once: true });
-      timer = setTimeout(() => reject(new Error(NOT_STARTED)), options.timeoutMs ?? CREATE_TIMEOUT_MS);
+      timer = setTimeout(() => reject(new Error(NOT_STARTED)), timeoutMs);
     });
-    const all = Promise.all(Array.from({ length: options.workers }, start));
+    const all = Promise.all(Array.from({ length: options.workers }, startWorker));
     all.catch(() => {});
     try {
       const workers = await Promise.race([all, stop]);
-      return new OcrEngine(workers, pageProgress);
+      engineStarted = true;
+      return new OcrEngine(workers, pageProgress, spawn, options.pagesPerWorker ?? PAGES_PER_WORKER);
     } catch (e) {
       stopAll();
       if (e instanceof Error && (e.message === CANCELLED || e.message === NOT_STARTED)) throw e;
@@ -275,24 +322,61 @@ export class OcrEngine {
   }
 
   private release(w: Worker) {
+    if (this.terminated) return;
     const next = this.waiting.shift();
     if (next) next(w);
     else this.idle.push(w);
   }
 
+  /** `old` terminated and a fresh worker in its place; the engine stops if none can start. */
+  private async replace(old: Worker): Promise<Worker> {
+    this.live.delete(old);
+    this.uses.delete(old);
+    void old.terminate();
+    try {
+      const fresh = await this.spawn();
+      if (this.terminated) {
+        void fresh.terminate();
+        throw new Error(CANCELLED);
+      }
+      this.live.add(fresh);
+      return fresh;
+    } catch (e) {
+      if (e instanceof Error && e.message === CANCELLED) throw e;
+      this.fail();
+      throw new Error(OCR_ENGINE_STOPPED);
+    }
+  }
+
+  /** Stops the engine for good: every pending and later page rejects with OCR_ENGINE_STOPPED. */
+  private fail() {
+    if (this.terminated) return;
+    this.stoppedWith = new Error(OCR_ENGINE_STOPPED);
+    this.terminated = true;
+    this.stop(this.stoppedWith);
+    this.waiting.length = 0;
+    this.pageProgress.clear();
+    for (const w of this.live) void w.terminate();
+    this.live.clear();
+  }
+
   /**
    * Recognise one page image (PGM, PNG or any format leptonica reads) rendered at `dpi`.
-   * `onProgress` receives this page's recognition progress (0 to 1). Rejects with "OCR cancelled" once `terminate`
-   * is called.
+   * `onProgress` receives this page's recognition progress (0 to 1). A page that fails rejects
+   * with its own error (the run may go on: see `isOcrFatal`); once `terminate` is called pages
+   * reject with "OCR cancelled".
    */
   async recognize(image: Uint8Array, onProgress?: (progress: number) => void, dpi = DEFAULT_DPI): Promise<RecognizedPage> {
+    if (this.stoppedWith) throw new Error(this.stoppedWith.message);
     if (this.terminated) throw new Error(CANCELLED);
     // Skewed scans read far better deskewed (measured on real scans), but tesseract then reports
     // boxes on the deskewed image: only deskew when they can be put back (the size is known).
     const size = imageSize(image);
     const run = (async () => {
-      const w = await this.acquire();
-      if (this.terminated) throw new Error(CANCELLED);
+      let w = await this.acquire();
+      if (this.terminated) throw new Error(this.stoppedWith?.message ?? CANCELLED);
+      if ((this.uses.get(w) ?? 0) >= this.pagesPerWorker) w = await this.replace(w);
+      this.uses.set(w, (this.uses.get(w) ?? 0) + 1);
       const jobId = `ocr-page-${++this.jobs}`;
       if (onProgress) this.pageProgress.set(jobId, onProgress);
       try {
@@ -300,15 +384,21 @@ export class OcrEngine {
         // The image's resolution: tesseract cannot read it from a PGM and would guess it (and log
         // "Estimating resolution as ..." to the console).
         const options = { user_defined_dpi: String(Math.round(dpi)), ...(size ? { rotateAuto: true } : {}) };
-        return await w.recognize(image as unknown as Blob, options, { text: true, blocks: true }, jobId);
+        const result = await w.recognize(image as unknown as Blob, options, { text: true, blocks: true }, jobId);
+        this.release(w);
+        return result;
+      } catch (e) {
+        if (this.terminated) throw new Error(this.stoppedWith?.message ?? CANCELLED);
+        // The page failed: its worker may be broken, so a fresh one takes its place.
+        this.release(await this.replace(w));
+        throw e;
       } finally {
         this.pageProgress.delete(jobId);
-        if (!this.terminated) this.release(w);
       }
     })();
     // A page cut off by terminate may reject later, or never settle: it is abandoned.
     run.catch(() => {});
-    const { data } = await Promise.race([run, this.cancelled]);
+    const { data } = await Promise.race([run, this.stopped]);
     const angle = (data as { rotateRadians?: number | null }).rotateRadians ?? 0;
     const words = size ? unskewWords(wordsFromBlocks(data.blocks), angle, size) : wordsFromBlocks(data.blocks);
     const confidence = words.length ? words.reduce((s, w) => s + w.confidence, 0) / words.length : 0;
@@ -318,9 +408,11 @@ export class OcrEngine {
   async terminate(): Promise<void> {
     if (this.terminated) return;
     this.terminated = true;
-    this.cancel(new Error(CANCELLED));
+    this.stop(new Error(CANCELLED));
     this.waiting.length = 0;
     this.pageProgress.clear();
-    await Promise.all(this.workers.map((w) => w.terminate()));
+    const workers = [...this.live];
+    this.live.clear();
+    await Promise.all(workers.map((w) => w.terminate()));
   }
 }
