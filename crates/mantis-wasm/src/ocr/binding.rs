@@ -6,8 +6,8 @@
 //! `Invalid OCR settings: <path>`.
 
 use super::job::{RawPage, check_counts};
-use super::{MAX_WORD_UNITS, OcrWord, invalid};
-use js_sys::{Array, JsString, Reflect};
+use super::{MAX_WORD_UNITS, OcrWord, TextLayerResult, invalid};
+use js_sys::{Array, JsString, Object, Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue};
 
 /// `obj[key]`, which may be null or undefined.
@@ -88,4 +88,14 @@ pub(crate) fn read_pages(pages: &JsValue) -> Result<Vec<RawPage>, String> {
         out.push(RawPage { page, words: read });
     }
     Ok(out)
+}
+
+/// `{ bytes: Uint8Array, alreadyOcrPages: number[] }`.
+pub(crate) fn result_to_js(result: &TextLayerResult) -> JsValue {
+    let obj = Object::new();
+    // Setting a plain data property on a fresh plain object cannot fail.
+    let _ = Reflect::set(&obj, &JsValue::from_str("bytes"), &Uint8Array::from(result.bytes.as_slice()));
+    let pages: Array = result.already_ocr_pages.iter().map(|&p| JsValue::from_f64(f64::from(p))).collect();
+    let _ = Reflect::set(&obj, &JsValue::from_str("alreadyOcrPages"), &pages);
+    obj.into()
 }

@@ -169,9 +169,9 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       }
 
       case "ocr-text-layer": {
-        const bytes = add_text_layer(msg.pdfBytes, msg.pages);
+        const { bytes, alreadyOcrPages } = add_text_layer(msg.pdfBytes, msg.pages);
         // A fresh copy out of WASM memory: hand it over instead of cloning.
-        postSuccess(msg.id, { kind: "bytes", bytes }, [bytes.buffer as ArrayBuffer]);
+        postSuccess(msg.id, { kind: "text-layer", bytes, alreadyOcrPages }, [bytes.buffer as ArrayBuffer]);
         break;
       }
 

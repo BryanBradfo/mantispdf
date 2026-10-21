@@ -9,6 +9,7 @@
 //! other pages share are left as they are.
 
 pub(crate) mod binding;
+pub(crate) mod existing;
 pub(crate) mod font;
 pub(crate) mod job;
 pub(crate) mod layer;
@@ -68,13 +69,32 @@ pub(crate) fn invalid(field: &str) -> String {
     format!("Invalid OCR settings: {field}")
 }
 
-/// `pdf` with the words of `pages` added as an invisible text layer.
-/// Words with blank text are skipped; pages without words are not touched.
+/// What `add_text_layer_report` did.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextLayerResult {
+    pub bytes: Vec<u8>,
+    /// Pages with words that were left alone: they already had an OCR layer.
+    pub already_ocr_pages: Vec<u32>,
+}
+
+/// `pdf` with the words of `pages` added as an invisible text layer (the
+/// tests' shorthand for `add_text_layer_report`).
+#[cfg(test)]
 pub fn add_text_layer(pdf: &[u8], pages: &[OcrPage]) -> Result<Vec<u8>, String> {
+    add_text_layer_report(pdf, pages).map(|r| r.bytes)
+}
+
+/// `pdf` with the words of `pages` added as an invisible text layer.
+/// Words with blank text are skipped; pages without words are not touched,
+/// nor are pages that already have an OCR layer (`existing`): those are
+/// listed in `already_ocr_pages`.
+pub fn add_text_layer_report(pdf: &[u8], pages: &[OcrPage]) -> Result<TextLayerResult, String> {
     validate_shape(pages)?;
     let mut doc = load_pdf(pdf)?;
     let page_ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
     validate(pages, page_ids.len())?;
+    let mut already_ocr_pages = Vec::new();
+    let mut budget = crate::redact::Budget::page(crate::redact::JOB_DECODED);
 
     // Encode every word first: the document's one font maps every code any
     // page uses. A page object listed more than once in the tree gets one
@@ -86,6 +106,14 @@ pub fn add_text_layer(pdf: &[u8], pages: &[OcrPage]) -> Result<Vec<u8>, String> 
         let page_id = page_ids[entry.page as usize - 1];
         let matrix = VisibleBox::of_page(&doc, page_id).matrix();
         let words: Vec<&OcrWord> = entry.words.iter().filter(|w| !w.text.trim().is_empty()).collect();
+        if words.is_empty() {
+            continue;
+        }
+        // Checked on the document as loaded (nothing is written before every page is planned).
+        if existing::has_ocr_layer(&doc, page_id, &mut budget) {
+            already_ocr_pages.push(entry.page);
+            continue;
+        }
         if words.iter().any(|w| w.space_after) {
             cids.encode(" ");
         }
@@ -104,7 +132,7 @@ pub fn add_text_layer(pdf: &[u8], pages: &[OcrPage]) -> Result<Vec<u8>, String> 
         plans[i].1.append(&mut placed);
     }
     if plans.is_empty() {
-        return save_pdf(&mut doc);
+        return Ok(TextLayerResult { bytes: save_pdf(&mut doc)?, already_ocr_pages });
     }
 
     let font_id = font::add_font(&mut doc, &cids);
@@ -115,7 +143,7 @@ pub fn add_text_layer(pdf: &[u8], pages: &[OcrPage]) -> Result<Vec<u8>, String> 
         layer::write_ops(&name, words, &mut pw.ops);
         pw.finish_compressed(&mut doc, &mut writer)?;
     }
-    save_pdf(&mut doc)
+    Ok(TextLayerResult { bytes: save_pdf(&mut doc)?, already_ocr_pages })
 }
 
 /// The limits that do not need the document: checked before parsing it.

@@ -8,7 +8,7 @@ import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob"
 import type { StampJobSpec } from "../lib/stampJob";
 import type { FormInfo } from "../lib/forms/model";
 import type { FormWireEntry } from "../lib/forms/toWire";
-import type { OcrPageWire } from "../lib/ocr/textLayerWire";
+import type { OcrPageWire, TextLayerResultWire } from "../lib/ocr/textLayerWire";
 import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, SearchOptionsWire } from "../lib/redact/toJob";
 import type { RedactSearchResultWire } from "../lib/redact/searchWire";
 import { PdfWorkerClient } from "../lib/workerClient";
@@ -74,6 +74,10 @@ const asBytes = (p: SuccessPayload): Uint8Array => {
 const asPlainBytes = (p: SuccessPayload): Uint8Array => {
   if (p.kind !== "bytes") throw new Error("Unexpected worker payload");
   return p.bytes;
+};
+const asTextLayer = (p: SuccessPayload): TextLayerResultWire => {
+  if (p.kind !== "text-layer") throw new Error("Unexpected worker payload");
+  return { bytes: p.bytes, alreadyOcrPages: p.alreadyOcrPages };
 };
 const asCount = (p: SuccessPayload): number => {
   if (p.kind !== "count") throw new Error("Unexpected worker payload");
@@ -356,7 +360,14 @@ export function usePdfWorker() {
   /** `pdfBytes` with the recognised words of `pages` added as an invisible, searchable text layer. */
   const addTextLayer = useCallback(
     (pdfBytes: Uint8Array, pages: OcrPageWire[]): Promise<Uint8Array> =>
-      run(null, (id) => ({ type: "ocr-text-layer", id, pdfBytes, pages }), asPlainBytes),
+      run(null, (id) => ({ type: "ocr-text-layer", id, pdfBytes, pages }), (p) => asTextLayer(p).bytes),
+    [run],
+  );
+
+  /** `addTextLayer`, also saying which pages were left alone because they already had an OCR layer. */
+  const addTextLayerReport = useCallback(
+    (pdfBytes: Uint8Array, pages: OcrPageWire[]): Promise<TextLayerResultWire> =>
+      run(null, (id) => ({ type: "ocr-text-layer", id, pdfBytes, pages }), asTextLayer),
     [run],
   );
 
@@ -480,6 +491,7 @@ export function usePdfWorker() {
       redactPlan,
       redactPdf,
       addTextLayer,
+      addTextLayerReport,
       cropPdf,
       resizePdf,
       nupPdf,
@@ -511,6 +523,7 @@ export function usePdfWorker() {
       redactPlan,
       redactPdf,
       addTextLayer,
+      addTextLayerReport,
       cropPdf,
       resizePdf,
       nupPdf,

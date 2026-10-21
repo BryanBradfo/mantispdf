@@ -660,3 +660,68 @@ fn angles_are_checked() {
     }
     assert!(add_text_layer(&letter(), &[page(1, vec![turned("a", 1.0, 1.0, 1.0, 1.0, -180.0)])]).is_ok());
 }
+
+/// Page 1 of the output: its /Contents (as written) and the number of GlyphLessFont Type0 fonts in the file.
+fn layer_state(doc: &Document) -> (Object, usize) {
+    let contents = doc.get_dictionary(page_id(doc, 1)).unwrap().get(b"Contents").unwrap().clone();
+    let fonts = doc
+        .objects
+        .values()
+        .filter(|o| o.as_dict().is_ok_and(|d| d.get(b"Subtype").ok().and_then(|s| s.as_name().ok()) == Some(b"Type0")))
+        .count();
+    (contents, fonts)
+}
+
+#[test]
+fn a_second_pass_skips_pages_that_already_have_an_ocr_layer() {
+    let words = || vec![word("MANTIS", 72.0, 700.0, 120.0, 20.0)];
+    let first = add_text_layer(&doc(2, [0.0, 0.0, 612.0, 792.0], 0), &[page(1, words())]).unwrap();
+    let second = add_text_layer_report(&first, &[page(1, words()), page(2, words())]).unwrap();
+    assert_eq!(second.already_ocr_pages, vec![1]);
+    let before = load_pdf(&first).unwrap();
+    let after = load_pdf(&second.bytes).unwrap();
+    // Page 1 keeps its one layer; page 2 gets its first.
+    assert_eq!(layer_state(&after).0, layer_state(&before).0);
+    assert_eq!(words_drawn(&glyphs(&after, 1)).len(), 1);
+    assert_eq!(words_drawn(&glyphs(&after, 2)).len(), 1);
+    assert_eq!(layer_state(&after).1, 2);
+    // A first pass reports nothing.
+    assert!(add_text_layer_report(&letter(), &[page(1, words())]).unwrap().already_ocr_pages.is_empty());
+}
+
+/// One page with a Type0 font `/F1` named `base` and `content`.
+fn page_with_font(base: &str, content: &str) -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let font = doc.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type0", "BaseFont" => Object::Name(base.as_bytes().to_vec()), "Encoding" => "Identity-H" });
+    let c = doc.add_object(Stream::new(dictionary! {}, content.as_bytes().to_vec()));
+    let page = doc.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages_id, "Contents" => c, "MediaBox" => nums(&[0.0, 0.0, 612.0, 792.0]),
+        "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } },
+    });
+    doc.objects.insert(pages_id, Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 }));
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    save_pdf(&mut doc).unwrap()
+}
+
+#[test]
+fn an_existing_layer_is_invisible_glyphless_text() {
+    for (base, content, already) in [
+        // Tesseract's own layer.
+        ("GlyphLessFont", "BT 3 Tr /F1 10 Tf 1 0 0 1 72 700 Tm <0041> Tj ET", true),
+        ("ABCDEF+GlyphLessFont", "BT /F1 10 Tf 3 Tr [<0041>] TJ ET", true),
+        // Render mode set before BT, kept across text objects.
+        ("GlyphLessFont", "3 Tr BT /F1 10 Tf <0041> Tj ET", true),
+        // Visible text in that font, or invisible text in another font: not an OCR layer.
+        ("GlyphLessFont", "BT 0 Tr /F1 10 Tf <0041> Tj ET", false),
+        ("Helvetica", "BT 3 Tr /F1 10 Tf <0041> Tj ET", false),
+        // Render mode restored by Q before the text.
+        ("GlyphLessFont", "q 3 Tr Q BT /F1 10 Tf <0041> Tj ET", false),
+        // The font set up, nothing shown.
+        ("GlyphLessFont", "BT 3 Tr /F1 10 Tf ET", false),
+    ] {
+        let report = add_text_layer_report(&page_with_font(base, content), &[page(1, vec![word("w", 10.0, 10.0, 10.0, 10.0)])]).unwrap();
+        assert_eq!(report.already_ocr_pages, if already { vec![1] } else { vec![] }, "{base}: {content}");
+    }
+}

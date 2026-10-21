@@ -8,13 +8,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { RedactSearchResultWire } from "../redact/searchWire";
-import type { OcrPageWire, OcrWordWire } from "./textLayerWire";
+import type { OcrPageWire, OcrWordWire, TextLayerResultWire } from "./textLayerWire";
+import { TEXT_LAYER_RESULT_KEYS } from "./wireKeys";
 
 const PKG = fileURLToPath(new URL("../../../crates/mantis-wasm/pkg/", import.meta.url));
 const built = existsSync(`${PKG}mantis_wasm_bg.wasm`);
 
 type Wasm = {
-  add_text_layer: (pdf: Uint8Array, pages: unknown) => Uint8Array;
+  add_text_layer: (pdf: Uint8Array, pages: unknown) => TextLayerResultWire;
   redact_search: (pdf: Uint8Array, query: string, options: object) => RedactSearchResultWire;
   initSync: (m: { module: BufferSource }) => unknown;
 };
@@ -50,11 +51,13 @@ const PDF = buildPdf([
 
 const word = (text: string, x: number, spaceAfter: boolean): OcrWordWire => ({ text, x, y: 700, w: 60, h: 20, baseline: null, spaceAfter });
 const SEARCH = { wholeWord: false, caseSensitive: false };
+/** The output bytes of `add_text_layer`. */
+const addLayer = (pdf: Uint8Array, pages: unknown) => wasm.add_text_layer(pdf, pages).bytes;
 
 describe.skipIf(!built)("add_text_layer binding", () => {
   it("adds words that the engine's search finds where they were placed", () => {
     const pages: OcrPageWire[] = [{ page: 1, words: [word("MANTIS", 72, true), word("été", 133, false)] }];
-    const out = wasm.add_text_layer(PDF, pages);
+    const out = addLayer(PDF, pages);
     expect(new TextDecoder("latin1").decode(out)).toContain("GlyphLessFont");
     // A 1 pt gap reads as a space only thanks to `spaceAfter`.
     const found = wasm.redact_search(out, "mantis été", SEARCH);
@@ -67,22 +70,32 @@ describe.skipIf(!built)("add_text_layer binding", () => {
     const pages = [
       { page: 1, words: [{ ...word("x", 10, false), baseline: 704 }] },
     ];
-    expect(wasm.add_text_layer(PDF, pages).length).toBeGreaterThan(PDF.length);
-    expect(wasm.add_text_layer(PDF, [{ page: 1, words: [] }]).length).toBeGreaterThan(0);
+    expect(addLayer(PDF, pages).length).toBeGreaterThan(PDF.length);
+    expect(addLayer(PDF, [{ page: 1, words: [] }]).length).toBeGreaterThan(0);
+  });
+
+  it("leaves a page that already has an OCR layer alone and says so", () => {
+    const pages: OcrPageWire[] = [{ page: 1, words: [word("MANTIS", 72, false)] }];
+    const first = wasm.add_text_layer(PDF, pages);
+    expect(Object.keys(first).sort()).toEqual([...TEXT_LAYER_RESULT_KEYS].sort());
+    expect(first.alreadyOcrPages).toEqual([]);
+    const second = wasm.add_text_layer(first.bytes, pages);
+    expect(second.alreadyOcrPages).toEqual([1]);
+    expect(wasm.redact_search(second.bytes, "mantis", SEARCH).matches).toHaveLength(1);
   });
 
   it("turns a word by its angle, and checks the angle", () => {
     const turned = { ...word("MANTIS", 72, false), angle: 2 };
-    const out = wasm.add_text_layer(PDF, [{ page: 1, words: [turned] }]);
+    const out = addLayer(PDF, [{ page: 1, words: [turned] }]);
     expect(wasm.redact_search(out, "mantis", SEARCH).matches).toHaveLength(1);
     // Null or absent: upright.
-    expect(wasm.add_text_layer(PDF, [{ page: 1, words: [{ ...turned, angle: null }] }]).length).toBeGreaterThan(0);
-    expect(() => wasm.add_text_layer(PDF, [{ page: 1, words: [{ ...turned, angle: "2" }] }])).toThrow("Invalid OCR settings: pages[0].words[0].angle");
-    expect(() => wasm.add_text_layer(PDF, [{ page: 1, words: [{ ...turned, angle: 400 }] }])).toThrow("Invalid OCR settings: angle");
+    expect(addLayer(PDF, [{ page: 1, words: [{ ...turned, angle: null }] }]).length).toBeGreaterThan(0);
+    expect(() => addLayer(PDF, [{ page: 1, words: [{ ...turned, angle: "2" }] }])).toThrow("Invalid OCR settings: pages[0].words[0].angle");
+    expect(() => addLayer(PDF, [{ page: 1, words: [{ ...turned, angle: 400 }] }])).toThrow("Invalid OCR settings: angle");
   });
 
   it("refuses bad shapes with the engine's messages", () => {
-    const bad = (pages: unknown) => () => wasm.add_text_layer(PDF, pages);
+    const bad = (pages: unknown) => () => addLayer(PDF, pages);
     expect(bad({ page: 1 })).toThrow("Invalid OCR settings: pages");
     expect(bad([{ page: 1.5, words: [] }])).toThrow("Invalid OCR settings: pages[0].page");
     expect(bad([{ page: 2, words: [] }])).toThrow("Invalid OCR settings: page");
@@ -94,13 +107,13 @@ describe.skipIf(!built)("add_text_layer binding", () => {
   });
 
   it("checks counts and string lengths before copying", () => {
-    const bad = (pages: unknown) => () => wasm.add_text_layer(PDF, pages);
+    const bad = (pages: unknown) => () => addLayer(PDF, pages);
     // Sparse arrays: only their lengths are read.
     expect(bad(new Array(2001))).toThrow("Invalid OCR settings: pages");
     expect(bad([{ page: 1, words: new Array(200_001) }])).toThrow("Invalid OCR settings: words");
     const full = Array.from({ length: 10 }, () => ({ page: 1, words: new Array(200_000) }));
     expect(bad([...full, { page: 1, words: [word("a", 1, false)] }])).toThrow("Invalid OCR settings: words");
     expect(bad([{ page: 1, words: [word("x".repeat(201), 1, false)] }])).toThrow("Invalid OCR settings: text");
-    expect(wasm.add_text_layer(PDF, [{ page: 1, words: [word("😀".repeat(100), 1, false)] }]).length).toBeGreaterThan(0);
+    expect(addLayer(PDF, [{ page: 1, words: [word("😀".repeat(100), 1, false)] }]).length).toBeGreaterThan(0);
   });
 });

@@ -63,8 +63,10 @@ export type ToWorker =
 export type SuccessPayload =
   | { kind: "split"; parts: PdfPart[] }
   | { kind: "merge"; bytes: Uint8Array }
-  /** Bytes that are not a merge result (`redact-prepare`, `ocr-text-layer`). */
+  /** Bytes that are not a merge result (`redact-prepare`). */
   | { kind: "bytes"; bytes: Uint8Array }
+  /** `ocr-text-layer`: the output and the pages that already had an OCR layer. */
+  | { kind: "text-layer"; bytes: Uint8Array; alreadyOcrPages: number[] }
   | { kind: "count"; count: number }
   | { kind: "buffer"; result: ArrayBuffer }
   | { kind: "sanitized"; bytes: Uint8Array; report: number[] }

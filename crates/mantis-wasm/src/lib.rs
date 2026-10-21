@@ -205,10 +205,11 @@ pub fn list_form(pdf_bytes: &[u8]) -> Result<JsValue, JsValue> {
 /// Add an invisible OCR text layer (`pages` from `src/lib/ocr/textLayerWire.ts`, words in
 /// visible-space points).
 #[wasm_bindgen]
-pub fn add_text_layer(pdf_bytes: &[u8], pages: JsValue) -> Result<Vec<u8>, JsValue> {
+pub fn add_text_layer(pdf_bytes: &[u8], pages: JsValue) -> Result<JsValue, JsValue> {
     let raw = ocr::binding::read_pages(&pages).map_err(|e| JsValue::from_str(&e))?;
     let pages = ocr::job::to_pages(raw).map_err(|e| JsValue::from_str(&e))?;
-    ocr::add_text_layer(pdf_bytes, &pages).map_err(|e| JsValue::from_str(&e))
+    let result = ocr::add_text_layer_report(pdf_bytes, &pages).map_err(|e| JsValue::from_str(&e))?;
+    Ok(ocr::binding::result_to_js(&result))
 }
 
 /// Fill form fields (`values` from `src/lib/forms/toWire.ts`), optionally

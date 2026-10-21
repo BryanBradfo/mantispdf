@@ -4,4 +4,6 @@
  * built engine). `read_pages` reads them all.
  */
 export const PAGE_KEYS = ["page", "words"] as const;
+/** What `result_to_js` writes. */
+export const TEXT_LAYER_RESULT_KEYS = ["bytes", "alreadyOcrPages"] as const;
 export const WORD_KEYS = ["text", "x", "y", "w", "h", "baseline", "spaceAfter", "angle"] as const;

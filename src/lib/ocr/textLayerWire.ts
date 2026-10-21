@@ -29,3 +29,10 @@ export interface OcrPageWire {
   page: number;
   words: OcrWordWire[];
 }
+
+/** What `add_text_layer` returns. */
+export interface TextLayerResultWire {
+  bytes: Uint8Array;
+  /** Pages given words that were left alone: they already had an OCR text layer (a second pass). */
+  alreadyOcrPages: number[];
+}

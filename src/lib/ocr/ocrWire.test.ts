@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { OcrPageWire, OcrWordWire } from "./textLayerWire";
-import { PAGE_KEYS, WORD_KEYS } from "./wireKeys";
+import { PAGE_KEYS, TEXT_LAYER_RESULT_KEYS, WORD_KEYS } from "./wireKeys";
 
 /**
  * The wire contract with `crates/mantis-wasm/src/ocr/binding.rs` (keys in `wireKeys.ts`). Every
@@ -20,6 +20,6 @@ describe("ocr text layer wire shape", () => {
   });
 
   it("the Rust binding reads every key as a literal", () => {
-    for (const k of [...PAGE_KEYS, ...WORD_KEYS]) expect(binding.includes(`"${k}"`), k).toBe(true);
+    for (const k of [...PAGE_KEYS, ...WORD_KEYS, ...TEXT_LAYER_RESULT_KEYS]) expect(binding.includes(`"${k}"`), k).toBe(true);
   });
 });
