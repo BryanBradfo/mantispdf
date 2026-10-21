@@ -1,11 +1,11 @@
 // @vitest-environment node
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error: a plain Node script without type declarations.
-import { OCR_FILES, OCR_LICENSE_FILES, RUNTIME_DIR, missingInDist, ocrLicenseSources, ocrSources } from "../../../scripts/copy-ocr-assets.mjs";
+import { OCR_FILES, OCR_LICENSE_FILES, RUNTIME_DIR, missingInDist, ocrLicenseSources, ocrSources, removeStaleRuntime } from "../../../scripts/copy-ocr-assets.mjs";
 import { OCR_BASE, ocrAssetFiles } from "./assets";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -48,5 +48,28 @@ describe("self-hosted OCR assets", () => {
     } finally {
       rmSync(dist, { recursive: true, force: true });
     }
+  });
+
+  it("the copy removes a stale runtime left at public/ocr/ by older builds", () => {
+    const root = mkdtempSync(join(tmpdir(), "ocr-root-"));
+    try {
+      mkdirSync(join(root, "public/ocr/lang"), { recursive: true });
+      writeFileSync(join(root, "public/ocr/lang/eng.traineddata.gz"), "x");
+      mkdirSync(join(root, "public/ocr-runtime"), { recursive: true });
+      writeFileSync(join(root, "public/ocr-runtime/worker.min.js"), "x");
+      expect(removeStaleRuntime(root)).toBe(true);
+      expect(existsSync(join(root, "public/ocr"))).toBe(false);
+      expect(existsSync(join(root, "public/ocr-runtime/worker.min.js"))).toBe(true);
+      // Nothing to remove the second time.
+      expect(removeStaleRuntime(root)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("git ignores both the runtime and the old /ocr/ copy", () => {
+    const ignore = readFileSync(join(ROOT, ".gitignore"), "utf8").split("\n");
+    expect(ignore).toContain("public/ocr-runtime/");
+    expect(ignore).toContain("public/ocr/");
   });
 });

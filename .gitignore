@@ -60,6 +60,8 @@ public/pdf.worker.min.mjs.LICENSE
 
 # OCR runtime copied from node_modules at build time (scripts/copy-ocr-assets.mjs)
 public/ocr-runtime/
+# Where older builds copied it (removed by the copy script when found)
+public/ocr/
 
 # Stage-3 ONNX model weights (downloaded/extracted, not committed)
 src-tauri/weights/

@@ -6,7 +6,7 @@
 //   node scripts/copy-ocr-assets.mjs            copy into public/ocr-runtime (pre{dev,build} hook)
 //   node scripts/copy-ocr-assets.mjs --check D  fail unless D holds every OCR file, their licences
 //                                               and the pdf.js worker's licence (postbuild)
-import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -44,6 +44,17 @@ export const OCR_LICENSE_FILES = Object.keys(ocrLicenseSources("/"));
 /** The pdf.js worker's licence, copied by copy-pdf-worker.mjs (relative to the build root). */
 const PDF_LICENSE = "pdf.worker.min.mjs.LICENSE";
 
+/**
+ * Older builds copied the runtime to public/ocr/, which Vite would still serve (and ship) next to
+ * the /ocr page route: removed when found. True when it was there.
+ */
+export function removeStaleRuntime(root) {
+  const stale = join(root, "public", "ocr");
+  if (!existsSync(stale)) return false;
+  rmSync(stale, { recursive: true, force: true });
+  return true;
+}
+
 /** Files the build output `dist` lacks (or has empty), relative to it. */
 export function missingInDist(dist) {
   const required = [PDF_LICENSE, ...[...OCR_FILES, ...OCR_LICENSE_FILES].map((f) => `${RUNTIME_DIR}/${f}`)];
@@ -63,6 +74,7 @@ function main() {
     console.log(`All OCR assets, their licences and the pdf.js licence are present in ${dist}`);
     return;
   }
+  if (removeStaleRuntime(root)) console.log("Removed the old runtime copy at public/ocr/");
   const dest = join(root, "public", RUNTIME_DIR);
   let bytes = 0;
   for (const [rel, src] of Object.entries({ ...ocrSources(root), ...ocrLicenseSources(root) })) {
