@@ -720,6 +720,8 @@ fn an_existing_layer_is_invisible_glyphless_text() {
         ("GlyphLessFont", "q 3 Tr Q BT /F1 10 Tf <0041> Tj ET", false),
         // The font set up, nothing shown.
         ("GlyphLessFont", "BT 3 Tr /F1 10 Tf ET", false),
+        // Clip-only text (Tr 7) is invisible too.
+        ("GlyphLessFont", "BT 7 Tr /F1 10 Tf <0041> Tj ET", true),
     ] {
         let report = add_text_layer_report(&page_with_font(base, content), &[page(1, vec![word("w", 10.0, 10.0, 10.0, 10.0)])]).unwrap();
         assert_eq!(report.already_ocr_pages, if already { vec![1] } else { vec![] }, "{base}: {content}");
@@ -754,4 +756,31 @@ fn other_invisible_text_is_not_padded() {
     let hidden = redact_search(&doc("BT 3 Tr /H 20 Tf 72 700 Td (MANTIS) Tj ET"), "mantis", &SearchOptions::default()).unwrap().matches[0].rects[0];
     assert_eq!(visible, hidden);
     assert!((visible[0] - 72.0).abs() < 1e-6, "{visible:?}");
+}
+
+#[test]
+fn an_ocr_layer_drawn_inside_a_form_is_found() {
+    for (tr, already) in [(3, true), (7, true), (0, false)] {
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let font = doc.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type0", "BaseFont" => "GlyphLessFont", "Encoding" => "Identity-H" });
+        let form = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Form", "BBox" => nums(&[0.0, 0.0, 612.0, 792.0]),
+                "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } },
+            },
+            format!("BT {tr} Tr /F1 10 Tf 1 0 0 1 72 700 Tm <0041> Tj ET").into_bytes(),
+        ));
+        let c = doc.add_object(Stream::new(dictionary! {}, b"q /Fm1 Do Q".to_vec()));
+        let page_obj = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages_id, "Contents" => c, "MediaBox" => nums(&[0.0, 0.0, 612.0, 792.0]),
+            "Resources" => dictionary! { "XObject" => dictionary! { "Fm1" => form } },
+        });
+        doc.objects.insert(pages_id, Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => vec![page_obj.into()], "Count" => 1 }));
+        let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", catalog);
+        let pdf = save_pdf(&mut doc).unwrap();
+        let report = add_text_layer_report(&pdf, &[page(1, vec![word("w", 10.0, 10.0, 10.0, 10.0)])]).unwrap();
+        assert_eq!(report.already_ocr_pages, if already { vec![1] } else { vec![] }, "Tr {tr}");
+    }
 }
