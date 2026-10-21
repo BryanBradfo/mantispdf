@@ -97,8 +97,8 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   const [report, setReport] = useState<RedactResultWire | null>(null);
   // Pages the last search could not fully cover: kept (next to the marks and in the report)
   // after "Mark all", until the next search or Start over.
-  const [coverage, setCoverage] = useState<{ undecodable: number[]; unsearched: number[] } | null>(null);
-  const uncovered = coverage ? [...new Set([...coverage.undecodable, ...coverage.unsearched])].sort((a, b) => a - b) : [];
+  const [coverage, setCoverage] = useState<{ undecodable: number[]; unsearched: number[]; textless: number[] } | null>(null);
+  const uncovered = coverage ? [...new Set([...coverage.undecodable, ...coverage.unsearched, ...coverage.textless])].sort((a, b) => a - b) : [];
   const continueRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const docRef = useRef<Promise<PdfDocument> | null>(null);
@@ -210,7 +210,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
         }
       }
       const entries = searchEntries(result.matches, fallback, query);
-      setCoverage({ undecodable: result.undecodablePages, unsearched: result.unsearchedPages });
+      setCoverage({ undecodable: result.undecodablePages, unsearched: result.unsearchedPages, textless: result.textlessPages });
       setSearch({
         query,
         count: entries.length,
@@ -511,6 +511,12 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           {search && search.truncated && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
               Too many matches; showing the first {search.count}. Refine the search.
+            </p>
+          )}
+          {coverage && coverage.textless.length > 0 && (
+            <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
+              These pages are scanned images with no text ({coverage.textless.length === 1 ? "page" : "pages"} {coverage.textless.join(", ")}).{" "}
+              <OcrLink>Run OCR first</OcrLink> to search them.
             </p>
           )}
           {coverage && coverage.undecodable.length > 0 && (
