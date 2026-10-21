@@ -108,9 +108,42 @@ export function wordLimitProblem(pages: readonly { page: number; words: readonly
   return null;
 }
 
+/** How to recognise pages the skip option left out. */
+export const SKIP_HINT = "Turn off 'Skip pages that already contain text' to recognise them anyway.";
+
 /** The summary's first line. */
 export function summaryHeadline(s: OcrSummary): string {
-  if (s.processed === 0 && s.skipped.length > 0) return "All pages already contain text. Nothing to recognise.";
+  if (s.processed === 0 && s.skipped.length > 0) return `All pages already contain text. Nothing to recognise. ${SKIP_HINT}`;
   const pages = s.processed - s.noText.length;
   return `Text recognised on ${pages} ${pages === 1 ? "page" : "pages"} (${s.words} ${s.words === 1 ? "word" : "words"}).`;
+}
+
+/** The summary line for skipped pages. */
+export function skippedLine(pages: readonly number[]): string {
+  return `Skipped (already had text): ${pages.length === 1 ? "page" : "pages"} ${pages.join(", ")}. ${SKIP_HINT}`;
+}
+
+/** What the page shows while the engine starts: the language data download as a percentage. */
+export function loadingLabel(p: { status: string; progress: number } | null): string {
+  if (p && /language/i.test(p.status)) return `Loading language data ${Math.round(Math.min(1, Math.max(0, p.progress)) * 100)}%`;
+  return "Starting the OCR engine…";
+}
+
+/** pdf.js text content items as plain text: items in order, a line break after each end of line. */
+export function pageTextFromItems(items: readonly ({ str: string; hasEOL?: boolean } | { type: string })[]): string {
+  let out = "";
+  for (const item of items) {
+    if (!("str" in item)) continue;
+    out += item.str;
+    if (item.hasEOL) out += "\n";
+  }
+  return out.replace(/\s+$/, "");
+}
+
+/** Recognised and skipped pages' text together, in page order, for the .txt of the whole document. */
+export function wholeDocumentText(
+  recognised: readonly { page: number; text: string }[],
+  skipped: readonly { page: number; text: string }[],
+): { page: number; text: string }[] {
+  return [...recognised, ...skipped].sort((a, b) => a.page - b.page);
 }

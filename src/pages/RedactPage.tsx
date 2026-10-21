@@ -46,15 +46,19 @@ import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 /** How long a shown search match stays highlighted. */
 const FLASH_MS = 1500;
 
-/** A plan reason for a page that is a scan: OCR first makes its text searchable. */
-const SCANNED = /scanned image/i;
-const OCR_HINT = (
-  <>
-    {/* A new tab: leaving this page would lose the marks and any run in progress. */}
+/** A link to OCR in a new tab: leaving this page would lose the marks and any run in progress. */
+function OcrLink({ children }: { children: string }) {
+  return (
     <Link to="/ocr" target="_blank" rel="noopener" className="font-medium underline">
-      Run OCR first
-    </Link>{" "}
-    to search scanned pages.
+      {children}
+    </Link>
+  );
+}
+
+/** Pages whose text the engine cannot decode: OCR again, this time over the existing text. */
+const UNDECODABLE_HINT = (
+  <>
+    <OcrLink>Run OCR</OcrLink> with 'Skip pages that already contain text' turned off.
   </>
 );
 
@@ -414,8 +418,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
             ))}
           </ul>
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-            Its text will no longer be selectable or searchable.
-            {confirm.pages.some((p) => SCANNED.test(p.reason ?? "")) && <> {OCR_HINT}</>}
+            These pages lose their text layer. <OcrLink>Run OCR</OcrLink> again on the redacted file to make them searchable.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button ref={continueRef} type="button" onClick={goAhead} className={primaryButton}>
@@ -513,7 +516,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           {coverage && coverage.undecodable.length > 0 && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
               Search may miss text on {coverage.undecodable.length === 1 ? "page" : "pages"} {coverage.undecodable.join(", ")}. Mark those areas by hand.{" "}
-              {OCR_HINT}
+              {UNDECODABLE_HINT}
             </p>
           )}
           {coverage && coverage.unsearched.length > 0 && (

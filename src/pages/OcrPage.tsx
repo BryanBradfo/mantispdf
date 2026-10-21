@@ -6,10 +6,10 @@ import { pdfjs } from "../lib/pdf";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import PageStrip from "../components/editor/PageStrip";
-import { OcrEngine, ocrWorkerCount } from "../lib/ocr/engine";
+import { OCR_CANCELLED, OCR_NOT_STARTED, OcrEngine, ocrWorkerCount } from "../lib/ocr/engine";
 import { OCR_LANGUAGES, defaultLanguages, type OcrLanguage } from "../lib/ocr/languages";
 import { renderPageImage, type OcrPageImage } from "../lib/ocr/render";
-import { estimateRemainingMs, formatEta, summarize, summaryHeadline, toggleLanguage, wordLimitProblem, wordsToWire, type PageOutcome } from "../lib/ocr/run";
+import { estimateRemainingMs, formatEta, loadingLabel, pageTextFromItems, skippedLine, summarize, summaryHeadline, toggleLanguage, wholeDocumentText, wordLimitProblem, wordsToWire, type PageOutcome } from "../lib/ocr/run";
 import { exportText, hasText } from "../lib/ocr/text";
 import type { OcrPageWire } from "../lib/ocr/textLayerWire";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
@@ -17,8 +17,8 @@ import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 
 /** The engine's page limit (`add_text_layer`). */
 const MAX_PAGES = 2000;
-const CANCELLED = "OCR cancelled";
-const NOT_STARTED = "OCR engine could not start";
+const CANCELLED = OCR_CANCELLED;
+const NOT_STARTED = OCR_NOT_STARTED;
 const linkClass = "font-medium text-mantis-700 underline dark:text-mantis-400";
 
 interface Progress {
@@ -40,6 +40,8 @@ interface OcrResult {
   layer: OcrPageWire[];
   /** Recognised text per processed page, for the .txt export. */
   texts: { page: number; text: string }[];
+  /** pdf.js text of the pages skipped because they had text: the .txt covers the whole document. */
+  skippedTexts: { page: number; text: string }[];
 }
 
 interface WorkspaceProps {
@@ -61,6 +63,8 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
   const [page, setPage] = useState(1);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [result, setResult] = useState<OcrResult | null>(null);
+  // After a download, leaving or starting over loses nothing (as in Compress, Merge, Split).
+  const [downloaded, setDownloaded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const engineRef = useRef<OcrEngine | null>(null);
   // Aborts the engine start too (core and model downloads).
@@ -80,14 +84,14 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
 
   // Leaving mid-run or with results not yet downloaded loses the work: warn first.
   useEffect(() => {
-    if (!running && !result) return;
+    if (!running && (!result || downloaded)) return;
     const warn = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [running, result]);
+  }, [running, result, downloaded]);
 
   // Stop the workers if the page goes away mid-run.
   useEffect(
@@ -111,18 +115,25 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
     const abort = new AbortController();
     abortRef.current = abort;
     const total = sizes.length;
-    setProgress({ done: 0, recognised: 0, partial: 0, total, startedAt: Date.now(), status: "Loading the OCR engine and languages…" });
+    setDownloaded(false);
+    setProgress({ done: 0, recognised: 0, partial: 0, total, startedAt: Date.now(), status: loadingLabel(null) });
     const workers = ocrWorkerCount(typeof navigator === "undefined" ? undefined : navigator.hardwareConcurrency);
     let engine: OcrEngine | null = null;
     let doc: Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]> | null = null;
     try {
-      engine = await OcrEngine.create(languages, { workers, origin: window.location.origin, signal: abort.signal });
+      engine = await OcrEngine.create(languages, {
+        workers,
+        origin: window.location.origin,
+        signal: abort.signal,
+        onProgress: (p) => setProgress((pr) => (pr && pr.done === 0 && pr.recognised === 0 ? { ...pr, status: loadingLabel(p) } : pr)),
+      });
       engineRef.current = engine;
       if (cancelledRef.current) throw new Error(CANCELLED);
       doc = await pdfjs.getDocument({ data: input.bytes.slice() }).promise;
       const outcomes: PageOutcome[] = [];
       const layer: OcrPageWire[] = [];
       const texts: { page: number; text: string }[] = [];
+      const skippedTexts: { page: number; text: string }[] = [];
       const startedAt = Date.now();
       let next = 0;
       let done = 0;
@@ -151,6 +162,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
               p.cleanup();
               if (hasText(content.items)) {
                 outcomes.push({ page: n, skipped: true });
+                skippedTexts.push({ page: n, text: pageTextFromItems(content.items) });
                 done++;
                 setProgress((pr) => (pr ? { ...pr, done } : pr));
                 continue;
@@ -190,7 +202,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       await Promise.all(Array.from({ length: Math.min(workers, total) }, lane));
       if (cancelledRef.current) throw new Error(CANCELLED);
       const byPage = (a: { page: number }, b: { page: number }) => a.page - b.page;
-      setResult({ outcomes: outcomes.sort(byPage), layer: layer.sort(byPage), texts: texts.sort(byPage) });
+      setResult({ outcomes: outcomes.sort(byPage), layer: layer.sort(byPage), texts: texts.sort(byPage), skippedTexts });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       if (cancelledRef.current || message === CANCELLED) return;
@@ -221,17 +233,21 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
     }
     void run(
       () => addTextLayer(input.bytes, result.layer),
-      (out) => downloadBlob(out, `${baseName(input.file)}_ocr.pdf`),
+      (out) => {
+        downloadBlob(out, `${baseName(input.file)}_ocr.pdf`);
+        setDownloaded(true);
+      },
     );
   };
 
   const downloadText = () => {
     if (!result) return;
-    downloadBlob(new TextEncoder().encode(exportText(result.texts)), `${baseName(input.file)}_ocr.txt`);
+    downloadBlob(new TextEncoder().encode(exportText(wholeDocumentText(result.texts, result.skippedTexts))), `${baseName(input.file)}_ocr.txt`);
+    setDownloaded(true);
   };
 
   const startOver = () => {
-    if ((running || result) && !window.confirm("Discard the recognised text and start over?")) return;
+    if ((running || (result && !downloaded)) && !window.confirm("Discard the recognised text and start over?")) return;
     cancel();
     onStartOver();
   };
@@ -333,13 +349,17 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
           <ul className="mt-1 list-disc pl-5">
             {summary.averageConfidence !== null && <li>Average confidence: {Math.round(summary.averageConfidence)}%.</li>}
             {summary.skipped.length > 0 && (
-              <li>
-                Skipped (already had text): {summary.skipped.length === 1 ? "page" : "pages"} {summary.skipped.join(", ")}.
-              </li>
+              <li>{skippedLine(summary.skipped)}</li>
             )}
             {summary.lowQuality.length > 0 && (
               <li>
-                Low quality scan, check the result: {summary.lowQuality.length === 1 ? "page" : "pages"} {summary.lowQuality.join(", ")}.
+                Low quality scan, check the result: {summary.lowQuality.length === 1 ? "page" : "pages"} {summary.lowQuality.join(", ")}. A
+                sideways scan reads as low quality:{" "}
+                {/* A new tab: leaving this page would lose the recognised text. */}
+                <Link to="/rotate" target="_blank" rel="noopener" className={linkClass}>
+                  Rotate pages
+                </Link>
+                , then run OCR again.
               </li>
             )}
             {summary.noText.length > 0 && (

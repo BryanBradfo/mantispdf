@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RecognizedWord } from "./engine";
-import { LOW_QUALITY, summaryHeadline, MAX_WORDS_PER_PAGE, MAX_WORDS_TOTAL, estimateRemainingMs, formatEta, summarize, toggleLanguage, wordLimitProblem, wordsToWire } from "./run";
+import { LOW_QUALITY, SKIP_HINT, loadingLabel, pageTextFromItems, skippedLine, summaryHeadline, wholeDocumentText, MAX_WORDS_PER_PAGE, MAX_WORDS_TOTAL, estimateRemainingMs, formatEta, summarize, toggleLanguage, wordLimitProblem, wordsToWire } from "./run";
 
 const word = (text: string, x0: number, y0: number, x1: number, y1: number, extra: Partial<RecognizedWord> = {}): RecognizedWord => ({
   text,
@@ -129,8 +129,54 @@ describe("summary headline", () => {
 
   it("says so when every page was skipped", () => {
     expect(summaryHeadline(summarize([{ page: 1, skipped: true }, { page: 2, skipped: true }]))).toBe(
-      "All pages already contain text. Nothing to recognise.",
+      `All pages already contain text. Nothing to recognise. ${SKIP_HINT}`,
     );
+  });
+});
+
+describe("skip messages", () => {
+  it("tell how to recognise skipped pages anyway", () => {
+    expect(SKIP_HINT).toBe("Turn off 'Skip pages that already contain text' to recognise them anyway.");
+    expect(skippedLine([3])).toBe(`Skipped (already had text): page 3. ${SKIP_HINT}`);
+    expect(skippedLine([1, 2])).toBe(`Skipped (already had text): pages 1, 2. ${SKIP_HINT}`);
+  });
+});
+
+describe("engine start label", () => {
+  it("shows the language data download as a percentage", () => {
+    expect(loadingLabel({ status: "loading language traineddata", progress: 0.42 })).toBe("Loading language data 42%");
+    expect(loadingLabel({ status: "loading language traineddata", progress: 1 })).toBe("Loading language data 100%");
+    expect(loadingLabel({ status: "initializing api", progress: 0.5 })).toBe("Starting the OCR engine…");
+    expect(loadingLabel(null)).toBe("Starting the OCR engine…");
+  });
+});
+
+describe("text of the whole document", () => {
+  it("reads a page's pdf.js text, a line break after each end of line", () => {
+    expect(
+      pageTextFromItems([
+        { str: "Hello", hasEOL: false },
+        { str: " world", hasEOL: true },
+        { type: "beginMarkedContent" },
+        { str: "next line", hasEOL: false },
+      ]),
+    ).toBe("Hello world\nnext line");
+  });
+
+  it("merges recognised and skipped pages in page order", () => {
+    expect(
+      wholeDocumentText(
+        [
+          { page: 3, text: "ocr three" },
+          { page: 1, text: "ocr one" },
+        ],
+        [{ page: 2, text: "had text" }],
+      ),
+    ).toEqual([
+      { page: 1, text: "ocr one" },
+      { page: 2, text: "had text" },
+      { page: 3, text: "ocr three" },
+    ]);
   });
 });
 
