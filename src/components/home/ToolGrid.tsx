@@ -194,7 +194,7 @@ const tools = [
 
 export default function ToolGrid() {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,13rem),1fr))] gap-4">
       {tools.map((tool) => (
         <ToolCard key={tool.title} {...tool} />
       ))}

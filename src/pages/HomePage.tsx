@@ -48,7 +48,7 @@ export default function HomePage() {
       </div>
 
       {/* Tool grid */}
-      <div className="mx-auto max-w-5xl px-4 py-10">
+      <div className="mx-auto max-w-[1800px] px-4 py-10 sm:px-6">
         <ToolGrid />
       </div>
 
