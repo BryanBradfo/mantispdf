@@ -63,7 +63,9 @@ describe.skipIf(!built)("add_text_layer binding", () => {
     const found = wasm.redact_search(out, "mantis été", SEARCH);
     expect(found.matches).toHaveLength(1);
     const [x, y, w, h] = found.matches[0].rects[0];
-    expect([x, y, x + w, y + h].map((v) => Math.round(v * 100) / 100)).toEqual([72, 700, 193, 720]);
+    // The word box, reaching one 300 dpi pixel (0.24 pt) further on every side: OCR marks cover
+    // the scan's ink the recogniser's box may miss by a pixel.
+    expect([x, y, x + w, y + h].map((v) => Math.round(v * 100) / 100)).toEqual([71.76, 699.76, 193.24, 720.24]);
   });
 
   it("accepts a known baseline and pages without words", () => {
