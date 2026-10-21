@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Block } from "tesseract.js";
-import { imageSize, ocrAssetUrls, ocrWorkerCount, unskewWords, wordsFromBlocks, type RecognizedWord } from "./engine";
+import { OCR_CANCELLED, OCR_NOT_STARTED, imageSize, isOcrCancelled, ocrAssetUrls, ocrWorkerCount, unskewWords, wordsFromBlocks, type RecognizedWord } from "./engine";
 import { encodePgm } from "./render";
 
 describe("OCR asset URLs", () => {
@@ -95,5 +95,15 @@ describe("words of a deskewed page back on the page image", () => {
     // The baseline at the word's centre moves with it: (630, 590) -> y 613.3.
     expect(w.baseline).toBeCloseTo(613.3, 0);
     expect(w.text).toBe("w");
+  });
+});
+
+describe("engine error messages", () => {
+  it("are exported for callers to tell cancel and start failure apart", () => {
+    expect(OCR_CANCELLED).toBe("OCR cancelled");
+    expect(OCR_NOT_STARTED).toBe("OCR engine could not start");
+    expect(isOcrCancelled(new Error(OCR_CANCELLED))).toBe(true);
+    expect(isOcrCancelled(new Error(OCR_NOT_STARTED))).toBe(false);
+    expect(isOcrCancelled("OCR cancelled")).toBe(false);
   });
 });

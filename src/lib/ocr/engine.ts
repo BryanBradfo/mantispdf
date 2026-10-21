@@ -117,8 +117,17 @@ export const DEFAULT_DPI = 300;
 
 /** How long `OcrEngine.create` may take (worker, core and model downloads) before giving up. */
 export const CREATE_TIMEOUT_MS = 120_000;
-const CANCELLED = "OCR cancelled";
-const NOT_STARTED = "OCR engine could not start";
+/** The message of every error that means the user (or the page) cancelled OCR. */
+export const OCR_CANCELLED = "OCR cancelled";
+/** The message of `OcrEngine.create` failing: a model that would not load, or the start timeout. */
+export const OCR_NOT_STARTED = "OCR engine could not start";
+const CANCELLED = OCR_CANCELLED;
+const NOT_STARTED = OCR_NOT_STARTED;
+
+/** An error that only means OCR was cancelled. */
+export function isOcrCancelled(e: unknown): boolean {
+  return e instanceof Error && e.message === OCR_CANCELLED;
+}
 
 export interface OcrEngineOptions {
   workers: number;
