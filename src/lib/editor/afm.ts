@@ -17,9 +17,13 @@ const CP1252_HIGH: ReadonlyMap<number, number> = new Map([
   [0x0153, 0x9c], [0x017e, 0x9e], [0x0178, 0x9f],
 ]);
 
-/** WinAnsi byte of one character (a code point), or null when the standard fonts cannot show it. */
+/**
+ * WinAnsi byte of one character (a code point), or null when the standard fonts cannot show it.
+ * U+202F and U+2009 count as U+00A0, which is what reaches the engine (`normalizeTypographicSpaces`),
+ * so the preview measures them as the engine draws them.
+ */
 export function winAnsiByte(ch: string): number | null {
-  const cp = ch.codePointAt(0);
+  const cp = normalizeTypographicSpaces(ch).codePointAt(0);
   if (cp === undefined) return null;
   if ((cp >= 0x20 && cp <= 0x7e) || (cp >= 0xa0 && cp <= 0xff)) return cp;
   return CP1252_HIGH.get(cp) ?? null;

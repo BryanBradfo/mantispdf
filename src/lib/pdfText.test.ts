@@ -3,7 +3,7 @@ import { normalizeTypographicSpaces } from "./pdfText";
 import { toWasmJob } from "./stampJob";
 import { toWire } from "./forms/toWire";
 import type { FormState } from "./forms/model";
-import { unsupportedChars } from "./editor/afm";
+import { charUnits, unsupportedChars, winAnsiByte } from "./editor/afm";
 import { buildEditJob } from "./editor/toJob";
 
 // macOS and iOS French typing puts a narrow no-break space (U+202F) before ! ? ; : and some tools
@@ -57,5 +57,17 @@ describe("typographic spaces before standard-font text", () => {
       values: new Map([[3, { kind: "text", text: TYPED }]]),
     };
     expect(toWire(state)).toEqual([{ id: 3, value: { kind: "text", text: SAVED } }]);
+  });
+});
+
+describe("typographic spaces in text measurement", () => {
+  it("measure like the no-break space the engine draws", () => {
+    for (const font of ["Helvetica", "Times-Roman", "Courier"] as const) {
+      expect(charUnits(font, "\u202f")).toBe(charUnits(font, "\u00a0"));
+      expect(charUnits(font, "\u2009")).toBe(charUnits(font, "\u00a0"));
+      expect(charUnits(font, "\u00a0")).toBeGreaterThan(0);
+    }
+    expect(winAnsiByte("\u202f")).toBe(0xa0);
+    expect(winAnsiByte("\u2009")).toBe(0xa0);
   });
 });
