@@ -86,9 +86,11 @@ const MAX_PAGE_CHARS: usize = 2_000_000;
 
 /// One character of a page's text: the glyph it comes from (None for an
 /// assumed space) and its line.
+#[derive(Clone)]
 struct Char {
     ch: char,
     glyph: Option<usize>,
+    line: usize,
     /// The drawn character this one starts (None for the rest of a fold).
     shown: Option<char>,
 }
@@ -124,11 +126,11 @@ fn needle(query: &str, case_sensitive: bool) -> Vec<char> {
 
 /// Add `ch` (from `glyph`) to the page text; a space after a space is
 /// dropped (whitespace runs read as one space).
-fn push(chars: &mut Vec<Char>, ch: char, glyph: Option<usize>, shown: Option<char>) {
+fn push(chars: &mut Vec<Char>, ch: char, glyph: Option<usize>, shown: Option<char>, line: usize) {
     if ch == ' ' && chars.last().is_some_and(|c| c.ch == ' ') {
         return;
     }
-    chars.push(Char { ch, glyph, shown });
+    chars.push(Char { ch, glyph, line, shown });
 }
 
 /// The page text with assumed spaces and the line of each glyph; None past
@@ -149,9 +151,9 @@ fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> Option<(Vec<Char>, Vec<u
             let em = g.em.max(p.em).max(f64::MIN_POSITIVE);
             if across > 0.5 * em || along < -0.5 * em {
                 line += 1;
-                push(&mut chars, ' ', None, Some(' '));
+                push(&mut chars, ' ', None, Some(' '), line);
             } else if along > 0.25 * em {
-                push(&mut chars, ' ', None, Some(' '));
+                push(&mut chars, ' ', None, Some(' '), line);
             }
         }
         match &g.text {
@@ -159,12 +161,12 @@ fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> Option<(Vec<Char>, Vec<u
                 for original in text.chars() {
                     let shown = if original.is_whitespace() { ' ' } else { original };
                     for (k, c) in fold(original, case_sensitive).into_iter().enumerate() {
-                        push(&mut chars, c, Some(i), (k == 0).then_some(shown));
+                        push(&mut chars, c, Some(i), (k == 0).then_some(shown), line);
                     }
                 }
             }
             // Unknown text: breaks any match across it.
-            None => chars.push(Char { ch: '\u{FFFD}', glyph: Some(i), shown: Some('\u{FFFD}') }),
+            None => chars.push(Char { ch: '\u{FFFD}', glyph: Some(i), line, shown: Some('\u{FFFD}') }),
         }
         lines.push(line);
         previous = Some(g);
@@ -173,6 +175,54 @@ fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> Option<(Vec<Char>, Vec<u
         }
     }
     Some((chars, lines))
+}
+
+fn is_rtl_strong(c: char) -> bool {
+    matches!(unicode_bidi::bidi_class(c), unicode_bidi::BidiClass::R | unicode_bidi::BidiClass::AL)
+}
+
+/// The page text in reading order, when some line holds right-to-left text
+/// (None otherwise). Glyphs are read in drawing order, and right-to-left
+/// text is drawn in visual order (left to right) by most producers and by
+/// our own engine, so a Hebrew or Arabic word reads backwards. Each such line
+/// is reordered with the bidi algorithm (UAX 9) as if its drawn text were
+/// logical: reordering visual text gives back its reading order. The
+/// paragraph direction is right-to-left when the line has more right-to-left
+/// than left-to-right strong characters.
+fn reading_order(chars: &[Char]) -> Option<Vec<Char>> {
+    if !chars.iter().any(|c| is_rtl_strong(c.ch)) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(chars.len());
+    let mut start = 0;
+    while start < chars.len() {
+        let line = chars[start].line;
+        let end = start + chars[start..].iter().take_while(|c| c.line == line).count();
+        let group = &chars[start..end];
+        let rtl = group.iter().filter(|c| is_rtl_strong(c.ch)).count();
+        if rtl == 0 {
+            out.extend_from_slice(group);
+        } else {
+            let ltr = group.iter().filter(|c| unicode_bidi::bidi_class(c.ch) == unicode_bidi::BidiClass::L).count();
+            let level = if rtl > ltr { unicode_bidi::Level::rtl() } else { unicode_bidi::Level::ltr() };
+            let text: String = group.iter().map(|c| c.ch).collect();
+            // Byte offset of each character, to map runs back to `group`.
+            let starts: Vec<usize> = text.char_indices().map(|(b, _)| b).collect();
+            let info = unicode_bidi::ParagraphBidiInfo::new(&text, Some(level));
+            let (levels, runs) = info.visual_runs(0..text.len());
+            for run in runs {
+                let first = starts.partition_point(|&b| b < run.start);
+                let last = starts.partition_point(|&b| b < run.end);
+                if levels[run.start].is_rtl() {
+                    out.extend(group[first..last].iter().rev().cloned());
+                } else {
+                    out.extend_from_slice(&group[first..last]);
+                }
+            }
+        }
+        start = end;
+    }
+    Some(out)
 }
 
 fn is_word(c: char) -> bool {
@@ -370,11 +420,24 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
             result.unsearched_pages.push(number);
             continue;
         }
+        // Matches in drawing order, then those only the reading order of
+        // right-to-left lines shows (the same glyphs are marked once).
+        let mut candidates: Vec<(Vec<usize>, Context)> = Vec::new();
+        let mut seen: std::collections::HashSet<Vec<usize>> = std::collections::HashSet::new();
+        let logical = reading_order(&chars);
+        for text in std::iter::once(&chars).chain(logical.as_ref()) {
+            for at in find_starts(text, &needle, options.whole_word) {
+                let mut matched: Vec<usize> = text[at..at + needle.len()].iter().filter_map(|c| c.glyph).collect();
+                matched.sort_unstable();
+                matched.dedup();
+                if seen.insert(matched.clone()) {
+                    candidates.push((matched, context(text, at, at + needle.len())));
+                }
+            }
+        }
+        candidates.sort_by_key(|(glyphs, _)| glyphs.first().copied());
         let mut rects = Vec::new();
-        for at in find_starts(&chars, &needle, options.whole_word) {
-            let mut matched: Vec<usize> = chars[at..at + needle.len()].iter().filter_map(|c| c.glyph).collect();
-            matched.dedup();
-            let mut by_line: Vec<(usize, Vec<usize>)> = Vec::new();
+        for (matched, match_context) in candidates {            let mut by_line: Vec<(usize, Vec<usize>)> = Vec::new();
             for g in matched {
                 match by_line.iter_mut().find(|(l, _)| *l == lines[g]) {
                     Some((_, list)) => list.push(g),
@@ -396,7 +459,7 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
                 break;
             }
             rects.extend(found.iter().copied());
-            result.matches.push(Match { page: number, rects: found, context: context(&chars, at, at + needle.len()) });
+            result.matches.push(Match { page: number, rects: found, context: match_context });
         }
         if !rects.is_empty() {
             total += rects.len();

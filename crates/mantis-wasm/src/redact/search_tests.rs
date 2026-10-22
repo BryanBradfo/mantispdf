@@ -748,3 +748,90 @@ fn an_image_inside_a_form_makes_a_textless_page() {
     }));
     assert_eq!(redact_search(&pdf, "x", &opts()).unwrap().textless_pages, vec![1]);
 }
+
+/// A page as a typical producer writes right-to-left text: a Type0 font
+/// (Identity-H, ToUnicode one letter per CID, no font program needed to
+/// search) and the glyphs drawn in visual order, left to right. `lines` are
+/// each drawn as given (already visual).
+fn visual_order_page(lines: &[&str]) -> Vec<u8> {
+    let mut letters: Vec<char> = lines.iter().flat_map(|l| l.chars()).filter(|c| *c != ' ').collect();
+    letters.sort_unstable();
+    letters.dedup();
+    let cid = |c: char| letters.iter().position(|&l| l == c).unwrap() + 1;
+    let mut cmap = format!("/CIDInit /ProcSet findresource begin 12 dict begin begincmap 1 begincodespacerange <0000> <FFFF> endcodespacerange {} beginbfchar\n", letters.len());
+    for (i, c) in letters.iter().enumerate() {
+        cmap.push_str(&format!("<{:04X}> <{:04X}>\n", i + 1, *c as u32));
+    }
+    cmap.push_str("endbfchar endcmap CMapName currentdict /CMap defineresource pop end end");
+    let mut content = String::new();
+    for (n, line) in lines.iter().enumerate() {
+        // One TJ per line; a space is a 300-unit gap (no space glyph).
+        content.push_str(&format!("BT /R 12 Tf 100 {} Td [", 700 - 20 * n));
+        for c in line.chars() {
+            if c == ' ' {
+                content.push_str(" -300 ");
+            } else {
+                content.push_str(&format!("<{:04X}>", cid(c)));
+            }
+        }
+        content.push_str("] TJ ET\n");
+    }
+    bytes(one_page(&content, |doc| {
+        let to_unicode = doc.add_object(Stream::new(dictionary! {}, cmap.into_bytes()));
+        let descendant = doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "CIDFontType2", "BaseFont" => "RtlTest", "DW" => 500,
+            "CIDSystemInfo" => dictionary! { "Registry" => Object::string_literal("Adobe"), "Ordering" => Object::string_literal("Identity"), "Supplement" => 0 },
+        });
+        let font = doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type0", "BaseFont" => "RtlTest", "Encoding" => "Identity-H",
+            "DescendantFonts" => vec![descendant.into()], "ToUnicode" => to_unicode,
+        });
+        dictionary! { "Font" => dictionary! { "R" => font } }
+    }))
+}
+
+/// The page's text in drawing order, through the fonts' ToUnicode.
+fn drawn(pdf: &[u8]) -> String {
+    let doc = load_pdf(pdf).unwrap();
+    let cache = std::rc::Rc::new(std::cell::RefCell::new(super::unicode::TextCache::new(JOB_DECODED)));
+    super::verify::page_text_glyphs(&doc, doc.get_pages()[&1], &mut Budget::page(JOB_DECODED), &cache)
+        .unwrap()
+        .iter()
+        .map(|g| g.text.as_deref().unwrap_or("?").to_string())
+        .collect()
+}
+
+#[test]
+fn right_to_left_text_drawn_in_visual_order_is_found_in_reading_order() {
+    // "שלום עולם" and "مرحبا بالعالم" drawn visually; "abc שלום def" and an
+    // Arabic line with a number keep their left-to-right parts.
+    let pdf = visual_order_page(&["םלוע םולש", "ملاعلاب ابحرم", "abc םולש def", "ءاقل 2024 ماع"]);
+    for (query, count) in
+        [("שלום", 2), ("עולם", 1), ("שלום עולם", 1), ("مرحبا", 1), ("بالعالم", 1), ("abc שלום def", 1), ("عام 2024", 1), ("abc", 1)]
+    {
+        let found = redact_search(&pdf, query, &opts()).unwrap();
+        assert_eq!(found.matches.len(), count, "{query}");
+    }
+    // Whole words, and the drawn (visual) order still matches too.
+    let whole = SearchOptions { whole_word: true, case_sensitive: false };
+    assert_eq!(redact_search(&pdf, "שלום", &whole).unwrap().matches.len(), 2);
+    assert_eq!(redact_search(&pdf, "םולש", &opts()).unwrap().matches.len(), 2);
+    // The context reads in reading order.
+    let found = redact_search(&pdf, "עולם", &opts()).unwrap();
+    assert_eq!(found.matches[0].context.text, "עולם");
+    // A match found in both orders (a palindrome) is marked once.
+    let pal = visual_order_page(&["אבא"]);
+    assert_eq!(redact_search(&pal, "אבא", &opts()).unwrap().matches.len(), 1);
+}
+
+#[test]
+fn right_to_left_matches_are_redacted() {
+    let pdf = visual_order_page(&["םלוע םולש", "abc םולש def"]);
+    let found = redact_search(&pdf, "שלום", &opts()).unwrap();
+    assert_eq!(found.matches.len(), 2);
+    let rects = found.pages.iter().flat_map(|p| p.rects.iter().map(|r| RedactRect { page: p.page, rect: *r })).collect();
+    let (out, _) = redact(&pdf, RedactJob { rects, fill: Fill::Black, remove_metadata: true, rasters: Vec::new() }).unwrap();
+    let left = drawn(&out);
+    // Both "שלום" gone (drawn "םולש"), "עולם" and the Latin words kept.
+    assert_eq!(left, "םלועabcdef");
+}
