@@ -549,8 +549,8 @@ impl Run<'_> {
             let width = font.width(code)?;
             let word_spacing = if font.word_space_applies(code, byte_range.len()) { self.gs.word_spacing } else { 0.0 };
             let trm = concat(&size, &concat(&self.text.tm, &self.gs.ctm));
-            let mut box_user = Quad::of_box(&trm, font.glyph_box(width));
-            let mut ink_user = Quad::of_box(&trm, font.ink_box(width));
+            let mut box_user = Quad::of_box(&trm, font.glyph_box(code, width));
+            let mut ink_user = Quad::of_box(&trm, font.ink_box(code, width));
             if matches!(self.gs.render_mode, 1 | 2 | 5 | 6) {
                 // Stroked outlines reach past the glyph box like a path's.
                 let reach = self.gs.stroke_reach();

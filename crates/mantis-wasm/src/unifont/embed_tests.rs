@@ -475,3 +475,34 @@ fn redacting_a_word_spares_the_lines_above_and_below() {
     let (out, _) = redact(&pdf, RedactJob { rects, fill: Fill::Black, remove_metadata: true, rasters: Vec::new() }).unwrap();
     assert_eq!(redact_search(&out, "мир", &opts()).unwrap().matches.len(), 5);
 }
+
+#[test]
+fn redacting_a_word_keeps_its_neighbours_marks() {
+    // Mark glyphs have (near) zero advances: the redact interpreter boxes them
+    // by their ink from the embedded font program, not 0.6 em each way, so a
+    // redaction next to them neither removes them nor widens its area.
+    let faces = all_faces();
+    for (text, redacted, kept) in [
+        ("ที่นี่ สวัสดี", "สวัสดี", "ที่นี่"),
+        ("नमस्ते हिन्दी", "हिन्दी", "नमस्ते"),
+        ("मस्ते नमस्ते", "मस्ते न", "मस्ते"),
+        ("مرحبا بالعالم", "مرحبا", "بالعالم"),
+    ] {
+        let mut built = build(&faces, text, 14.0, false);
+        let pdf = saved(&mut built);
+        let before = load_pdf(&pdf).unwrap();
+        let count = |doc: &Document| page_glyphs(doc, doc.get_pages()[&1]).unwrap().len();
+        let found = redact_search(&pdf, redacted, &opts()).unwrap();
+        assert_eq!(found.matches.len(), 1, "{text}: {redacted}");
+        let rects = found.pages.iter().flat_map(|p| p.rects.iter().map(|r| RedactRect { page: p.page, rect: *r })).collect();
+        let (out, summary) = redact(&pdf, RedactJob { rects, fill: Fill::Black, remove_metadata: true, rasters: Vec::new() }).unwrap();
+        assert!(summary.pages_widened.is_empty(), "{text}: the area was widened");
+        let after = load_pdf(&out).unwrap();
+        // What is left is exactly the kept word (and the space), every glyph of it.
+        let kept_only = build(&faces, kept, 14.0, false);
+        let kept_glyphs = page_glyphs(&kept_only.doc, kept_only.page).unwrap().len();
+        let left = drawn_text(&after, after.get_pages()[&1]);
+        assert_eq!(left.trim(), drawn_text(&kept_only.doc, kept_only.page), "{text}");
+        assert!(count(&after) >= kept_glyphs && count(&after) <= kept_glyphs + 1, "{text}: {} glyphs left of {}, kept word has {kept_glyphs}", count(&after), count(&before));
+    }
+}

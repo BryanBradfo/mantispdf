@@ -382,6 +382,42 @@ fn collect_matches(texts: &[&Vec<Char>], needle: &[char], whole_word: bool, room
     (kept, false)
 }
 
+/// `matched` (sorted glyph indices) with the glyphs drawn next to them that
+/// carry no text of their own (marks and dots a font draws as separate
+/// glyphs of a cluster) and sit inside the match's box: the redaction
+/// removes them with their base, so the match must cover them (else the area
+/// grows over them, and their own rise or offset can stick out of it).
+fn with_textless_neighbours(mut matched: Vec<usize>, glyphs: &[Glyph]) -> Vec<usize> {
+    // Glyphs one cluster draws at most: a longer textless run is not marks.
+    const MAX_RUN: usize = 32;
+    let Some(area) = union(matched.iter().map(|&g| glyphs[g].box_user)) else {
+        return matched;
+    };
+    let joins = |i: usize| {
+        let g = &glyphs[i];
+        let b = g.box_user.bbox();
+        let (cx, cy) = ((b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0);
+        g.text.as_deref() == Some("") && (area.x0..=area.x1).contains(&cx) && (area.y0..=area.y1).contains(&cy)
+    };
+    let mut extra = Vec::new();
+    for &g in &matched {
+        let mut i = g;
+        while i > 0 && g - i < MAX_RUN && joins(i - 1) {
+            i -= 1;
+            extra.push(i);
+        }
+        let mut i = g;
+        while i + 1 < glyphs.len() && i - g < MAX_RUN && joins(i + 1) {
+            i += 1;
+            extra.push(i);
+        }
+    }
+    matched.extend(extra);
+    matched.sort_unstable();
+    matched.dedup();
+    matched
+}
+
 /// `redact_search` reading at most `max_chars` characters of page text.
 pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOptions, max_chars: usize) -> Result<SearchResult, String> {
     if query.chars().count() > MAX_QUERY_CHARS || query.contains('\u{FFFD}') {
@@ -455,6 +491,7 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
         kept.sort_by_key(|(_, _, glyphs)| glyphs.first().copied());
         let mut rects = Vec::new();
         for (t, at, matched) in kept {
+            let matched = with_textless_neighbours(matched, &glyphs);
             let mut by_line: Vec<(usize, Vec<usize>)> = Vec::new();
             for g in matched {
                 match by_line.iter_mut().find(|(l, _)| *l == lines[g]) {

@@ -13,6 +13,7 @@ pub(crate) mod graphics;
 #[cfg(test)]
 mod image_tests;
 pub(crate) mod images;
+pub(crate) mod ink;
 pub(crate) mod interp;
 pub(crate) mod marked;
 pub(crate) mod binding;
