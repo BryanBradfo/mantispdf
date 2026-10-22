@@ -262,7 +262,6 @@ fn a_long_cluster_spreads_over_its_glyphs() {
     let faces = all_faces();
     let text = format!("e{}", "\u{301}".repeat(40));
     let mut built = build(&faces, &text, 12.0, false);
-    assert!(!built.content.contains("ActualText"));
     let (type0, _) = &fonts_of(&built.doc, built.page)[0];
     let cmap = String::from_utf8(stream_bytes(&built.doc, type0.get(b"ToUnicode").unwrap())).unwrap();
     assert!(cmap.lines().all(|l| l.len() <= "<0000> <>".len() + 4 * 32), "{cmap}");
@@ -517,4 +516,29 @@ fn a_glyph_keeps_one_cid_wherever_it_stands() {
     let cmap = to_unicode_of(&built);
     let tone: Vec<&str> = cmap.lines().filter(|l| l.ends_with("<0E48>")).collect();
     assert_eq!(tone.len(), 1, "{cmap}");
+}
+
+#[test]
+fn raised_marks_extract_in_order() {
+    // Harakat and niqqud are drawn raised, lowered (Ts) or shifted over their
+    // base: poppler then reads them out of order unless their cluster
+    // carries /ActualText.
+    let faces = all_faces();
+    for text in ["مَرْحَبًا بِالْعَالَمِ", "שָׁלוֹם עוֹלָם"] {
+        let mut built = build(&faces, text, 14.0, false);
+        assert!(built.content.contains("/ActualText"), "{text}: {}", built.content);
+        let pdf = saved(&mut built);
+        // The redact reader still reads every glyph's own text.
+        let doc = load_pdf(&pdf).unwrap();
+        let drawn = drawn_text(&doc, doc.get_pages()[&1]);
+        let sorted = |s: &str| {
+            let mut v: Vec<char> = s.chars().filter(|c| !c.is_whitespace()).collect();
+            v.sort_unstable();
+            v
+        };
+        assert_eq!(sorted(&drawn), sorted(text), "{text}");
+        let Some(extracted) = pdftotext(&pdf) else { continue };
+        let bare = |s: &str| s.chars().filter(|c| !c.is_whitespace() && !('\u{202A}'..='\u{202E}').contains(c)).collect::<String>();
+        assert_eq!(bare(&extracted), bare(text), "{text}: {extracted:?}");
+    }
 }

@@ -29,6 +29,7 @@ use crate::page_content::{flate_stream, fmt_num};
 use lopdf::{Dictionary, Document, Object, ObjectId, StringFormat, dictionary};
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::ops::Range;
 
 /// Highest CID (two-byte codes; 0 is .notdef).
 const MAX_CID: u32 = 0xFFFF;
@@ -161,7 +162,28 @@ impl<'f, 'a> Embedder<'f, 'a> {
             let mut at = 0i64;
             let mut p = 0.0;
             let mut items: Vec<Item> = Vec::new();
-            for (g, text) in run.glyphs.iter().zip(texts) {
+            // Clusters of several glyphs placed off their pen (harakat and
+            // niqqud raised, lowered or shifted over their base, stacked Thai
+            // marks): their own /ActualText, or poppler reads the marks out of
+            // order or on a line of their own (a run with /ActualText already
+            // covers them).
+            let spans: Vec<(Range<usize>, &str)> = if actual_text.is_some() {
+                Vec::new()
+            } else {
+                clusters(run)
+                    .into_iter()
+                    .filter(|(r, _)| r.len() > 1 && run.glyphs[r.clone()].iter().any(|g| g.y_offset != 0.0 || g.x_offset != 0.0))
+                    .collect()
+            };
+            for (i, (g, text)) in run.glyphs.iter().zip(texts).enumerate() {
+                if let Some((_, whole)) = spans.iter().find(|(r, _)| r.start == i) {
+                    flush(&mut out, &mut items);
+                    // Poppler reverses what a right-to-left span holds as if it
+                    // were drawn glyph by glyph: it gets the cluster reversed,
+                    // and extracts it in reading order.
+                    let shown: String = if run.rtl { whole.chars().rev().collect() } else { whole.to_string() };
+                    let _ = writeln!(out, "/Span <</ActualText <{}>>> BDC", utf16_hex(&shown, true));
+                }
                 if g.y_offset != rise {
                     flush(&mut out, &mut items);
                     let _ = writeln!(out, "{} Ts", fmt_num(g.y_offset));
@@ -183,6 +205,10 @@ impl<'f, 'a> Embedder<'f, 'a> {
                 }
                 at = start + width;
                 p += g.x_advance;
+                if spans.iter().any(|(r, _)| r.end == i + 1) {
+                    flush(&mut out, &mut items);
+                    out.push_str("EMC\n");
+                }
             }
             flush(&mut out, &mut items);
             if actual_text.is_some() {
@@ -252,6 +278,27 @@ fn entry_texts(run: &Run) -> (Vec<String>, Option<String>) {
     }
     let whole = overflow.then(|| order.iter().map(|&i| run.glyphs[i].cluster_text.as_str()).collect());
     (texts, whole)
+}
+
+/// The clusters of `run`: the visual range of their glyphs and their text.
+/// A cluster is a glyph with text (its first in logical order) and the
+/// glyphs without text after it in logical order: contiguous in visual
+/// order too.
+fn clusters(run: &Run) -> Vec<(Range<usize>, &str)> {
+    let n = run.glyphs.len();
+    let order: Vec<usize> = if run.rtl { (0..n).rev().collect() } else { (0..n).collect() };
+    let mut out = Vec::new();
+    let mut k = 0;
+    while k < n {
+        let mut end = k + 1;
+        while end < n && run.glyphs[order[end]].cluster_text.is_empty() {
+            end += 1;
+        }
+        let (a, b) = (order[k], order[end - 1]);
+        out.push((a.min(b)..a.max(b) + 1, run.glyphs[order[k]].cluster_text.as_str()));
+        k = end;
+    }
+    out
 }
 
 /// `text` as UTF-16BE hex digits, with a byte order mark when `bom`.
