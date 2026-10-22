@@ -21,9 +21,21 @@ type Store = {
 type Wasm = {
   FontStore: new () => Store;
   edit_pdf: (pdf: Uint8Array, job: unknown) => Uint8Array;
-  layout_text: (fonts: unknown, text: string, size: number, width: number, height: number, align: string, lineHeight: number) => unknown;
   initSync: (m: { module: BufferSource }) => unknown;
 };
+/** `layout_text` through a fresh store holding `fonts` (ids "0", "1"...), freed after. */
+function layoutText(fonts: Uint8Array[], text: string, size: number, width: number, height: number, align: string, lineHeight: number): unknown {
+  const store = new wasm.FontStore();
+  try {
+    const ids = fonts.map((f, i) => {
+      store.add(String(i), f);
+      return String(i);
+    });
+    return store.layout_text(ids, text, size, width, height, align, lineHeight);
+  } finally {
+    store.free();
+  }
+}
 const FONT_DIR = "../../../crates/mantis-wasm/tests/fonts/";
 const font = (name: string) => new Uint8Array(readFileSync(new URL(`${FONT_DIR}${name}`, import.meta.url)));
 let wasm: Wasm;
@@ -95,11 +107,11 @@ describe.skipIf(!built)("edit_pdf binding", () => {
     // Views over one 40 MiB buffer: the total is counted on the lengths, nothing is copied.
     const big = new Uint8Array(40 << 20);
     expect(() => wasm.edit_pdf(PDF, { items: [], fonts: [{ id: "a", bytes: big }, { id: "b", bytes: big }] })).toThrow("Invalid edit settings: font");
-    expect(() => wasm.layout_text([big, big], "x", 12, 100, 100, "auto", 1.2)).toThrow("Invalid edit settings: font");
+    expect(() => layoutText([big, big], "x", 12, 100, 100, "auto", 1.2)).toThrow("Invalid edit settings: font");
   });
 
   it("lays out text for the preview as the PDF will", () => {
-    const layout = wasm.layout_text([font("NotoSans-subset.ttf"), font("NotoSansHebrew-subset.ttf")], "Hi שלום\nmore", 12, 200, 100, "auto", 1.2) as {
+    const layout = layoutText([font("NotoSans-subset.ttf"), font("NotoSansHebrew-subset.ttf")], "Hi שלום\nmore", 12, 200, 100, "auto", 1.2) as {
       lines: { baselineY: number; runs: { face: number; rtl: boolean; x: number; width: number; text: string }[] }[];
       missing: string;
     };
@@ -107,7 +119,7 @@ describe.skipIf(!built)("edit_pdf binding", () => {
     expect(layout.lines[0].runs.map((r) => [r.face, r.rtl, r.text])).toEqual([[0, false, "Hi "], [1, true, "שלום"]]);
     expect(layout.lines[1].baselineY - layout.lines[0].baselineY).toBeCloseTo(14.4);
     expect(layout.missing).toBe("");
-    expect(() => wasm.layout_text([font("NotoSans-subset.ttf")], "x", 12, 100, 100, "justify", 1.2)).toThrow("Invalid edit settings: align");
+    expect(() => layoutText([font("NotoSans-subset.ttf")], "x", 12, 100, 100, "justify", 1.2)).toThrow("Invalid edit settings: align");
   });
 
   it("pdf.js reads Noto text in reading order, also across lines and with harakat", async () => {
@@ -138,10 +150,10 @@ describe.skipIf(!built)("edit_pdf binding", () => {
       // The box the editor's estimate gives (textFit): too short for Noto Sans Arabic.
       const estimated = fitTextRect([50, 600, 200, 10], text, "Helvetica", 14, 1.2);
       type Layout = { lines: unknown[]; height: number };
-      const first = wasm.layout_text(fonts, text, 14, 200, estimated[3], "auto", 1.2) as Layout;
+      const first = layoutText(fonts, text, 14, 200, estimated[3], "auto", 1.2) as Layout;
       // Fitted to the height the engine reports, every line shows.
       const fitted = fitRectToHeight(estimated, first.height);
-      const again = wasm.layout_text(fonts, text, 14, 200, fitted[3], "auto", 1.2) as Layout;
+      const again = layoutText(fonts, text, 14, 200, fitted[3], "auto", 1.2) as Layout;
       expect(again.lines).toHaveLength(lines);
       expect(fitted[1] + fitted[3]).toBeCloseTo(estimated[1] + estimated[3]);
     }
@@ -155,7 +167,7 @@ describe.skipIf(!built)("edit_pdf binding", () => {
     store.add("sc", sc);
     expect(store.has("sc")).toBe(true);
     const held = store.layout_text(["sans", "sc"], "Hi 你好", 12, 200, 100, "auto", 1.2);
-    expect(held).toEqual(wasm.layout_text([sans, sc], "Hi 你好", 12, 200, 100, "auto", 1.2));
+    expect(held).toEqual(layoutText([sans, sc], "Hi 你好", 12, 200, 100, "auto", 1.2));
     expect(() => store.layout_text(["nope"], "x", 12, 10, 10, "auto", 1.2)).toThrow("Invalid edit settings: font");
     // 64 MiB together at most, checked before copying.
     const big = new Uint8Array(40 << 20);

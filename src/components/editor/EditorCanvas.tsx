@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch } from "react";
 import PageImage from "../common/PageImage";
-import { charUnits, unsupportedChars } from "../../lib/editor/afm";
+import { charUnits } from "../../lib/editor/afm";
 import {
   HIT_SLOP,
   handlePositions,
@@ -393,25 +393,9 @@ export default function EditorCanvas(props: Props) {
         }
         const font = resolved.font;
         const { family, weight } = cssFont(font);
-        // Characters the standard fonts lack: the download will refuse this box, say so here.
-        const unsupported = unsupportedChars(it.text) !== "";
+        // Standard fonts only for WinAnsi text (other text resolved to Noto above): nothing to flag.
         return (
           <g key={it.id}>
-            {unsupported && (
-              <rect
-                data-warning="unsupported-text"
-                x={box.left}
-                y={box.top}
-                width={box.width}
-                height={box.height}
-                fill="none"
-                stroke="#dc2626"
-                strokeWidth={2}
-                strokeDasharray="5 3"
-              >
-                <title>Some characters cannot be saved with the standard PDF fonts</title>
-              </rect>
-            )}
             <g opacity={it.opacity} fill={cssColor(it.color)} fontFamily={family} fontWeight={weight} fontSize={it.size * scale}>
               {layoutText(it.rect, it.text, font, it.size, it.align === "auto" ? "left" : it.align, it.lineHeight).map((line, i) => {
                 const [x, y] = toPx([line.x, line.y]);

@@ -160,30 +160,7 @@ pub fn edit_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<Vec<u8>, JsValue> {
     edit_ops::edit_pdf(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))
 }
 
-/// Lays out the text of an Edit PDF box drawn with embedded fonts, exactly as
-/// `edit_pdf` will: `fonts` are the font files in fallback order (family
-/// first), `align` is "left", "center", "right" or "auto". Returns
-/// `{ lines: [{ baselineY, runs: [{ face, rtl, x, width, text }] }], missing }`
-/// (points from the box's top-left corner; lines past the box height dropped).
-#[wasm_bindgen]
-pub fn layout_text(
-    fonts: JsValue,
-    text: &str,
-    size: f64,
-    width: f64,
-    height: f64,
-    align: &str,
-    line_height: f64,
-) -> Result<JsValue, JsValue> {
-    let err = |e: String| JsValue::from_str(&e);
-    let bytes = edit_ops::binding::read_layout_fonts(&fonts).map_err(err)?;
-    let align = parse_align(align).map_err(err)?;
-    let refs: Vec<&[u8]> = bytes.iter().map(Vec::as_slice).collect();
-    let layout = edit_ops::unitext::preview_layout(&refs, text, size, width, height, align, line_height).map_err(err)?;
-    Ok(edit_ops::binding::preview_to_js(&layout))
-}
-
-/// The worker's font cache for `layout_text` previews: font files copied into
+/// The worker's font cache for text box previews (`layout_text`): font files copied into
 /// wasm memory once each (by id), then laid out by id. `free()` it when the
 /// page is reset; `add` refuses past 20 files or 64 MiB (checked on the JS
 /// length, before copying): start a new store then.

@@ -55,16 +55,6 @@ declare module "mantis-wasm" {
   }
   export function stamp_pdf(pdf_bytes: Uint8Array, job: object): StampOutput;
   export function edit_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
-  /** Lines of an embedded-font text box, as `edit_pdf` draws them (see `TextLayout` in src/lib/fonts/jobFonts.ts). */
-  export function layout_text(
-    fonts: Uint8Array[],
-    text: string,
-    size: number,
-    width: number,
-    height: number,
-    align: string,
-    line_height: number,
-  ): unknown;
   /** The form fields; shape built by `forms::binding::form_to_js`. */
   export function list_form(pdf_bytes: Uint8Array): import("./lib/forms/model").FormInfo;
   /** `fonts`: `{ files: [{ id, bytes }], fields: [{ field, faces, fakeBold }] }` for values in Noto fonts. */

@@ -289,32 +289,6 @@ pub(crate) fn read_job(job: &JsValue) -> Result<RawJob, String> {
     Ok(RawJob { items, fonts: fonts(job)? })
 }
 
-/// The fonts of a `layout_text` call (an array of `Uint8Array`, chain
-/// order), limits checked on the JS lengths before copying.
-pub(crate) fn read_layout_fonts(fonts: &JsValue) -> Result<Vec<Vec<u8>>, String> {
-    if !Array::is_array(fonts) {
-        return Err(invalid("font"));
-    }
-    let list: Array = fonts.clone().unchecked_into();
-    if list.length() as usize > MAX_FONTS {
-        return Err(invalid("font"));
-    }
-    let mut arrays = Vec::with_capacity(list.length() as usize);
-    let mut total = 0usize;
-    for v in list.iter() {
-        if !v.is_instance_of::<Uint8Array>() {
-            return Err(invalid("font"));
-        }
-        let arr: Uint8Array = v.unchecked_into();
-        total = total.saturating_add(arr.length() as usize);
-        if total > MAX_FONT_BYTES {
-            return Err(invalid("font"));
-        }
-        arrays.push(arr);
-    }
-    Ok(arrays.iter().map(Uint8Array::to_vec).collect())
-}
-
 /// A `PreviewLayout` as `{ lines: [{ baselineY, runs: [{ face, rtl, x, width, text }] }], missing }`.
 pub(crate) fn preview_to_js(layout: &super::unitext::PreviewLayout) -> JsValue {
     let set = |obj: &Object, key: &str, value: JsValue| {
