@@ -34,6 +34,9 @@ export default {
   submit: "Crop and download",
   noVisibleArea: "This page has no visible area to crop.",
   cropArea: "Crop area",
+  boxRole: "resizable crop box",
+  boxHelp:
+    "Drag the box to move it, drag a handle to resize it. Arrow keys move it by 1 pt (Shift+arrows by 10 pt); Ctrl+arrows (Cmd on a Mac) resize it from the bottom-right corner by 1 pt, Ctrl+Shift+arrows by 10 pt.",
   // lib/cropBox
   describeCrop: "Crop area {width} by {height} pt, {x} pt from the left, {top} pt from the top.",
   missed: {

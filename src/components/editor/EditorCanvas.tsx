@@ -378,7 +378,7 @@ export default function EditorCanvas(props: Props) {
   if (degenerate) {
     return (
       <div ref={wrapRef} className="w-full">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">This page has no visible area to edit.</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
       </div>
     );
   }

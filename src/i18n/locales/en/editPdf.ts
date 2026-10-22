@@ -69,6 +69,7 @@ export default {
   canvasHelp:
     "Drag to create, click an item to select it. Arrow keys move the selection by 1 pt (Shift: 10 pt), Delete removes it, Ctrl+Z undoes. Shift while resizing keeps the proportions.",
   textContent: "Text box content",
+  noVisibleArea: "This page has no visible area to edit.",
   overlayUnsupported: "{problem}. They cannot be saved with the standard PDF fonts.",
   // lib/editor/model limits
   tooManyEdits: "A document can hold at most {max} edits.",

@@ -131,7 +131,7 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
         <div className="absolute inset-px">
           <div
             role="group"
-            aria-roledescription="resizable crop box"
+            aria-roledescription={t("boxRole")}
             aria-label={t("cropArea")}
             aria-describedby="crop-area-help"
             tabIndex={0}
@@ -158,8 +158,7 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
         </div>
       </div>
       <p id="crop-area-help" className="mt-2 text-xs text-gray-500 dark:text-[#777]">
-        Drag the box to move it, drag a handle to resize it. Arrow keys move it by 1 pt (Shift+arrows by 10 pt);
-        Ctrl+arrows (Cmd on a Mac) resize it from the bottom-right corner by 1 pt, Ctrl+Shift+arrows by 10 pt.
+        {t("boxHelp")}
       </p>
       <p className="sr-only" aria-live="polite">{spoken}</p>
     </div>

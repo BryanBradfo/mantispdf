@@ -92,6 +92,7 @@ const redact: Messages<typeof en> = {
   markSelected: "Marquer la sélection ({count})",
   markAll: "Tout marquer",
   canvasRole: "page à caviarder",
+  noVisibleArea: "Cette page n’a aucune zone visible.",
   canvasLabel: "Page {page}\u00a0: glissez pour marquer une zone à caviarder",
   searchMatch: "Résultat de recherche\u00a0: {query}",
   canvasHelp:

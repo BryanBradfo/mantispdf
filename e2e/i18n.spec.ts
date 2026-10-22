@@ -157,3 +157,35 @@ test("French Edit PDF: the toolbar and the empty panel are French", async ({ pag
   await expect(page.getByText("Choisissez un outil, puis cliquez ou glissez sur la page.", { exact: false })).toBeVisible();
 });
 
+test("French 404 page, linking back to the French home", async ({ page }) => {
+  await page.goto("/fr/no-such-page");
+  await expect(page.getByRole("heading", { name: "Page introuvable" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "← Retour à tous les outils" })).toHaveAttribute("href", "/fr");
+  await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+});
+
+test("French engine errors: a wrong password reads in French", async ({ page }, testInfo) => {
+  // Encrypt a file in French first, then unlock it with the wrong password.
+  await page.goto("/fr/encrypt");
+  await page.locator('input[type="file"]').setInputFiles(fx("four-pages.pdf"));
+  await page.getByPlaceholder("Saisissez le mot de passe").fill("u");
+  await page.getByPlaceholder("Saisissez-le à nouveau").fill("u");
+  await page.getByRole("button", { name: "Chiffrer le PDF" }).click();
+  const [dl] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Télécharger le PDF chiffré" }).click(),
+  ]);
+  const encrypted = testInfo.outputPath("encrypted.pdf");
+  await dl.saveAs(encrypted);
+
+  await page.goto("/fr/unlock");
+  const submit = page.getByRole("button", { name: "Déverrouiller et télécharger" });
+  await expect(async () => {
+    await page.locator('input[type="file"]').setInputFiles(encrypted);
+    await expect(submit).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 20000 });
+  await page.getByLabel("Mot de passe (laissez vide si le PDF s’ouvre sans)").fill("x");
+  await submit.click();
+  await expect(page.getByText("Mot de passe incorrect")).toBeVisible();
+});
+

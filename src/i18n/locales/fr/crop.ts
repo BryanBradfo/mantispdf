@@ -35,6 +35,9 @@ const crop: Messages<typeof en> = {
   submit: "Rogner et télécharger",
   noVisibleArea: "Cette page n’a aucune zone visible à rogner.",
   cropArea: "Zone de rognage",
+  boxRole: "zone de rognage redimensionnable",
+  boxHelp:
+    "Glissez la zone pour la déplacer, et une poignée pour la redimensionner. Les flèches la déplacent de 1\u00a0pt (Maj+flèches\u00a0: 10\u00a0pt)\u00a0; Ctrl+flèches (Cmd sur Mac) la redimensionnent depuis le coin inférieur droit de 1\u00a0pt, Ctrl+Maj+flèches de 10\u00a0pt.",
   describeCrop: "Zone de rognage de {width} sur {height}\u00a0pt, à {x}\u00a0pt du bord gauche et {top}\u00a0pt du haut.",
   missed: {
     one: "La zone de rognage ne couvre pas la page {list}. Utilisez une plage de pages ou la détection automatique.",

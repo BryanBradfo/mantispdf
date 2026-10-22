@@ -67,6 +67,7 @@ const editPdf: Messages<typeof en> = {
   canvasHelp:
     "Glissez pour créer, cliquez sur un élément pour le sélectionner. Les flèches déplacent la sélection de 1\u00a0pt (Maj\u00a0: 10\u00a0pt), Suppr la retire, Ctrl+Z annule. Maj pendant le redimensionnement garde les proportions.",
   textContent: "Contenu de la zone de texte",
+  noVisibleArea: "Cette page n’a aucune zone visible à modifier.",
   overlayUnsupported: "{problem}. Ils ne peuvent pas être enregistrés avec les polices PDF standard.",
   tooManyEdits: "Un document peut contenir au plus {max}\u00a0modifications.",
   noArea: "Cet élément n’a pas de surface, il n’a donc pas été ajouté.",

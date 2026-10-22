@@ -29,3 +29,14 @@ describe("French dictionary parity", () => {
     expect(tokens(frValue)).toEqual(tokens(enValue));
   });
 });
+
+describe("no stray French keys", () => {
+  it("has no namespace or key that English lacks", () => {
+    const extra = Object.entries(fr).flatMap(([ns, messages]) => {
+      const enNs: Record<string, MessageValue> | undefined = en[ns as keyof typeof en];
+      if (!enNs) return [ns];
+      return Object.keys(messages).filter((key) => !(key in enNs)).map((key) => `${ns}.${key}`);
+    });
+    expect(extra).toEqual([]);
+  });
+});

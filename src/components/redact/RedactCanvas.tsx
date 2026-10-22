@@ -102,7 +102,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
   if (!(pageSize[0] > 0 && pageSize[1] > 0)) {
     return (
       <div ref={wrapRef} className="w-full">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">This page has no visible area.</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
       </div>
     );
   }

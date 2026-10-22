@@ -95,6 +95,7 @@ export default {
   markAll: "Mark all",
   // RedactCanvas
   canvasRole: "redaction page",
+  noVisibleArea: "This page has no visible area.",
   canvasLabel: "Page {page}: drag to mark an area to redact",
   searchMatch: "Search match: {query}",
   canvasHelp: "Drag on the page to mark an area. Drag a mark to move it, its handles to resize it; Delete removes the selected mark.",
