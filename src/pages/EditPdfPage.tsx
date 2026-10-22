@@ -113,10 +113,12 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
   // they make a single undo step.
   const newTextGesture = useRef(false);
   const urls = useRef(new Map<Blob, string>());
-  // The self-hosted font list (fonts themselves are fetched only for text that needs them).
+  // The self-hosted font list, fetched only once some text box needs Noto (as the fonts are).
   const [manifest, setManifest] = useState<FontManifest | null>(null);
   const cjk = useMemo(() => cjkFlavourFromLanguage(typeof navigator === "undefined" ? undefined : navigator.language), []);
+  const needsNoto = useMemo(() => state.items.some((it) => it.kind === "text" && resolveFont(it.font, it.text).kind === "noto"), [state.items]);
   useEffect(() => {
+    if (!needsNoto || manifest) return;
     let live = true;
     pageFonts
       .manifest()
@@ -125,7 +127,7 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
     return () => {
       live = false;
     };
-  }, []);
+  }, [needsNoto, manifest]);
   const fit = useCallback((id: string, height: number) => dispatch({ type: "fit", id, height }), []);
   const unicodeText = useMemo<UnicodeTextEnv>(() => ({ manifest, cjk, layoutText, fit }), [manifest, cjk, layoutText, fit]);
 
@@ -247,6 +249,8 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
     if (busy || items.length === 0) return;
     void run(
       async () => {
+        // Standard fonts only: no font list, no fonts.
+        if (!needsNoto) return editPdf(input.bytes, await buildEditJob(items));
         const fonts = manifest ?? (await pageFonts.manifest());
         const problem = textProblem(items, fonts, cjk);
         if (problem) throw new Error(problem);

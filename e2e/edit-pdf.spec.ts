@@ -539,3 +539,20 @@ test("edit pdf: the preview draws right-to-left runs as the PDF does, punctuatio
     expect(markX, `${text}: "${mark}" left of "${letter}"`).toBeLessThan(letterX);
   }
 });
+
+test("edit pdf: standard-font text never fetches the font list", async ({ page }) => {
+  const fontRequests: string[] = [];
+  await page.route("**/fonts-runtime/**", (route) => {
+    fontRequests.push(route.request().url());
+    return route.abort();
+  });
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  await canvas.tool("Text (T)");
+  await canvas.click(100, 100);
+  await page.getByRole("textbox", { name: "Text box content" }).fill("Plain café text");
+  await page.keyboard.press("Escape");
+  const bytes = await download(page);
+  expect(bytes.length).toBeGreaterThan(0);
+  expect(fontRequests).toEqual([]);
+});
