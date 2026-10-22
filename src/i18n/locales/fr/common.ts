@@ -8,6 +8,7 @@ const common: Messages<typeof en> = {
   errorWrongPassword: "Mot de passe incorrect",
   errorLocked: "Ce PDF est protégé par un mot de passe. Déverrouillez-le d’abord.",
   errorLockedNth: "Le PDF {n} est protégé par un mot de passe. Déverrouillez-le d’abord.",
+  errorUnsupportedChars: "Caractères non pris en charge par les polices PDF standard\u00a0: {chars}",
   errorEngineCrashed: "Le moteur PDF s’est arrêté. Rechargez la page.",
   errorEngineUnreadable: "Le moteur PDF a envoyé une réponse illisible. Rechargez la page.",
   errorNoCanvas: "Le navigateur ne permet pas de dessiner l’image (canevas indisponible).",

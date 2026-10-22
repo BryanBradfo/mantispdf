@@ -1,11 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
 
 test("French home: French copy, html lang, cards link under /fr, hreflang alternates", async ({ page }) => {
   await page.goto("/fr");
   await expect(page.getByRole("heading", { name: "Outils PDF" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "fr");
-  await expect(page).toHaveTitle("MantisPDF : outils PDF gratuits dans votre navigateur");
+  await expect(page).toHaveTitle("MantisPDF\u00a0: outils PDF gratuits dans votre navigateur");
   await expect(page.getByRole("link", { name: /Fusionner PDF/ })).toHaveAttribute("href", "/fr/merge");
   await expect(page.locator('main a[href^="/"]:not([href^="/fr"])')).toHaveCount(0);
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://mantispdf.vercel.app/fr");
@@ -72,9 +73,9 @@ test("French Merge: full flow in French", async ({ page }) => {
   await expect(page).toHaveTitle("Fusionner des PDF | MantisPDF");
   await expect(page.getByText("Glissez vos PDF ici ou parcourez vos fichiers")).toBeVisible();
   await upload(page, [fx("alpha.pdf"), fx("bravo.pdf")], "merge-card", 2);
-  await expect(page.getByText("2 fichiers · 2 pages au total")).toBeVisible();
+  await expect(page.getByText("2\u00a0fichiers · 2\u00a0pages au total")).toBeVisible();
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Fusionner 2 fichiers" }).click();
+  await page.getByRole("button", { name: "Fusionner 2\u00a0fichiers" }).click();
   expect((await download).suggestedFilename()).toBe("merged.pdf");
   await expect(page.getByRole("link", { name: "← Tous les outils" })).toHaveAttribute("href", "/fr");
 });
@@ -84,9 +85,9 @@ test("French Remove pages: range errors and the result count are in French", asy
   await upload(page, [fx("four-pages.pdf")], "planner-card", 4);
   const range = page.getByLabel("Pages à supprimer");
   await range.fill("2-3");
-  await expect(page.getByText("résultat : 2 sur 4 pages")).toBeVisible();
+  await expect(page.getByText("résultat\u00a0: 2 sur 4\u00a0pages")).toBeVisible();
   await range.fill("2, 9");
-  await expect(page.getByText("La page 9 n’existe pas (le document compte 4 pages)")).toBeVisible();
+  await expect(page.getByText("La page 9 n’existe pas (le document compte 4\u00a0pages)")).toBeVisible();
 });
 
 test("French Page numbers: positions, formats and the printed text are French", async ({ page }) => {
@@ -94,18 +95,40 @@ test("French Page numbers: positions, formats and the printed text are French", 
   await expect(page.getByRole("heading", { name: "Numéros de page" })).toBeVisible();
   await expect(async () => {
     await page.locator('input[type="file"]').setInputFiles(fx("four-pages.pdf"));
-    await expect(page.getByText("four-pages.pdf (4 pages)")).toBeVisible({ timeout: 3000 });
+    await expect(page.getByText("four-pages.pdf (4\u00a0pages)")).toBeVisible({ timeout: 3000 });
   }).toPass({ timeout: 20000 });
   await page.getByRole("radio", { name: "En bas à droite" }).click();
   await page.getByLabel("Format").selectOption({ label: "Page 1 sur 12" });
   const summary = page.getByTestId("settings-summary");
   await expect(summary).toContainText("En bas à droite");
-  await expect(summary).toContainText("Les 4 pages");
+  await expect(summary).toContainText("Les 4\u00a0pages");
   await expect(summary).toContainText('"Page 1 sur 4"');
+
+  // The text printed in the PDF itself is French too.
+  const [dl] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Numéroter et télécharger" }).click(),
+  ]);
+  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await getDocument({ data: new Uint8Array(await readFile(await dl.path())) }).promise;
+  expect(doc.numPages).toBe(4);
+  for (let i = 1; i <= doc.numPages; i++) {
+    // The fixture prints its own "Page N"; the stamp is its own text item.
+    const items = (await (await doc.getPage(i)).getTextContent()).items.map((it) => ("str" in it ? it.str : ""));
+    expect(items).toContain(`Page ${i} sur 4`);
+  }
 });
 
 test("French Encrypt: a non-PDF file is refused in French", async ({ page }) => {
   await page.goto("/fr/encrypt");
   await page.locator('input[type="file"]').setInputFiles({ name: "note.txt", mimeType: "text/plain", buffer: Buffer.from("x") });
   await expect(page.getByText("Veuillez choisir un fichier PDF.")).toBeVisible();
+});
+
+test("French Watermark: a narrow no-break space typed before ! is accepted", async ({ page }) => {
+  await page.goto("/fr/watermark");
+  await page.locator('input[type="file"]').setInputFiles(fx("four-pages.pdf"));
+  await page.getByPlaceholder("CONFIDENTIEL").fill("Confidentiel\u202f!");
+  await page.getByRole("button", { name: "Ajouter le filigrane" }).click();
+  await expect(page.getByText("Filigrane ajouté.")).toBeVisible({ timeout: 20000 });
 });

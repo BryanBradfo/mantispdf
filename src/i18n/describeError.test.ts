@@ -52,4 +52,13 @@ describe("describeError", () => {
     expect(describeError(new Error(raw), tFr, "fr")).toEqual({ message: french, details: null });
     expect(describeError(new Error(raw), tEn, "en")).toEqual({ message: raw, details: null });
   });
+
+  it("lists the unsupported characters in both languages", () => {
+    const raw = "Characters not supported by the standard PDF fonts: 日✓";
+    expect(describeError(new Error(raw), tEn, "en")).toEqual({ message: raw, details: null });
+    expect(describeError(new Error(raw), tFr, "fr")).toEqual({
+      message: "Caractères non pris en charge par les polices PDF standard\u00a0: 日✓",
+      details: null,
+    });
+  });
 });

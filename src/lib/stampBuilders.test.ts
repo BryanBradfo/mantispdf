@@ -7,6 +7,7 @@ import {
   hexToRgb,
   pageNumberRange,
   describeStyle,
+  stampDate,
   pageNumberPresets,
   previewHeaderFooter,
   previewStampText,
@@ -143,5 +144,15 @@ describe("stamp texts in French", () => {
     const fr = pageNumberPresets(t);
     expect(fr.map((p) => p.template)).toEqual(["{n}", "Page {n}", "{n} / {total}", "Page {n} sur {total}"]);
     expect(fr.map((p) => p.label)).toEqual(["1", "Page 1", "1 / 12", "Page 1 sur 12"]);
+  });
+});
+
+describe("stampDate", () => {
+  const day = new Date(2026, 9, 7);
+  it("keeps ISO dates in English (unchanged output)", () => {
+    expect(stampDate("en", day)).toBe("2026-10-07");
+  });
+  it("writes French dates as dd/mm/yyyy", () => {
+    expect(stampDate("fr", day)).toBe("07/10/2026");
   });
 });

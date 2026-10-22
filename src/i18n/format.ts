@@ -7,7 +7,7 @@ export function formatNumber(n: number, locale: Locale, options?: Intl.NumberFor
 /** Size units per locale; French uses octets and a non-breaking space before the unit. */
 const BYTE_UNITS: Record<Locale, { kb: string; mb: string; sep: string }> = {
   en: { kb: "KB", mb: "MB", sep: " " },
-  fr: { kb: "Ko", mb: "Mo", sep: " " },
+  fr: { kb: "Ko", mb: "Mo", sep: "\u00a0" },
 };
 
 /** File size as KB (whole) below 1 MB, else MB with one decimal. English matches the pre-i18n output. */

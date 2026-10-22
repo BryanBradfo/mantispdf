@@ -67,7 +67,7 @@ describe("createT", () => {
     expect(tEn("files", { count: 1 })).toBe("1 file");
     expect(tEn("files", { count: 1200 })).toBe("1,200 files");
     expect(tFr("files", { count: 0 })).toBe("0 fichier");
-    expect(tFr("files", { count: 1200 })).toBe("1 200 fichiers");
+    expect(tFr("files", { count: 1200 })).toBe("1\u202f200 fichiers");
     expect(tFr("filesIn", { count: 2, folder: "A" })).toBe("2 fichiers dans A");
   });
 

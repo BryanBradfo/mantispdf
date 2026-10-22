@@ -41,6 +41,7 @@ export default function PositionPicker({ value, onChange, label, layout = "nine"
               type="button"
               role="radio"
               aria-checked={checked}
+              data-anchor={a}
               aria-label={anchorLabel(a, t)}
               title={anchorLabel(a, t)}
               tabIndex={checked ? 0 : -1}
@@ -51,7 +52,7 @@ export default function PositionPicker({ value, onChange, label, layout = "nine"
                 e.preventDefault();
                 const next = anchors[j];
                 onChange(next);
-                (e.currentTarget.parentElement?.querySelector(`[aria-label="${anchorLabel(next, t)}"]`) as HTMLElement | null)?.focus();
+                (e.currentTarget.parentElement?.querySelector(`[data-anchor="${next}"]`) as HTMLElement | null)?.focus();
               }}
               className={`rounded-sm border focus:outline-none focus:ring-2 focus:ring-mantis-500 ${checked ? "border-mantis-600 bg-mantis-600" : "border-gray-200 bg-gray-100 hover:bg-mantis-100 dark:border-[#2a2a2a] dark:bg-[#1f1f1f]"}`}
             />

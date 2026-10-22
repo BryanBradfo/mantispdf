@@ -4,6 +4,7 @@
  */
 import type { StdFont } from "../stampJob";
 import { AFM_VMETRICS, AFM_WIDTHS } from "./afmWidths";
+import { normalizeTypographicSpaces } from "../pdfText";
 
 /** WinAnsi 0x80..0x9F: the characters that differ from Latin-1 (0x81, 0x8D, 0x8F, 0x90, 0x9D are undefined). */
 const CP1252_HIGH: ReadonlyMap<number, number> = new Map([
@@ -31,7 +32,8 @@ export function winAnsiByte(ch: string): number | null {
  */
 export function unsupportedChars(text: string): string {
   let bad = "";
-  for (const ch of text) {
+  // Typographic spaces are saved as U+00A0 (`normalizeTypographicSpaces`), so they are fine.
+  for (const ch of normalizeTypographicSpaces(text)) {
     if (ch === "\r" || ch === "\n" || ch === "\t") continue;
     if (winAnsiByte(ch) === null && !bad.includes(ch)) bad += ch;
   }

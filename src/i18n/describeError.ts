@@ -22,6 +22,10 @@ const KNOWN: readonly { pattern: RegExp; describe: (m: RegExpExecArray, t: Commo
     describe: (_, t) => t("errorLocked"),
   },
   // Worker failures (hooks/usePdfWorker) and browser image decoding (lib/imageInput).
+  {
+    pattern: /^Characters not supported by the standard PDF fonts: (.+)$/,
+    describe: (m, t) => t("errorUnsupportedChars", { chars: m[1] }),
+  },
   { pattern: /^PDF engine crashed$/, describe: (_, t) => t("errorEngineCrashed") },
   { pattern: /^PDF engine sent an unreadable message$/, describe: (_, t) => t("errorEngineUnreadable") },
   { pattern: /^Canvas is not available$/, describe: (_, t) => t("errorNoCanvas") },

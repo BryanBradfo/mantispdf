@@ -15,7 +15,7 @@ import {
   describeStyle,
   previewHeaderFooter,
   slotLabel,
-  todayIso,
+  stampDate,
   type HeaderFooterSlots,
   type TextStyle,
 } from "../lib/stampBuilders";
@@ -62,7 +62,7 @@ export default function HeaderFooterPage() {
     : !(margin >= 0 && margin <= 300) ? ts("marginRange")
     : null;
 
-  const ctx = { total, pages: selected, filename: input ? baseName(input.file) : "", date: todayIso() };
+  const ctx = { total, pages: selected, filename: input ? baseName(input.file) : "", date: stampDate(locale) };
   const preview = previewHeaderFooter(slots, Number.isFinite(numberStart) ? numberStart : 1, ctx, ts);
   const firstPage = selected.length > 0 ? selected.reduce((a, b) => Math.min(a, b)) : null;
   const summary = t("summary", {

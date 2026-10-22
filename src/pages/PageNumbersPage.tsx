@@ -17,18 +17,19 @@ import {
   pageNumberPresets,
   pageNumberRange,
   previewStampText,
-  todayIso,
+  stampDate,
   type TextStyle,
 } from "../lib/stampBuilders";
 import type { Anchor } from "../lib/stampJob";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
-import { useT } from "../i18n";
+import { useLocale, useT } from "../i18n";
 
 const CUSTOM = "custom";
 
 export default function PageNumbersPage() {
   const t = useT("pageNumbers");
+  const locale = useLocale();
   const ts = useT("stamp");
   const tp = useT("pages");
   const tg = useT("geometry");
@@ -63,7 +64,7 @@ export default function PageNumbersPage() {
   const firstShown = previewStampText(template, {
     n: range.first,
     total: range.last,
-    date: todayIso(),
+    date: stampDate(locale),
     filename: input ? baseName(input.file) : "",
   });
   const summary = `${anchorLabel(anchor, ts)} · ${describePages(selected, total, tp)} · ${describeStyle(style, ts)} · "${firstShown}"`;
@@ -73,7 +74,7 @@ export default function PageNumbersPage() {
     if (!input || busy || problem) return;
     const job = buildPageNumberJob(
       { anchor, template, numberStart, style, margin },
-      { total, pages: selected, filename: baseName(input.file), date: todayIso() },
+      { total, pages: selected, filename: baseName(input.file), date: stampDate(locale) },
     );
     void run(
       () => worker.stampPdf(input.bytes, job),

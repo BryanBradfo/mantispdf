@@ -1,5 +1,5 @@
 import { resolveEngineTokens, substituteJsTokens, type Anchor, type StampJobSpec, type StdFont, type TextStampSpec } from "./stampJob";
-import type { NsT } from "../i18n";
+import type { Locale, NsT } from "../i18n";
 
 export interface TextStyle {
   font: StdFont;
@@ -44,6 +44,15 @@ export function hexToRgb(hex: string): [number, number, number] {
 export function todayIso(now: Date = new Date()): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+}
+
+/**
+ * The date printed by {date} and "Signed on": ISO in English (as before), the locale's short date
+ * elsewhere (French: dd/mm/yyyy).
+ */
+export function stampDate(locale: Locale, now: Date = new Date()): string {
+  if (locale === "en") return todayIso(now);
+  return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
 }
 
 export interface JobContext {

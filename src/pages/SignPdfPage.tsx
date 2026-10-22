@@ -6,7 +6,7 @@ import ErrorAlert from "../components/common/ErrorAlert";
 import PageImage from "../components/common/PageImage";
 import PlacementCanvas from "../components/sign/PlacementCanvas";
 import SignaturePad, { type Signature } from "../components/sign/SignaturePad";
-import { todayIso } from "../lib/stampBuilders";
+import { stampDate } from "../lib/stampBuilders";
 import { substituteJsTokens } from "../lib/stampJob";
 import {
   SIGNED_ON_SIZE,
@@ -18,7 +18,7 @@ import {
 } from "../lib/signPlacement";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
-import { useT } from "../i18n";
+import { useLocale, useT } from "../i18n";
 
 
 function StepHeading({ n, children }: { n: number; children: string }) {
@@ -32,6 +32,7 @@ function StepHeading({ n, children }: { n: number; children: string }) {
 
 export default function SignPdfPage() {
   const t = useT("sign");
+  const locale = useLocale();
   const tc = useT("common");
   const worker = usePdfWorker();
   const { pageSizes } = worker;
@@ -58,7 +59,7 @@ export default function SignPdfPage() {
 
   // Printed on the page, so in the UI language; {date} is resolved by the stamp tokens.
   const signedOnTemplate = t("signedOn", { date: "{date}" });
-  const signedOn = addDate ? substituteJsTokens(signedOnTemplate, { date: todayIso(), filename: input ? baseName(input.file) : "" }) : null;
+  const signedOn = addDate ? substituteJsTokens(signedOnTemplate, { date: stampDate(locale), filename: input ? baseName(input.file) : "" }) : null;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,7 +154,7 @@ export default function SignPdfPage() {
                     onChange={(e) => setAddDate(e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
                   />
-                  {t("addDate", { text: substituteJsTokens(signedOnTemplate, { date: todayIso(), filename: "" }) })}
+                  {t("addDate", { text: substituteJsTokens(signedOnTemplate, { date: stampDate(locale), filename: "" }) })}
                 </label>
               </section>
             </>

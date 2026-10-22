@@ -1,4 +1,5 @@
 import { dirtyIds, valueOf, type FormState, type FormValue } from "./model";
+import { normalizeTypographicSpaces } from "../pdfText";
 
 /**
  * One fill value as `crates/mantis-wasm/src/forms/binding.rs` `read_values`
@@ -13,7 +14,7 @@ export interface FormWireEntry {
 function wireValue(value: FormValue): FormValue {
   switch (value.kind) {
     case "text":
-      return { kind: "text", text: value.text };
+      return { kind: "text", text: normalizeTypographicSpaces(value.text) };
     case "names":
       return { kind: "names", names: [...new Set(value.names)] };
     case "none":

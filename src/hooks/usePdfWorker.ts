@@ -13,6 +13,7 @@ import type { OcrPageWire, TextLayerResultWire } from "../lib/ocr/textLayerWire"
 import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, SearchOptionsWire } from "../lib/redact/toJob";
 import type { RedactSearchResultWire } from "../lib/redact/searchWire";
 import { PdfWorkerClient } from "../lib/workerClient";
+import { normalizeTypographicSpaces } from "../lib/pdfText";
 
 export interface SanitizeReport {
   linksKept: number;
@@ -291,7 +292,7 @@ export function usePdfWorker() {
       const pdfBytes = await readFileAsArrayBuffer(file);
       return run(
         "watermarking",
-        (id) => ({ type: "watermark", id, pdfBytes, text, fontSize, opacity, angle, r, g, b }),
+        (id) => ({ type: "watermark", id, pdfBytes, text: normalizeTypographicSpaces(text), fontSize, opacity, angle, r, g, b }),
         asBuffer,
         { transfer: [pdfBytes] },
       );

@@ -4,11 +4,11 @@ import { formatBytes, formatNumber } from "./format";
 describe("formatNumber", () => {
   it("groups digits per locale", () => {
     expect(formatNumber(1234.5, "en")).toBe("1,234.5");
-    expect(formatNumber(1234.5, "fr")).toBe("1 234,5");
+    expect(formatNumber(1234.5, "fr")).toBe("1\u202f234,5");
   });
 
   it("passes Intl options through", () => {
-    expect(formatNumber(0.25, "fr", { style: "percent" })).toBe("25 %");
+    expect(formatNumber(0.25, "fr", { style: "percent" })).toBe("25\u00a0%");
   });
 });
 
@@ -23,7 +23,7 @@ describe("formatBytes", () => {
   });
 
   it("uses French units, decimal comma and a non-breaking space", () => {
-    expect(formatBytes(10 * 1024, "fr")).toBe("10 Ko");
-    expect(formatBytes(2.5 * 1024 * 1024, "fr")).toBe("2,5 Mo");
+    expect(formatBytes(10 * 1024, "fr")).toBe("10\u00a0Ko");
+    expect(formatBytes(2.5 * 1024 * 1024, "fr")).toBe("2,5\u00a0Mo");
   });
 });

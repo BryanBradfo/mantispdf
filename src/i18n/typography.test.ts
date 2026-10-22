@@ -21,16 +21,18 @@ const RULES: [string, RegExp][] = [
   ["no em-dash", /—/],
   ["NBSP (not a space) before : ; ! ?", /\S [:;!?](?=\s|$|")/],
   ["no space at all before : ; ! ?", /[\p{L}\d)}»](?<!https?)[:;!?](?=\s|$)/u],
-  ["NBSP after «", /«(?! )/],
-  ["NBSP before »", /(?<! )»/],
+  ["NBSP after «", /«(?!\u00a0)/],
+  ["NBSP before »", /(?<!\u00a0)»/],
   ["NBSP between a number and its unit", new RegExp(`(\\d|\\}) (${UNITS})(?![\\p{L}])`, "u")],
   ["NBSP before %", /(\d|\}) ?%/],
+  ["typographic apostrophe (’), not '", /'/],
+  ["ellipsis character (…), not ...", /\.\.\./],
 ];
 
 describe("French typography", () => {
   const all = texts(fr);
   it.each(RULES)("%s", (_rule, pattern) => {
-    const bad = all.filter(([, text]) => pattern.test(text.replace(/ %/g, " PCT")));
+    const bad = all.filter(([, text]) => pattern.test(text.replace(/\u00a0%/g, "\u00a0PCT")));
     expect(bad.map(([id, text]) => `${id}: ${text}`)).toEqual([]);
   });
 });

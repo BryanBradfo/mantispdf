@@ -9,6 +9,7 @@ export default {
   errorWrongPassword: "Wrong password",
   errorLocked: "This PDF is password-protected. Unlock it first.",
   errorLockedNth: "PDF {n} is password-protected. Unlock it first.",
+  errorUnsupportedChars: "Characters not supported by the standard PDF fonts: {chars}",
   errorEngineCrashed: "PDF engine crashed",
   errorEngineUnreadable: "PDF engine sent an unreadable message",
   errorNoCanvas: "Canvas is not available",
