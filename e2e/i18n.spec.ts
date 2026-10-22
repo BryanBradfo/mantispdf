@@ -189,3 +189,17 @@ test("French engine errors: a wrong password reads in French", async ({ page }, 
   await expect(page.getByText("Mot de passe incorrect")).toBeVisible();
 });
 
+test("French head: one title and one description, both French (no static English left)", async ({ page }) => {
+  await page.goto("/fr/merge");
+  await expect(page).toHaveTitle("Fusionner des PDF | MantisPDF");
+  await expect(page.locator("head title")).toHaveCount(1);
+  const description = page.locator('head meta[name="description"]');
+  await expect(description).toHaveCount(1);
+  await expect(description).toHaveAttribute("content", /^Combinez plusieurs PDF/);
+  for (const selector of ['meta[property="og:title"]', 'meta[property="og:description"]', 'meta[name="twitter:title"]', 'meta[name="twitter:description"]', 'meta[property="og:url"]']) {
+    await expect(page.locator(`head ${selector}`), selector).toHaveCount(1);
+  }
+  await expect(page.locator('head meta[property="og:title"]')).toHaveAttribute("content", "Fusionner des PDF | MantisPDF");
+  await expect(page.locator('head meta[property="og:url"]')).toHaveAttribute("content", "https://mantispdf.vercel.app/fr/merge");
+});
+
