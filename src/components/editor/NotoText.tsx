@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { NotoFamily, Point, TextItem } from "../../lib/editor/model";
 import { planFonts } from "../../lib/editor/unicodeText";
 import type { TextLayout } from "../../lib/fonts/jobFonts";
@@ -34,6 +34,14 @@ export default function NotoText({ item, family, bold, toPx, scale, box }: Props
   const fakeBold = new Set(plan?.fakeBold.map((f) => f.file) ?? []);
   const key = JSON.stringify([files, item.text, item.size, item.rect[2], item.rect[3], item.align, item.lineHeight]);
   const [shown, setShown] = useState<{ key: string; layout: TextLayout | null; files: string[] } | null>(null);
+  // The box grows to its engine layout once per content change, never after the user resizes it.
+  const content = JSON.stringify([files, item.text, item.size, item.rect[2], item.align, item.lineHeight]);
+  const fitted = useRef<string | null>(null);
+  useEffect(() => {
+    if (!shown?.layout || !env?.fit || shown.key !== key || fitted.current === content) return;
+    fitted.current = content;
+    if (shown.layout.height > item.rect[3] + 1e-6) env.fit(item.id, shown.layout.height);
+  }, [shown, key, content, env, item.id, item.rect]);
 
   useEffect(() => {
     if (!env || files.length === 0) return;

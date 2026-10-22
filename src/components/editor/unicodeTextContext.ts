@@ -18,6 +18,8 @@ export interface UnicodeTextEnv {
   manifest: FontManifest | null;
   cjk: CjkFlavour;
   layoutText: (request: LayoutRequest) => Promise<TextLayout>;
+  /** Grow text box `id` to `height` points (top edge fixed): its engine layout needs it. */
+  fit?: (id: string, height: number) => void;
 }
 
 export const UnicodeTextContext = createContext<UnicodeTextEnv | null>(null);

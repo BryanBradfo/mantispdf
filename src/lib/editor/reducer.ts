@@ -6,6 +6,7 @@
  */
 import { resizeItem, translateItem, type Handle } from "./geometry";
 import { HISTORY_LIMIT, type EditorState, type Item, type ItemPatch, type NewItem, type Point } from "./model";
+import { fitRectToHeight } from "./textFit";
 
 /** Offset of a duplicate from its original, in points (right and down on the page). */
 export const DUPLICATE_OFFSET = 10;
@@ -13,6 +14,11 @@ export const DUPLICATE_OFFSET = 10;
 export type EditorAction =
   | { type: "add"; item: NewItem }
   | { type: "update"; id: string; props: ItemPatch }
+  /**
+   * A text box grown to the height its engine layout needs (Noto text, measured once the preview
+   * arrives): part of the change that made the text longer, so no undo step of its own.
+   */
+  | { type: "fit"; id: string; height: number }
   | { type: "move"; id: string; dx: number; dy: number }
   | { type: "resize"; id: string; handle: Handle; point: Point; keepAspect: boolean }
   | { type: "delete"; id?: string }
@@ -122,6 +128,14 @@ function reduce(state: EditorState, action: EditorAction): EditorState {
     }
     case "update":
       return replaceItem(state, action.id, (it) => mergeProps(it, action.props));
+    case "fit": {
+      const items = state.items.map((it) => {
+        if (it.id !== action.id || it.kind !== "text") return it;
+        const rect = fitRectToHeight(it.rect, action.height);
+        return rect === it.rect ? it : { ...it, rect };
+      });
+      return items.some((it, i) => it !== state.items[i]) ? { ...state, items } : state;
+    }
     case "move":
       if (action.dx === 0 && action.dy === 0) return state;
       return replaceItem(state, action.id, (it) => translateItem(it, action.dx, action.dy));

@@ -33,4 +33,6 @@ export interface TextLayout {
   lines: { baselineY: number; runs: TextLayoutRun[] }[];
   /** Characters no font covers. */
   missing: string;
+  /** Box height (points) that shows every line. */
+  height: number;
 }

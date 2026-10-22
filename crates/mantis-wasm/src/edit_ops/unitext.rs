@@ -28,7 +28,7 @@ pub(crate) fn place_lines(
     budget: &mut ShapeBudget,
 ) -> Result<Vec<PlacedLine>, String> {
     let [x, y, w, h] = rect;
-    let (lines, _) = visible_lines(chain, text, size, w, h, align, line_height, budget)?;
+    let (lines, _, _) = visible_lines(chain, text, size, w, h, align, line_height, budget)?;
     let top = y + h;
     Ok(lines
         .into_iter()
@@ -37,8 +37,8 @@ pub(crate) fn place_lines(
         .collect())
 }
 
-/// The layout's lines that fit a box `height` tall (see `place_lines`), and
-/// the characters no font covers.
+/// The layout's lines that fit a box `height` tall (see `place_lines`), the
+/// characters no font covers, and the height that shows every line.
 #[allow(clippy::too_many_arguments)]
 fn visible_lines(
     chain: &[&Face],
@@ -49,11 +49,12 @@ fn visible_lines(
     align: Option<Align>,
     line_height: f64,
     budget: &mut ShapeBudget,
-) -> Result<(Vec<Line>, Vec<char>), String> {
+) -> Result<(Vec<Line>, Vec<char>, f64), String> {
     let family = chain.first().ok_or_else(|| invalid("font"))?;
     let params = LayoutParams { size, width, align, line_height };
     let layout = layout_text(chain, text, &params, budget).map_err(|e| invalid(e.field()))?;
     let descent = f64::from(family.hb.descender()) * size / family.units_per_em();
+    let needed = layout.lines.last().map_or(0.0, |l| l.baseline_y) - descent;
     let mut out = Vec::new();
     for (i, line) in layout.lines.into_iter().enumerate() {
         if i > 0 && line.baseline_y - descent > height {
@@ -61,7 +62,7 @@ fn visible_lines(
         }
         out.push(line);
     }
-    Ok((out, layout.missing))
+    Ok((out, layout.missing, needed))
 }
 
 /// One run of a preview line: drawn with font `face` (index into the fonts
@@ -88,6 +89,9 @@ pub(crate) struct PreviewLayout {
     pub lines: Vec<PreviewLine>,
     /// Characters no font covers, once each.
     pub missing: String,
+    /// Box height (points) that shows every line: the last baseline plus the
+    /// family's descender (the clipping rule of `place_lines`).
+    pub height: f64,
 }
 
 /// The lines the PDF will hold for a box `width` x `height` (points), for the
@@ -119,7 +123,7 @@ pub(crate) fn preview_layout(
     let faces = load_faces(fonts).map_err(|e| invalid(e.field()))?;
     let chain: Vec<&Face> = faces.iter().collect();
     let mut budget = ShapeBudget::per_job();
-    let (lines, missing) = visible_lines(&chain, text, size, width, height, align, line_height, &mut budget)?;
+    let (lines, missing, needed) = visible_lines(&chain, text, size, width, height, align, line_height, &mut budget)?;
     let missing: String = missing.into_iter().collect();
     let lines = lines
         .into_iter()
@@ -141,7 +145,7 @@ pub(crate) fn preview_layout(
             PreviewLine { baseline_y: line.baseline_y, runs }
         })
         .collect();
-    Ok(PreviewLayout { lines, missing })
+    Ok(PreviewLayout { lines, missing, height: needed })
 }
 
 #[cfg(test)]
@@ -187,5 +191,28 @@ mod tests {
         assert_eq!(preview_layout(&[], "a", 12.0, 10.0, 10.0, None, 1.2).unwrap_err(), "Invalid edit settings: font");
         let long = "a".repeat(MAX_TEXT_CHARS + 1);
         assert_eq!(preview_layout(&[SANS], &long, 12.0, 10.0, 10.0, None, 1.2).unwrap_err(), "Invalid edit settings: text");
+    }
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
+
+    const SANS: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSans-subset.ttf"));
+    const ARABIC: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSansArabic-subset.ttf"));
+
+    #[test]
+    fn the_reported_height_shows_every_line() {
+        let faces = load_faces(&[SANS, ARABIC]).unwrap();
+        let chain: Vec<&Face> = faces.iter().collect();
+        for (text, count) in [("مرحبا\nبالعالم", 2), ("مرحبا\nبالعالم\nالسلام", 3)] {
+            let preview = preview_layout(&[SANS, ARABIC], text, 14.0, 200.0, 5.0, None, 1.2).unwrap();
+            assert_eq!(preview.lines.len(), 1, "a short box shows the first line only");
+            let placed = place_lines(&chain, [0.0, 0.0, 200.0, preview.height], text, 14.0, None, 1.2, &mut ShapeBudget::per_job()).unwrap();
+            assert_eq!(placed.len(), count, "{text}");
+            // Not a point taller than needed: the last line goes with a hair less.
+            let short = place_lines(&chain, [0.0, 0.0, 200.0, preview.height - 0.01], text, 14.0, None, 1.2, &mut ShapeBudget::per_job()).unwrap();
+            assert_eq!(short.len(), count - 1, "{text}");
+        }
     }
 }

@@ -94,14 +94,14 @@ describe("Noto values in forms", () => {
     const plan = fieldPlan(f, text("你好"), manifest, "SC")!;
     const request = overflowRequest(f, f.widgets[0], "你好", plan);
     expect(request).toMatchObject({ fonts: ["NotoSans_400.ttf", "NotoSansSC_400.ttf"], size: 12, align: "left" });
-    const line = (width: number) => ({ lines: [{ baselineY: 12, runs: [{ face: 0, rtl: false, x: 0, width, text: "x" }] }], missing: "" });
+    const line = (width: number) => ({ lines: [{ baselineY: 12, runs: [{ face: 0, rtl: false, x: 0, width, text: "x" }] }], missing: "", height: 16 });
     // The box is 200 pt wide, 196 inside the padding.
-    expect(overflowsLayout(f, f.widgets[0], 12, line(190))).toBe(false);
-    expect(overflowsLayout(f, f.widgets[0], 12, line(200))).toBe(true);
-    // Multiline: lines past the 20 pt height.
+    expect(overflowsLayout(f, f.widgets[0], line(190))).toBe(false);
+    expect(overflowsLayout(f, f.widgets[0], line(200))).toBe(true);
+    // Multiline: the height the engine's lines need, past the 20 pt box (16 inside the padding).
     const multi = field(0, { kind: { kind: "text", multiline: true, comb: false, maxLen: null, password: false } });
-    const lines = (n: number) => ({ lines: Array.from({ length: n }, (_, i) => ({ baselineY: 12 + i * 13.8, runs: [] })), missing: "" });
-    expect(overflowsLayout(multi, multi.widgets[0], 12, lines(1))).toBe(false);
-    expect(overflowsLayout(multi, multi.widgets[0], 12, lines(2))).toBe(true);
+    const lines = (height: number) => ({ lines: [], missing: "", height });
+    expect(overflowsLayout(multi, multi.widgets[0], lines(16))).toBe(false);
+    expect(overflowsLayout(multi, multi.widgets[0], lines(29.8))).toBe(true);
   });
 });

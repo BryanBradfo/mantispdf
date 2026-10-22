@@ -126,7 +126,8 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
       live = false;
     };
   }, []);
-  const unicodeText = useMemo<UnicodeTextEnv>(() => ({ manifest, cjk, layoutText }), [manifest, cjk, layoutText]);
+  const fit = useCallback((id: string, height: number) => dispatch({ type: "fit", id, height }), []);
+  const unicodeText = useMemo<UnicodeTextEnv>(() => ({ manifest, cjk, layoutText, fit }), [manifest, cjk, layoutText, fit]);
 
   const { items, page, selectedId, editingId } = state;
   const setEditingId = (id: string | null) => dispatch({ type: "editText", id });

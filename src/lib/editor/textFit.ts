@@ -42,3 +42,12 @@ export function fitTextRect(rect: Rect, text: string, font: EditFont, size: numb
   const grown = needed + 1e-3;
   return [x, y + h - grown, w, grown];
 }
+
+/** `rect` grown downwards (top edge fixed) to `height` when shorter, else `rect`. */
+export function fitRectToHeight(rect: Rect, height: number): Rect {
+  const [x, y, w, h] = rect;
+  if (!(height > h)) return rect;
+  // A hair taller, so float rounding never drops the last line.
+  const grown = height + 1e-3;
+  return [x, y + h - grown, w, grown];
+}

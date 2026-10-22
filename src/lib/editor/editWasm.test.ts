@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { fitRectToHeight, fitTextRect } from "./textFit";
 
 const PKG = fileURLToPath(new URL("../../../crates/mantis-wasm/pkg/", import.meta.url));
 const built = existsSync(`${PKG}mantis_wasm_bg.wasm`);
@@ -121,5 +122,21 @@ describe.skipIf(!built)("edit_pdf binding", () => {
     const text = content.items.map((i) => ("str" in i ? i.str : "")).join("|");
     for (const word of ["مرحبا", "بالعالم", "مَرْحَبًا", "שָׁלוֹם"]) expect(text).toContain(word);
     await doc.destroy();
+  });
+
+  it("fits a box to the engine's lines: two and three Arabic lines all show", () => {
+    const fonts = [font("NotoSans-subset.ttf"), font("NotoSansArabic-subset.ttf")];
+    for (const text of ["مرحبا\nبالعالم", "مرحبا\nبالعالم\nالسلام"]) {
+      const lines = text.split("\n").length;
+      // The box the editor's estimate gives (textFit): too short for Noto Sans Arabic.
+      const estimated = fitTextRect([50, 600, 200, 10], text, "Helvetica", 14, 1.2);
+      type Layout = { lines: unknown[]; height: number };
+      const first = wasm.layout_text(fonts, text, 14, 200, estimated[3], "auto", 1.2) as Layout;
+      // Fitted to the height the engine reports, every line shows.
+      const fitted = fitRectToHeight(estimated, first.height);
+      const again = wasm.layout_text(fonts, text, 14, 200, fitted[3], "auto", 1.2) as Layout;
+      expect(again.lines).toHaveLength(lines);
+      expect(fitted[1] + fitted[3]).toBeCloseTo(estimated[1] + estimated[3]);
+    }
   });
 });

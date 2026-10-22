@@ -100,7 +100,7 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
         const widget = firstDrawn(field);
         if (!plan || !widget || plan.faces.length === 0) return [];
         const request = overflowRequest(field, widget, shownText(field, value), plan);
-        return [layoutText(request).then((layout) => [field.id, overflowsLayout(field, widget, request.size, layout)] as const)];
+        return [layoutText(request).then((layout) => [field.id, overflowsLayout(field, widget, layout)] as const)];
       });
       void Promise.allSettled(checks).then((results) => {
         if (!live) return;

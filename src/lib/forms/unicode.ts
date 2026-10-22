@@ -68,8 +68,6 @@ export function formFonts(fields: readonly FormField[], state: FormState, manife
 const MIN_AUTO_SIZE = 4;
 /** Height asked of the engine when a layout must not be clipped. */
 const UNCLIPPED = 100_000;
-/** Descent assumed under the last line (em): Noto's descenders are about 0.3 em. */
-const DESCENT = 0.3;
 
 /** The engine layout that tells whether a Noto value overflows `widget` (the smallest size it can get). */
 export function overflowRequest(field: FormField, widget: FormWidget, text: string, plan: FontPlan) {
@@ -88,13 +86,10 @@ export function overflowRequest(field: FormField, widget: FormWidget, text: stri
 }
 
 /** Whether the engine's lines (from `overflowRequest`) are cut off by the widget. */
-export function overflowsLayout(field: FormField, widget: FormWidget, size: number, layout: TextLayout): boolean {
+export function overflowsLayout(field: FormField, widget: FormWidget, layout: TextLayout): boolean {
   const { width, height } = widgetFrame(widget);
   if (field.kind.kind === "text" && field.kind.comb && field.kind.maxLen !== null) return false;
-  if (field.kind.kind === "text" && field.kind.multiline) {
-    const last = layout.lines[layout.lines.length - 1];
-    return last !== undefined && 2 * PADDING + last.baselineY + DESCENT * size > height + 1e-9;
-  }
+  if (field.kind.kind === "text" && field.kind.multiline) return 2 * PADDING + layout.height > height + 1e-9;
   const lineWidth = Math.max(0, ...layout.lines.map((l) => l.runs.reduce((w, r) => Math.max(w, r.x + r.width), 0)));
   return lineWidth > width - 2 * PADDING + 1e-9;
 }

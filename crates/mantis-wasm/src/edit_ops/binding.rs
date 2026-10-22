@@ -340,5 +340,6 @@ pub(crate) fn preview_to_js(layout: &super::unitext::PreviewLayout) -> JsValue {
     let out = Object::new();
     set(&out, "lines", lines.into());
     set(&out, "missing", JsValue::from_str(&layout.missing));
+    set(&out, "height", layout.height.into());
     out.into()
 }
