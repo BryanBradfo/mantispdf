@@ -766,7 +766,7 @@ fn visual_order_page(lines: &[&str]) -> Vec<u8> {
     let mut content = String::new();
     for (n, line) in lines.iter().enumerate() {
         // One TJ per line; a space is a 300-unit gap (no space glyph).
-        content.push_str(&format!("BT /R 12 Tf 100 {} Td [", 700 - 20 * n));
+        content.push_str(&format!("BT /R 12 Tf 100 {} Td [", 700 - 20 * n as i64));
         for c in line.chars() {
             if c == ' ' {
                 content.push_str(" -300 ");
@@ -834,4 +834,20 @@ fn right_to_left_matches_are_redacted() {
     let left = drawn(&out);
     // Both "שלום" gone (drawn "םולש"), "עולם" and the Latin words kept.
     assert_eq!(left, "םלועabcdef");
+}
+
+#[test]
+fn one_letter_matches_in_both_reading_orders_stay_bounded() {
+    // 120,000 one-letter matches, each found in drawing and in reading order:
+    // collecting stops at MAX_RECTS kept matches instead of holding them all.
+    let line = "א".repeat(400);
+    let lines: Vec<&str> = std::iter::repeat_n(line.as_str(), 300).collect();
+    let pdf = visual_order_page(&lines);
+    let started = std::time::Instant::now();
+    let found = redact_search(&pdf, "א", &opts()).unwrap();
+    assert_eq!(found.matches.len(), MAX_RECTS);
+    assert_eq!(found.pages[0].rects.len(), MAX_RECTS);
+    assert!(found.truncated);
+    assert_eq!(found.unsearched_pages, [1]);
+    assert!(started.elapsed() < std::time::Duration::from_secs(20), "{:?}", started.elapsed());
 }

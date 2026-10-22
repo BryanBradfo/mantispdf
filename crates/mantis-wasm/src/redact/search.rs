@@ -356,6 +356,32 @@ fn find_starts(text: &[Char], needle: &[char], whole_word: bool) -> Vec<usize> {
     starts
 }
 
+/// The matches of `needle` in `texts` (the page text in drawing order, then
+/// in reading order), as (text index, start, sorted glyphs), each glyph set
+/// once, at most `room` of them; true when more were left (the page is then
+/// truncated). Nothing is kept past `room`: a page of millions of one-letter
+/// matches allocates no more than that.
+fn collect_matches(texts: &[&Vec<Char>], needle: &[char], whole_word: bool, room: usize) -> (Vec<(usize, usize, Vec<usize>)>, bool) {
+    let mut kept: Vec<(usize, usize, Vec<usize>)> = Vec::new();
+    let mut seen: std::collections::HashSet<Vec<usize>> = std::collections::HashSet::new();
+    for (t, text) in texts.iter().enumerate() {
+        for at in find_starts(text, needle, whole_word) {
+            let mut matched: Vec<usize> = text[at..at + needle.len()].iter().filter_map(|c| c.glyph).collect();
+            matched.sort_unstable();
+            matched.dedup();
+            if seen.contains(&matched) {
+                continue;
+            }
+            if kept.len() >= room {
+                return (kept, true);
+            }
+            seen.insert(matched.clone());
+            kept.push((t, at, matched));
+        }
+    }
+    (kept, false)
+}
+
 /// `redact_search` reading at most `max_chars` characters of page text.
 pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOptions, max_chars: usize) -> Result<SearchResult, String> {
     if query.chars().count() > MAX_QUERY_CHARS || query.contains('\u{FFFD}') {
@@ -421,23 +447,15 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
             continue;
         }
         // Matches in drawing order, then those only the reading order of
-        // right-to-left lines shows (the same glyphs are marked once).
-        let mut candidates: Vec<(Vec<usize>, Context)> = Vec::new();
-        let mut seen: std::collections::HashSet<Vec<usize>> = std::collections::HashSet::new();
+        // right-to-left lines shows (the same glyphs are marked once). Each
+        // kept match takes at least one rect: collecting stops at the rects left.
         let logical = reading_order(&chars);
-        for text in std::iter::once(&chars).chain(logical.as_ref()) {
-            for at in find_starts(text, &needle, options.whole_word) {
-                let mut matched: Vec<usize> = text[at..at + needle.len()].iter().filter_map(|c| c.glyph).collect();
-                matched.sort_unstable();
-                matched.dedup();
-                if seen.insert(matched.clone()) {
-                    candidates.push((matched, context(text, at, at + needle.len())));
-                }
-            }
-        }
-        candidates.sort_by_key(|(glyphs, _)| glyphs.first().copied());
+        let texts: Vec<&Vec<Char>> = std::iter::once(&chars).chain(logical.as_ref()).collect();
+        let (mut kept, capped) = collect_matches(&texts, &needle, options.whole_word, MAX_RECTS.saturating_sub(total));
+        kept.sort_by_key(|(_, _, glyphs)| glyphs.first().copied());
         let mut rects = Vec::new();
-        for (matched, match_context) in candidates {            let mut by_line: Vec<(usize, Vec<usize>)> = Vec::new();
+        for (t, at, matched) in kept {
+            let mut by_line: Vec<(usize, Vec<usize>)> = Vec::new();
             for g in matched {
                 match by_line.iter_mut().find(|(l, _)| *l == lines[g]) {
                     Some((_, list)) => list.push(g),
@@ -459,7 +477,13 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
                 break;
             }
             rects.extend(found.iter().copied());
-            result.matches.push(Match { page: number, rects: found, context: match_context });
+            result.matches.push(Match { page: number, rects: found, context: context(texts[t], at, at + needle.len()) });
+        }
+        if capped {
+            result.truncated = true;
+            if !result.unsearched_pages.contains(&number) {
+                result.unsearched_pages.push(number);
+            }
         }
         if !rects.is_empty() {
             total += rects.len();
@@ -473,4 +497,30 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
     let unsearched = &result.unsearched_pages;
     result.unknown_complete.retain(|p| !unsearched.contains(p));
     Ok(result)
+}
+
+#[cfg(test)]
+mod collect_tests {
+    use super::*;
+
+    fn text(s: &str) -> Vec<Char> {
+        s.chars().enumerate().map(|(i, ch)| Char { ch, glyph: Some(i), line: 0, shown: Some(ch) }).collect()
+    }
+
+    #[test]
+    fn collecting_stops_at_the_room_left() {
+        let page = text(&"a".repeat(1_000_000));
+        let reversed: Vec<Char> = page.iter().rev().cloned().collect();
+        let (kept, capped) = collect_matches(&[&page, &reversed], &['a'], false, 10);
+        assert_eq!(kept.len(), 10);
+        assert!(capped);
+        // Room for all: each glyph once, the second order adding nothing.
+        let small = text("aaaa");
+        let back: Vec<Char> = small.iter().rev().cloned().collect();
+        let (kept, capped) = collect_matches(&[&small, &back], &['a'], false, 10);
+        assert_eq!(kept.len(), 4);
+        assert!(!capped);
+        // Exactly full is not truncated.
+        assert!(!collect_matches(&[&small, &back], &['a'], false, 4).1);
+    }
 }
