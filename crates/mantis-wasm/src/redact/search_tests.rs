@@ -851,3 +851,21 @@ fn one_letter_matches_in_both_reading_orders_stay_bounded() {
     assert_eq!(found.unsearched_pages, [1]);
     assert!(started.elapsed() < std::time::Duration::from_secs(20), "{:?}", started.elapsed());
 }
+
+#[test]
+fn arabic_presentation_forms_are_searched_as_letters() {
+    // Chrome (Skia) maps Arabic glyphs to presentation forms (U+FB50..U+FDFF, U+FE70..U+FEFF)
+    // in its ToUnicode: search folds them to their letters. chrome-scripts.pdf is Chrome's print
+    // of a page with Thai, Arabic, Devanagari, Hebrew and Latin lines.
+    let pdf = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../e2e/fixtures/chrome-scripts.pdf")).unwrap();
+    for word in ["الكلمة", "السرية"] {
+        let found = redact_search(&pdf, word, &opts()).unwrap();
+        assert_eq!(found.matches.len(), 1, "{word}");
+    }
+    // Redacting the match removes exactly that word.
+    let found = redact_search(&pdf, "الكلمة", &opts()).unwrap();
+    let rects = found.pages.iter().flat_map(|p| p.rects.iter().map(|r| RedactRect { page: p.page, rect: *r })).collect();
+    let (out, _) = redact(&pdf, RedactJob { rects, fill: Fill::Black, remove_metadata: true, rasters: Vec::new() }).unwrap();
+    assert!(redact_search(&out, "الكلمة", &opts()).unwrap().matches.is_empty());
+    assert_eq!(redact_search(&out, "السرية", &opts()).unwrap().matches.len(), 1);
+}

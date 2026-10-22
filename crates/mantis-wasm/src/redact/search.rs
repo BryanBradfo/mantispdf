@@ -95,9 +95,14 @@ struct Char {
     shown: Option<char>,
 }
 
-/// The characters `c` reads as: ligatures (U+FB00..=U+FB06) as their
-/// letters, any whitespace as a space, lower case unless `case_sensitive`.
+/// The characters `c` reads as: Arabic presentation forms and ligatures
+/// (U+FB00..=U+FB06) as their letters, any whitespace as a space, lower case
+/// unless `case_sensitive`.
 fn fold(c: char, case_sensitive: bool) -> Vec<char> {
+    // Arabic presentation forms (Chrome writes them in its ToUnicode) read as their letters.
+    if let Some(letters) = super::arabic_forms::arabic_letters(c) {
+        return letters.chars().collect();
+    }
     let letters: &str = match c {
         '\u{FB00}' => "ff",
         '\u{FB01}' => "fi",
