@@ -717,16 +717,23 @@ mod tests {
         let two = embedded_with(&mut doc, file, Object::Name(b"Identity".to_vec()));
         let start = 1 << 30;
         let mut budget = Budget::page(start);
+        let programs = budget.programs.clone();
         boxes(&doc, &one, u32::from(mark), &mut budget);
-        assert_eq!(budget.decoded, start - THAI.len(), "the decode is charged to the job");
+        // Font programs have their own job budget: page content keeps all of its own.
+        assert_eq!(budget.decoded, start, "page content is not charged");
+        assert_eq!(super::super::ink::program_bytes_left(&programs), super::super::ink::MAX_JOB_PROGRAM_BYTES - THAI.len());
         boxes(&doc, &two, u32::from(mark), &mut budget);
-        assert_eq!(budget.decoded, start - THAI.len(), "the second font reuses the decoded program");
+        assert_eq!(super::super::ink::program_bytes_left(&programs), super::super::ink::MAX_JOB_PROGRAM_BYTES - THAI.len(), "decoded once");
         // A page budget made for the next page of the job shares it too.
         let mut next = budget.next_page(budget.decoded);
         boxes(&doc, &one, u32::from(mark), &mut next);
-        assert_eq!(next.decoded, start - THAI.len());
-        // Too little budget left: no ink, the fallback.
-        let mut tight = Budget::page(THAI.len() - 1);
-        assert_eq!(boxes(&doc, &one, u32::from(mark), &mut tight).0, WIDE);
+        assert_eq!(super::super::ink::program_bytes_left(&next.programs), super::super::ink::MAX_JOB_PROGRAM_BYTES - THAI.len());
+        // Page content nearly spent: font programs still decode.
+        let mut tight = Budget::page(1);
+        assert_ne!(boxes(&doc, &one, u32::from(mark), &mut tight).0, WIDE);
+        // Font programs' own budget spent: no ink, the fallback.
+        let mut spent = Budget::page(start);
+        super::super::ink::spend_program_bytes(&spent.programs, super::super::ink::MAX_JOB_PROGRAM_BYTES - THAI.len() + 1);
+        assert_eq!(boxes(&doc, &one, u32::from(mark), &mut spent).0, WIDE);
     }
 }

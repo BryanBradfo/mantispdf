@@ -13,8 +13,9 @@
 //! - the glyph's outline reads (its box is computed from its points, never
 //!   from the glyf header), within ±`MAX_REACH` em; a glyph is empty only
 //!   when its loca range is empty;
-//! - the program decodes within the job's decode budget (charged once per
-//!   document: decoded programs are shared by object id through `Programs`).
+//! - the program decodes within the job's font program budget
+//!   (`MAX_JOB_PROGRAM_BYTES`, apart from the page content's), charged once
+//!   per document: decoded programs are shared by object id through `Programs`.
 //!
 //! Anything else answers None, and the caller keeps its wide fallback.
 
@@ -34,7 +35,36 @@ const MAX_CACHED: usize = 1 << 16;
 
 /// Decoded streams (font programs, CIDToGIDMaps) of one document by object
 /// id, shared by the page budgets of a job; None: it did not decode.
-pub(crate) type Programs = Rc<RefCell<HashMap<ObjectId, Option<Rc<Vec<u8>>>>>>;
+pub(crate) type Programs = Rc<RefCell<ProgramCache>>;
+
+/// Decoded bytes all font programs of one job may take (apart from the page
+/// content's `JOB_DECODED`: reading ink never starves redaction itself).
+pub(crate) const MAX_JOB_PROGRAM_BYTES: usize = 128 << 20;
+
+/// The decoded streams of a job and the program bytes it may still decode.
+#[derive(Debug)]
+pub(crate) struct ProgramCache {
+    decoded: HashMap<ObjectId, Option<Rc<Vec<u8>>>>,
+    left: usize,
+}
+
+impl Default for ProgramCache {
+    fn default() -> Self {
+        ProgramCache { decoded: HashMap::new(), left: MAX_JOB_PROGRAM_BYTES }
+    }
+}
+
+/// Font program bytes the job may still decode.
+#[cfg(test)]
+pub(crate) fn program_bytes_left(programs: &Programs) -> usize {
+    programs.borrow().left
+}
+
+#[cfg(test)]
+pub(crate) fn spend_program_bytes(programs: &Programs, bytes: usize) {
+    let mut cache = programs.borrow_mut();
+    cache.left = cache.left.saturating_sub(bytes);
+}
 
 /// How codes reach glyph ids.
 #[derive(Debug)]
@@ -125,23 +155,25 @@ impl Ink {
 }
 
 /// The decoded stream `id`, decoded once per document (through the budget's
-/// shared `Programs`) and charged to the job's decode budget.
+/// shared `Programs`) and charged to the job's font program budget.
 fn decoded(doc: &Document, id: ObjectId, budget: &mut Budget) -> Option<Rc<Vec<u8>>> {
-    if let Some(known) = budget.programs.borrow().get(&id) {
+    if let Some(known) = budget.programs.borrow().decoded.get(&id) {
         return known.clone();
     }
     let Ok(Object::Stream(stream)) = doc.get_object(id) else {
         return None;
     };
     let mut charged = 0;
-    let bytes = match strict_content_in(Some(doc), stream, MAX_PROGRAM_BYTES.min(budget.decoded), &mut charged) {
+    let left = budget.programs.borrow().left;
+    let bytes = match strict_content_in(Some(doc), stream, MAX_PROGRAM_BYTES.min(left), &mut charged) {
         Decoded::Content(bytes) => Some(Rc::new(bytes)),
         _ => None,
     };
-    budget.decoded = budget.decoded.saturating_sub(charged);
+    let mut cache = budget.programs.borrow_mut();
+    cache.left = cache.left.saturating_sub(charged);
     // Kept either way: the job's budget only shrinks, so a stream past it
     // stays past it.
-    budget.programs.borrow_mut().insert(id, bytes.clone());
+    cache.decoded.insert(id, bytes.clone());
     bytes
 }
 
