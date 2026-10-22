@@ -104,19 +104,21 @@ fn winansi_values_keep_the_standard_font_even_with_fonts() {
 
 #[test]
 fn comb_cells_hold_one_grapheme_each() {
-    // MaxLen 2: two cells, and "क्षमा" is five characters but two graphemes.
-    let comb = vec![("Ff", Object::Integer(1 << 24)), ("MaxLen", 2.into())];
-    let (pdf, ids) = form(vec![comb]);
-    // Two graphemes: "क्ष" (a conjunct) and "मा".
+    // MaxLen counts code points (/V, as Acrobat): "क्षमा" is five, in a MaxLen 6 field of six
+    // cells; it draws two graphemes, one per cell.
+    let comb = |max: i64| vec![("Ff", Object::Integer(1 << 24)), ("MaxLen", max.into())];
+    let (pdf, ids) = form(vec![comb(6), comb(4)]);
     let out = fill_form_with_fonts(&pdf, &[(0, Value::Text("क्षमा".into()))], false, &fonts(&[(0, chain(&[0]))])).unwrap();
     let (content, _) = appearance(&out, ids[0]);
     assert_eq!(content.matches(" Tm\n").count(), 2, "{content}");
-    // Cells are 100 pt wide: each grapheme centred in its own.
+    // Cells are 200 / 6 pt wide: each grapheme centred in its own.
+    let cell = 200.0 / 6.0;
     let xs: Vec<f64> = content.lines().filter(|l| l.ends_with(" Tm")).map(|l| l.split(' ').nth(4).unwrap().parse().unwrap()).collect();
-    assert!(xs[0] > 0.0 && xs[0] < 100.0 && xs[1] > 100.0 && xs[1] < 200.0, "{xs:?}");
-    // Cells far apart read as separate words.
+    assert!(xs[0] > 0.0 && xs[0] < cell && xs[1] > cell && xs[1] < 2.0 * cell, "{xs:?}");
     assert_eq!(search(&out, "क्ष"), 1);
-    assert_eq!(search(&out, "मा"), 1);
+    // Five code points do not fit MaxLen 4, however few graphemes they make.
+    let err = fill_form_with_fonts(&pdf, &[(1, Value::Text("क्षमा".into()))], false, &fonts(&[(1, chain(&[0]))])).unwrap_err();
+    assert_eq!(err, "Invalid form settings: max-length");
 }
 
 #[test]

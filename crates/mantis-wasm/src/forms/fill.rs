@@ -271,12 +271,12 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value, embedded: bool) 
     }
     let change = match &field.kind {
         FieldKind::Signature | FieldKind::Button => return Err(invalid("value")),
-        FieldKind::Text { multiline, max_len, password, comb } => {
+        FieldKind::Text { multiline, max_len, password, .. } => {
             let text = text_of(value)?;
             check_text(&text, *multiline, &field.label, embedded)?;
-            // A comb cell holds one grapheme (with its marks) when drawn with embedded fonts.
-            let length = if *comb && embedded { super::unicode::graphemes(&text).len() } else { text.chars().count() };
-            if max_len.is_some_and(|m| length > m as usize) {
+            // MaxLen counts code points of /V (the PDF spec; viewers truncate by it), also in a
+            // comb field drawn with one grapheme per cell.
+            if max_len.is_some_and(|m| text.chars().count() > m as usize) {
                 return Err(invalid("max-length"));
             }
             // A password is never stored (ISO 32000, as Acrobat): no /V, an empty appearance.
