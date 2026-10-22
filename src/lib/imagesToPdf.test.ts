@@ -74,7 +74,7 @@ describe("images-to-PDF messages in French", () => {
   const t = tFor("imagesToPdf", "fr");
   it("explains the limits in French", () => {
     expect(imagesProblem(301, 10, t)).toBe("Trop d’images\u00a0: la limite est de 300 par PDF.");
-    expect(layoutSummary(1, "A4", "auto", 10, t)).toBe("1 image · 1 page · A4 · auto · marge de 10\u00a0mm");
-    expect(layoutSummary(2, "A4", "paysage", 0, t)).toBe("2 images · 2 pages · A4 · paysage · marge de 0\u00a0mm");
+    expect(layoutSummary(1, "A4", "auto", 10, t)).toBe("1\u00a0image · 1\u00a0page · A4 · auto · marge de 10\u00a0mm");
+    expect(layoutSummary(2, "A4", "paysage", 0, t)).toBe("2\u00a0images · 2\u00a0pages · A4 · paysage · marge de 0\u00a0mm");
   });
 });

@@ -21,6 +21,12 @@ const KNOWN: readonly { pattern: RegExp; describe: (m: RegExpExecArray, t: Commo
     pattern: /^This PDF is password-protected\. Unlock it first\.$/,
     describe: (_, t) => t("errorLocked"),
   },
+  // Worker failures (hooks/usePdfWorker) and browser image decoding (lib/imageInput).
+  { pattern: /^PDF engine crashed$/, describe: (_, t) => t("errorEngineCrashed") },
+  { pattern: /^PDF engine sent an unreadable message$/, describe: (_, t) => t("errorEngineUnreadable") },
+  { pattern: /^Canvas is not available$/, describe: (_, t) => t("errorNoCanvas") },
+  { pattern: /^Image decoding is not supported in this browser$/, describe: (_, t) => t("errorNoDecoder") },
+  { pattern: /^Image is too large to decode \(limit 100 megapixels\)$/, describe: (_, t) => t("errorDecodeTooLarge") },
 ];
 
 /** An error whose message is already translated for the user: `describeError` shows it as it is. */

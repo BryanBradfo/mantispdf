@@ -7,14 +7,14 @@ const rotate: Messages<typeof en> = {
   heading: "Faire pivoter",
   intro: "Choisissez un PDF et faites pivoter certaines pages ou le document entier. Tout se passe dans votre navigateur.",
   allCcw: "↺ Tout à gauche",
-  allCcwLabel: "Faire pivoter toutes les pages de 90° vers la gauche",
+  allCcwLabel: "Faire pivoter toutes les pages de 90° à gauche",
   allCw: "↻ Tout à droite",
-  allCwLabel: "Faire pivoter toutes les pages de 90° vers la droite",
+  allCwLabel: "Faire pivoter toutes les pages de 90° à droite",
   resetAll: "Tout réinitialiser",
-  ccw: "Pivoter vers la gauche",
-  ccwPage: "Faire pivoter la page {n} de 90° vers la gauche",
-  cw: "Pivoter vers la droite",
-  cwPage: "Faire pivoter la page {n} de 90° vers la droite",
+  ccw: "Faire pivoter à gauche",
+  ccwPage: "Faire pivoter la page {n} de 90° à gauche",
+  cw: "Faire pivoter à droite",
+  cwPage: "Faire pivoter la page {n} de 90° à droite",
 };
 
 export default rotate;

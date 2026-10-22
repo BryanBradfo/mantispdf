@@ -41,4 +41,15 @@ describe("describeError", () => {
   it("shows an already translated UserError as it is, in any locale", () => {
     expect(describeError(new UserError("Déjà traduit"), tFr, "fr")).toEqual({ message: "Déjà traduit", details: null });
   });
+
+  it.each([
+    ["PDF engine crashed", "Le moteur PDF s’est arrêté. Rechargez la page."],
+    ["PDF engine sent an unreadable message", "Le moteur PDF a envoyé une réponse illisible. Rechargez la page."],
+    ["Canvas is not available", "Le navigateur ne permet pas de dessiner l’image (canevas indisponible)."],
+    ["Image decoding is not supported in this browser", "Ce navigateur ne sait pas décoder cette image."],
+    ["Image is too large to decode (limit 100 megapixels)", "Image trop grande pour être décodée (limite de 100\u00a0mégapixels)."],
+  ])("translates the engine and browser message %j", (raw, french) => {
+    expect(describeError(new Error(raw), tFr, "fr")).toEqual({ message: french, details: null });
+    expect(describeError(new Error(raw), tEn, "en")).toEqual({ message: raw, details: null });
+  });
 });

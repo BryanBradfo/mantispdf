@@ -6,7 +6,10 @@ export default {
   rangeHelp: "Click pages or type ranges.",
   rangeUnreadable: "Cannot read \"{text}\"",
   rangeStartsAt1: "Page numbers start at 1",
-  rangeNoSuchPage: "Page {page} does not exist (the document has {total} pages)",
+  rangeNoSuchPage: {
+    one: "Page {page} does not exist (the document has {count} page)",
+    other: "Page {page} does not exist (the document has {count} pages)",
+  },
   rangeBackwards: "Range {start}-{end} is backwards",
 
   // describePages

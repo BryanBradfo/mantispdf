@@ -70,3 +70,13 @@ describe("parsePageRanges in French", () => {
     expect(parsePageRanges("4-2", 4, tFr)).toEqual({ ok: false, error: "La plage 4-2 est à l’envers" });
   });
 });
+
+describe("parsePageRanges: the page count agrees with its noun", () => {
+  it("says 1 page", () => {
+    expect(parsePageRanges("2", 1, tPages)).toEqual({ ok: false, error: "Page 2 does not exist (the document has 1 page)" });
+    expect(parsePageRanges("2", 1, tFor("pages", "fr"))).toEqual({
+      ok: false,
+      error: "La page 2 n’existe pas (le document compte 1\u00a0page)",
+    });
+  });
+});

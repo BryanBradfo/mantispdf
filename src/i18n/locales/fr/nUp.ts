@@ -3,7 +3,7 @@ import type en from "../en/nUp";
 
 const nUp: Messages<typeof en> = {
   seoTitle: "Pages multiples (N-up)\u00a0: plusieurs pages par feuille | MantisPDF",
-  seoDescription: "Placez 2, 4, 6, 8, 9 ou 16 pages de PDF sur chaque feuille. Gratuit, privé, sans envoi.",
+  seoDescription: "Placez 2, 4, 6, 8, 9 ou 16\u00a0pages de PDF sur chaque feuille. Gratuit, privé, sans envoi.",
   heading: "Pages multiples (N-up)",
   intro: "Placez plusieurs pages sur chaque feuille, pour des polycopiés ou pour économiser du papier. Tout reste sur votre appareil.",
   orientationAuto: "Auto (paysage pour 2 et 8)",

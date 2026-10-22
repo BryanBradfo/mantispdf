@@ -124,7 +124,7 @@ describe("describePages in French", () => {
     expect(describePages([1, 2, 3], 3, t)).toBe("Les 3\u00a0pages");
     expect(describePages([1], 1, t)).toBe("La seule page");
     expect(describePages([3], 12, t)).toBe("Page 3 sur 12");
-    expect(describePages([2, 3], 12, t)).toBe("2 pages sur 12");
+    expect(describePages([2, 3], 12, t)).toBe("2\u00a0pages sur 12");
   });
 });
 

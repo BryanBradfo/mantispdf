@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePdfWorker } from "../hooks/usePdfWorker";
-import { downloadBlob, errorMessage } from "../lib/fileHelpers";
+import { downloadBlob } from "../lib/fileHelpers";
+import { useLatestRef } from "../hooks/useLatestRef";
 import {
   BudgetError,
   decodeToRgba,
@@ -140,6 +141,9 @@ export default function ImagesToPdfPage() {
   const tg = useT("geometry");
   const tc = useT("common");
   const describe = useDescribeError();
+  // Read by the upload queue, which is built once: a language switch must not cancel pending uploads.
+  const tRef = useLatestRef(t);
+  const describeRef = useLatestRef(describe);
   const worker = usePdfWorker();
   const [items, setItems] = useState<ImageItem[]>([]);
   const [uploadError, setUploadError] = useState<UiError | null>(null);
@@ -166,19 +170,19 @@ export default function ImagesToPdfPage() {
     () =>
       createUploadQueue<{ images: ImageItem[]; skipped: number }>({
         onResult: ({ images, skipped }) => {
-          const skippedNote = skipped > 0 ? t("skipped", { count: skipped }) : "";
+          const skippedNote = skipped > 0 ? tRef.current("skipped", { count: skipped }) : "";
           // The room is computed from the latest list; the note is derived from the same pure result.
           setItems((prev) => {
             const room = Math.max(0, MAX_IMAGES - prev.length);
-            const over = images.length > room ? t("onlyFirst", { max: MAX_IMAGES }) : "";
+            const over = images.length > room ? tRef.current("onlyFirst", { max: MAX_IMAGES }) : "";
             setUploadError([skippedNote, over].filter(Boolean).join(" ") || null);
             return [...prev, ...images.slice(0, room)];
           });
         },
-        onError: (err) => setUploadError(describe(err)),
+        onError: (err) => setUploadError(describeRef.current(err)),
         onPending: () => undefined,
       }),
-    [t, describe],
+    [tRef, describeRef],
   );
   useEffect(() => () => queue.cancel(), [queue]);
 
@@ -283,7 +287,7 @@ export default function ImagesToPdfPage() {
           } catch (err) {
             // A budget refusal carries our own (translated) message.
             if (err instanceof BudgetError) throw new UserError(err.message);
-            throw new UserError(t("couldNotRead", { name, error: errorMessage(err) }));
+            throw new UserError(t("couldNotRead", { name, error: describeRef.current(err).message }));
           }
           const { width, height, pixels } = decoded;
           const tf = composeTransform({ rotate: 0, flipX: false }, it.rotate);

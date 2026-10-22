@@ -120,8 +120,8 @@ describe("extract-images summaries in French", () => {
   const t = tFor("extractImages", "fr");
   it("summarises in French", () => {
     expect(skippedSummary([{ reason: "jpeg2000", count: 2 }, { reason: "corrupt", count: 1 }], t)).toBe(
-      "3 images ignorées\u00a0: JPEG 2000 (2), image corrompue (1)",
+      "3\u00a0images ignorées\u00a0: JPEG 2000 (2), image corrompue (1)",
     );
-    expect(keptWithoutAlphaSummary([{ reason: "alpha dropped", count: 1 }], t)).toBe("1 image conservée sans transparence");
+    expect(keptWithoutAlphaSummary([{ reason: "alpha dropped", count: 1 }], t)).toBe("1\u00a0image conservée sans transparence");
   });
 });

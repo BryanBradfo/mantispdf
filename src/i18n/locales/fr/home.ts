@@ -52,7 +52,7 @@ const home: Messages<typeof en> = {
   "resize.title": "Redimensionner",
   "resize.desc": "Passez vos pages en A4, au format Lettre US ou à une taille personnalisée.",
   "nUp.title": "Pages multiples (N-up)",
-  "nUp.desc": "Placez 2, 4, 6, 8, 9 ou 16 pages sur chaque feuille.",
+  "nUp.desc": "Placez 2, 4, 6, 8, 9 ou 16\u00a0pages sur chaque feuille.",
   "editPdf.title": "Modifier le PDF",
   "editPdf.desc": "Ajoutez du texte, des images, des formes et des dessins sur n’importe quelle page.",
   "fillForm.title": "Remplir un formulaire",

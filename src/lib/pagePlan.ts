@@ -1,3 +1,5 @@
+import type { NsT } from "../i18n";
+
 /** One page of the output PDF (mirrors the Rust `PlanEntry`). */
 export type PlanEntry =
   | { kind: "page"; src: number; page: number; rotate: number }
@@ -11,8 +13,6 @@ export function encodePlan(entries: readonly PlanEntry[]): Int32Array {
   });
   return out;
 }
-
-import type { NsT } from "../i18n";
 
 export type RangeParse = { ok: true; pages: number[] } | { ok: false; error: string };
 
@@ -35,8 +35,8 @@ export function parsePageRanges(text: string, total: number, t: NsT<"pages">): R
       return { ok: false, error: t("rangeUnreadable", { text: raw.trim() }) };
     }
     if (start < 1 || end < 1) return { ok: false, error: t("rangeStartsAt1") };
-    if (start > total) return { ok: false, error: t("rangeNoSuchPage", { page: start, total }) };
-    if (end > total) return { ok: false, error: t("rangeNoSuchPage", { page: end, total }) };
+    if (start > total) return { ok: false, error: t("rangeNoSuchPage", { page: start, count: total }) };
+    if (end > total) return { ok: false, error: t("rangeNoSuchPage", { page: end, count: total }) };
     if (start > end) return { ok: false, error: t("rangeBackwards", { start, end }) };
     for (let p = start; p <= end; p++) pages.add(p);
   }

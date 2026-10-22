@@ -8,6 +8,11 @@ const common: Messages<typeof en> = {
   errorWrongPassword: "Mot de passe incorrect",
   errorLocked: "Ce PDF est protégé par un mot de passe. Déverrouillez-le d’abord.",
   errorLockedNth: "Le PDF {n} est protégé par un mot de passe. Déverrouillez-le d’abord.",
+  errorEngineCrashed: "Le moteur PDF s’est arrêté. Rechargez la page.",
+  errorEngineUnreadable: "Le moteur PDF a envoyé une réponse illisible. Rechargez la page.",
+  errorNoCanvas: "Le navigateur ne permet pas de dessiner l’image (canevas indisponible).",
+  errorNoDecoder: "Ce navigateur ne sait pas décoder cette image.",
+  errorDecodeTooLarge: "Image trop grande pour être décodée (limite de 100\u00a0mégapixels).",
 
   dismiss: "Fermer",
   close: "Fermer",
@@ -50,11 +55,11 @@ const common: Messages<typeof en> = {
   dragItem: "élément",
   dragInstructions:
     "Pour saisir un élément déplaçable, appuyez sur la barre d’espace. Pendant le déplacement, utilisez les flèches pour le déplacer. Appuyez de nouveau sur espace pour le déposer à sa nouvelle position, ou sur Échap pour annuler.",
-  dragPickedUp: "{name} saisi, position {position} sur {count}.",
-  dragOver: "{name} est au-dessus de la position {position}.",
-  dragDropped: "{name} déposé à la position {position}.",
-  dragDroppedNowhere: "{name} déposé.",
-  dragCancelled: "Annulé. {name} est revenu à la position {position}.",
+  dragPickedUp: "Élément saisi\u00a0: {name}, position {position} sur {count}.",
+  dragOver: "Au-dessus de la position {position}\u00a0: {name}.",
+  dragDropped: "Élément déposé\u00a0: {name}, position {position}.",
+  dragDroppedNowhere: "Élément déposé\u00a0: {name}.",
+  dragCancelled: "Déplacement annulé\u00a0: {name}, de retour à la position {position}.",
 
   progressError: "Erreur",
   progressProcessing: "Traitement en cours",

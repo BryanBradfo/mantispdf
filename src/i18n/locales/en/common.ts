@@ -9,6 +9,11 @@ export default {
   errorWrongPassword: "Wrong password",
   errorLocked: "This PDF is password-protected. Unlock it first.",
   errorLockedNth: "PDF {n} is password-protected. Unlock it first.",
+  errorEngineCrashed: "PDF engine crashed",
+  errorEngineUnreadable: "PDF engine sent an unreadable message",
+  errorNoCanvas: "Canvas is not available",
+  errorNoDecoder: "Image decoding is not supported in this browser",
+  errorDecodeTooLarge: "Image is too large to decode (limit 100 megapixels)",
 
   // Engine and file input (every tool)
   engineFailed: "WASM engine failed to load: {error}",
