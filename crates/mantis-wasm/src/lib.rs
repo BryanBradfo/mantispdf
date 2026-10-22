@@ -19,6 +19,9 @@ mod redact;
 mod rotate;
 mod split;
 mod stamp;
+// Wired into Edit PDF and Fill form by the unicode fonts integration (spec 2026-10-22).
+#[cfg_attr(not(test), allow(dead_code, unused_imports))]
+mod unifont;
 mod watermark;
 
 pub use compress::compress_pdf;

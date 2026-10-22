@@ -22,3 +22,20 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 js-sys = "0.3"
 zune-jpeg = { version = "0.4", default-features = false }
 jpeg-encoder = { version = "0.6", default-features = false }
+# Unicode text: shaping, bidi and line breaking (pinned, see the unicode fonts spec).
+ttf-parser = "=0.25.1"
+rustybuzz = "=0.20.1"
+unicode-bidi = "=0.3.18"
+unicode-linebreak = "=0.1.5"
+
+# The font crates ship (release, wasm) without overflow checks; test them the
+# same way so the hostile-font tests exercise the shipped arithmetic (wrapping),
+# not debug-only overflow panics inside their table parsers. Optimised so the
+# shaping tests stay fast.
+[profile.dev.package.rustybuzz]
+overflow-checks = false
+opt-level = 2
+
+[profile.dev.package.ttf-parser]
+overflow-checks = false
+opt-level = 2
