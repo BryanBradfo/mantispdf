@@ -203,3 +203,22 @@ test("French head: one title and one description, both French (no static English
   await expect(page.locator('head meta[property="og:url"]')).toHaveAttribute("content", "https://mantispdf.vercel.app/fr/merge");
 });
 
+test("a /fr first load fetches the page chunk without waiting for the French dictionary", async ({ page }) => {
+  const started = new Map<string, number>();
+  const finished = new Map<string, number>();
+  const name = (url: string) => /\/assets\/(MergePdfPage|fr)-[^/]+\.js$/.exec(url)?.[1];
+  page.on("request", (r) => {
+    const n = name(r.url());
+    if (n && !started.has(n)) started.set(n, performance.now());
+  });
+  page.on("requestfinished", (r) => {
+    const n = name(r.url());
+    if (n && !finished.has(n)) finished.set(n, performance.now());
+  });
+  await page.goto("/fr/merge");
+  await expect(page.getByRole("heading", { name: "Fusionner PDF" })).toBeVisible();
+  expect(started.has("fr") && started.has("MergePdfPage")).toBe(true);
+  // Before startFirstLoad, the page chunk was only requested after the dictionary had arrived.
+  expect(started.get("MergePdfPage")!).toBeLessThan(finished.get("fr")!);
+});
+
