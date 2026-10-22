@@ -7,6 +7,7 @@ import "@fontsource/homemade-apple/latin-400.css";
 import { listStep } from "../../lib/gridNav";
 import { fitTypedFontSize, removeWhiteBackground, trimTransparent, type RgbaImage } from "../../lib/signPlacement";
 import { inputClass, secondaryButton } from "../../pages/ToolShell";
+import { useT } from "../../i18n";
 
 /** A trimmed RGBA signature plus a data URL of it for on-screen previews. */
 export interface Signature extends RgbaImage {
@@ -15,11 +16,7 @@ export interface Signature extends RgbaImage {
 
 type Mode = "draw" | "type" | "upload";
 
-const MODES: { id: Mode; label: string }[] = [
-  { id: "draw", label: "Draw" },
-  { id: "type", label: "Type" },
-  { id: "upload", label: "Upload" },
-];
+const MODES: { id: Mode }[] = [{ id: "draw" }, { id: "type" }, { id: "upload" }];
 
 /** Script fonts, self-hosted via @fontsource (imported above). */
 export const SIGNATURE_FONTS = ["Caveat", "Dancing Script", "Homemade Apple"] as const;
@@ -56,6 +53,7 @@ interface Props {
 }
 
 export default function SignaturePad({ onChange }: Props) {
+  const t = useT("sign");
   const [mode, setMode] = useState<Mode>("draw");
   const id = useId();
   const tabId = (m: Mode) => `${id}-tab-${m}`;
@@ -80,7 +78,7 @@ export default function SignaturePad({ onChange }: Props) {
 
   return (
     <div>
-      <div role="tablist" aria-label="Signature source" className="inline-flex rounded-lg border border-gray-300 p-0.5 dark:border-[#333]">
+      <div role="tablist" aria-label={t("source")} className="inline-flex rounded-lg border border-gray-300 p-0.5 dark:border-[#333]">
         {MODES.map((m) => (
           <button
             key={m.id}
@@ -99,7 +97,7 @@ export default function SignaturePad({ onChange }: Props) {
                 : "text-gray-700 hover:bg-gray-100 dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
             }`}
           >
-            {m.label}
+            {t(m.id)}
           </button>
         ))}
       </div>
@@ -113,6 +111,7 @@ export default function SignaturePad({ onChange }: Props) {
 }
 
 function DrawPad({ onChange }: Props) {
+  const t = useT("sign");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const points = useRef<{ x: number; y: number }[]>([]);
   const drawing = useRef(false);
@@ -204,7 +203,7 @@ function DrawPad({ onChange }: Props) {
     <div>
       <canvas
         ref={canvasRef}
-        aria-label="Signature drawing area"
+        aria-label={t("drawArea")}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
@@ -213,9 +212,9 @@ function DrawPad({ onChange }: Props) {
       />
       <div className="mt-2 flex items-center gap-3">
         <button type="button" onClick={clear} disabled={empty} className={`${secondaryButton} disabled:opacity-50`}>
-          Clear
+          {t("clear")}
         </button>
-        <span className="text-xs text-gray-500 dark:text-[#777]">Sign with your mouse, finger or stylus.</span>
+        <span className="text-xs text-gray-500 dark:text-[#777]">{t("drawHint")}</span>
       </div>
     </div>
   );
@@ -250,6 +249,7 @@ async function renderTyped(name: string, font: SignatureFont): Promise<Signature
 }
 
 function TypePad({ onChange }: Props) {
+  const tr = useT("sign");
   const [name, setName] = useState("");
   const [font, setFont] = useState<SignatureFont>(SIGNATURE_FONTS[0]);
 
@@ -269,11 +269,11 @@ function TypePad({ onChange }: Props) {
   return (
     <div className="space-y-3">
       <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-        Your name
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} className={inputClass} placeholder="Jane Doe" />
+        {tr("yourName")}
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} className={inputClass} placeholder={tr("namePlaceholder")} />
       </label>
       <fieldset>
-        <legend className="text-sm text-gray-700 dark:text-[#aaa]">Style</legend>
+        <legend className="text-sm text-gray-700 dark:text-[#aaa]">{tr("style")}</legend>
         <div className="mt-1 grid gap-2 sm:grid-cols-3">
           {SIGNATURE_FONTS.map((f) => (
             <label
@@ -283,7 +283,7 @@ function TypePad({ onChange }: Props) {
               }`}
             >
               <input type="radio" name="signature-font" value={f} checked={font === f} onChange={() => setFont(f)} className="sr-only" />
-              <span aria-hidden="true" style={{ fontFamily: `"${f}", cursive` }}>{name.trim() || "Signature"}</span>
+              <span aria-hidden="true" style={{ fontFamily: `"${f}", cursive` }}>{name.trim() || tr("sample")}</span>
               <span className="sr-only">{f}</span>
             </label>
           ))}
@@ -311,6 +311,7 @@ async function loadImage(file: File, dropWhite: boolean): Promise<Signature | nu
 }
 
 function UploadPad({ onChange }: Props) {
+  const t = useT("sign");
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -328,20 +329,20 @@ function UploadPad({ onChange }: Props) {
     onChange(null);
     if (!f) return;
     if (!/^image\/(png|jpeg)$/.test(f.type)) {
-      setError("Choose a PNG or JPG image.");
+      setError(t("notImage"));
       return;
     }
     try {
       const sig = await loadImage(f, white);
       if (!current()) return;
       if (!sig) {
-        setError(white ? "Nothing is left once the white background is removed." : "This image is fully transparent.");
+        setError(white ? t("nothingLeft") : t("transparent"));
         return;
       }
       setPreview(sig.url);
       onChange(sig);
     } catch {
-      if (current()) setError("Could not read this image.");
+      if (current()) setError(t("unreadable"));
     }
   };
 
@@ -358,7 +359,7 @@ function UploadPad({ onChange }: Props) {
   return (
     <div className="space-y-2">
       <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-        Signature image (PNG or JPG)
+        {t("imageLabel")}
         <input
           type="file"
           accept="image/png,image/jpeg"
@@ -373,10 +374,10 @@ function UploadPad({ onChange }: Props) {
           onChange={(e) => toggleWhite(e.target.checked)}
           className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
         />
-        Remove white background
+        {t("removeWhite")}
       </label>
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      {preview && <img src={preview} alt="Uploaded signature" className="max-h-24 rounded border border-gray-200 bg-white p-2 dark:border-[#333]" />}
+      {preview && <img src={preview} alt={t("uploaded")} className="max-h-24 rounded border border-gray-200 bg-white p-2 dark:border-[#333]" />}
     </div>
   );
 }

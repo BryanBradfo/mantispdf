@@ -12,6 +12,7 @@ import {
 } from "../imageInput";
 import { LIMITS, type Align, type Item, type Paint, type Point, type Rect, type Rgb, type Rotation, type StdFont } from "./model";
 import { SIMPLIFY_TOLERANCE, simplifyStroke } from "./simplify";
+import { normalizeTypographicSpaces } from "../pdfText";
 
 export type EditImageData =
   | { kind: "jpeg"; bytes: Uint8Array }
@@ -98,6 +99,8 @@ export async function buildEditJob(items: readonly Item[], reader: ImageReader =
   for (const item of items) {
     switch (item.kind) {
       case "text":
+        out.push({ ...withoutId(item), text: normalizeTypographicSpaces(item.text) });
+        break;
       case "highlight":
       case "whiteout":
       case "line":

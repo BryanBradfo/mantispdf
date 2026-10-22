@@ -1,5 +1,6 @@
 import { useReducer } from "react";
 import type { PlanEntry } from "../lib/pagePlan";
+import type { UiError } from "../i18n";
 
 export interface PlannerSource {
   id: string;
@@ -18,12 +19,12 @@ export interface PlannerState {
   selected: ReadonlySet<string>;
   /** Counter for item ids; kept in state so the reducer stays pure. */
   nextId: number;
-  uploadError: string | null;
+  uploadError: UiError | null;
 }
 
 export type PlannerAction =
   | { type: "sources-added"; sources: PlannerSource[] }
-  | { type: "upload-error"; message: string }
+  | { type: "upload-error"; message: UiError }
   | { type: "reorder"; from: number; to: number }
   | { type: "remove-item"; id: string }
   | { type: "duplicate-item"; id: string }

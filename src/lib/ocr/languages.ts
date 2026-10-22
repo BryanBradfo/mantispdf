@@ -14,6 +14,18 @@ export const OCR_LANGUAGES = [
 
 export type OcrLanguage = (typeof OCR_LANGUAGES)[number]["code"];
 
+/** The language's name in the UI language (`Intl.DisplayNames`), capitalised; the English label as a fallback. */
+export function languageLabel(code: OcrLanguage, locale: string): string {
+  const lang = OCR_LANGUAGES.find((l) => l.code === code);
+  if (!lang) return code;
+  try {
+    const name = new Intl.DisplayNames([locale], { type: "language" }).of(lang.bcp47);
+    return name ? name.charAt(0).toLocaleUpperCase(locale) + name.slice(1) : lang.label;
+  } catch {
+    return lang.label;
+  }
+}
+
 /**
  * English, plus the first of the browser's languages (`navigator.languages`) that is offered
  * and is not English.

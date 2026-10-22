@@ -1,5 +1,6 @@
 import type { ExtractedImage } from "./imageInput";
 import { rgbaToPngBlob } from "./imageInput";
+import type { NsT } from "../i18n";
 
 export const MIN_IMAGE_SIDE = 32;
 
@@ -54,39 +55,40 @@ export function filterImages(images: ExtractedImage[], skipSmall: boolean, min =
   });
 }
 
-const REASON_NAMES: Record<string, string> = {
-  jpeg2000: "JPEG 2000",
-  jbig2: "JBIG2",
-  ccitt: "CCITT fax",
-  "colour space": "unsupported colour space",
-  corrupt: "corrupt",
-  "too large": "too large",
-  budget: "over the size budget",
-  "alpha dropped": "kept without transparency",
-  inline: "inline (embedded in page content, not extractable)",
-};
+/** Engine skip reasons and their `extractImages` key. */
+const REASON_KEYS = {
+  jpeg2000: "reasonJpeg2000",
+  jbig2: "reasonJbig2",
+  ccitt: "reasonCcitt",
+  "colour space": "reasonColourSpace",
+  corrupt: "reasonCorrupt",
+  "too large": "reasonTooLarge",
+  budget: "reasonBudget",
+  "alpha dropped": "reasonAlphaDropped",
+  inline: "reasonInline",
+} as const;
 
-export function reasonName(reason: string): string {
-  return REASON_NAMES[reason] ?? reason;
+export function reasonName(reason: string, t: NsT<"extractImages">): string {
+  return Object.prototype.hasOwnProperty.call(REASON_KEYS, reason) ? t(REASON_KEYS[reason as keyof typeof REASON_KEYS]) : reason;
 }
 
 /** The engine lists these with the skipped reasons, but the images themselves were extracted (opaque). */
 const ALPHA_DROPPED = "alpha dropped";
 
 /** "3 images skipped: 2 JPEG 2000, 1 corrupt", or "" when nothing was skipped. */
-export function skippedSummary(skipped: { reason: string; count: number }[]): string {
+export function skippedSummary(skipped: { reason: string; count: number }[], t: NsT<"extractImages">): string {
   const real = skipped.filter((s) => s.count > 0 && s.reason !== ALPHA_DROPPED);
   const total = real.reduce((n, s) => n + s.count, 0);
   if (total === 0) return "";
-  const parts = real.map((s) => `${s.count} ${reasonName(s.reason)}`);
-  return `${total} ${total === 1 ? "image" : "images"} skipped: ${parts.join(", ")}`;
+  const parts = real.map((s) => t("skippedItem", { count: s.count, reason: reasonName(s.reason, t) }));
+  return t("skippedSummary", { count: total, list: parts.join(", ") });
 }
 
 /** "2 images kept without transparency", or "" when every mask was usable. */
-export function keptWithoutAlphaSummary(skipped: { reason: string; count: number }[]): string {
+export function keptWithoutAlphaSummary(skipped: { reason: string; count: number }[], t: NsT<"extractImages">): string {
   const n = skipped.filter((s) => s.reason === ALPHA_DROPPED).reduce((sum, s) => sum + s.count, 0);
   if (n === 0) return "";
-  return `${n} ${n === 1 ? "image" : "images"} ${reasonName(ALPHA_DROPPED)}`;
+  return t("keptSummary", { count: n });
 }
 
 type RgbaImage = Extract<ExtractedImage, { kind: "rgba" }>;

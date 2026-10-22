@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { formatPageRanges, parsePageRanges } from "../../lib/pagePlan";
+import { useT } from "../../i18n";
 
 interface Props {
   label: string;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function RangeInput({ label, total, selectedPages, onPages }: Props) {
+  const t = useT("pages");
   const id = useId();
   const canonical = formatPageRanges(selectedPages);
   const [text, setText] = useState(canonical);
@@ -24,7 +26,7 @@ export default function RangeInput({ label, total, selectedPages, onPages }: Pro
 
   function handleChange(value: string) {
     setText(value);
-    const parsed = parsePageRanges(value, total);
+    const parsed = parsePageRanges(value, total, t);
     if (parsed.ok) {
       setError(null);
       onPages(parsed.pages);
@@ -42,13 +44,13 @@ export default function RangeInput({ label, total, selectedPages, onPages }: Pro
         onChange={(e) => handleChange(e.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        placeholder="e.g. 1-3, 7, 10-"
+        placeholder={t("rangePlaceholder")}
         aria-invalid={error !== null}
         aria-describedby={`${id}-help`}
         className={`mt-1 w-full max-w-sm rounded-lg border px-3 py-1.5 text-sm dark:bg-[#141414] dark:text-[#e5e5e5] ${error ? "border-red-400" : "border-gray-300 dark:border-[#333]"}`}
       />
       <p id={`${id}-help`} role={error ? "alert" : undefined} className={`mt-1 text-xs ${error ? "text-red-600 dark:text-red-400" : "text-gray-500 dark:text-[#555]"}`}>
-        {error ?? "Click pages or type ranges."}
+        {error ?? t("rangeHelp")}
       </p>
     </div>
   );

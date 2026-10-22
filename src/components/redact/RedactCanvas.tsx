@@ -11,6 +11,7 @@ import {
 import type { Mark, Rect } from "../../lib/redact/model";
 import type { Fill } from "../../lib/redact/toJob";
 import { placementPreviewSize } from "../../lib/signPlacement";
+import { useT } from "../../i18n";
 
 /** Same preview size as the Edit PDF canvas. */
 const PREVIEW_WIDTH = 1000;
@@ -71,6 +72,8 @@ function handlePoint([x, y, w, h]: Rect, handle: BoxHandle): [number, number] {
  * mark to move it, its handles to resize it (search matches too, to widen them).
  */
 export default function RedactCanvas({ source, page, pageSize, marks, fill, locked, selectedId, flash = [], onSelect, onAdd, onUpdate, onDelete }: Props) {
+  const t = useT("redact");
+  const tc = useT("common");
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -99,7 +102,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
   if (!(pageSize[0] > 0 && pageSize[1] > 0)) {
     return (
       <div ref={wrapRef} className="w-full">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">This page has no visible area.</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
       </div>
     );
   }
@@ -192,8 +195,8 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
       <div
         ref={rootRef}
         role="application"
-        aria-roledescription="redaction page"
-        aria-label={`Page ${page}: drag to mark an area to redact`}
+        aria-roledescription={t("canvasRole")}
+        aria-label={t("canvasLabel", { page })}
         aria-describedby="redact-canvas-help"
         tabIndex={0}
         data-testid="redact-canvas"
@@ -218,7 +221,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
         className="relative mx-auto select-none overflow-hidden rounded-lg border border-gray-300 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 dark:border-[#333]"
         style={{ width: pw, height: ph }}
       >
-        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={`Page ${page}`} className="h-full" />
+        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={tc("pageN", { n: page })} className="h-full" />
         <svg
           ref={svgRef}
           className="absolute inset-0 touch-none"
@@ -266,7 +269,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
                 style={{ cursor: "move" }}
                 onPointerDown={onMarkDown(m)}
               >
-                <title>{m.kind === "search" ? `Search match: ${m.query}` : "Marked area"}</title>
+                <title>{m.kind === "search" ? t("searchMatch", { query: m.query }) : t("markArea")}</title>
               </rect>
             );
           })}
@@ -318,7 +321,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
         </svg>
       </div>
       <p id="redact-canvas-help" className="mt-2 text-center text-xs text-gray-500 dark:text-[#777]">
-        Drag on the page to mark an area. Drag a mark to move it, its handles to resize it; Delete removes the selected mark.
+        {t("canvasHelp")}
       </p>
     </div>
   );

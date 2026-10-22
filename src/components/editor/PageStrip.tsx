@@ -1,4 +1,5 @@
 import PageImage from "../common/PageImage";
+import { useT } from "../../i18n";
 
 interface Props {
   source: Blob | Uint8Array;
@@ -12,9 +13,11 @@ interface Props {
   markLabel?: string;
 }
 
-export default function PageStrip({ source, pageCount, page, edited, onPage, markLabel = "edited" }: Props) {
+export default function PageStrip({ source, pageCount, page, edited, onPage, markLabel: markProp }: Props) {
+  const t = useT("common");
+  const markLabel = markProp ?? t("pageEdited");
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2" role="group" aria-label="Pages">
+    <div className="flex gap-2 overflow-x-auto pb-2" role="group" aria-label={t("pagesGroup")}>
       {Array.from({ length: pageCount }, (_, i) => {
         const n = i + 1;
         const isEdited = edited.has(n);
@@ -22,7 +25,7 @@ export default function PageStrip({ source, pageCount, page, edited, onPage, mar
           <button
             key={n}
             type="button"
-            aria-label={`Page ${n}${isEdited ? `, ${markLabel}` : ""}`}
+            aria-label={isEdited ? t("pageNMarked", { n, mark: markLabel }) : t("pageN", { n })}
             aria-pressed={page === n}
             onClick={() => onPage(n)}
             className={`relative w-16 shrink-0 overflow-hidden rounded-md border-2 bg-white text-xs dark:bg-[#111] ${

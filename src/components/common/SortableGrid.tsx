@@ -13,6 +13,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
+import { useT } from "../../i18n";
 
 const EASE = "cubic-bezier(0.2, 0, 0, 1)";
 
@@ -113,6 +114,7 @@ export default function SortableGrid<T extends { id: string }>({
   label,
   className,
 }: SortableGridProps<T>) {
+  const t = useT("common");
   const reduced = usePrefersReducedMotion();
   const sensors = useSensors(
     useSensor(GridMouseSensor, { activationConstraint: { distance: 5 } }),
@@ -124,14 +126,19 @@ export default function SortableGrid<T extends { id: string }>({
 
   const nameOf = (id: string | number) => {
     const item = items.find((i) => i.id === String(id));
-    return item ? label(item) : "item";
+    return item ? label(item) : t("dragItem");
   };
   const position = (id: string | number) => items.findIndex((i) => i.id === String(id)) + 1;
   const announcements: Announcements = {
-    onDragStart: ({ active }) => `Picked up ${nameOf(active.id)}, position ${position(active.id)} of ${items.length}.`,
-    onDragOver: ({ active, over }) => (over ? `${nameOf(active.id)} is over position ${position(over.id)}.` : undefined),
-    onDragEnd: ({ active, over }) => (over ? `Dropped ${nameOf(active.id)} at position ${position(over.id)}.` : `Dropped ${nameOf(active.id)}.`),
-    onDragCancel: ({ active }) => `Cancelled. ${nameOf(active.id)} returned to position ${position(active.id)}.`,
+    onDragStart: ({ active }) =>
+      t("dragPickedUp", { name: nameOf(active.id), position: position(active.id), count: items.length }),
+    onDragOver: ({ active, over }) =>
+      over ? t("dragOver", { name: nameOf(active.id), position: position(over.id) }) : undefined,
+    onDragEnd: ({ active, over }) =>
+      over
+        ? t("dragDropped", { name: nameOf(active.id), position: position(over.id) })
+        : t("dragDroppedNowhere", { name: nameOf(active.id) }),
+    onDragCancel: ({ active }) => t("dragCancelled", { name: nameOf(active.id), position: position(active.id) }),
   };
 
   function handleDragStart({ active }: DragStartEvent) {
@@ -153,7 +160,7 @@ export default function SortableGrid<T extends { id: string }>({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveId(null)}
-      accessibility={{ announcements }}
+      accessibility={{ announcements, screenReaderInstructions: { draggable: t("dragInstructions") } }}
     >
       <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
         <div className={className}>

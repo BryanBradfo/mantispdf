@@ -13,6 +13,7 @@ import {
 } from "../../lib/editor/model";
 import { fitTextRect } from "../../lib/editor/textFit";
 import { hexToRgb, rgbToHex } from "./svgStyle";
+import { formatNumber, useLocale, useT } from "../../i18n";
 
 const FONTS: { value: StdFont; label: string }[] = [
   { value: "Helvetica", label: "Helvetica" },
@@ -21,16 +22,6 @@ const FONTS: { value: StdFont; label: string }[] = [
   { value: "Courier", label: "Courier" },
 ];
 
-const KIND_LABEL: Record<Item["kind"], string> = {
-  text: "Text box",
-  image: "Image",
-  rect: "Rectangle",
-  ellipse: "Ellipse",
-  line: "Line",
-  highlight: "Highlight",
-  freehand: "Drawing",
-  whiteout: "Whiteout",
-};
 
 const labelClass = "block text-xs font-medium text-gray-700 dark:text-[#aaa]";
 const fieldClass =
@@ -140,10 +131,12 @@ function OpacityField({
   onBeginGesture: () => void;
   onEndGesture: () => void;
 }) {
+  const t = useT("editPdf");
+  const locale = useLocale();
   const id = useId();
   return (
     <div className={labelClass}>
-      <label htmlFor={id}>Opacity ({Math.round(value * 100)}%)</label>
+      <label htmlFor={id}>{t("opacity", { percent: formatNumber(Math.round(value * 100) / 100, locale, { style: "percent" }) })}</label>
       <input
         id={id}
         type="range"
@@ -186,10 +179,11 @@ function IconButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: s
 }
 
 function WidthField({ kind, value, onCommit }: { kind: StrokedKind; value: number; onCommit: (v: number) => void }) {
+  const t = useT("editPdf");
   const min = kind === "line" || kind === "freehand" ? LIMITS.minStrokeWidth : LIMITS.minWidth;
   return (
     <NumberField
-      label={kind === "rect" || kind === "ellipse" ? "Outline width (pt)" : "Width (pt)"}
+      label={kind === "rect" || kind === "ellipse" ? t("outlineWidth") : t("width")}
       value={value}
       min={min}
       max={LIMITS.maxWidth}
@@ -204,6 +198,8 @@ const DEFAULT_PAINT: Rgb = [0, 0, 0];
 const paintColor = (p: Paint, fallback: Rgb): Rgb => (p.kind === "rgb" ? p.color : fallback);
 
 export default function PropertiesPanel(props: Props) {
+  const t = useT("editPdf");
+  const tc = useT("common");
   const { item, onChange, onBeginGesture, onEndGesture } = props;
   const gesture = { onBeginGesture, onEndGesture };
   let fields: ReactNode = null;
@@ -218,17 +214,17 @@ export default function PropertiesPanel(props: Props) {
         onChange({ ...patch, rect: fitTextRect(item.rect, item.text, font, size, lineHeight) });
       };
       const aligns: { value: Align; label: string; icon: LucideIcon }[] = [
-        { value: "left", label: "Align left", icon: TextAlignStart },
-        { value: "center", label: "Align center", icon: TextAlignCenter },
-        { value: "right", label: "Align right", icon: TextAlignEnd },
+        { value: "left", label: t("alignLeft"), icon: TextAlignStart },
+        { value: "center", label: t("alignCenter"), icon: TextAlignCenter },
+        { value: "right", label: t("alignRight"), icon: TextAlignEnd },
       ];
       fields = (
         <>
           <button type="button" onClick={props.onEditText} className={`${smallButton} col-span-2`}>
-            Edit text (Enter)
+            {t("editText")}
           </button>
           <label className={`${labelClass} col-span-2`}>
-            Font
+            {t("font")}
             <select value={item.font} onChange={(e) => restyle({ font: e.target.value as StdFont })} className={fieldClass}>
               {FONTS.map((f) => (
                 <option key={f.value} value={f.value}>{f.label}</option>
@@ -236,7 +232,7 @@ export default function PropertiesPanel(props: Props) {
             </select>
           </label>
           <NumberField
-            label="Size (pt)"
+            label={t("size")}
             value={item.size}
             min={LIMITS.minFontSize}
             max={LIMITS.maxFontSize}
@@ -245,7 +241,7 @@ export default function PropertiesPanel(props: Props) {
             onCommit={(size) => restyle({ size })}
           />
           <NumberField
-            label="Line height"
+            label={t("lineHeight")}
             value={item.lineHeight}
             min={LIMITS.minLineHeight}
             max={LIMITS.maxLineHeight}
@@ -253,8 +249,8 @@ export default function PropertiesPanel(props: Props) {
             clamp={(v) => Math.min(LIMITS.maxLineHeight, Math.max(LIMITS.minLineHeight, v))}
             onCommit={(lineHeight) => restyle({ lineHeight })}
           />
-          <ColorField label="Colour" color={item.color} onColor={(color) => onChange({ color })} {...gesture} />
-          <div className="col-span-2 flex gap-1" role="group" aria-label="Alignment">
+          <ColorField label={t("colour")} color={item.color} onColor={(color) => onChange({ color })} {...gesture} />
+          <div className="col-span-2 flex gap-1" role="group" aria-label={t("alignment")}>
             {aligns.map(({ value, label, icon: Icon }) => (
               <button
                 key={value}
@@ -286,7 +282,7 @@ export default function PropertiesPanel(props: Props) {
       fields = (
         <>
           <div className="col-span-2">
-            <IconButton icon={RotateCw} label="Rotate 90°" onClick={rotate} />
+            <IconButton icon={RotateCw} label={t("rotate90")} onClick={rotate} />
           </div>
           <div className="col-span-2">
             <OpacityField value={item.opacity} onValue={(opacity) => onChange({ opacity })} {...gesture} />
@@ -303,7 +299,7 @@ export default function PropertiesPanel(props: Props) {
         <>
           <div className="col-span-2">
             <Toggle
-              label="Outline"
+              label={t("outline")}
               checked={item.stroke.kind === "rgb"}
               onChange={(on) =>
                 onChange({
@@ -315,19 +311,19 @@ export default function PropertiesPanel(props: Props) {
           </div>
           {item.stroke.kind === "rgb" && (
             <>
-              <ColorField label="Outline colour" color={strokeColor} onColor={(color) => onChange({ stroke: { kind: "rgb", color } })} {...gesture} />
+              <ColorField label={t("outlineColour")} color={strokeColor} onColor={(color) => onChange({ stroke: { kind: "rgb", color } })} {...gesture} />
               <WidthField kind={item.kind} value={item.width} onCommit={(width) => onChange({ width })} />
             </>
           )}
           <div className="col-span-2">
             <Toggle
-              label="Fill"
+              label={t("fill")}
               checked={item.fill.kind === "rgb"}
               onChange={(on) => onChange({ fill: on ? { kind: "rgb", color: fillColor } : { kind: "none" } })}
             />
           </div>
           {item.fill.kind === "rgb" && (
-            <ColorField label="Fill colour" color={fillColor} onColor={(color) => onChange({ fill: { kind: "rgb", color } })} {...gesture} />
+            <ColorField label={t("fillColour")} color={fillColor} onColor={(color) => onChange({ fill: { kind: "rgb", color } })} {...gesture} />
           )}
           <div className="col-span-2">
             <OpacityField value={item.opacity} onValue={(opacity) => onChange({ opacity })} {...gesture} />
@@ -339,10 +335,10 @@ export default function PropertiesPanel(props: Props) {
     case "line":
       fields = (
         <>
-          <ColorField label="Colour" color={item.color} onColor={(color) => onChange({ color })} {...gesture} />
+          <ColorField label={t("colour")} color={item.color} onColor={(color) => onChange({ color })} {...gesture} />
           <WidthField kind="line" value={item.width} onCommit={(width) => onChange({ width })} />
-          <Toggle label="Arrow at start" checked={item.arrowStart} onChange={(arrowStart) => onChange({ arrowStart })} />
-          <Toggle label="Arrow at end" checked={item.arrowEnd} onChange={(arrowEnd) => onChange({ arrowEnd })} />
+          <Toggle label={t("arrowStart")} checked={item.arrowStart} onChange={(arrowStart) => onChange({ arrowStart })} />
+          <Toggle label={t("arrowEnd")} checked={item.arrowEnd} onChange={(arrowEnd) => onChange({ arrowEnd })} />
           <div className="col-span-2">
             <OpacityField value={item.opacity} onValue={(opacity) => onChange({ opacity })} {...gesture} />
           </div>
@@ -352,7 +348,7 @@ export default function PropertiesPanel(props: Props) {
     case "freehand":
       fields = (
         <>
-          <ColorField label="Colour" color={item.color} onColor={(color) => onChange({ color })} {...gesture} />
+          <ColorField label={t("colour")} color={item.color} onColor={(color) => onChange({ color })} {...gesture} />
           <WidthField kind="freehand" value={item.width} onCommit={(width) => onChange({ width })} />
           <div className="col-span-2">
             <OpacityField value={item.opacity} onValue={(opacity) => onChange({ opacity })} {...gesture} />
@@ -363,7 +359,7 @@ export default function PropertiesPanel(props: Props) {
     case "highlight":
       fields = (
         <>
-          <ColorField label="Colour" color={item.color} onColor={(color) => onChange({ color })} {...gesture} />
+          <ColorField label={t("colour")} color={item.color} onColor={(color) => onChange({ color })} {...gesture} />
           <div className="col-span-2">
             <OpacityField value={item.opacity} onValue={(opacity) => onChange({ opacity })} {...gesture} />
           </div>
@@ -373,21 +369,21 @@ export default function PropertiesPanel(props: Props) {
     case "whiteout":
       fields = (
         <p className="col-span-2 text-xs text-gray-600 dark:text-[#888]">
-          Covers what is under it with white.
+          {t("whiteoutHelp")}
         </p>
       );
       break;
   }
 
   return (
-    <section aria-label={`${KIND_LABEL[item.kind]} properties`} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-[#333] dark:bg-[#111]">
-      <h2 className="text-sm font-semibold text-gray-900 dark:text-[#ddd]">{KIND_LABEL[item.kind]}</h2>
+    <section aria-label={t("properties", { kind: t(`kind.${item.kind}`) })} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-[#333] dark:bg-[#111]">
+      <h2 className="text-sm font-semibold text-gray-900 dark:text-[#ddd]">{t(`kind.${item.kind}`)}</h2>
       <div className="mt-3 grid grid-cols-2 gap-3">{fields}</div>
       <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-200 pt-3 dark:border-[#333]">
-        <IconButton icon={ArrowUp} label="Forward" onClick={props.onForward} />
-        <IconButton icon={ArrowDown} label="Backward" onClick={props.onBackward} />
-        <IconButton icon={Copy} label="Duplicate" onClick={props.onDuplicate} />
-        <IconButton icon={Trash2} label="Delete" onClick={props.onDelete} />
+        <IconButton icon={ArrowUp} label={t("forward")} onClick={props.onForward} />
+        <IconButton icon={ArrowDown} label={t("backward")} onClick={props.onBackward} />
+        <IconButton icon={Copy} label={t("duplicate")} onClick={props.onDuplicate} />
+        <IconButton icon={Trash2} label={tc("delete")} onClick={props.onDelete} />
       </div>
     </section>
   );

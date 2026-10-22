@@ -4,19 +4,23 @@ import ErrorAlert from "../components/common/ErrorAlert";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName } from "./usePdfInput";
 import { METADATA_FIELDS, useMetadataInput } from "./useMetadataInput";
+import { useT } from "../i18n";
 
 export default function EditMetadataPage() {
+  const t = useT("editMetadata");
+  const tm = useT("metadata");
+  const tc = useT("common");
   const { worker, input, error, setError, busy, pick, reset, update, run } = useMetadataInput();
 
   return (
     <ToolShell
-      title="Edit PDF Metadata | MantisPDF"
-      description="Edit the title, author, subject and keywords of a PDF. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/edit-metadata"
-      heading="Edit Metadata"
-      intro="Change the title, author, subject and keywords stored inside a PDF."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!input && (
         <div className="mt-8">
@@ -28,9 +32,9 @@ export default function EditMetadataPage() {
         <div className={panelClass}>
           <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
           <div className="mt-4 space-y-3">
-            {METADATA_FIELDS.map(([key, label]) => (
+            {METADATA_FIELDS.map((key) => (
               <label key={key} className="block text-sm text-gray-700 dark:text-[#aaa]">
-                {label}
+                {tm(key)}
                 <input
                   type="text"
                   value={input.data[key]}
@@ -40,7 +44,7 @@ export default function EditMetadataPage() {
               </label>
             ))}
           </div>
-          <p className="mt-3 text-xs text-gray-500 dark:text-[#555]">Leave a field empty to remove it.</p>
+          <p className="mt-3 text-xs text-gray-500 dark:text-[#555]">{t("emptyHint")}</p>
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
             <button
@@ -53,10 +57,10 @@ export default function EditMetadataPage() {
               disabled={busy}
               className={`flex-1 ${primaryButton}`}
             >
-              {busy ? "Saving…" : "Save and download"}
+              {busy ? t("saving") : t("submit")}
             </button>
             <button onClick={reset} className={secondaryButton}>
-              Choose another file
+              {tc("chooseAnother")}
             </button>
           </div>
         </div>

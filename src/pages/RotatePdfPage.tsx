@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useDescribeError, useT, type UiError } from "../i18n";
 import { PageSEO } from "../components/seo/PageSEO";
 import PageImage from "../components/common/PageImage";
 import { usePdfWorker } from "../hooks/usePdfWorker";
-import { validatePdfFile, downloadBlob, readFileAsUint8Array } from "../lib/fileHelpers";
+import { isPdfFile, downloadBlob, readFileAsUint8Array } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import { thumbnailTransform } from "../lib/rotationTransform";
@@ -14,8 +14,11 @@ export default function RotatePdfPage() {
   const [file, setFile] = useState<File | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [rotations, setRotations] = useState<number[]>([]);
+  const t = useT("rotate");
+  const tc = useT("common");
+  const describe = useDescribeError();
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [rotateError, setRotateError] = useState<string | null>(null);
+  const [rotateError, setRotateError] = useState<UiError | null>(null);
   const [downloaded, setDownloaded] = useState(false);
   const [loading, setLoading] = useState(false);
   // Identifies the latest upload so a superseded countPages result is ignored.
@@ -23,17 +26,12 @@ export default function RotatePdfPage() {
 
   const handleFile = useCallback(
     async (f: File) => {
-      const err = validatePdfFile(f);
-      if (err) {
-        setUploadError(err);
+      if (!isPdfFile(f)) {
+        setUploadError(tc("invalidPdf"));
         return;
       }
       if (!worker.ready) {
-        setUploadError(
-          worker.initError
-            ? "PDF engine failed to load. Please reload the page."
-            : "Engine is still loading, please wait a moment.",
-        );
+        setUploadError(worker.initError ? tc("engineFailedReload") : tc("engineLoading"));
         return;
       }
       const token = ++uploadToken.current;
@@ -44,19 +42,19 @@ export default function RotatePdfPage() {
         const n = await worker.countPages(await readFileAsUint8Array(f));
         if (token !== uploadToken.current) return;
         if (n <= 0) {
-          setUploadError("Failed to read this PDF.");
+          setUploadError(tc("readFailed"));
         } else {
           setFile(f);
           setNumPages(n);
           setRotations(Array(n).fill(0));
         }
       } catch {
-        if (token === uploadToken.current) setUploadError("Failed to read this PDF.");
+        if (token === uploadToken.current) setUploadError(tc("readFailed"));
       } finally {
         if (token === uploadToken.current) setLoading(false);
       }
     },
-    [worker],
+    [worker, tc],
   );
 
   const rotatePage = useCallback((idx: number, delta: number) => {
@@ -76,9 +74,9 @@ export default function RotatePdfPage() {
       downloadBlob(new Uint8Array(result), outName);
       setDownloaded(true);
     } catch (err) {
-      setRotateError(String(err));
+      setRotateError(describe(err));
     }
-  }, [file, rotations, worker]);
+  }, [file, rotations, worker, describe]);
 
   const handleReset = useCallback(() => {
     setFile(null);
@@ -93,22 +91,22 @@ export default function RotatePdfPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <PageSEO
-        title="Rotate PDF Pages | MantisPDF"
-        description="Rotate individual pages or entire PDF documents online. Client-side processing, nothing is uploaded."
+        title={t("seoTitle")}
+        description={t("seoDescription")}
         path="/rotate"
       />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Rotate Pages</h1>
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        Upload a PDF and rotate individual pages or the entire document. All processing happens in your browser.
+        {t("intro")}
       </p>
 
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!file ? (
         loading ? (
           <div className="mt-8 flex items-center justify-center py-12">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent motion-reduce:animate-none" />
-            <span className="ml-3 text-gray-500 dark:text-[#555]">Loading PDF…</span>
+            <span className="ml-3 text-gray-500 dark:text-[#555]">{tc("loadingPdf")}</span>
           </div>
         ) : (
           <div className="mt-8">
@@ -119,52 +117,52 @@ export default function RotatePdfPage() {
         <>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-gray-500 dark:text-[#555]">
-              {file.name} · {numPages} page{numPages !== 1 ? "s" : ""}
+              {tc("fileWithPages", { name: file.name, count: numPages })}
             </p>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => rotateAll(-90)}
                 disabled={numPages === 0}
-                aria-label="Rotate all pages 90° counter-clockwise"
+                aria-label={t("allCcwLabel")}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
               >
-                ↺ All CCW
+                {t("allCcw")}
               </button>
               <button
                 onClick={() => rotateAll(90)}
                 disabled={numPages === 0}
-                aria-label="Rotate all pages 90° clockwise"
+                aria-label={t("allCwLabel")}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
               >
-                ↻ All CW
+                {t("allCw")}
               </button>
               <button
                 onClick={() => setRotations(Array(numPages).fill(0))}
                 disabled={allZero || numPages === 0}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
               >
-                Reset All
+                {t("resetAll")}
               </button>
               <button
                 onClick={handleDownload}
                 disabled={worker.rotating || !worker.ready || numPages === 0}
                 className="rounded-lg bg-mantis-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-mantis-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-mantis-500 focus:ring-offset-2"
               >
-                {worker.rotating ? "Processing…" : "Download"}
+                {worker.rotating ? tc("processing") : tc("download")}
               </button>
               {downloaded && (
                 <Link
                   to="/"
                   className="rounded-lg border border-mantis-500 px-3 py-1.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
                 >
-                  ← All tools
+                  {tc("allTools")}
                 </Link>
               )}
               <button
                 onClick={handleReset}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
               >
-                New file
+                {tc("newFile")}
               </button>
             </div>
           </div>
@@ -185,11 +183,11 @@ export default function RotatePdfPage() {
                             transition: "transform 0.3s ease",
                           }}
                         >
-                          <PageImage source={file!} page={i + 1} width={160} alt={`Page ${i + 1}`} />
+                          <PageImage source={file!} page={i + 1} width={160} alt={tc("pageN", { n: i + 1 })} />
                         </div>
                       </div>
                       <div className="border-t border-gray-100 px-2 py-1 text-center text-xs text-gray-500 dark:border-[#222] dark:text-[#555]">
-                        Page {i + 1}
+                        {tc("pageN", { n: i + 1 })}
                       </div>
                     </div>
                     {rotations[i] !== 0 && (
@@ -202,16 +200,16 @@ export default function RotatePdfPage() {
                     <button
                       onClick={() => rotatePage(i, -90)}
                       className="rounded border border-gray-200 px-2.5 py-1 text-sm hover:bg-gray-50 dark:border-[#333] dark:hover:bg-[#1a1a1a]"
-                      title="Rotate counter-clockwise"
-                      aria-label={`Rotate page ${i + 1} 90° counter-clockwise`}
+                      title={t("ccw")}
+                      aria-label={t("ccwPage", { n: i + 1 })}
                     >
                       ↺
                     </button>
                     <button
                       onClick={() => rotatePage(i, 90)}
                       className="rounded border border-gray-200 px-2.5 py-1 text-sm hover:bg-gray-50 dark:border-[#333] dark:hover:bg-[#1a1a1a]"
-                      title="Rotate clockwise"
-                      aria-label={`Rotate page ${i + 1} 90° clockwise`}
+                      title={t("cw")}
+                      aria-label={t("cwPage", { n: i + 1 })}
                     >
                       ↻
                     </button>

@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import PageThumbnail from "./PageThumbnail";
+import { useT } from "../../i18n";
 
 interface ThumbnailGridProps {
   source: Blob;
@@ -17,13 +18,14 @@ function VerticalDivider({
   isActive: boolean;
   onToggle: (page: number) => void;
 }) {
+  const t = useT("split");
   return (
     <button
       onClick={() => onToggle(pageNumber)}
       className={`group flex w-6 shrink-0 cursor-pointer flex-col items-center justify-center self-stretch transition ${
         isActive ? "text-mantis-600" : "text-gray-300 hover:text-gray-500 dark:text-[#333] dark:hover:text-[#666]"
       }`}
-      title={isActive ? "Remove split point" : "Split after this page"}
+      title={isActive ? t("removePoint") : t("splitAfter")}
     >
       <div
         className={`w-px flex-1 transition ${
@@ -61,6 +63,7 @@ function RowEndCut({
   splitPoints: Set<number>;
   onCut: () => void;
 }) {
+  const t = useT("split");
   const splittable = rowPages.filter(p => p !== numPages);
   if (splittable.length === 0) return null;
   const allActive = splittable.every(p => splitPoints.has(p));
@@ -72,7 +75,7 @@ function RowEndCut({
           ? "text-mantis-600"
           : "text-gray-300 hover:text-gray-500 dark:text-[#333] dark:hover:text-[#666]"
       }`}
-      title={allActive ? "Remove all splits in this row" : "Split after every page in this row"}
+      title={allActive ? t("removeRow") : t("splitRow")}
     >
       <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
         <path d="M9.64 7.64c.23-.5.36-1.05.36-1.64a4 4 0 1 0-8 0 4 4 0 0 0 4 4c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36A4.2 4.2 0 0 0 6 14a4 4 0 1 0 4 4c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64M6 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4m0 12a2 2 0 1 1 0-4 2 2 0 0 1 0 4M19 3l-3 3 1.5 1.5L22 3h-3Z" />

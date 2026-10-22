@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Trans, formatNumber, useDescribeError, useLocale, useT } from "../i18n";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import { pdfjs } from "../lib/pdf";
@@ -7,7 +7,7 @@ import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import PageStrip from "../components/editor/PageStrip";
 import { OCR_CANCELLED, OCR_NOT_STARTED, OcrEngine, isOcrCancelled, ocrWorkerCount } from "../lib/ocr/engine";
-import { OCR_LANGUAGES, defaultLanguages, type OcrLanguage } from "../lib/ocr/languages";
+import { OCR_LANGUAGES, defaultLanguages, languageLabel, type OcrLanguage } from "../lib/ocr/languages";
 import { runPipeline } from "../lib/ocr/pipeline";
 import { renderPageImage } from "../lib/ocr/render";
 import {
@@ -17,6 +17,7 @@ import {
   formatEta,
   fromPipeline,
   loadingLabel,
+  pageList,
   skippedLine,
   summarize,
   summaryHeadline,
@@ -28,6 +29,7 @@ import {
 import { exportText } from "../lib/ocr/text";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
+import type { UiError } from "../i18n";
 
 /** The engine's page limit (`add_text_layer`). */
 const MAX_PAGES = 2000;
@@ -52,13 +54,17 @@ interface WorkspaceProps {
   input: PdfInput<[number, number][]>;
   busy: boolean;
   run: <R>(work: () => Promise<R>, done: (result: R) => void) => Promise<void>;
-  error: string | null;
-  setError: (error: string | null) => void;
+  error: UiError | null;
+  setError: (error: UiError | null) => void;
   addTextLayer: ReturnType<typeof usePdfWorker>["addTextLayer"];
   onStartOver: () => void;
 }
 
 function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOver }: WorkspaceProps) {
+  const t = useT("ocr");
+  const tc = useT("common");
+  const locale = useLocale();
+  const describe = useDescribeError();
   const sizes = input.data;
   const [languages, setLanguages] = useState<OcrLanguage[]>(() =>
     defaultLanguages(typeof navigator === "undefined" ? [] : navigator.languages ?? [navigator.language]),
@@ -112,7 +118,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
   const runOcr = async () => {
     if (running || busy) return;
     if (sizes.length > MAX_PAGES) {
-      setError(`OCR handles at most ${MAX_PAGES} pages at once. Split the PDF first.`);
+      setError(t("tooManyPages", { max: MAX_PAGES }));
       return;
     }
     setError(null);
@@ -123,7 +129,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
     const total = sizes.length;
     setDownloaded(false);
     setAlreadyOcr([]);
-    setProgress({ done: 0, recognised: 0, partial: 0, total, startedAt: Date.now(), status: loadingLabel(null) });
+    setProgress({ done: 0, recognised: 0, partial: 0, total, startedAt: Date.now(), status: loadingLabel(null, t) });
     const workers = ocrWorkerCount(typeof navigator === "undefined" ? undefined : navigator.hardwareConcurrency);
     let engine: OcrEngine | null = null;
     let doc: Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]> | null = null;
@@ -132,7 +138,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
         workers,
         origin: window.location.origin,
         signal: abort.signal,
-        onProgress: (p) => setProgress((pr) => (pr && pr.done === 0 && pr.recognised === 0 ? { ...pr, status: loadingLabel(p) } : pr)),
+        onProgress: (p) => setProgress((pr) => (pr && pr.done === 0 && pr.recognised === 0 ? { ...pr, status: loadingLabel(p, t) } : pr)),
       });
       engineRef.current = engine;
       if (cancelledRef.current) throw new Error(OCR_CANCELLED);
@@ -141,7 +147,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       const startedAt = Date.now();
       let done = 0;
       let recognisedPages = 0;
-      setProgress({ done: 0, recognised: 0, partial: 0, total, startedAt, status: "Reading page 1" });
+      setProgress({ done: 0, recognised: 0, partial: 0, total, startedAt, status: t("readingPage", { page: 1 }) });
       // Progress of the pages in flight, by page number.
       const inFlight = new Map<number, number>();
       const showPartial = () => {
@@ -168,7 +174,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
           isCancelled: () => cancelledRef.current,
           onPageStart: (n) => {
             inFlight.set(n, 0);
-            setProgress((pr) => (pr ? { ...pr, status: `Reading page ${n}` } : pr));
+            setProgress((pr) => (pr ? { ...pr, status: t("readingPage", { page: n }) } : pr));
           },
           onPageProgress: (n, fraction) => {
             inFlight.set(n, fraction);
@@ -187,9 +193,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
     } catch (e) {
       if (cancelledRef.current || isOcrCancelled(e)) return;
       const message = e instanceof Error ? e.message : String(e);
-      setError(
-        message === OCR_NOT_STARTED ? "The OCR engine could not start. Check your connection to this site and try again." : message,
-      );
+      setError(message === OCR_NOT_STARTED ? t("notStarted") : describe(e));
     } finally {
       engineRef.current = null;
       abortRef.current = null;
@@ -208,7 +212,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
   const downloadPdf = () => {
     if (!result) return;
     setAlreadyOcr([]);
-    const tooMany = wordLimitProblem(result.layer);
+    const tooMany = wordLimitProblem(result.layer, t);
     if (tooMany) {
       setError(tooMany);
       return;
@@ -230,7 +234,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
   };
 
   const startOver = () => {
-    if ((running || (result && !downloaded)) && !window.confirm("Discard the recognised text and start over?")) return;
+    if ((running || (result && !downloaded)) && !window.confirm(t("discardConfirm"))) return;
     cancel();
     onStartOver();
   };
@@ -243,6 +247,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
           total: progress.recognised + (progress.total - progress.done),
           elapsedMs: now - progress.startedAt,
         }),
+        t,
       )
     : "";
   const percent =
@@ -251,7 +256,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
   return (
     <div className={panelClass}>
       <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
-        {input.file.name} ({sizes.length} {sizes.length === 1 ? "page" : "pages"})
+        {tc("fileWithPagesParen", { name: input.file.name, count: sizes.length })}
       </p>
 
       {sizes.length > 0 && (
@@ -262,13 +267,13 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
             page={page}
             edited={recognised}
             onPage={setPage}
-            markLabel="text recognised"
+            markLabel={t("markRecognised")}
           />
         </div>
       )}
 
       <fieldset className="mt-6" disabled={running}>
-        <legend className="text-sm font-semibold text-gray-900 dark:text-[#ddd]">Languages in the document</legend>
+        <legend className="text-sm font-semibold text-gray-900 dark:text-[#ddd]">{t("languages")}</legend>
         <div className="mt-2 flex flex-wrap gap-2">
           {OCR_LANGUAGES.map((l) => {
             const on = languages.includes(l.code);
@@ -284,12 +289,12 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
                     : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#bbb] dark:hover:bg-[#1a1a1a]"
                 }`}
               >
-                {l.label}
+                {languageLabel(l.code, locale)}
               </button>
             );
           })}
         </div>
-        <p className="mt-1 text-xs text-gray-500 dark:text-[#777]">Language data downloads the first time from this site, then stays in your browser.</p>
+        <p className="mt-1 text-xs text-gray-500 dark:text-[#777]">{t("languageNote")}</p>
         <label className="mt-4 flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
           <input
             type="checkbox"
@@ -297,7 +302,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
             onChange={(e) => setSkipText(e.target.checked)}
             className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
           />
-          Skip pages that already contain text
+          {t("skipText")}
         </label>
       </fieldset>
 
@@ -305,17 +310,17 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
         <div className="mt-6">
           {/* Announced only when the page count changes; the status and ETA below are visual. */}
           <p className="sr-only" role="status" aria-live="polite">
-            {progress.done} of {progress.total} pages done
+            {t("pagesDone", { done: progress.done, total: progress.total })}
           </p>
           <div className="flex items-center justify-between text-sm text-gray-700 dark:text-[#aaa]" aria-hidden="true">
             <span>
-              {progress.status} ({progress.done} of {progress.total} done)
+              {t("status", { status: progress.status, done: progress.done, total: progress.total })}
             </span>
             <span>{progress.recognised > 0 ? eta : ""}</span>
           </div>
           <div
             role="progressbar"
-            aria-label="OCR progress"
+            aria-label={t("progressLabel")}
             aria-valuemin={0}
             aria-valuemax={progress.total}
             aria-valuenow={progress.done}
@@ -328,30 +333,40 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
 
       {summary && result && (
         <div role="status" className="mt-6 rounded-lg border border-mantis-300 bg-mantis-50 p-3 text-sm text-mantis-900 dark:border-mantis-800 dark:bg-[#0f1a0f] dark:text-mantis-200">
-          <p className="font-medium">{summaryHeadline(summary)}</p>
+          <p className="font-medium">{summaryHeadline(summary, t)}</p>
           <ul className="mt-1 list-disc pl-5">
-            {summary.averageConfidence !== null && <li>Average confidence: {Math.round(summary.averageConfidence)}%.</li>}
+            {summary.averageConfidence !== null && (
+              <li>
+                {t("averageConfidence", {
+                  percent: formatNumber(Math.round(summary.averageConfidence) / 100, locale, { style: "percent" }),
+                })}
+              </li>
+            )}
             {summary.skipped.length > 0 && (
-              <li>{skippedLine(summary.skipped)}</li>
+              <li>{skippedLine(summary.skipped, t)}</li>
             )}
             {summary.lowQuality.length > 0 && (
               <li>
-                Low quality scan, check the result: {summary.lowQuality.length === 1 ? "page" : "pages"} {summary.lowQuality.join(", ")}. A
-                sideways scan reads as low quality:{" "}
                 {/* A new tab: leaving this page would lose the recognised text. */}
-                <Link to="/rotate" target="_blank" rel="noopener" className={linkClass}>
-                  Rotate pages
-                </Link>
-                , then run OCR again.
+                <Trans
+                  ns="ocr"
+                  k="lowQuality"
+                  values={{ pages: pageList(summary.lowQuality, t) }}
+                  components={{
+                    link: (c) => (
+                      <Link to="/rotate" target="_blank" rel="noopener" className={linkClass}>
+                        {c}
+                      </Link>
+                    ),
+                  }}
+                />
               </li>
             )}
             {summary.noText.length > 0 && (
-              <li>
-                No text found: {summary.noText.length === 1 ? "page" : "pages"} {summary.noText.join(", ")}.
-              </li>
+              <li>{t("noText", { pages: pageList(summary.noText, t) })}</li>
             )}
-            {result.failed.length > 0 && <li>{failedLine(result.failed)}</li>}
-            {alreadyOcr.length > 0 && <li>{alreadyOcrLine(alreadyOcr)}</li>}
+            {result.failed.length > 0 && <li>{failedLine(result.failed, t)}</li>}
+            {alreadyOcr.length > 0 && <li>{alreadyOcrLine(alreadyOcr, t)}</li>}
           </ul>
         </div>
       )}
@@ -361,42 +376,50 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       <div className="mt-6 flex flex-wrap gap-3">
         {running ? (
           <button type="button" onClick={cancel} className={secondaryButton}>
-            Cancel
+            {tc("cancel")}
           </button>
         ) : result ? (
           <>
             <button type="button" onClick={downloadPdf} disabled={busy || result.layer.length === 0} className={primaryButton}>
-              {busy ? "Saving…" : "Download searchable PDF"}
+              {busy ? tc("saving") : t("downloadSearchable")}
             </button>
             <button type="button" onClick={downloadText} disabled={result.texts.length === 0} className={secondaryButton}>
-              Download text
+              {t("downloadText")}
             </button>
             <button type="button" onClick={() => void runOcr()} className={secondaryButton}>
-              Run again
+              {t("runAgain")}
             </button>
           </>
         ) : (
           <button type="button" onClick={() => void runOcr()} disabled={busy} className={primaryButton}>
-            Run OCR
+            {t("run")}
           </button>
         )}
         <button type="button" onClick={startOver} className={secondaryButton}>
-          Choose another file
+          {tc("chooseAnother")}
         </button>
       </div>
 
       <p className="mt-4 text-xs text-gray-500 dark:text-[#777]">
-        Run OCR first to redact scanned documents by search.{" "}
         {/* A new tab: leaving this page would lose the recognised text and any run in progress. */}
-        <Link to="/redact" target="_blank" rel="noopener" className={linkClass}>
-          Redact PDF
-        </Link>
+        <Trans
+          ns="ocr"
+          k="redactNote"
+          components={{
+            link: (c) => (
+              <Link to="/redact" target="_blank" rel="noopener" className={linkClass}>
+                {c}
+              </Link>
+            ),
+          }}
+        />
       </p>
     </div>
   );
 }
 
 export default function OcrPage() {
+  const t = useT("ocr");
   const worker = usePdfWorker();
   const { pageSizes, addTextLayer } = worker;
   const prepare = useCallback((bytes: Uint8Array) => pageSizes(bytes), [pageSizes]);
@@ -404,13 +427,13 @@ export default function OcrPage() {
 
   return (
     <ToolShell
-      title="OCR PDF: Make Scanned PDFs Searchable | MantisPDF"
-      description="Recognise the text of scanned PDFs in your browser and add it as a searchable, copyable text layer. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/ocr"
-      heading="OCR PDF"
-      intro="Make scanned PDFs searchable and copyable. The text is recognised on your device; nothing is uploaded."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!input && (
         <div className="mt-8">

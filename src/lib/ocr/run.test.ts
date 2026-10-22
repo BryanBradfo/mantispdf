@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { RecognizedWord } from "./engine";
-import { LOW_QUALITY, SKIP_HINT, alreadyOcrLine, failedLine, fromPipeline, loadingLabel, pageTextFromItems, skippedLine, summaryHeadline, wholeDocumentText, MAX_WORDS_PER_PAGE, MAX_WORDS_TOTAL, estimateRemainingMs, formatEta, summarize, toggleLanguage, wordLimitProblem, wordsToWire } from "./run";
+import { LOW_QUALITY, alreadyOcrLine as alreadyOcrLineT, failedLine as failedLineT, fromPipeline, loadingLabel as loadingLabelT, pageTextFromItems, skippedLine as skippedLineT, summaryHeadline as summaryHeadlineT, wholeDocumentText, MAX_WORDS_PER_PAGE, MAX_WORDS_TOTAL, estimateRemainingMs, formatEta as formatEtaT, summarize, toggleLanguage, wordLimitProblem as wordLimitProblemT, wordsToWire } from "./run";
+import { tFor } from "../../i18n/testUtils";
+
+const tEn = tFor("ocr");
+const SKIP_HINT = tEn("skipHint");
+const alreadyOcrLine = (pages: readonly number[]) => alreadyOcrLineT(pages, tEn);
+const failedLine = (pages: readonly number[]) => failedLineT(pages, tEn);
+const loadingLabel = (p: Parameters<typeof loadingLabelT>[0]) => loadingLabelT(p, tEn);
+const skippedLine = (pages: readonly number[]) => skippedLineT(pages, tEn);
+const summaryHeadline = (s: Parameters<typeof summaryHeadlineT>[0]) => summaryHeadlineT(s, tEn);
+const formatEta = (ms: number | null) => formatEtaT(ms, tEn);
+const wordLimitProblem = (pages: Parameters<typeof wordLimitProblemT>[0]) => wordLimitProblemT(pages, tEn);
 
 const word = (text: string, x0: number, y0: number, x1: number, y1: number, extra: Partial<RecognizedWord> = {}): RecognizedWord => ({
   text,
@@ -213,3 +224,16 @@ describe("pipeline result", () => {
   });
 });
 
+describe("OCR texts in French", () => {
+  const t = tFor("ocr", "fr");
+  it("reads in French", () => {
+    expect(summaryHeadlineT(summarize([{ page: 1, skipped: false, confidence: 90, words: 7 }]), t)).toBe(
+      "Texte reconnu sur 1\u00a0page (7\u00a0mots).",
+    );
+    expect(formatEtaT(125000, t)).toBe("environ 2\u00a0min 5\u00a0s restantes");
+    expect(loadingLabelT({ status: "loading language traineddata", progress: 0.42 }, t)).toBe(
+      "Chargement des données de langue 42\u00a0%",
+    );
+    expect(failedLineT([2, 9], t)).toBe("Lecture impossible\u00a0: pages 2 et 9.");
+  });
+});

@@ -4,16 +4,19 @@ import ToolGrid from "../components/home/ToolGrid";
 import { PageSEO } from "../components/seo/PageSEO";
 import LicenseDialog from "../components/license/LicenseDialog";
 import { useLicense, CHECKOUT_URL } from "../hooks/useLicense";
+import { useT } from "../i18n";
 
 export default function HomePage() {
+  const t = useT("home");
+  const tSeo = useT("seo");
   const license = useLicense();
   const [licenseOpen, setLicenseOpen] = useState(false);
 
   return (
     <div className="relative">
       <PageSEO
-        title="MantisPDF: Free PDF Tools in Your Browser"
-        description="Split, merge, compress and rotate PDFs for free. 100% client-side. Your files never leave your device."
+        title={tSeo("homeTitle")}
+        description={tSeo("homeDescription")}
         path="/"
       />
 
@@ -24,7 +27,7 @@ export default function HomePage() {
           className="absolute right-4 top-4 z-20 inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 backdrop-blur transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:text-white"
         >
           <Sparkles className="h-3.5 w-3.5 text-accent-deep dark:text-accent" />
-          {license.isPro ? "Pro" : "Upgrade to Pro"}
+          {license.isPro ? t("pro") : t("upgradeToPro")}
         </button>
       )}
 
@@ -32,17 +35,16 @@ export default function HomePage() {
       <div className="hero-gradient">
         <div className="mx-auto max-w-5xl px-4 pb-12 pt-16 text-center">
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-mantis-200 bg-mantis-100 px-3 py-1 text-xs font-semibold text-mantis-700 dark:border-[#222] dark:bg-[#141414] dark:text-mantis-400">
-            🔒 Zero uploads · WebAssembly powered
+            {t("badge")}
           </div>
           <h1 className="gradient-text text-5xl font-black tracking-tight">
-            PDF Tools
+            {t("heading")}
           </h1>
           <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-[#e5e5e5]">
-            100% Private, 100% Fast
+            {t("tagline")}
           </p>
           <p className="mx-auto mt-4 max-w-lg text-base leading-relaxed text-gray-500 dark:text-[#555]">
-            All processing runs directly in your browser via WebAssembly.
-            Your files never leave your device, not even for a millisecond.
+            {t("intro")}
           </p>
         </div>
       </div>
