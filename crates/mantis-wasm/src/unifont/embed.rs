@@ -152,9 +152,29 @@ impl<'f, 'a> Embedder<'f, 'a> {
                 }
                 stroked = bold;
             }
-            let (texts, actual_text) = entry_texts(run);
+            let (texts, mut actual_text) = entry_texts(run);
+            // Clusters of several glyphs placed off their pen (harakat and
+            // niqqud raised, lowered or shifted over their base, stacked Thai
+            // marks) need /ActualText, or poppler reads the marks out of order
+            // or on a line of their own.
+            let offset: Vec<(Range<usize>, &str)> = clusters(run)
+                .into_iter()
+                .filter(|(r, _)| r.len() > 1 && run.glyphs[r.clone()].iter().any(|g| g.y_offset != 0.0 || g.x_offset != 0.0))
+                .collect();
+            // A right-to-left run gets one span for the whole run, never one per
+            // cluster: pdf.js cuts its text items at marked content and reorders
+            // each item on its own, which would scramble the word.
+            if run.rtl && !offset.is_empty() && actual_text.is_none() {
+                actual_text = Some(clusters(run).iter().map(|(_, t)| *t).collect());
+            }
             if let Some(text) = &actual_text {
-                let _ = writeln!(out, "/Span <</ActualText <{}>>> BDC", utf16_hex(text, true));
+                // Poppler (pdftotext, Evince, Okular) takes the span's text as
+                // if drawn glyph by glyph and reverses a right-to-left one: it
+                // gets the reading-order text reversed, character by character,
+                // and extracts it in reading order. (pdf.js ignores /ActualText;
+                // a reader that took it as is would read the run reversed.)
+                let shown: String = if run.rtl { text.chars().rev().collect() } else { text.clone() };
+                let _ = writeln!(out, "/Span <</ActualText <{}>>> BDC", utf16_hex(&shown, true));
             }
             let _ = writeln!(out, "1 0 0 1 {} {} Tm", fmt_num(origin.0 + pen), fmt_num(origin.1));
             // Positions in 1/1000 em from the run start: `at` is where the
@@ -162,27 +182,13 @@ impl<'f, 'a> Embedder<'f, 'a> {
             let mut at = 0i64;
             let mut p = 0.0;
             let mut items: Vec<Item> = Vec::new();
-            // Clusters of several glyphs placed off their pen (harakat and
-            // niqqud raised, lowered or shifted over their base, stacked Thai
-            // marks): their own /ActualText, or poppler reads the marks out of
-            // order or on a line of their own (a run with /ActualText already
-            // covers them).
-            let spans: Vec<(Range<usize>, &str)> = if actual_text.is_some() {
-                Vec::new()
-            } else {
-                clusters(run)
-                    .into_iter()
-                    .filter(|(r, _)| r.len() > 1 && run.glyphs[r.clone()].iter().any(|g| g.y_offset != 0.0 || g.x_offset != 0.0))
-                    .collect()
-            };
+            // Left-to-right runs: a span per offset cluster (a run-wide span
+            // already covers them).
+            let spans: Vec<(Range<usize>, &str)> = if actual_text.is_some() { Vec::new() } else { offset };
             for (i, (g, text)) in run.glyphs.iter().zip(texts).enumerate() {
                 if let Some((_, whole)) = spans.iter().find(|(r, _)| r.start == i) {
                     flush(&mut out, &mut items);
-                    // Poppler reverses what a right-to-left span holds as if it
-                    // were drawn glyph by glyph: it gets the cluster reversed,
-                    // and extracts it in reading order.
-                    let shown: String = if run.rtl { whole.chars().rev().collect() } else { whole.to_string() };
-                    let _ = writeln!(out, "/Span <</ActualText <{}>>> BDC", utf16_hex(&shown, true));
+                    let _ = writeln!(out, "/Span <</ActualText <{}>>> BDC", utf16_hex(whole, true));
                 }
                 if g.y_offset != rise {
                     flush(&mut out, &mut items);

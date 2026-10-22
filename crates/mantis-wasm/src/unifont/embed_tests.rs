@@ -521,12 +521,17 @@ fn a_glyph_keeps_one_cid_wherever_it_stands() {
 #[test]
 fn raised_marks_extract_in_order() {
     // Harakat and niqqud are drawn raised, lowered (Ts) or shifted over their
-    // base: poppler then reads them out of order unless their cluster
-    // carries /ActualText.
+    // base: poppler then reads them out of order, or on a line of their own,
+    // unless the text carries /ActualText. A right-to-left run gets one span
+    // for the whole run: per-cluster spans make pdf.js cut and reorder the
+    // word piece by piece.
     let faces = all_faces();
     for text in ["مَرْحَبًا بِالْعَالَمِ", "שָׁלוֹם עוֹלָם"] {
         let mut built = build(&faces, text, 14.0, false);
-        assert!(built.content.contains("/ActualText"), "{text}: {}", built.content);
+        assert_eq!(built.content.matches("/ActualText").count(), 1, "{text}: {}", built.content);
+        // Reversed character by character, for poppler (see `show_line`).
+        let reversed: String = text.chars().rev().collect::<String>().encode_utf16().map(|u| format!("{u:04X}")).collect();
+        assert!(built.content.contains(&format!("/ActualText <FEFF{reversed}>")), "{text}: {}", built.content);
         let pdf = saved(&mut built);
         // The redact reader still reads every glyph's own text.
         let doc = load_pdf(&pdf).unwrap();
@@ -538,7 +543,9 @@ fn raised_marks_extract_in_order() {
         };
         assert_eq!(sorted(&drawn), sorted(text), "{text}");
         let Some(extracted) = pdftotext(&pdf) else { continue };
+        // Poppler gives the text in reading order, on one line.
         let bare = |s: &str| s.chars().filter(|c| !c.is_whitespace() && !('\u{202A}'..='\u{202E}').contains(c)).collect::<String>();
         assert_eq!(bare(&extracted), bare(text), "{text}: {extracted:?}");
+        assert_eq!(extracted.trim().lines().count(), 1, "{text}: {extracted:?}");
     }
 }
