@@ -54,16 +54,16 @@ export interface AppRoute {
   element: ReactElement;
 }
 
-/**
- * Every client route, in English (root) form. App renders this table once per locale
- * (`localizeRoutes`: `/merge` and `/fr/merge` share an element). Paths are absolute; `Link` and
- * `Navigate` from `./i18n` keep the current locale prefix.
- */
 /** A legacy path kept only to redirect (not a page of its own: left out of the sitemap). */
 export function isRedirect(route: AppRoute): boolean {
   return route.element.type === Navigate;
 }
 
+/**
+ * Every client route, in English (root) form. App renders this table once per locale
+ * (`localizeRoutes`: `/merge` and `/fr/merge` share an element). Paths are absolute; `Link` and
+ * `Navigate` from `./i18n` keep the current locale prefix.
+ */
 export const APP_ROUTES: readonly AppRoute[] = [
   { path: "/", element: <HomePage /> },
   { path: "/split", element: <SplitPdfPage /> },

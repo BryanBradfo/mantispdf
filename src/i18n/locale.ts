@@ -14,11 +14,17 @@ function isLocale(s: string): s is Locale {
  * `\\host`) as protocol-relative URLs, so a path that kept them would link off-site (open redirect).
  */
 function collapseLeadingSlashes(path: string): string {
-  return path.replace(/^[/\\]+/, "/");
+  return asBrowserReads(path).replace(/^[/\\]+/, "/");
+}
+
+/** What a browser's URL parser keeps: tabs and newlines dropped anywhere, leading C0 controls and spaces trimmed. */
+function asBrowserReads(path: string): string {
+  return path.replace(/[\t\n\r]/g, "").replace(/^[\u0000-\u0020]+/, "");
 }
 
 function isAbsolute(path: string): boolean {
-  return path.startsWith("/") || path.startsWith("\\");
+  const p = asBrowserReads(path);
+  return p.startsWith("/") || p.startsWith("\\");
 }
 
 /** First path segment, e.g. `fr` for `/fr/merge?x`. */

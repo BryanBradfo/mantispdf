@@ -98,11 +98,25 @@ describe("protocol-relative inputs (open redirect guard)", () => {
     expect(stripLocale(path)).toBe(expected);
   });
 
+  it.each([
+    ["/\t/evil.com", "fr", "/fr/evil.com"],
+    [" //evil.com", "en", "/evil.com"],
+    ["\u0000//evil.com", "fr", "/fr/evil.com"],
+    ["/fr/\n/evil.com", "en", "/evil.com"],
+  ] as const)("strips controls: localePath(%j, %s) -> %s", (path, locale, expected) => {
+    expect(localePath(path, locale)).toBe(expected);
+  });
+
   it("never returns a protocol-relative value", () => {
-    const nasty = ["//a", "/\\a", "\\/a", "\\\\a", "/fr//a", "/fr/\\a", "/fr\\\\a", "//fr//a", "/fr/", "/fr"];
+    const nasty = [
+      "//a", "/\\a", "\\/a", "\\\\a", "/fr//a", "/fr/\\a", "/fr\\\\a", "//fr//a", "/fr/", "/fr",
+      // Browsers drop tabs and newlines anywhere and leading C0 controls and spaces.
+      "/\t/a", "/\n/a", "/\r\n/a", "\t//a", " //a", "\u0000//a", "\u001f/\\a", "/fr/\t/a", "/f\tr//a",
+    ];
     for (const p of nasty) {
       for (const out of [stripLocale(p), localePath(p, "en"), localePath(p, "fr")]) {
-        expect(out, `${JSON.stringify(p)} -> ${JSON.stringify(out)}`).not.toMatch(/^[/\\]{2}/);
+        const asBrowserReads = out.replace(/[\t\n\r]/g, "").replace(/^[\u0000-\u0020]+/, "");
+        expect(asBrowserReads, `${JSON.stringify(p)} -> ${JSON.stringify(out)}`).not.toMatch(/^[/\\]{2}/);
       }
     }
   });

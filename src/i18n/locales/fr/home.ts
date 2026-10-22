@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/home";
 
 const home: Messages<typeof en> = {
-  badge: "🔒 Aucun envoi · Propulsé par WebAssembly",
+  badge: "🔒 Aucun fichier envoyé · Fonctionne avec WebAssembly",
   heading: "Outils PDF",
   tagline: "100 % privé, 100 % rapide",
   intro:
@@ -24,7 +24,7 @@ const home: Messages<typeof en> = {
   "removePages.title": "Supprimer des pages",
   "removePages.desc": "Supprimez les pages dont vous n’avez pas besoin.",
   "extractPages.title": "Extraire des pages",
-  "extractPages.desc": "Placez des pages dans un nouveau PDF, ou un fichier par page.",
+  "extractPages.desc": "Copiez des pages dans un nouveau PDF, ou créez un fichier par page.",
   "pdfToImage.title": "PDF en images",
   "pdfToImage.desc": "Exportez chaque page du PDF en image PNG ou JPEG.",
   "watermark.title": "Filigrane",
@@ -50,7 +50,7 @@ const home: Messages<typeof en> = {
   "crop.title": "Rogner",
   "crop.desc": "Réduisez les marges à la main ou détectez-les automatiquement.",
   "resize.title": "Redimensionner",
-  "resize.desc": "Passez vos pages en A4, en Letter ou à une taille personnalisée.",
+  "resize.desc": "Passez vos pages en A4, au format Lettre US ou à une taille personnalisée.",
   "nUp.title": "Pages multiples (N-up)",
   "nUp.desc": "Placez 2, 4, 6, 8, 9 ou 16 pages sur chaque feuille.",
   "editPdf.title": "Modifier le PDF",
@@ -60,7 +60,7 @@ const home: Messages<typeof en> = {
   "redact.title": "Caviarder",
   "redact.desc": "Supprimez définitivement le texte et les images sensibles.",
   "ocr.title": "OCR",
-  "ocr.desc": "Rendez le texte des PDF numérisés cherchable et copiable.",
+  "ocr.desc": "Permettez la recherche et la copie du texte de vos PDF numérisés.",
   "imagesToPdf.title": "Images en PDF",
   "imagesToPdf.desc": "Transformez des images JPG, PNG ou WebP en PDF, une image par page.",
   "extractImages.title": "Extraire les images",

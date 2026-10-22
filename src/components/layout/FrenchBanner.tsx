@@ -15,10 +15,10 @@ export default function FrenchBanner() {
   const t = useT("common");
   const locale = useLocale();
   const { pathname, search, hash } = useLocation();
-  const [offered, setOffered] = useState(() =>
-    shouldOfferFrench({ locale, stored: readStoredLocale(), languages: browserLanguages() }),
-  );
-  const show = offered && locale === "en";
+  // Only for the instant hide on "Non merci"; otherwise the stored choice decides, read on every render
+  // so a choice made in the switcher (which also stores it) hides the banner for good.
+  const [dismissed, setDismissed] = useState(false);
+  const show = !dismissed && shouldOfferFrench({ locale, stored: readStoredLocale(), languages: browserLanguages() });
 
   useEffect(() => {
     if (show) void loadLocale("fr");
@@ -44,7 +44,7 @@ export default function FrenchBanner() {
         type="button"
         onClick={() => {
           storeLocale("en");
-          setOffered(false);
+          setDismissed(true);
         }}
         className="text-gray-500 underline hover:text-gray-700 dark:text-[#555] dark:hover:text-[#888]"
       >

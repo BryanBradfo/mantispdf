@@ -34,7 +34,7 @@ const common: Messages<typeof en> = {
   pageNMarked: "Page {n}, {mark}",
   pageEdited: "modifiée",
 
-  headerStar: "Étoile",
+  headerStar: "Star",
   toggleDarkMode: "Activer ou désactiver le mode sombre",
   language: "Langue",
   languageEnglish: "English",

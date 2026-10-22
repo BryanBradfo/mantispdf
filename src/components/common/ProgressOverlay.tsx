@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useT } from "../../i18n";
+import { formatNumber, useLocale, useT } from "../../i18n";
 
 interface ProgressOverlayProps {
   progress: number;
@@ -10,6 +10,7 @@ interface ProgressOverlayProps {
 
 export default function ProgressOverlay({ progress, message, error, onDismissError }: ProgressOverlayProps) {
   const t = useT("common");
+  const locale = useLocale();
   const dismissRef = useRef<HTMLButtonElement>(null);
 
   // When an error is shown, move focus to the Dismiss button and let Escape
@@ -59,7 +60,7 @@ export default function ProgressOverlay({ progress, message, error, onDismissErr
               )}
             </div>
             <p className="mt-2 text-right text-xs text-gray-400 dark:text-[#555]">
-              {progress < 0.1 ? t("progressWorking") : `${Math.round(progress * 100)}%`}
+              {progress < 0.1 ? t("progressWorking") : formatNumber(Math.round(progress * 100) / 100, locale, { style: "percent" })}
             </p>
           </>
         )}
