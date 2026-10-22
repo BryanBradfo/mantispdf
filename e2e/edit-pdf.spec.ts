@@ -388,16 +388,26 @@ test("edit pdf: keys typed right after placing a text box are all text", async (
   await expect(page.getByRole("button", { name: "Undo (Ctrl+Z)" })).toBeDisabled();
 });
 
-test("edit pdf: a saved text box with characters the PDF fonts lack is outlined in red", async ({ page }) => {
+test("edit pdf: a text box with characters no font has is outlined in red", async ({ page }) => {
   await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
   const canvas = new Canvas(page, [612, 792]);
   const overlay = page.getByTestId("editor-overlay");
+  // Characters the standard fonts lack switch the box to Noto: no warning.
   await canvas.tool("Text (T)");
   await canvas.click(100, 100);
   await page.getByRole("textbox", { name: "Text box content" }).fill("ok 日本");
   await page.keyboard.press("Escape");
+  await expect(overlay.getByTestId("noto-text")).toHaveCount(1, { timeout: 30000 });
+  await expect(page.getByTestId("font-switch-notice")).toHaveText("Uses Noto Sans for these characters");
   await page.keyboard.press("Escape"); // deselect: the warning must not depend on the selection
   const warning = overlay.locator('[data-warning="unsupported-text"]');
+  await expect(warning).toHaveCount(0);
+  // An emoji has no font: outlined in red.
+  await canvas.tool("Text (T)");
+  await canvas.click(110, 108);
+  await page.getByRole("textbox", { name: "Text box content" }).fill("ok 😀");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
   await expect(warning).toHaveCount(1);
   await expect(warning).toHaveAttribute("stroke", "#dc2626");
   // Fixing the text removes the outline.

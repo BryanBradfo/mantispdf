@@ -8,7 +8,6 @@ import EditorCanvas from "../components/editor/EditorCanvas";
 import PageStrip from "../components/editor/PageStrip";
 import PropertiesPanel from "../components/editor/PropertiesPanel";
 import Toolbar, { type Tool } from "../components/editor/Toolbar";
-import { unsupportedChars, unsupportedMessage } from "../lib/editor/afm";
 import {
   addError,
   imageBudgetError,
@@ -17,10 +16,16 @@ import {
   type ImageSource,
   type Item,
   type NewItem,
+  type TextItem,
 } from "../lib/editor/model";
 import { editorReducer } from "../lib/editor/reducer";
 import { fitTextRect } from "../lib/editor/textFit";
-import { buildEditJob } from "../lib/editor/toJob";
+import { buildEditJob, type TextFontSpec } from "../lib/editor/toJob";
+import { missingMessage, planFonts, resolveFont } from "../lib/editor/unicodeText";
+import { pageFonts } from "../lib/fonts/fontFaces";
+import type { FontManifest } from "../lib/fonts/manifest";
+import { cjkFlavourFromLanguage, type CjkFlavour } from "../lib/fonts/select";
+import { UnicodeTextContext, type UnicodeTextEnv } from "../components/editor/unicodeTextContext";
 import { jpegPassthrough, orientationToTransform, readExifOrientation } from "../lib/imageInput";
 import ToolShell, { primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
@@ -66,11 +71,24 @@ async function readImageSource(file: File): Promise<ImageSource> {
 }
 
 /** First text box whose content the standard fonts cannot save, as a user message. */
-function textProblem(items: readonly Item[]): string | null {
+/** How each text box is drawn: its standard font, or the Noto font files it needs (chain order). */
+function textFonts(manifest: FontManifest, cjk: CjkFlavour) {
+  return (item: TextItem): TextFontSpec => {
+    const resolved = resolveFont(item.font, item.text);
+    if (resolved.kind === "standard") return { family: "standard", font: resolved.font };
+    const plan = planFonts(manifest, item.text, resolved.family, resolved.bold, cjk);
+    return { family: "noto", faces: plan.faces.map((f) => f.file), fakeBold: plan.fakeBold.map((f) => f.file) };
+  };
+}
+
+/** The first text box with characters no font can show, as a message. */
+function textProblem(items: readonly Item[], manifest: FontManifest, cjk: CjkFlavour): string | null {
   for (const it of items) {
     if (it.kind !== "text") continue;
-    const bad = unsupportedChars(it.text);
-    if (bad !== "") return `${unsupportedMessage(bad)} (text box on page ${it.page}).`;
+    const resolved = resolveFont(it.font, it.text);
+    if (resolved.kind === "standard") continue;
+    const { missing } = planFonts(manifest, it.text, resolved.family, resolved.bold, cjk);
+    if (missing !== "") return `${missingMessage(missing)} (text box on page ${it.page}).`;
   }
   return null;
 }
@@ -79,12 +97,12 @@ interface WorkspaceProps {
   input: PdfInput<[number, number][]>;
   busy: boolean;
   run: <R>(work: () => Promise<R>, done: (result: R) => void) => Promise<void>;
-  setError: (error: string | null) => void;
   editPdf: ReturnType<typeof usePdfWorker>["editPdf"];
+  layoutText: ReturnType<typeof usePdfWorker>["layoutText"];
   onStartOver: () => void;
 }
 
-function Workspace({ input, busy, run, setError, editPdf, onStartOver }: WorkspaceProps) {
+function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: WorkspaceProps) {
   const sizes = input.data;
   const [state, dispatch] = useReducer(editorReducer, undefined, () => initialEditorState());
   const [tool, setTool] = useState<Tool>("select");
@@ -95,6 +113,20 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
   // they make a single undo step.
   const newTextGesture = useRef(false);
   const urls = useRef(new Map<Blob, string>());
+  // The self-hosted font list (fonts themselves are fetched only for text that needs them).
+  const [manifest, setManifest] = useState<FontManifest | null>(null);
+  const cjk = useMemo(() => cjkFlavourFromLanguage(typeof navigator === "undefined" ? undefined : navigator.language), []);
+  useEffect(() => {
+    let live = true;
+    pageFonts
+      .manifest()
+      .then((m) => live && setManifest(m))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  const unicodeText = useMemo<UnicodeTextEnv>(() => ({ manifest, cjk, layoutText }), [manifest, cjk, layoutText]);
 
   const { items, page, selectedId, editingId } = state;
   const setEditingId = (id: string | null) => dispatch({ type: "editText", id });
@@ -212,13 +244,13 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
 
   const download = () => {
     if (busy || items.length === 0) return;
-    const problem = textProblem(items);
-    if (problem) {
-      setError(problem);
-      return;
-    }
     void run(
-      async () => editPdf(input.bytes, await buildEditJob(items)),
+      async () => {
+        const fonts = manifest ?? (await pageFonts.manifest());
+        const problem = textProblem(items, fonts, cjk);
+        if (problem) throw new Error(problem);
+        return editPdf(input.bytes, await buildEditJob(items, undefined, textFonts(fonts, cjk)));
+      },
       (out) => downloadBlob(out, `${baseName(input.file)}_edited.pdf`),
     );
   };
@@ -234,6 +266,7 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
   };
 
   return (
+    <UnicodeTextContext.Provider value={unicodeText}>
     <div className="mt-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
@@ -336,12 +369,13 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
         </aside>
       </div>
     </div>
+    </UnicodeTextContext.Provider>
   );
 }
 
 export default function EditPdfPage() {
   const worker = usePdfWorker();
-  const { pageSizes, editPdf } = worker;
+  const { pageSizes, editPdf, layoutText } = worker;
   const prepare = useCallback((bytes: Uint8Array) => pageSizes(bytes), [pageSizes]);
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker, prepare);
 
@@ -364,7 +398,7 @@ export default function EditPdfPage() {
 
       {input && (
         <>
-          <Workspace input={input} busy={busy} run={run} setError={setError} editPdf={editPdf} onStartOver={reset} />
+          <Workspace input={input} busy={busy} run={run} editPdf={editPdf} layoutText={layoutText} onStartOver={reset} />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
         </>
       )}

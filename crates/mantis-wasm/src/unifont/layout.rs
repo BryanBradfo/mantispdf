@@ -14,6 +14,7 @@ use super::marks::is_mark;
 use super::shape::{ShapedGlyph, shape};
 use super::{Face, Glyph, Layout, LayoutError, LayoutParams, Line, MAX_LAYOUT_CHARS, Run, ShapeBudget};
 use crate::edit_ops::Align;
+use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::ops::Range;
 
@@ -25,12 +26,14 @@ const PARAGRAPH_SEPARATORS: [char; 7] = ['\n', '\r', '\u{B}', '\u{C}', '\u{85}',
 /// The first baseline sits the tallest ascender of the faces on the first
 /// line below the top (the family's for an empty line), the others
 /// `line_height * size` apart.
-pub(crate) fn layout_text(
-    faces: &[Face],
+pub(crate) fn layout_text<'a, F: Borrow<Face<'a>>>(
+    faces: &[F],
     text: &str,
     p: &LayoutParams,
     budget: &mut ShapeBudget,
 ) -> Result<Layout, LayoutError> {
+    let faces: Vec<&Face> = faces.iter().map(Borrow::borrow).collect();
+    let faces = faces.as_slice();
     if text.chars().nth(MAX_LAYOUT_CHARS).is_some() {
         return Err(LayoutError::TooLong);
     }
@@ -82,7 +85,7 @@ impl Missing {
 
 /// Lines of one paragraph, `baseline_y` left at 0.
 fn layout_paragraph(
-    faces: &[Face],
+    faces: &[&Face],
     para: &str,
     p: &LayoutParams,
     budget: &mut ShapeBudget,
@@ -98,7 +101,7 @@ fn layout_paragraph(
     for run in split_runs(para, 0..para.len(), |b| (face_at[b], bidi.rtl_at(b))) {
         let (face, rtl) = (face_at[run.start], bidi.rtl_at(run.start));
         cluster_start[run.start] = true;
-        for g in shape(&faces[face], para, run, 0..para.len(), rtl, budget)? {
+        for g in shape(faces[face], para, run, 0..para.len(), rtl, budget)? {
             if let (Some(a), Some(s)) = (advance.get_mut(g.cluster), cluster_start.get_mut(g.cluster)) {
                 *a += f64::from(g.x_advance) * scale(face);
                 *s = true;
@@ -142,7 +145,7 @@ fn runs_width(runs: &[Run]) -> f64 {
 /// The runs of the line `range` of `para`: bidi visual runs, split by face,
 /// each shaped with the line as context. Visual order, left to right.
 fn shape_line(
-    faces: &[Face],
+    faces: &[&Face],
     para: &str,
     bidi: &Paragraph,
     face_at: &[usize],
@@ -158,7 +161,7 @@ fn shape_line(
         }
         for piece in pieces {
             let face = face_at[piece.start];
-            let shaped = shape(&faces[face], para, piece.clone(), range.clone(), rtl, budget)?;
+            let shaped = shape(faces[face], para, piece.clone(), range.clone(), rtl, budget)?;
             let scale = p.size / faces[face].units_per_em();
             runs.push(Run { face, rtl, glyphs: to_glyphs(para, piece, &shaped, rtl, scale) });
         }
@@ -179,7 +182,7 @@ fn shape_line(
 ///
 /// Characters no face covers use the previous face, else face 0, and are
 /// added to `missing` (whitespace and format characters excepted).
-fn assign_faces(faces: &[Face], para: &str, missing: &mut Missing) -> Vec<usize> {
+fn assign_faces(faces: &[&Face], para: &str, missing: &mut Missing) -> Vec<usize> {
     let mut out: Vec<usize> = Vec::with_capacity(para.len());
     let mut prev: Option<usize> = None;
     // The current base character and its marks so far, from byte `cluster_at`.

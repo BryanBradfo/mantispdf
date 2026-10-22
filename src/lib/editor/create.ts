@@ -73,7 +73,7 @@ export function createItem(g: CreateGesture): NewItem | null {
         size: TEXT_DEFAULTS.size,
         color: BLACK,
         opacity: 1,
-        align: "left",
+        align: "auto",
         lineHeight: TEXT_DEFAULTS.lineHeight,
       };
     case "rect":

@@ -19,8 +19,6 @@ mod redact;
 mod rotate;
 mod split;
 mod stamp;
-// Wired into Edit PDF and Fill form by the unicode fonts integration (spec 2026-10-22).
-#[cfg_attr(not(test), allow(dead_code, unused_imports))]
 mod unifont;
 mod watermark;
 
@@ -160,6 +158,35 @@ pub fn edit_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<Vec<u8>, JsValue> {
     let raw = edit_ops::binding::read_job(&job).map_err(|e| JsValue::from_str(&e))?;
     let job = edit_ops::job::validate_job(raw).map_err(|e| JsValue::from_str(&e))?;
     edit_ops::edit_pdf(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Lays out the text of an Edit PDF box drawn with embedded fonts, exactly as
+/// `edit_pdf` will: `fonts` are the font files in fallback order (family
+/// first), `align` is "left", "center", "right" or "auto". Returns
+/// `{ lines: [{ baselineY, runs: [{ face, rtl, x, width, text }] }], missing }`
+/// (points from the box's top-left corner; lines past the box height dropped).
+#[wasm_bindgen]
+pub fn layout_text(
+    fonts: JsValue,
+    text: &str,
+    size: f64,
+    width: f64,
+    height: f64,
+    align: &str,
+    line_height: f64,
+) -> Result<JsValue, JsValue> {
+    let err = |e: String| JsValue::from_str(&e);
+    let bytes = edit_ops::binding::read_layout_fonts(&fonts).map_err(err)?;
+    let align = match align {
+        "left" => Some(edit_ops::Align::Left),
+        "center" => Some(edit_ops::Align::Center),
+        "right" => Some(edit_ops::Align::Right),
+        "auto" => None,
+        _ => return Err(err(edit_ops::invalid("align"))),
+    };
+    let refs: Vec<&[u8]> = bytes.iter().map(Vec::as_slice).collect();
+    let layout = edit_ops::unitext::preview_layout(&refs, text, size, width, height, align, line_height).map_err(err)?;
+    Ok(edit_ops::binding::preview_to_js(&layout))
 }
 
 /// Which pages with areas can be redacted in place: `[{ page, reason }]`,

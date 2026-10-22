@@ -40,16 +40,21 @@ function pick(manifest: FontManifest, family: string, bold: boolean): FontEntry 
   return (bold ? faces.find((f) => f.weight === 700) : undefined) ?? faces.find((f) => f.weight === 400);
 }
 
+/** The fonts of the fallback chain in order: the family, then the script fonts (the chosen CJK flavour first). */
+export function fontChain(manifest: FontManifest, options: SelectOptions): FontEntry[] {
+  const cjk = [options.cjk, ...CJK_ORDER.filter((f) => f !== options.cjk)].map((f) => `Noto Sans ${f}`);
+  return [options.family, ...SCRIPT_CHAIN, ...cjk]
+    .map((family) => pick(manifest, family, options.bold))
+    .filter((f): f is FontEntry => f !== undefined);
+}
+
 /**
  * Split `text` into runs by the font that covers each character, walking code points: the chosen
  * family first, then the script fonts in chain order. Bold uses the Bold face where one ships
  * (not for CJK). Characters nothing covers get `font: null` so the caller can flag them.
  */
 export function selectFonts(manifest: FontManifest, text: string, options: SelectOptions): FontRun[] {
-  const cjk = [options.cjk, ...CJK_ORDER.filter((f) => f !== options.cjk)].map((f) => `Noto Sans ${f}`);
-  const chain = [options.family, ...SCRIPT_CHAIN, ...cjk]
-    .map((family) => pick(manifest, family, options.bold))
-    .filter((f): f is FontEntry => f !== undefined);
+  const chain = fontChain(manifest, options);
 
   const runs: FontRun[] = [];
   for (const ch of text) {

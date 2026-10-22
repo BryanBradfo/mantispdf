@@ -110,7 +110,7 @@ fn bad_params() {
     ] {
         assert_eq!(layout_text(&faces, "a", &p, &mut ShapeBudget::per_job()).err(), Some(LayoutError::Params));
     }
-    assert_eq!(layout_text(&[], "a", &params(10.0, 100.0, None), &mut ShapeBudget::per_job()).err(), Some(LayoutError::BadFont(0)));
+    assert_eq!(layout_text::<Face>(&[], "a", &params(10.0, 100.0, None), &mut ShapeBudget::per_job()).err(), Some(LayoutError::BadFont(0)));
 }
 
 // ---- shaping ----

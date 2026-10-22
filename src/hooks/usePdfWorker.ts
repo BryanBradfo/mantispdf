@@ -4,6 +4,7 @@ import type { PdfPart } from "../types/pdf";
 import { readFileAsArrayBuffer } from "../lib/fileHelpers";
 import type { ExtractResultSpec, ImageInputSpec, ImageLayoutSpec } from "../lib/imageInput";
 import { editJobTransferables, type EditJobSpec } from "../lib/editor/toJob";
+import type { TextLayout } from "../lib/fonts/jobFonts";
 import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob";
 import type { StampJobSpec } from "../lib/stampJob";
 import type { FormInfo } from "../lib/forms/model";
@@ -66,6 +67,10 @@ const initialState: WorkerState = {
 const asParts = (p: SuccessPayload): PdfPart[] => {
   if (p.kind !== "split") throw new Error("Unexpected worker payload");
   return p.parts;
+};
+const asTextLayout = (p: SuccessPayload): TextLayout => {
+  if (p.kind !== "text-layout") throw new Error("Unexpected worker payload");
+  return p.layout;
 };
 const asBytes = (p: SuccessPayload): Uint8Array => {
   if (p.kind !== "merge") throw new Error("Unexpected worker payload");
@@ -328,6 +333,13 @@ export function usePdfWorker() {
     [run],
   );
 
+  /** The engine's lines for an embedded-font text box (Edit PDF preview); `fonts` are file names in chain order. */
+  const layoutText = useCallback(
+    (request: { fonts: string[]; text: string; size: number; width: number; height: number; align: string; lineHeight: number }): Promise<TextLayout> =>
+      run(null, (id) => ({ type: "layout-text", id, ...request }), asTextLayout),
+    [run],
+  );
+
   /** The form fields of a PDF (engine traversal order; ids are what `fillForm` takes). */
   const listForm = useCallback(
     (pdfBytes: Uint8Array): Promise<FormInfo> => run(null, (id) => ({ type: "list-form", id, pdfBytes }), asForm),
@@ -480,6 +492,7 @@ export function usePdfWorker() {
       sanitizePdf,
       stampPdf,
       editPdf,
+      layoutText,
       listForm,
       fillForm,
       redactSearch,
@@ -511,6 +524,7 @@ export function usePdfWorker() {
       sanitizePdf,
       stampPdf,
       editPdf,
+      layoutText,
       listForm,
       fillForm,
       redactSearch,

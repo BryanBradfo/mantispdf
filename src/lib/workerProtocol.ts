@@ -8,6 +8,7 @@ import type { FormWireEntry } from "./forms/toWire";
 import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, SearchOptionsWire } from "./redact/toJob";
 import type { RedactSearchResultWire } from "./redact/searchWire";
 import type { OcrPageWire } from "./ocr/textLayerWire";
+import type { TextLayout } from "./fonts/jobFonts";
 
 /** Correlates a request with its response/progress/failure messages. */
 export type ReqId = number;
@@ -38,6 +39,18 @@ export type ToWorker =
   | { type: "sanitize"; id: ReqId; pdfBytes: Uint8Array; keepComments: boolean }
   | { type: "stamp"; id: ReqId; pdfBytes: Uint8Array; job: StampJobSpec }
   | { type: "edit-pdf"; id: ReqId; pdfBytes: Uint8Array; job: EditJobSpec }
+  /** The engine's lines for an embedded-font text box; `fonts` are file names under /fonts-runtime/ (chain order). */
+  | {
+      type: "layout-text";
+      id: ReqId;
+      fonts: string[];
+      text: string;
+      size: number;
+      width: number;
+      height: number;
+      align: string;
+      lineHeight: number;
+    }
   | { type: "crop"; id: ReqId; pdfBytes: Uint8Array; job: CropJobSpec }
   | { type: "resize"; id: ReqId; pdfBytes: Uint8Array; job: ResizeJobSpec }
   | { type: "nup"; id: ReqId; pdfBytes: Uint8Array; job: NupJobSpec }
@@ -78,7 +91,8 @@ export type SuccessPayload =
   | { kind: "form"; info: FormInfo }
   | { kind: "redact-plan"; pages: PageStatusWire[] }
   | { kind: "redacted"; result: RedactResultWire }
-  | { kind: "redact-search"; result: RedactSearchResultWire };
+  | { kind: "redact-search"; result: RedactSearchResultWire }
+  | { kind: "text-layout"; layout: TextLayout };
 
 // Worker → Main messages. `init-done`/`init-error` are the one-time handshake;
 // all operation responses carry the originating `id`.

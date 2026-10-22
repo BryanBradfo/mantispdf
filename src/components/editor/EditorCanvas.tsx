@@ -20,6 +20,8 @@ import { layoutText } from "../../lib/editor/wrap";
 import { placementPreviewSize } from "../../lib/signPlacement";
 import { cssColor, cssFont } from "./svgStyle";
 import TextEditOverlay from "./TextEditOverlay";
+import NotoText from "./NotoText";
+import { resolveFont } from "../../lib/editor/unicodeText";
 import { TOOLS, type Tool } from "./Toolbar";
 
 /** Render width of the page preview (also its maximum on-screen width). */
@@ -384,10 +386,15 @@ export default function EditorCanvas(props: Props) {
     switch (it.kind) {
       case "text": {
         if (it.id === editingId) return null;
-        const { family, weight } = cssFont(it.font);
+        const box = visibleToPreviewRect(it.rect, preview, pageSize);
+        const resolved = resolveFont(it.font, it.text);
+        if (resolved.kind === "noto") {
+          return <NotoText key={it.id} item={it} family={resolved.family} bold={resolved.bold} toPx={toPx} scale={scale} box={box} />;
+        }
+        const font = resolved.font;
+        const { family, weight } = cssFont(font);
         // Characters the standard fonts lack: the download will refuse this box, say so here.
         const unsupported = unsupportedChars(it.text) !== "";
-        const box = visibleToPreviewRect(it.rect, preview, pageSize);
         return (
           <g key={it.id}>
             {unsupported && (
@@ -406,9 +413,9 @@ export default function EditorCanvas(props: Props) {
               </rect>
             )}
             <g opacity={it.opacity} fill={cssColor(it.color)} fontFamily={family} fontWeight={weight} fontSize={it.size * scale}>
-              {layoutText(it.rect, it.text, it.font, it.size, it.align, it.lineHeight).map((line, i) => {
+              {layoutText(it.rect, it.text, font, it.size, it.align === "auto" ? "left" : it.align, it.lineHeight).map((line, i) => {
                 const [x, y] = toPx([line.x, line.y]);
-                const width = lineWidth(line.text, it.font, it.size) * scale;
+                const width = lineWidth(line.text, font, it.size) * scale;
                 return (
                   <text key={i} x={x} y={y} style={{ whiteSpace: "pre" }} {...(width > 0 ? { textLength: width, lengthAdjust: "spacingAndGlyphs" } : {})}>
                     {line.text}
