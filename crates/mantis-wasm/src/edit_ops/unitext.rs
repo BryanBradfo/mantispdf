@@ -3,7 +3,7 @@
 //! layout handed to the editor preview (`preview_layout`), so the preview's
 //! lines are the PDF's lines.
 
-use super::{Align, MAX_FONT_SIZE, MAX_LINE_HEIGHT, MAX_TEXT_CHARS, MIN_FONT_SIZE, MIN_LINE_HEIGHT, invalid};
+use super::{Align, MAX_FONT_SIZE, MAX_LINE_HEIGHT, MIN_FONT_SIZE, MIN_LINE_HEIGHT, invalid};
 use crate::stamp::engine::MAX_COORD;
 use crate::unifont::{Face, LayoutParams, Line, ShapeBudget, layout_text, load_faces};
 
@@ -96,7 +96,8 @@ pub(crate) struct PreviewLayout {
 
 /// The lines the PDF will hold for a box `width` x `height` (points), for the
 /// editor preview: `fonts` in chain order (family first). Same checks and
-/// limits as an edit job's text item.
+/// limits as an edit job's text item, except the text: up to `MAX_LAYOUT_CHARS`
+/// (a form value).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn preview_layout(
     fonts: &[&[u8]],
@@ -117,7 +118,8 @@ pub(crate) fn preview_layout(
     if !(MIN_LINE_HEIGHT..=MAX_LINE_HEIGHT).contains(&line_height) {
         return Err(invalid("line_height"));
     }
-    if text.chars().nth(MAX_TEXT_CHARS).is_some() {
+    // The layout's own cap (20,000): form values are laid out here too (overflow checks).
+    if text.chars().nth(crate::unifont::MAX_LAYOUT_CHARS).is_some() {
         return Err(invalid("text"));
     }
     let faces = load_faces(fonts).map_err(|e| invalid(e.field()))?;
@@ -189,7 +191,11 @@ mod tests {
         assert_eq!(preview_layout(&[SANS], "a", 12.0, 10.0, 10.0, None, 9.0).unwrap_err(), "Invalid edit settings: line_height");
         assert_eq!(preview_layout(&[b"junk"], "a", 12.0, 10.0, 10.0, None, 1.2).unwrap_err(), "Invalid edit settings: font");
         assert_eq!(preview_layout(&[], "a", 12.0, 10.0, 10.0, None, 1.2).unwrap_err(), "Invalid edit settings: font");
-        let long = "a".repeat(MAX_TEXT_CHARS + 1);
+        // Form values go up to 20,000 characters (the overflow check lays them out): the cap is
+        // the layout's, not the 5,000 of a text box.
+        let form_value = "a".repeat(crate::forms::MAX_VALUE_CHARS);
+        assert!(preview_layout(&[SANS], &form_value, 12.0, 100.0, 100.0, None, 1.2).is_ok());
+        let long = "a".repeat(crate::unifont::MAX_LAYOUT_CHARS + 1);
         assert_eq!(preview_layout(&[SANS], &long, 12.0, 10.0, 10.0, None, 1.2).unwrap_err(), "Invalid edit settings: text");
     }
 }
