@@ -186,9 +186,85 @@ impl<'f, 'a> UnicodeFields<'f, 'a> {
 
         let fill = color_op(&da_components(da.color), false).unwrap_or_else(|| "0 g".into());
         let stroke = color_op(&da_components(da.color), true).unwrap_or_else(|| "0 G".into());
+        let body = self.draw(doc, &placed, size, font, resources)?;
+        let mut out = frame_content(frame);
+        out.extend(
+            format!("/Tx BMC\nq\n1 1 {} {} re W n\n{fill}\n{stroke}\n{body}Q\nEMC\n", fmt_num(w - 2.0), fmt_num(h - 2.0))
+                .into_bytes(),
+        );
+        Ok(out)
+    }
+}
+
+impl UnicodeFields<'_, '_> {
+    /// Content of a list box in `font`'s faces, laid out like the
+    /// standard-font one (`list_appearance`): as many options as fit from the
+    /// top (scrolled so the first selected one shows), selected ones on a
+    /// light blue background.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn list_appearance(
+        &mut self,
+        doc: &mut Document,
+        frame: &Frame,
+        da: &DefaultAppearance,
+        displays: &[String],
+        selected: &[usize],
+        font: &FieldFont,
+        resources: &mut Dictionary,
+    ) -> Result<Vec<u8>, String> {
+        let chain = font.faces.as_slice();
+        if chain.is_empty() || chain.iter().any(|&i| i >= self.faces.len()) {
+            return Err(invalid("font"));
+        }
+        let (w, h) = (frame.width, frame.height);
+        let size = if da.size > 0.0 { da.size } else { MAX_AUTO_SIZE };
+        let row = size * LEADING;
+        let visible = (((h - 2.0 * PADDING) / row).floor() as usize).max(1);
+        let start = match selected.iter().min() {
+            Some(&first) if first >= visible => first + 1 - visible,
+            _ => 0,
+        };
+        let (asc, desc) = self.metrics(chain, size);
+        let mut highlights = String::new();
+        let mut placed: Vec<(Line, (f64, f64))> = Vec::new();
+        for (row_index, i) in (start..displays.len()).take(visible).enumerate() {
+            let top = h - PADDING - row_index as f64 * row;
+            if selected.contains(&i) {
+                highlights.push_str(&format!(
+                    "{SELECTED_RGB} rg\n1 {} {} {} re f\n",
+                    fmt_num(top - row),
+                    fmt_num(w - 2.0),
+                    fmt_num(row)
+                ));
+            }
+            let y = top - row + (row - (asc - desc)) / 2.0 - desc;
+            for line in self.lay(chain, &displays[i], size, UNWRAPPED, Align::Left)? {
+                placed.push((line, (PADDING, y)));
+            }
+        }
+        let body = self.draw(doc, &placed, size, font, resources)?;
+        let fill = color_op(&da_components(da.color), false).unwrap_or_else(|| "0 g".into());
+        let stroke = color_op(&da_components(da.color), true).unwrap_or_else(|| "0 G".into());
+        let mut out = frame_content(frame);
+        out.extend(
+            format!("/Tx BMC\nq\n1 1 {} {} re W n\n{highlights}{fill}\n{stroke}\n{body}Q\nEMC\n", fmt_num(w - 2.0), fmt_num(h - 2.0))
+                .into_bytes(),
+        );
+        Ok(out)
+    }
+
+    /// The operators of `placed` lines (pen origins), fonts added to `resources`.
+    fn draw(
+        &mut self,
+        doc: &mut Document,
+        placed: &[(Line, (f64, f64))],
+        size: f64,
+        font: &FieldFont,
+        resources: &mut Dictionary,
+    ) -> Result<String, String> {
         let mut names: HashMap<ObjectId, String> = HashMap::new();
         let mut body = String::new();
-        for (line, origin) in &placed {
+        for (line, origin) in placed {
             if line.runs.is_empty() {
                 continue;
             }
@@ -208,14 +284,12 @@ impl<'f, 'a> UnicodeFields<'f, 'a> {
                 .map_err(layout_error)?;
             body.push_str(&shown);
         }
-        let mut out = frame_content(frame);
-        out.extend(
-            format!("/Tx BMC\nq\n1 1 {} {} re W n\n{fill}\n{stroke}\n{body}Q\nEMC\n", fmt_num(w - 2.0), fmt_num(h - 2.0))
-                .into_bytes(),
-        );
-        Ok(out)
+        Ok(body)
     }
 }
+
+/// Background of a selected list option (as `appearance::SELECTED_RGB`).
+const SELECTED_RGB: &str = "0.6 0.75 0.95";
 
 fn aligned_x(align: u8, width: f64, line_width: f64, padding: f64) -> f64 {
     match align {

@@ -135,7 +135,7 @@ fn fill(doc: &mut Document, values: &[(u32, Value)], for_flatten: bool, fonts: &
             continue;
         }
         let font = fonts.fields.get(&(index as u32));
-        let embedded = font.is_some() && matches!(shown, Shown::Text(_));
+        let embedded = font.is_some();
         if !embedded && !shown_in_standard_fonts(field, &shown) {
             // Our fonts cannot show it: keep the file's appearances, and let
             // viewers build the missing ones with the field's own fonts.
@@ -411,7 +411,7 @@ fn apply(
                     }
                 }
             }
-            draw_field(doc, field, field_ref, &Shown::List(selected), &all, fonts, None)?;
+            draw_field(doc, field, field_ref, &Shown::List(selected), &all, fonts, unicode)?;
         }
         Change::Button { state } => {
             let off = b"Off".to_vec();
@@ -466,13 +466,24 @@ fn draw_field(
             continue;
         };
         // Text the standard fonts cannot encode: the field's embedded fonts.
-        if let (Shown::Text(text), Some((fields, font))) = (shown, unicode.as_mut())
-            && !text.chars().all(|c| matches!(c, '\r' | '\n' | '\t') || winansi_byte(c).is_some())
-        {
-            set_unicode_appearance(doc, wref.obj, |doc, frame, resources| {
-                fields.text_appearance(doc, frame, &wref.da, widget.align, layout, text, font, resources)
-            })?;
-            continue;
+        if let Some((fields, font)) = unicode.as_mut() {
+            let standard = |t: &str| t.chars().all(|c| matches!(c, '\r' | '\n' | '\t') || winansi_byte(c).is_some());
+            match shown {
+                Shown::Text(text) if !standard(text) => {
+                    set_unicode_appearance(doc, wref.obj, |doc, frame, resources| {
+                        fields.text_appearance(doc, frame, &wref.da, widget.align, layout, text, font, resources)
+                    })?;
+                    continue;
+                }
+                // Options in other scripts: every row in the field's faces.
+                Shown::List(selected) if !displays.iter().all(|d| standard(d)) => {
+                    set_unicode_appearance(doc, wref.obj, |doc, frame, resources| {
+                        fields.list_appearance(doc, frame, &wref.da, &displays, selected, font, resources)
+                    })?;
+                    continue;
+                }
+                _ => {}
+            }
         }
         set_appearance(doc, wref.obj, Some(wref.da.font), fonts, |frame| match shown {
             Shown::Text(text) => text_appearance(frame, &wref.da, widget.align, layout, text),

@@ -197,3 +197,37 @@ fn untouched_documents_without_fonts_are_not_parsed() {
     assert!(fill_form_with_fonts(&pdf, &[(0, Value::Text("ok".into()))], false, &junk).is_ok());
     let _ = Document::with_version("1.7");
 }
+
+#[test]
+fn list_box_options_in_other_scripts_are_drawn() {
+    // A list box (Ch, not combo) whose options are Cyrillic and Chinese.
+    let utf16 = |s: &str| {
+        let mut b = vec![0xFE, 0xFF];
+        for u in s.encode_utf16() {
+            b.extend_from_slice(&u.to_be_bytes());
+        }
+        Object::String(b, lopdf::StringFormat::Hexadecimal)
+    };
+    let opt = Object::Array(vec![
+        Object::Array(vec![Object::string_literal("a"), utf16("Привет")]),
+        Object::Array(vec![Object::string_literal("b"), utf16("你好")]),
+    ]);
+    let (mut doc, page) = base(0);
+    let list = doc.add_object(with(widget(page, [100, 600, 300, 680]), vec![
+        ("FT", "Ch".into()),
+        ("T", Object::string_literal("pick")),
+        ("DA", Object::string_literal("/Helv 12 Tf 0 g")),
+        ("Opt", opt),
+    ]));
+    finish(&mut doc, page, &[list], &[list], vec![]);
+    let pdf = save_pdf(&mut doc).unwrap();
+    let out = fill_form_with_fonts(&pdf, &[(0, Value::Names(vec!["b".into()]))], false, &fonts(&[(0, chain(&[0, 2]))])).unwrap();
+    let (content, faces) = appearance(&out, list);
+    assert_eq!(faces.len(), 2, "{faces:?}");
+    assert!(content.contains("0.6 0.75 0.95 rg"), "the selected row is highlighted: {content}");
+    assert_eq!(search(&out, "Привет"), 1);
+    assert_eq!(search(&out, "你好"), 1);
+    // Flattened too.
+    let flat = fill_form_with_fonts(&pdf, &[(0, Value::Names(vec!["b".into()]))], true, &fonts(&[(0, chain(&[0, 2]))])).unwrap();
+    assert_eq!(search(&flat, "你好"), 1);
+}

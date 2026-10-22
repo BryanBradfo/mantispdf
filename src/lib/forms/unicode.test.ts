@@ -52,6 +52,13 @@ describe("Noto values in forms", () => {
     expect(notoFamily(field(0, { widgets: [widget({ font: "Helvetica-Bold" })] }), text("你好"))).toEqual({ family: "Noto Sans", bold: true });
     expect(notoFamily(field(0, { kind: { kind: "checkbox" } }), { kind: "names", names: ["日"] })).toBeNull();
     expect(notoNotice(field(0, { widgets: [widget({ font: "Courier" })] }), text("Привет"))).toBe("Uses Noto Sans Mono for these characters");
+    // A list box draws every option: options in other scripts need Noto whatever is selected.
+    const list = field(0, {
+      kind: { kind: "list", multi: false },
+      options: [{ exportValue: "a", display: "Привет" }, { exportValue: "b", display: "你好" }],
+    });
+    expect(notoFamily(list, { kind: "none" })).toEqual({ family: "Noto Sans", bold: false });
+    expect(fieldPlan(list, { kind: "none" }, manifest, "SC")?.faces.map((f) => f.file)).toEqual(["NotoSans_400.ttf", "NotoSansSC_400.ttf"]);
   });
 
   it("flag only characters no font covers, once the font list is known", () => {

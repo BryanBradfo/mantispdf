@@ -22,10 +22,15 @@ export interface FormFontsWire {
 
 const isTextLike = (f: FormField) => f.kind.kind === "text" || f.kind.kind === "combo";
 
+/** What a field's appearance draws: its value's text, or every option of a list box (its rows). */
+function drawnText(field: FormField, value: FormValue): string {
+  return field.kind.kind === "list" ? field.options.map((o) => o.display).join("\n") : shownText(field, value);
+}
+
 /** The Noto family a field's value needs, or null when its standard font can draw it. */
 export function notoFamily(field: FormField, value: FormValue): { family: NotoFamily; bold: boolean } | null {
-  if (!isTextLike(field)) return null;
-  const text = shownText(field, value);
+  if (!isTextLike(field) && field.kind.kind !== "list") return null;
+  const text = drawnText(field, value);
   if (unsupportedChars(text.replace(/[\r\n\t]/g, " ")) === "") return null;
   const font = field.widgets[0]?.font ?? "Helvetica";
   const resolved = resolveFont(font, text);
@@ -35,7 +40,7 @@ export function notoFamily(field: FormField, value: FormValue): { family: NotoFa
 /** The fonts a field's value is drawn with (null: its standard font). */
 export function fieldPlan(field: FormField, value: FormValue, manifest: FontManifest, cjk: CjkFlavour): FontPlan | null {
   const noto = notoFamily(field, value);
-  return noto ? planFonts(manifest, shownText(field, value), noto.family, noto.bold, cjk) : null;
+  return noto ? planFonts(manifest, drawnText(field, value), noto.family, noto.bold, cjk) : null;
 }
 
 /** Characters of a field's value no font can show ("" until the font list is known). */

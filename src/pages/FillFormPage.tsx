@@ -98,7 +98,8 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
         const value = valueOf(state, field.id);
         const plan = fieldPlan(field, value, manifest, cjk);
         const widget = firstDrawn(field);
-        if (!plan || !widget || plan.faces.length === 0) return [];
+        // List boxes never overflow (their rows scroll).
+        if (!plan || !widget || plan.faces.length === 0 || field.kind.kind === "list") return [];
         const request = overflowRequest(field, widget, shownText(field, value), plan);
         return [layoutText(request).then((layout) => [field.id, overflowsLayout(field, widget, layout)] as const)];
       });
