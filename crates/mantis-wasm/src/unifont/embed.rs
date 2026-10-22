@@ -316,6 +316,14 @@ fn write_font(doc: &mut Document, face: &Face, used: &FaceUse) -> Option<Diction
     let k = 1000.0 / face.units_per_em();
     let em = |v: f64| Object::Integer((v * k).round() as i64);
     let ascent = f64::from(hb.ascender());
+    let descent = f64::from(hb.descender());
+    // Readers that box glyphs by the descriptor (our redact interpreter does)
+    // stack those boxes line over line: Noto's ascender plus descender is
+    // 1.3 to 1.45 em, more than a 1.2 line pitch, so redacting a word would
+    // also hit the lines above and below it. Ascent and Descent are scaled
+    // down to one em together (their ratio kept).
+    let fit = (face.units_per_em() / (ascent - descent)).min(1.0);
+    let (box_ascent, box_descent) = (ascent * fit, descent * fit);
     let bbox = hb.global_bounding_box();
     let name = base_font(face, &gids);
 
@@ -327,9 +335,9 @@ fn write_font(doc: &mut Document, face: &Face, used: &FaceUse) -> Option<Diction
         "Flags" => 4,
         "FontBBox" => vec![em(bbox.x_min.into()), em(bbox.y_min.into()), em(bbox.x_max.into()), em(bbox.y_max.into())],
         "ItalicAngle" => Object::Real(hb.italic_angle()),
-        "Ascent" => em(ascent),
-        "Descent" => em(hb.descender().into()),
-        "CapHeight" => em(hb.capital_height().map_or(ascent, f64::from)),
+        "Ascent" => em(box_ascent),
+        "Descent" => em(box_descent),
+        "CapHeight" => em(hb.capital_height().map_or(box_ascent, f64::from).min(box_ascent)),
         "StemV" => 80,
         "FontFile2" => file,
     });

@@ -47,7 +47,11 @@ struct Built {
 
 /// One page showing `text` laid out with `faces`.
 fn build(faces: &[Face], text: &str, size: f64, bold: bool) -> Built {
-    let p = LayoutParams { size, width: WIDTH, align: Some(crate::edit_ops::Align::Left), line_height: 1.3 };
+    build_spaced(faces, text, size, bold, 1.3)
+}
+
+fn build_spaced(faces: &[Face], text: &str, size: f64, bold: bool, line_height: f64) -> Built {
+    let p = LayoutParams { size, width: WIDTH, align: Some(crate::edit_ops::Align::Left), line_height };
     let layout = layout_text(faces, text, &p, &mut ShapeBudget::per_job()).unwrap();
     build_from(faces, layout, size, bold)
 }
@@ -438,4 +442,36 @@ fn embedding_mutated_fonts_never_panics() {
             let _ = embedder.finish(&mut doc);
         }
     }
+}
+
+#[test]
+fn right_to_left_text_is_found_in_reading_order_and_redacted() {
+    let faces = all_faces();
+    let mut built = build(&faces, "שלום עולם\nمرحبا بالعالم\nabc שלום def", 12.0, false);
+    let pdf = saved(&mut built);
+    for (query, count) in [("שלום", 2), ("שלום עולם", 1), ("مرحبا", 1), ("بالعالم", 1), ("abc שלום def", 1)] {
+        assert_eq!(redact_search(&pdf, query, &opts()).unwrap().matches.len(), count, "{query}");
+    }
+    let found = redact_search(&pdf, "بالعالم", &opts()).unwrap();
+    let rects = found.pages.iter().flat_map(|p| p.rects.iter().map(|r| RedactRect { page: p.page, rect: *r })).collect();
+    let (out, _) = redact(&pdf, RedactJob { rects, fill: Fill::Black, remove_metadata: true, rasters: Vec::new() }).unwrap();
+    assert!(redact_search(&out, "بالعالم", &opts()).unwrap().matches.is_empty());
+    assert_eq!(redact_search(&out, "مرحبا", &opts()).unwrap().matches.len(), 1);
+    assert_eq!(redact_search(&out, "שלום", &opts()).unwrap().matches.len(), 2);
+}
+
+#[test]
+fn redacting_a_word_spares_the_lines_above_and_below() {
+    // Noto's ascender plus descender (1.36 em) is more than the 1.2 pitch:
+    // the descriptor heights are scaled to one em so glyph boxes do not reach
+    // into the neighbouring lines.
+    let faces = all_faces();
+    let mut built = build_spaced(&faces, "мир мир\nмир мир\nмир мир", 12.0, false, 1.2);
+    let pdf = saved(&mut built);
+    let found = redact_search(&pdf, "мир", &opts()).unwrap();
+    assert_eq!(found.matches.len(), 6);
+    // The second line's first word only.
+    let rects = found.matches[2].rects.iter().map(|r| RedactRect { page: 1, rect: *r }).collect();
+    let (out, _) = redact(&pdf, RedactJob { rects, fill: Fill::Black, remove_metadata: true, rasters: Vec::new() }).unwrap();
+    assert_eq!(redact_search(&out, "мир", &opts()).unwrap().matches.len(), 5);
 }
