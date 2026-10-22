@@ -306,7 +306,8 @@ fn interpreter_places_every_glyph_where_the_layout_put_it() {
         for (line, origin) in built.layout.lines.iter().zip(&built.origins) {
             let mut pen = origin.0;
             for g in line.runs.iter().flat_map(|r| r.glyphs.iter()) {
-                expected.push((pen + g.x_offset, origin.1 + g.y_offset, pen + g.x_advance));
+                // A glyph spans its own advance from where it is drawn.
+                expected.push((pen + g.x_offset, origin.1 + g.y_offset, pen + g.x_offset + g.x_advance));
                 pen += g.x_advance;
             }
         }
@@ -505,4 +506,15 @@ fn redacting_a_word_keeps_its_neighbours_marks() {
         assert_eq!(left.trim(), drawn_text(&kept_only.doc, kept_only.page), "{text}");
         assert!(count(&after) >= kept_glyphs && count(&after) <= kept_glyphs + 1, "{text}: {} glyphs left of {}, kept word has {kept_glyphs}", count(&after), count(&before));
     }
+}
+
+#[test]
+fn a_glyph_keeps_one_cid_wherever_it_stands() {
+    // The tone mark sits at a different offset over each base: its CID must
+    // not change with it (it is keyed on the glyph's own advance).
+    let faces = all_faces();
+    let built = build(&faces, "ที่ นี่ ที่นี่", 12.0, false);
+    let cmap = to_unicode_of(&built);
+    let tone: Vec<&str> = cmap.lines().filter(|l| l.ends_with("<0E48>")).collect();
+    assert_eq!(tone.len(), 1, "{cmap}");
 }

@@ -170,7 +170,9 @@ impl<'f, 'a> Embedder<'f, 'a> {
                 let start = unit(p + g.x_offset);
                 // A glyph carrying no text is a mark-like piece of its cluster:
                 // width 0 (pdf.js skips it without advancing), placed by TJ.
-                let width = if text.is_empty() { 0 } else { (unit(p + g.x_advance) - start).max(0) };
+                // Otherwise the glyph's own shaped advance, rounded: the same
+                // glyph keeps one CID wherever it stands (TJ absorbs rounding).
+                let width = if text.is_empty() { 0 } else { unit(g.x_advance).max(0) };
                 let cid = self.cid(doc, run.face, (g.gid, text, width))?;
                 if at != start {
                     items.push(Item::Adjust(at - start));
