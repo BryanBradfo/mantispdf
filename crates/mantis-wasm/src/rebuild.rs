@@ -3523,8 +3523,11 @@ mod tests {
         let start = std::time::Instant::now();
         let (bytes, _, report) = rebuild(doc, &[1]);
         let elapsed = start.elapsed();
+        // The regression this guards against was exponential (minutes, not
+        // seconds); debug builds on shared CI runners need headroom.
+        let limit = if cfg!(debug_assertions) { 20 } else { 2 };
         assert!(
-            elapsed < std::time::Duration::from_secs(2),
+            elapsed < std::time::Duration::from_secs(limit),
             "took {elapsed:?}"
         );
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
