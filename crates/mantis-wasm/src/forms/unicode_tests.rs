@@ -233,3 +233,20 @@ fn list_box_options_in_other_scripts_are_drawn() {
     let flat = fill_form_with_fonts(&pdf, &[(0, Value::Names(vec!["b".into()]))], true, &fonts(&[(0, chain(&[0, 2]))])).unwrap();
     assert_eq!(search(&flat, "你好"), 1);
 }
+
+#[test]
+fn three_long_multiline_values_fit_the_shaping_budget() {
+    // Three auto-size multiline fields of 20,000 characters each: the auto size is searched
+    // with a few layouts per widget, within one job's shaping budget.
+    let multi = || vec![("Ff", Object::Integer(1 << 12)), ("DA", Object::string_literal("/Helv 0 Tf 0 g"))];
+    let (pdf, ids) = form(vec![multi(), multi(), multi()]);
+    let long: String = "你好世界我们在测试".chars().cycle().take(super::MAX_VALUE_CHARS).collect();
+    let values: Vec<(u32, Value)> = (0..3).map(|i| (i, Value::Text(long.clone()))).collect();
+    let fields: Vec<(u32, FieldFont)> = (0..3).map(|i| (i, chain(&[0, 2]))).collect();
+    let out = fill_form_with_fonts(&pdf, &values, false, &fonts(&fields)).unwrap();
+    for id in ids {
+        let (content, _) = appearance(&out, id);
+        let size: f64 = content.lines().find(|l| l.ends_with(" Tf")).unwrap().split(' ').nth(1).unwrap().parse().unwrap();
+        assert_eq!(size, 4.0, "far too long to fit: the smallest size");
+    }
+}

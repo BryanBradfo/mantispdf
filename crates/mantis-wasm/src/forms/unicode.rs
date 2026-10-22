@@ -159,20 +159,29 @@ impl<'f, 'a> UnicodeFields<'f, 'a> {
                 let (s, lines) = if da.size > 0.0 {
                     (da.size, self.lay(chain, text, da.size, avail, q)?)
                 } else {
-                    let mut chosen = None;
-                    let mut s = MAX_AUTO_SIZE;
-                    while s >= MIN_AUTO_SIZE {
+                    // The largest whole size from 12 down to 4 whose lines fit the height: a
+                    // binary search (a larger size never needs fewer lines), so a few layouts per
+                    // widget, not nine.
+                    let mut fits = |s: f64| -> Result<Option<Vec<Line>>, String> {
                         let lines = self.lay(chain, text, s, avail, q)?;
                         let (_, desc) = self.metrics(chain, s);
                         let bottom = lines.last().map_or(0.0, |l| l.baseline_y) - desc;
-                        if 2.0 * PADDING + bottom <= h {
-                            chosen = Some((s, lines));
-                            break;
+                        Ok((2.0 * PADDING + bottom <= h).then_some(lines))
+                    };
+                    let (mut lo, mut hi) = (MIN_AUTO_SIZE as i64, MAX_AUTO_SIZE as i64);
+                    let mut best: Option<(f64, Vec<Line>)> = None;
+                    while lo <= hi {
+                        let mid = (lo + hi) / 2;
+                        match fits(mid as f64)? {
+                            Some(lines) => {
+                                best = Some((mid as f64, lines));
+                                lo = mid + 1;
+                            }
+                            None => hi = mid - 1,
                         }
-                        s -= 1.0;
                     }
-                    match chosen {
-                        Some(c) => c,
+                    match best {
+                        Some(found) => found,
                         None => (MIN_AUTO_SIZE, self.lay(chain, text, MIN_AUTO_SIZE, avail, q)?),
                     }
                 };
