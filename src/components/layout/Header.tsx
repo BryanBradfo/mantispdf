@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+import { Link, stripLocale } from "../../i18n";
 
 function useTheme() {
   const [dark, setDark] = useState<boolean>(() => {
@@ -30,7 +31,7 @@ function formatStars(n: number): string {
 export default function Header() {
   const [dark, setDark] = useTheme();
   const [stars, setStars] = useState<string | null>(null);
-  const onHome = useLocation().pathname === "/";
+  const onHome = stripLocale(useLocation().pathname) === "/";
 
   // The star count is a third-party request (api.github.com): only the home page makes it, so a
   // tool page, where documents are open, never contacts another host.

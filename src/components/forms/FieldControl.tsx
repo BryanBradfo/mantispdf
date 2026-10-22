@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../i18n";
 import { cssFont } from "../editor/svgStyle";
 import { PADDING, overflows, textFontSize, widgetFrame } from "../../lib/forms/layout";
 import { NO_VALUE, type FormField, type FormValue, type FormWidget } from "../../lib/forms/model";

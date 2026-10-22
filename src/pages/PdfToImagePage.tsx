@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../i18n";
 import { downloadBlobsAsZip } from "../lib/downloadZip";
 import { PageSEO } from "../components/seo/PageSEO";
 import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";

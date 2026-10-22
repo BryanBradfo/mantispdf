@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../i18n";
 import { unsupportedMessage } from "../../lib/editor/afm";
 import { NO_VALUE, isDirty, isDrawn, valueOf, type FormField, type FormState, type FormValue } from "../../lib/forms/model";
 import { overflows } from "../../lib/forms/layout";

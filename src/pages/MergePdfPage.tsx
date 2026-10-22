@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../i18n";
 import { PageSEO } from "../components/seo/PageSEO";
 import { useMergeState } from "../hooks/useMergeState";
 import type { MergeFile } from "../hooks/useMergeState";

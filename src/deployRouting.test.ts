@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { localizeRoutes } from "./i18n";
+import { APP_ROUTES } from "./routes";
 
 /**
  * MantisPDF uses <BrowserRouter>, so every client route must be served the
@@ -15,10 +17,11 @@ import { resolve } from "node:path";
 
 const root = resolve(__dirname, "..");
 
-const clientRoutes = (): string[] => {
-  const app = readFileSync(resolve(root, "src/App.tsx"), "utf8");
-  return [...app.matchAll(/path="(\/[^"*]*)"/g)].map((m) => m[1]);
-};
+// Every rendered path: the route table under the root and under each locale prefix (/fr/...).
+const clientRoutes = (): string[] =>
+  localizeRoutes(APP_ROUTES)
+    .map((r) => r.path)
+    .filter((p) => !p.includes("*"));
 
 type Rewrite = { source: string; destination: string };
 
@@ -33,6 +36,10 @@ const destinationFor = (path: string): string | undefined =>
 describe("vercel.json SPA rewrites", () => {
   it("declares at least one route to protect", () => {
     expect(clientRoutes().length).toBeGreaterThan(1);
+  });
+
+  it("includes the French mirror of every route", () => {
+    expect(clientRoutes()).toEqual(expect.arrayContaining(["/fr", "/fr/merge", "/fr/ocr"]));
   });
 
   it.each(clientRoutes())("serves the SPA shell for a hard load of %s", (path) => {

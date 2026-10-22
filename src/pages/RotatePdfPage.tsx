@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../i18n";
 import { PageSEO } from "../components/seo/PageSEO";
 import PageImage from "../components/common/PageImage";
 import { usePdfWorker } from "../hooks/usePdfWorker";
