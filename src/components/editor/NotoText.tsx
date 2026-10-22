@@ -96,9 +96,10 @@ export default function NotoText({ item, family, bold, toPx, scale, box }: Props
           {shown.layout.lines.flatMap((line, i) =>
             line.runs.map((run, k) => {
               const file = shown.files[run.face] ?? "";
-              // Left edge of the run: a right-to-left run is one direction only, so the browser
-              // lays it out right to left within the width the engine gave it.
-              const [x, y] = toPx([x0 + run.x, y0 + h - line.baselineY]);
+              // A right-to-left run is laid out right to left from its right edge: in a
+              // left-to-right text element a neutral at its end (a comma, a stop) would be
+              // put on the wrong side.
+              const [x, y] = toPx([x0 + run.x + (run.rtl ? run.width : 0), y0 + h - line.baselineY]);
               const stroke = fakeBold.has(file) ? { stroke: cssColor(item.color), strokeWidth: FAKE_BOLD_EM * item.size * scale } : {};
               return (
                 <text
@@ -106,7 +107,8 @@ export default function NotoText({ item, family, bold, toPx, scale, box }: Props
                   x={x}
                   y={y}
                   fontFamily={fontFaceFamily(file)}
-                  style={{ whiteSpace: "pre" }}
+                  direction={run.rtl ? "rtl" : "ltr"}
+                  style={{ whiteSpace: "pre", unicodeBidi: "embed" }}
                   {...stroke}
                   {...(run.width > 0 ? { textLength: run.width * scale, lengthAdjust: "spacingAndGlyphs" } : {})}
                 >

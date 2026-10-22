@@ -504,3 +504,38 @@ test("edit pdf: /edit still redirects to /organize and the home page lists the t
   await expect(page).toHaveURL(/\/edit-pdf$/);
   await expect(page.getByRole("heading", { name: "Edit PDF", level: 1 })).toBeVisible();
 });
+
+test("edit pdf: the preview draws right-to-left runs as the PDF does, punctuation included", async ({ page }) => {
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  const overlay = page.getByTestId("editor-overlay");
+  // In a right-to-left paragraph the final "!" or "." is drawn at the left end (the PDF's order).
+  // The Arabic comma is drawn with the Arabic font: inside the right-to-left run, at its end.
+  for (const [i, [text, mark, letter]] of [["שלום!", "!", "ש"], ["مرحبا.", ".", "م"], ["مرحبا،", "،", "م"]].entries()) {
+    await canvas.tool("Text (T)");
+    await canvas.click(100, 100 + 80 * i);
+    await page.getByRole("textbox", { name: "Text box content" }).fill(text);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    const box = overlay.getByTestId("noto-text").nth(i);
+    await expect(box.locator("text", { hasText: letter })).toHaveCount(1, { timeout: 30000 });
+    // The centre of each character on screen, whichever run holds it.
+    const [markX, letterX] = await box.evaluate(
+      (g, [m, l]) => {
+        const at = (ch: string) => {
+          for (const el of Array.from(g.querySelectorAll("text"))) {
+            const chars = Array.from(el.textContent ?? "");
+            const k = chars.indexOf(ch);
+            if (k < 0) continue;
+            const r = (el as SVGTextElement).getExtentOfChar(k);
+            return r.x + r.width / 2;
+          }
+          return NaN;
+        };
+        return [at(m), at(l)];
+      },
+      [mark, letter],
+    );
+    expect(markX, `${text}: "${mark}" left of "${letter}"`).toBeLessThan(letterX);
+  }
+});
