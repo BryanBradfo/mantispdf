@@ -153,28 +153,23 @@ impl<'f, 'a> Embedder<'f, 'a> {
                 stroked = bold;
             }
             let (texts, mut actual_text) = entry_texts(run);
-            // Clusters of several glyphs placed off their pen (harakat and
-            // niqqud raised, lowered or shifted over their base, stacked Thai
-            // marks) need /ActualText, or poppler reads the marks out of order
-            // or on a line of their own.
-            let offset: Vec<(Range<usize>, &str)> = clusters(run)
+            // Clusters with a Ts-raised or lowered glyph that carries text
+            // (harakat, Thai tone marks): /ActualText in reading order (the
+            // PDF spec's logical text), or readers may take the marks out of
+            // order or onto a line of their own. Textless glyphs (Arabic dots)
+            // do not count: their cluster's text sits on the base, on the line.
+            let raised: Vec<(Range<usize>, &str)> = clusters(run)
                 .into_iter()
-                .filter(|(r, _)| r.len() > 1 && run.glyphs[r.clone()].iter().any(|g| g.y_offset != 0.0 || g.x_offset != 0.0))
+                .filter(|(r, _)| r.clone().any(|i| run.glyphs[i].y_offset != 0.0 && !texts[i].is_empty()))
                 .collect();
             // A right-to-left run gets one span for the whole run, never one per
             // cluster: pdf.js cuts its text items at marked content and reorders
             // each item on its own, which would scramble the word.
-            if run.rtl && !offset.is_empty() && actual_text.is_none() {
+            if run.rtl && !raised.is_empty() && actual_text.is_none() {
                 actual_text = Some(clusters(run).iter().map(|(_, t)| *t).collect());
             }
             if let Some(text) = &actual_text {
-                // Poppler (pdftotext, Evince, Okular) takes the span's text as
-                // if drawn glyph by glyph and reverses a right-to-left one: it
-                // gets the reading-order text reversed, character by character,
-                // and extracts it in reading order. (pdf.js ignores /ActualText;
-                // a reader that took it as is would read the run reversed.)
-                let shown: String = if run.rtl { text.chars().rev().collect() } else { text.clone() };
-                let _ = writeln!(out, "/Span <</ActualText <{}>>> BDC", utf16_hex(&shown, true));
+                let _ = writeln!(out, "/Span <</ActualText <{}>>> BDC", utf16_hex(text, true));
             }
             let _ = writeln!(out, "1 0 0 1 {} {} Tm", fmt_num(origin.0 + pen), fmt_num(origin.1));
             // Positions in 1/1000 em from the run start: `at` is where the
@@ -182,9 +177,9 @@ impl<'f, 'a> Embedder<'f, 'a> {
             let mut at = 0i64;
             let mut p = 0.0;
             let mut items: Vec<Item> = Vec::new();
-            // Left-to-right runs: a span per offset cluster (a run-wide span
+            // Left-to-right runs: a span per raised cluster (a run-wide span
             // already covers them).
-            let spans: Vec<(Range<usize>, &str)> = if actual_text.is_some() { Vec::new() } else { offset };
+            let spans: Vec<(Range<usize>, &str)> = if actual_text.is_some() { Vec::new() } else { raised };
             for (i, (g, text)) in run.glyphs.iter().zip(texts).enumerate() {
                 if let Some((_, whole)) = spans.iter().find(|(r, _)| r.start == i) {
                     flush(&mut out, &mut items);
