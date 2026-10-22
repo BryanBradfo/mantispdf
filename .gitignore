@@ -63,6 +63,9 @@ public/ocr-runtime/
 # Where older builds copied it (removed by the copy script when found)
 public/ocr/
 
+# Noto fonts copied from node_modules at build time (scripts/copy-font-assets.mjs)
+public/fonts-runtime/
+
 # Stage-3 ONNX model weights (downloaded/extracted, not committed)
 src-tauri/weights/
 
