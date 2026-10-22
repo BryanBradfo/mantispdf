@@ -37,10 +37,16 @@ export default function NotoText({ item, family, bold, toPx, scale, box }: Props
   // The box grows to its engine layout once per content change (text, fonts, size, alignment,
   // line height), never after the user resizes it: its size is not part of the content.
   const content = JSON.stringify([files, item.text, item.size, item.align, item.lineHeight]);
+  // The layout key whose fit decision was taken (data-settled: the preview shows the current
+  // layout and no fit is pending).
+  const [checked, setChecked] = useState<string | null>(null);
   useEffect(() => {
-    if (!shown?.layout || !env?.fit || !env.fitted || shown.key !== key || env.fitted.get(item.id) === content) return;
-    env.fitted.set(item.id, content);
-    if (shown.layout.height > item.rect[3] + 1e-6) env.fit(item.id, shown.layout.height);
+    if (!shown?.layout || shown.key !== key) return;
+    if (env?.fit && env.fitted && env.fitted.get(item.id) !== content) {
+      env.fitted.set(item.id, content);
+      if (shown.layout.height > item.rect[3] + 1e-6) env.fit(item.id, shown.layout.height);
+    }
+    setChecked(key);
   }, [shown, key, content, env, item.id, item.rect]);
 
   useEffect(() => {
@@ -92,7 +98,13 @@ export default function NotoText({ item, family, bold, toPx, scale, box }: Props
         </rect>
       )}
       {shown?.layout && (
-        <g opacity={item.opacity} fill={cssColor(item.color)} fontSize={item.size * scale} data-testid="noto-text">
+        <g
+          opacity={item.opacity}
+          fill={cssColor(item.color)}
+          fontSize={item.size * scale}
+          data-testid="noto-text"
+          data-settled={shown.key === key && checked === key ? "true" : "false"}
+        >
           {shown.layout.lines.flatMap((line, i) =>
             line.runs.map((run, k) => {
               const file = shown.files[run.face] ?? "";

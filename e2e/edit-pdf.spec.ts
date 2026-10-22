@@ -579,6 +579,7 @@ test("edit pdf: a Noto box shrunk by hand stays shrunk after editing it", async 
   await page.keyboard.press("Enter");
   await expect(page.getByRole("textbox", { name: "Text box content" })).toBeFocused();
   await page.keyboard.press("Escape");
-  await page.waitForTimeout(1000);
+  // Once the preview shows its current layout with no fit pending, the box is still shrunk.
+  await expect(overlay.getByTestId("noto-text")).toHaveAttribute("data-settled", "true", { timeout: 30000 });
   await expect(overlay.getByTestId("noto-text").locator("text")).toHaveCount(1);
 });
