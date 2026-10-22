@@ -13,7 +13,7 @@ pub(crate) fn arabic_letters(c: char) -> Option<&'static str> {
 }
 
 #[rustfmt::skip]
-const FORMS: [(u32, &str); 731] = [
+static FORMS: [(u32, &str); 731] = [
     (0xFB50, "\u{671}"), (0xFB51, "\u{671}"), (0xFB52, "\u{67B}"), (0xFB53, "\u{67B}"), (0xFB54, "\u{67B}"),
     (0xFB55, "\u{67B}"), (0xFB56, "\u{67E}"), (0xFB57, "\u{67E}"), (0xFB58, "\u{67E}"), (0xFB59, "\u{67E}"),
     (0xFB5A, "\u{680}"), (0xFB5B, "\u{680}"), (0xFB5C, "\u{680}"), (0xFB5D, "\u{680}"), (0xFB5E, "\u{67A}"),
