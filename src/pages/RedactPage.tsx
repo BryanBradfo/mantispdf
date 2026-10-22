@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useT, type UiError } from "../i18n";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link, Trans, useDescribeError, useT, type UiError } from "../i18n";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import { pdfjs } from "../lib/pdf";
@@ -27,7 +27,7 @@ import {
 import { formatPageRanges, parsePageRanges } from "../lib/pagePlan";
 import { filteredPages, keepFallback, repeatTargets, searchEntries, type SearchEntry } from "../lib/redact/marking";
 import { chooseDpi, renderRaster } from "../lib/redact/raster";
-import { REPORT_TITLE, TOO_LARGE_REASON, neededRasters, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
+import { TOO_LARGE_REASON, neededRasters, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
 import { findMatches, type TextRun } from "../lib/redact/search";
 import {
   marksToRects,
@@ -47,23 +47,11 @@ import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 const FLASH_MS = 1500;
 
 /** A link to OCR in a new tab: leaving this page would lose the marks and any run in progress. */
-function OcrLink({ children }: { children: string }) {
-  return (
-    <Link to="/ocr" target="_blank" rel="noopener" className="font-medium underline">
-      {children}
-    </Link>
-  );
-}
-
-/** Pages whose text the engine cannot decode: OCR again, this time over the existing text. */
-const UNDECODABLE_HINT = (
-  <>
-    <OcrLink>Run OCR</OcrLink> with 'Skip pages that already contain text' turned off.
-  </>
+const ocrLink = (children: ReactNode) => (
+  <Link to="/ocr" target="_blank" rel="noopener" className="font-medium underline">
+    {children}
+  </Link>
 );
-
-const KEEP_ORIGINAL = "Redaction permanently removes the marked content. Keep your original file.";
-const ALSO_REMOVED = "Comments are removed from the whole document, and form fields are flattened.";
 
 type PdfDocument = Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]>;
 
@@ -84,6 +72,10 @@ interface WorkspaceProps {
 
 function Workspace({ input, busy, run, error, setError, worker, onStartOver }: WorkspaceProps) {
   const tp = useT("pages");
+  const t = useT("redact");
+  const tc = useT("common");
+  const describe = useDescribeError();
+  const pageList = (pages: readonly number[]) => t("pageList", { count: pages.length, list: pages.join(", ") });
   const sizes = input.data;
   const [state, setState] = useState<MarksState>(initialMarks);
   const [page, setPage] = useState(1);
@@ -220,7 +212,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
         truncated: result.truncated,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describe(err));
     } finally {
       setSearching(false);
     }
@@ -248,8 +240,8 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     }
     const { marks: copies, skipped } = repeatTargets(rect, page, parsed.pages, sizes);
     change((s) => addMarks(s, copies));
-    const added = `Added to ${copies.length} ${copies.length === 1 ? "page" : "pages"}.`;
-    setRepeatNote(skipped.length > 0 ? `${added} Skipped (too small): ${formatPageRanges(skipped)}.` : added);
+    const added = t("addedTo", { count: copies.length });
+    setRepeatNote(skipped.length > 0 ? t("skippedSmall", { added, pages: formatPageRanges(skipped) }) : added);
   };
 
   /** Mark the reviewed search areas (the checked ones, or all). */
@@ -270,7 +262,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     const pages = planned.map((p) => p.page);
     const dpi = chooseDpi(pages.map((p) => sizes[p - 1] ?? [0, 0]));
     if (dpi === null) {
-      setError("Too many pages need to be converted to images at once. Split the PDF first.");
+      setError(t("tooManyRasters"));
       return;
     }
     const rects = marksToRects(snap.marks, sizes);
@@ -282,12 +274,12 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           if (pages.length > 0) {
             // Rasters come from the document as the engine prepares it (form fields flattened),
             // so values typed into fields stay visible on converted pages.
-            setProgress("Preparing pages to convert…");
+            setProgress(t("preparing"));
             const prepared = await worker.redactPrepare(input.bytes);
             const doc = await pdfjs.getDocument({ data: prepared }).promise;
             try {
               for (const [i, p] of pages.entries()) {
-                setProgress(`Converting page ${p} to an image (${i + 1} of ${pages.length})…`);
+                setProgress(t("converting", { page: p, n: i + 1, total: pages.length }));
                 const pageRects: Rect[] = rects.filter((r) => r.page === p).map((r) => r.rect);
                 rasters.push(await renderRaster(doc, p, pageRects, snap.fill, dpi));
               }
@@ -295,7 +287,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
               void doc.destroy();
             }
           }
-          setProgress("Removing the marked content…");
+          setProgress(t("removing"));
           const job = toJob(snap.marks, sizes, { fill: snap.fill, removeMetadata: snap.removeMetadata }, rasters);
           try {
             return { kind: "done", result: await worker.redactPdf(input.bytes, job) } as const;
@@ -355,7 +347,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   };
 
   const startOver = () => {
-    if (hasMarks && !window.confirm("Discard all your marks and start over?")) return;
+    if (hasMarks && !window.confirm(t("discardConfirm"))) return;
     onStartOver();
   };
 
@@ -363,20 +355,20 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     <div className="mt-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
-          {input.file.name} ({sizes.length} {sizes.length === 1 ? "page" : "pages"})
+          {tc("fileWithPagesParen", { name: input.file.name, count: sizes.length })}
         </p>
         <div className="flex gap-3">
           <button type="button" onClick={start} disabled={busy || marks.length === 0 || confirm !== null} className={primaryButton}>
-            {busy ? (progress ?? "Checking pages…") : "Redact and download"}
+            {busy ? (progress ?? t("checking")) : t("submit")}
           </button>
           <button type="button" onClick={startOver} className={secondaryButton}>
-            Start over
+            {tc("startOver")}
           </button>
         </div>
       </div>
 
       <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-[#1f1a0a] dark:text-amber-200">
-        {KEEP_ORIGINAL} {ALSO_REMOVED}
+        {t("keepOriginal")} {t("alsoRemoved")}
       </p>
 
       <ErrorAlert error={error} onDismiss={() => setError(null)} />
@@ -405,28 +397,28 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-[#1f1a0a]"
         >
           <p id="redact-raster-title" className="text-sm font-medium text-amber-900 dark:text-amber-200">
-            Some pages cannot be redacted in place:
+            {t("cannotInPlace")}
           </p>
           <ul className="mt-1 list-disc pl-5 text-sm text-amber-900 dark:text-amber-200">
             {confirm.pages.map((p) => (
               <li key={p.page}>
-                Page {p.page} will be converted to an image: it {plainReason(p.reason ?? "")}.{" "}
+                {t("willConvert", { page: p.page, reason: plainReason(p.reason ?? "", t) })}{" "}
                 <details className="inline">
-                  <summary className="inline cursor-pointer text-xs underline">Details</summary>
+                  <summary className="inline cursor-pointer text-xs underline">{tc("errorDetails")}</summary>
                   <span className="ml-1 text-xs">{p.reason}</span>
                 </details>
               </li>
             ))}
           </ul>
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-            These pages lose their text layer. <OcrLink>Run OCR</OcrLink> again on the redacted file to make them searchable.
+            <Trans ns="redact" k="loseText" components={{ link: ocrLink }} />
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button ref={continueRef} type="button" onClick={goAhead} className={primaryButton}>
-              Continue
+              {t("continue")}
             </button>
             <button ref={cancelRef} type="button" onClick={() => setConfirm(null)} className={secondaryButton}>
-              Cancel
+              {tc("cancel")}
             </button>
           </div>
         </div>
@@ -434,9 +426,9 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
 
       {report && (
         <div role="status" className="rounded-lg border border-mantis-300 bg-mantis-50 p-3 text-sm text-mantis-900 dark:border-mantis-800 dark:bg-[#0f1a0f] dark:text-mantis-200">
-          <p className="font-medium">Redacted and downloaded. {REPORT_TITLE}</p>
+          <p className="font-medium">{t("done", { title: t("reportTitle") })}</p>
           <ul className="mt-1 list-disc pl-5">
-            {reportLines(report, uncovered).map((line) => (
+            {reportLines(report, uncovered, t).map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
@@ -444,7 +436,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
       )}
 
       {sizes.length > 1 && (
-        <PageStrip source={input.file} pageCount={sizes.length} page={page} edited={marked} onPage={setPage} markLabel="has marks" />
+        <PageStrip source={input.file} pageCount={sizes.length} page={page} edited={marked} onPage={setPage} markLabel={t("markHasMarks")} />
       )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
@@ -470,27 +462,27 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           )}
           {selectedMark && selectedMark.kind !== "page" && sizes.length > 1 && (
             <form
-              aria-label="Repeat on pages"
+              aria-label={t("repeatForm")}
               className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-[#333] dark:bg-[#111]"
               onSubmit={(e) => {
                 e.preventDefault();
                 repeat(selectedMark.rect, repeatText);
               }}
             >
-              <span className="font-medium text-gray-800 dark:text-[#ccc]">Repeat this area on</span>
+              <span className="font-medium text-gray-800 dark:text-[#ccc]">{t("repeatOn")}</span>
               <button type="button" disabled={locked} onClick={() => repeat(selectedMark.rect, "all")} className={secondaryButton}>
-                All pages
+                {t("allPages")}
               </button>
-              <span className="text-gray-500 dark:text-[#888]">or pages</span>
+              <span className="text-gray-500 dark:text-[#888]">{t("orPages")}</span>
               <input
-                aria-label="Pages to repeat the area on"
+                aria-label={t("repeatInput")}
                 value={repeatText}
                 onChange={(e) => setRepeatText(e.target.value)}
-                placeholder="2-5, 8"
+                placeholder={t("repeatPlaceholder")}
                 className="w-28 rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-[#333] dark:bg-[#111] dark:text-[#ddd]"
               />
               <button type="submit" disabled={locked || repeatText.trim() === ""} className={secondaryButton}>
-                Repeat
+                {t("repeat")}
               </button>
               {repeatNote && (
                 <p role="status" className="basis-full text-xs text-gray-600 dark:text-[#999]">
@@ -511,24 +503,23 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           />
           {search && search.truncated && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              Too many matches; showing the first {search.count}. Refine the search.
+              {t("truncated", { count: search.count })}
             </p>
           )}
           {coverage && coverage.textless.length > 0 && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              These pages are scanned images with no text ({coverage.textless.length === 1 ? "page" : "pages"} {coverage.textless.join(", ")}).{" "}
-              <OcrLink>Run OCR first</OcrLink> to search them.
+              <Trans ns="redact" k="textless" values={{ pages: pageList(coverage.textless) }} components={{ link: ocrLink }} />
             </p>
           )}
           {coverage && coverage.undecodable.length > 0 && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              Search may miss text on {coverage.undecodable.length === 1 ? "page" : "pages"} {coverage.undecodable.join(", ")}. Mark those areas by hand.{" "}
-              {UNDECODABLE_HINT}
+              {t("undecodable", { pages: pageList(coverage.undecodable) })}{" "}
+              <Trans ns="redact" k="undecodableHint" components={{ link: ocrLink }} />
             </p>
           )}
           {coverage && coverage.unsearched.length > 0 && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              Not searched: {coverage.unsearched.length === 1 ? "page" : "pages"} {coverage.unsearched.join(", ")}. {uncoveredNote([], coverage.unsearched)}
+              {t("unsearched", { pages: pageList(coverage.unsearched), note: uncoveredNote([], coverage.unsearched, t) ?? "" })}
             </p>
           )}
           <MarksPanel
@@ -564,27 +555,27 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
 }
 
 export default function RedactPage() {
+  const t = useT("redact");
   const worker = usePdfWorker();
   const { pageSizes } = worker;
   const prepare = useCallback((bytes: Uint8Array) => pageSizes(bytes), [pageSizes]);
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker, prepare);
-
   return (
     <ToolShell
       wide={input !== null}
-      title="Redact PDF: Permanently Remove Text and Images | MantisPDF"
-      description="Redact a PDF in your browser: mark areas or find text, and the content under the marks is removed from the file, not just covered. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/redact"
-      heading="Redact PDF"
-      intro="Mark areas or find text to remove. The content under the marks is deleted from the file, not just hidden. Everything stays on your device."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!input && (
         <div className="mx-auto mt-8 max-w-2xl">
           <DropZone onFile={(f) => void pick(f)} error={error} engineReady={worker.ready} />
           <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">
-            {KEEP_ORIGINAL} {ALSO_REMOVED}
+            {t("keepOriginal")} {t("alsoRemoved")}
           </p>
         </div>
       )}

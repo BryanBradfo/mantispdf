@@ -48,7 +48,7 @@ export default function OrganizePdfPage() {
       <p className="mt-2 text-gray-600 dark:text-[#555]">
         {t("intro")}
       </p>
-      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       <div className="mt-8">
         <DropZone multiple onFiles={addFiles} error={state.uploadError} />

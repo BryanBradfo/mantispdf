@@ -101,7 +101,7 @@ export default function WatermarkPdfPage() {
         {t("intro")}
       </p>
 
-      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!file && (
         <div className="mt-8">

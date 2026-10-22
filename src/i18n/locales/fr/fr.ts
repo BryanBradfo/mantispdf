@@ -18,6 +18,10 @@ import resize from "./resize";
 import rotate from "./rotate";
 import seo from "./seo";
 import split from "./split";
+import editPdf from "./editPdf";
+import fillForm from "./fillForm";
+import redact from "./redact";
+import ocr from "./ocr";
 import stamp from "./stamp";
 import watermark from "./watermark";
 import pageNumbers from "./pageNumbers";
@@ -63,6 +67,10 @@ const fr: Dictionary<EnDictionary> = {
   metadata,
   removeMetadata,
   editMetadata,
+  editPdf,
+  fillForm,
+  redact,
+  ocr,
 };
 
 export default fr;

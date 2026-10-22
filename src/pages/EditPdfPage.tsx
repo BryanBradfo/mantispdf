@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { Link } from "../i18n";
+import { Link, Trans, UserError, useDescribeError, useT, type NsT } from "../i18n";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
@@ -8,7 +8,7 @@ import EditorCanvas from "../components/editor/EditorCanvas";
 import PageStrip from "../components/editor/PageStrip";
 import PropertiesPanel from "../components/editor/PropertiesPanel";
 import Toolbar, { type Tool } from "../components/editor/Toolbar";
-import { unsupportedChars, unsupportedMessage } from "../lib/editor/afm";
+import { unsupportedChars } from "../lib/editor/afm";
 import {
   addError,
   imageBudgetError,
@@ -51,14 +51,14 @@ async function uprightSize(file: Blob): Promise<{ width: number; height: number 
 }
 
 /** Reads a picked image once: its upright size and what each placement adds to the image budget. */
-async function readImageSource(file: File): Promise<ImageSource> {
+async function readImageSource(file: File, t: NsT<"editPdf">): Promise<ImageSource> {
   let size: { width: number; height: number };
   try {
     size = await uprightSize(file);
   } catch {
-    throw new Error(`${file.name} could not be read as an image.`);
+    throw new UserError(t("imageUnreadable", { name: file.name }));
   }
-  if (size.width < 1 || size.height < 1) throw new Error(`${file.name} could not be read as an image.`);
+  if (size.width < 1 || size.height < 1) throw new UserError(t("imageUnreadable", { name: file.name }));
   const bytes = new Uint8Array(await file.arrayBuffer());
   // Same rule as buildEditJob: a JPEG goes through as is unless its EXIF orientation is mirrored.
   const passthrough = jpegPassthrough(bytes) && !orientationToTransform(readExifOrientation(bytes)).flipX;
@@ -66,11 +66,11 @@ async function readImageSource(file: File): Promise<ImageSource> {
 }
 
 /** First text box whose content the standard fonts cannot save, as a user message. */
-function textProblem(items: readonly Item[]): string | null {
+function textProblem(items: readonly Item[], t: NsT<"editPdf">): string | null {
   for (const it of items) {
     if (it.kind !== "text") continue;
     const bad = unsupportedChars(it.text);
-    if (bad !== "") return `${unsupportedMessage(bad)} (text box on page ${it.page}).`;
+    if (bad !== "") return t("textBoxProblem", { problem: t("unsupportedChars", { chars: bad }), page: it.page });
   }
   return null;
 }
@@ -85,6 +85,9 @@ interface WorkspaceProps {
 }
 
 function Workspace({ input, busy, run, setError, editPdf, onStartOver }: WorkspaceProps) {
+  const t = useT("editPdf");
+  const tc = useT("common");
+  const describe = useDescribeError();
   const sizes = input.data;
   const [state, dispatch] = useReducer(editorReducer, undefined, () => initialEditorState());
   const [tool, setTool] = useState<Tool>("select");
@@ -147,7 +150,7 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
 
   /** The limit check shared by every way of adding an item; shows why it is refused. */
   const allowAdd = (item: NewItem | Item): boolean => {
-    const problem = addError(items, item);
+    const problem = addError(items, item, t);
     setNotice(problem);
     return problem === null;
   };
@@ -196,8 +199,8 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
   const onImageFile = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const source = await readImageSource(file);
-      const problem = imageBudgetError(items, source);
+      const source = await readImageSource(file, t);
+      const problem = imageBudgetError(items, source, t);
       if (problem) {
         setNotice(problem);
         return;
@@ -206,13 +209,13 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
       setPendingImage(source);
       setTool("image");
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      setNotice(describe(err).message);
     }
   };
 
   const download = () => {
     if (busy || items.length === 0) return;
-    const problem = textProblem(items);
+    const problem = textProblem(items, t);
     if (problem) {
       setError(problem);
       return;
@@ -224,7 +227,7 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
   };
 
   const startOver = () => {
-    if (hasEdits && !window.confirm("Discard all your edits and start over?")) return;
+    if (hasEdits && !window.confirm(t("discardConfirm"))) return;
     onStartOver();
   };
 
@@ -237,14 +240,14 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
     <div className="mt-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
-          {input.file.name} ({sizes.length} {sizes.length === 1 ? "page" : "pages"})
+          {tc("fileWithPagesParen", { name: input.file.name, count: sizes.length })}
         </p>
         <div className="flex gap-3">
           <button type="button" onClick={download} disabled={busy || items.length === 0} className={primaryButton}>
-            {busy ? "Saving…" : "Download PDF"}
+            {busy ? tc("saving") : tc("downloadPdf")}
           </button>
           <button type="button" onClick={startOver} className={secondaryButton}>
-            Start over
+            {tc("startOver")}
           </button>
         </div>
       </div>
@@ -282,7 +285,7 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
         </p>
       )}
       {tool === "image" && pendingImage && (
-        <p className="text-sm text-gray-700 dark:text-[#aaa]">Click or drag on the page to place the image.</p>
+        <p className="text-sm text-gray-700 dark:text-[#aaa]">{t("placeImage")}</p>
       )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
@@ -323,15 +326,21 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
             />
           ) : (
             <p className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600 dark:border-[#333] dark:text-[#888]">
-              Pick a tool, then click or drag on the page. Select an item to change its colour, size or order.
+              {t("pickTool")}
             </p>
           )}
           <p className="text-xs text-gray-500 dark:text-[#777]">
-            Whiteout hides content, it does not delete it. Use{" "}
-            <Link to="/redact" className="font-medium text-mantis-700 underline dark:text-mantis-400">
-              Redact
-            </Link>{" "}
-            to remove text.
+            <Trans
+              ns="editPdf"
+              k="whiteoutNote"
+              components={{
+                link: (c) => (
+                  <Link to="/redact" className="font-medium text-mantis-700 underline dark:text-mantis-400">
+                    {c}
+                  </Link>
+                ),
+              }}
+            />
           </p>
         </aside>
       </div>
@@ -340,6 +349,7 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
 }
 
 export default function EditPdfPage() {
+  const t = useT("editPdf");
   const worker = usePdfWorker();
   const { pageSizes, editPdf } = worker;
   const prepare = useCallback((bytes: Uint8Array) => pageSizes(bytes), [pageSizes]);
@@ -348,13 +358,13 @@ export default function EditPdfPage() {
   return (
     <ToolShell
       wide
-      title="Edit PDF: Add Text, Images and Shapes | MantisPDF"
-      description="Edit a PDF in your browser: add text, images, shapes, arrows, highlights, drawings and whiteout. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/edit-pdf"
-      heading="Edit PDF"
-      intro="Add text, images, shapes, highlights and drawings to any page. Everything stays on your device."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!input && (
         <div className="mx-auto mt-8 max-w-2xl">

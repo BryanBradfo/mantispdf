@@ -160,7 +160,7 @@ export default function BatesPage() {
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       <div className={`mt-8 ${busy ? "pointer-events-none opacity-50" : ""}`} inert={busy}>
         <DropZone multiple onFiles={(f) => void handleFiles(f)} error={state.uploadError} />

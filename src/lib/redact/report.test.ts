@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { REPORT_TITLE, TOO_LARGE_REASON, neededRasters, plainReason, reportLines, uncoveredNote } from "./report";
+import { TOO_LARGE_REASON, neededRasters, plainReason as plainReasonT, reportLines as reportLinesT, uncoveredNote as uncoveredNoteT } from "./report";
 import type { RedactResultWire } from "./toJob";
+import { tFor } from "../../i18n/testUtils";
+
+const tEn = tFor("redact");
+const reportLines = (r: Parameters<typeof reportLinesT>[0], uncovered: readonly number[] = []) => reportLinesT(r, uncovered, tEn);
+const uncoveredNote = (a: readonly number[], b: readonly number[]) => uncoveredNoteT(a, b, tEn);
+const plainReason = (reason: string) => plainReasonT(reason, tEn);
 
 const result = (extra: Partial<RedactResultWire> = {}): RedactResultWire => ({
   bytes: new Uint8Array(),
@@ -16,7 +22,7 @@ const result = (extra: Partial<RedactResultWire> = {}): RedactResultWire => ({
 
 describe("redaction report", () => {
   it("states what the engine verified", () => {
-    expect(REPORT_TITLE).toBe(
+    expect(tEn("reportTitle")).toBe(
       "The marked content was removed and the result was checked: no text, images or drawings remain under the marks.",
     );
   });
@@ -99,3 +105,15 @@ describe("neededRasters", () => {
   });
 });
 
+describe("redaction report in French", () => {
+  const t = tFor("redact", "fr");
+  it("reads in French", () => {
+    expect(reportLinesT(result({ pagesRedacted: [1, 3], glyphsRemoved: 1, pagesRasterized: [2] }), [], t)).toEqual([
+      "2\u00a0pages caviardées.",
+      "1\u00a0caractère de texte supprimé.",
+      "Converties en images\u00a0: page 2.",
+    ]);
+    expect(plainReasonT("TYPE3 font", t)).toBe("utilise une police spéciale");
+    expect(uncoveredNoteT([4], [], t)).toBe("La recherche n’a pas couvert la page 4\u00a0; vérifiez-la à la main.");
+  });
+});

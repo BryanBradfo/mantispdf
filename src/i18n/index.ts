@@ -2,7 +2,7 @@ export { DEFAULT_LOCALE, LOCALES, localeFromPath, localePath, localizeRoutes, st
 export type { Locale } from "./locale";
 export { readStoredLocale, resolveLocale, shouldOfferFrench, storeLocale } from "./localeChoice";
 export { formatBytes, formatNumber } from "./format";
-export { describeError, UserError, type DescribedError } from "./describeError";
+export { describeError, describeInitError, UserError, type DescribedError } from "./describeError";
 export {
   Link,
   LocaleProvider,

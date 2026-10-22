@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FromWorker, ProgressStep, SuccessPayload, ToWorker } from "../lib/workerProtocol";
-import { describeProgress, useT } from "../i18n";
+import { describeInitError, describeProgress, useLocale, useT } from "../i18n";
 import type { PdfPart } from "../types/pdf";
 import { readFileAsArrayBuffer } from "../lib/fileHelpers";
 import type { ExtractResultSpec, ImageInputSpec, ImageLayoutSpec } from "../lib/imageInput";
@@ -155,6 +155,7 @@ export function usePdfWorker() {
   const clientRef = useRef<PdfWorkerClient | null>(null);
   const [state, setState] = useState<WorkerState>(initialState);
   const t = useT("common");
+  const locale = useLocale();
 
   const setFlag = useCallback((flag: BusyFlag, value: boolean) => {
     setState((s) => ({ ...s, [flag]: value }));
@@ -474,6 +475,8 @@ export function usePdfWorker() {
     () => ({
       ...state,
       progressMessage: describeProgress(state.progressStep, t),
+      /** `initError` as an alert, in the UI language. */
+      initProblem: describeInitError(state.initError, t, locale),
       splitPdf,
       mergePdfs,
       countPages,
@@ -506,6 +509,7 @@ export function usePdfWorker() {
     [
       state,
       t,
+      locale,
       splitPdf,
       mergePdfs,
       countPages,

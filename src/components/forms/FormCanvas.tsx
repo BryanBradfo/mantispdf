@@ -5,6 +5,7 @@ import { widgetFrame } from "../../lib/forms/layout";
 import { isDrawn, valueOf, type FormField, type FormState, type FormValue } from "../../lib/forms/model";
 import { placementPreviewSize } from "../../lib/signPlacement";
 import FieldControl from "./FieldControl";
+import { useT } from "../../i18n";
 
 /** Same preview size as the Edit PDF canvas. */
 const PREVIEW_WIDTH = 1000;
@@ -36,6 +37,8 @@ export function canvasControls(root: ParentNode): HTMLElement[] {
 
 /** The page with an HTML control over each of its visible widgets. */
 export default function FormCanvas({ source, page, pageSize, fields, state, onChange, onTabOut }: Props) {
+  const t = useT("fillForm");
+  const tc = useT("common");
   const wrapRef = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState(PREVIEW_WIDTH);
 
@@ -52,7 +55,7 @@ export default function FormCanvas({ source, page, pageSize, fields, state, onCh
   if (!(pageSize[0] > 0 && pageSize[1] > 0)) {
     return (
       <div ref={wrapRef} className="w-full">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">This page has no visible area.</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
       </div>
     );
   }
@@ -62,7 +65,7 @@ export default function FormCanvas({ source, page, pageSize, fields, state, onCh
     <div ref={wrapRef} className="w-full">
       <div
         role="group"
-        aria-label={`Page ${page} form fields`}
+        aria-label={t("canvasLabel", { page })}
         data-testid="form-canvas"
         onKeyDown={(e) => {
           if (e.key !== "Tab" || !onTabOut) return;
@@ -75,7 +78,7 @@ export default function FormCanvas({ source, page, pageSize, fields, state, onCh
         style={{ width: pw, height: ph }}
       >
         {/* Without the file's field appearances: the controls below show the values instead. */}
-        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={`Page ${page}`} className="h-full" mode="no-widgets" />
+        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={tc("pageN", { n: page })} className="h-full" mode="no-widgets" />
         {fields.flatMap((field) =>
           field.widgets.map((widget, i) => {
             if (widget.page !== page || !isDrawn(widget) || field.kind.kind === "button") return null;

@@ -21,6 +21,7 @@ import { placementPreviewSize } from "../../lib/signPlacement";
 import { cssColor, cssFont } from "./svgStyle";
 import TextEditOverlay from "./TextEditOverlay";
 import { TOOLS, type Tool } from "./Toolbar";
+import { useT } from "../../i18n";
 
 /** Render width of the page preview (also its maximum on-screen width). */
 const PREVIEW_WIDTH = 1000;
@@ -106,6 +107,8 @@ function arrowHead(tip: Point, u: Point, width: number): Point[] {
 }
 
 export default function EditorCanvas(props: Props) {
+  const t = useT("editPdf");
+  const tc = useT("common");
   const { source, page, pageSize, items, selectedId, editingId, tool, pendingImage, imageUrl, dispatch } = props;
   const wrapRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -357,7 +360,7 @@ export default function EditorCanvas(props: Props) {
         }
       }
       if (e.shiftKey || e.repeat) return;
-      const info = TOOLS.find((t) => t.key === key);
+      const info = TOOLS.find((info) => info.key === key);
       if (!info) return;
       e.preventDefault();
       if (info.tool === "image") props.onPickImage();
@@ -402,7 +405,7 @@ export default function EditorCanvas(props: Props) {
                 strokeWidth={2}
                 strokeDasharray="5 3"
               >
-                <title>Some characters cannot be saved with the standard PDF fonts</title>
+                <title>{t("unsupportedWarning")}</title>
               </rect>
             )}
             <g opacity={it.opacity} fill={cssColor(it.color)} fontFamily={family} fontWeight={weight} fontSize={it.size * scale}>
@@ -589,21 +592,21 @@ export default function EditorCanvas(props: Props) {
   };
 
   const cursor = tool === "select" ? "default" : tool === "text" ? "text" : "crosshair";
-  const toolLabel = TOOLS.find((t) => t.tool === tool)?.label ?? "Select";
+  const toolLabel = t(`tool.${tool}`);
 
   return (
     <div ref={wrapRef} className="w-full">
       <div
         ref={rootRef}
         role="application"
-        aria-roledescription="page editor"
-        aria-label={`Page ${page} editor, ${toolLabel} tool${selected ? ", an item is selected" : ""}`}
+        aria-roledescription={t("editorRole")}
+        aria-label={selected ? t("editorLabelSelected", { page, tool: toolLabel }) : t("editorLabel", { page, tool: toolLabel })}
         aria-describedby="editor-canvas-help"
         tabIndex={0}
         className="relative mx-auto select-none overflow-hidden rounded-lg border border-gray-300 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 dark:border-[#333]"
         style={{ width: pw, height: ph }}
       >
-        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={`Page ${page}`} className="h-full" />
+        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={tc("pageN", { n: page })} className="h-full" />
         <svg
           ref={svgRef}
           data-testid="editor-overlay"
@@ -640,8 +643,7 @@ export default function EditorCanvas(props: Props) {
         )}
       </div>
       <p id="editor-canvas-help" className="mt-2 text-center text-xs text-gray-500 dark:text-[#777]">
-        Drag to create, click an item to select it. Arrow keys move the selection by 1 pt (Shift: 10 pt), Delete removes it,
-        Ctrl+Z undoes. Shift while resizing keeps the proportions.
+        {t("canvasHelp")}
       </p>
     </div>
   );

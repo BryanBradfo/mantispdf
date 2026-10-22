@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "../i18n";
+import { Link, Trans, UserError, useT } from "../i18n";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
@@ -43,6 +43,8 @@ interface WorkspaceProps {
 }
 
 function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }: WorkspaceProps) {
+  const t = useT("fillForm");
+  const tc = useT("common");
   const { sizes, form } = input.data;
   const ordered = useMemo(() => listedFields(tabOrder(form.fields)), [form.fields]);
   const [state, setState] = useState<FormState>(() => initialFormState(form));
@@ -117,7 +119,7 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
   const download = () => {
     if (busy) return;
     // Values the engine would refuse block the download; empty required fields only warn.
-    const problem = blockingProblem(ordered, state);
+    const problem = blockingProblem(ordered, state, t);
     if (problem) {
       setMissing(null);
       setError(problem);
@@ -133,7 +135,7 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
   };
 
   const startOver = () => {
-    if (dirty && !window.confirm("Discard the values you typed and start over?")) return;
+    if (dirty && !window.confirm(t("discardConfirm"))) return;
     onStartOver();
   };
 
@@ -141,8 +143,11 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
     <div className="mt-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
-          {input.file.name} ({ordered.length} {ordered.length === 1 ? "field" : "fields"}, {sizes.length}{" "}
-          {sizes.length === 1 ? "page" : "pages"})
+          {t("fileSummary", {
+            name: input.file.name,
+            fields: t("fields", { count: ordered.length }),
+            pages: t("pages", { count: sizes.length }),
+          })}
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
@@ -152,16 +157,16 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
               onChange={(e) => setFlatten(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
             />
-            Flatten (fields become part of the page, no longer editable)
+            {t("flatten")}
           </label>
           <button type="button" onClick={download} disabled={busy} className={primaryButton}>
-            {busy ? "Saving…" : "Download PDF"}
+            {busy ? tc("saving") : tc("downloadPdf")}
           </button>
           <button type="button" onClick={() => setState(resetForm)} disabled={!dirty} className={`${secondaryButton} disabled:opacity-50`}>
-            Reset
+            {tc("reset")}
           </button>
           <button type="button" onClick={startOver} className={secondaryButton}>
-            Start over
+            {tc("startOver")}
           </button>
         </div>
       </div>
@@ -171,16 +176,18 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
       {missing && (
         <div role="alertdialog" aria-labelledby="missing-required" className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-[#1f1a0a]">
           <p id="missing-required" className="text-sm text-amber-900 dark:text-amber-200">
-            {missing.length} required {missing.length === 1 ? "field is" : "fields are"} empty:{" "}
-            {missing
-              .slice(0, LISTED_MISSING)
-              .map((f) => f.label || f.name)
-              .join(", ")}
-            {missing.length > LISTED_MISSING && ` and ${missing.length - LISTED_MISSING} more`}. Download anyway?
+            {t("missing", {
+              count: missing.length,
+              names: missing
+                .slice(0, LISTED_MISSING)
+                .map((f) => f.label || f.name)
+                .join(", "),
+              more: missing.length > LISTED_MISSING ? t("missingMore", { count: missing.length - LISTED_MISSING }) : "",
+            })}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={save} className={primaryButton}>
-              Download anyway
+              {t("downloadAnyway")}
             </button>
             <button
               type="button"
@@ -191,10 +198,10 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
               }}
               className={secondaryButton}
             >
-              Go to first
+              {t("goToFirst")}
             </button>
             <button type="button" onClick={() => setMissing(null)} className={secondaryButton}>
-              Cancel
+              {tc("cancel")}
             </button>
           </div>
         </div>
@@ -202,18 +209,17 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
 
       {signed && (
         <p role="note" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-[#1f1a0a] dark:text-amber-200">
-          Filling this form invalidates its digital signatures and usage rights.
+          {t("signedWarning")}
         </p>
       )}
 
       <p className="text-xs text-gray-500 dark:text-[#777]">
-        Form scripts are not run: formatting, calculations and checks built into the form do not happen here, and
-        calculated fields keep their value unless you change them.
-        {form.xfa === "hybrid" && " This form also carries XFA data, which is removed from the downloaded file."}
+        {t("scriptsNote")}
+        {form.xfa === "hybrid" && ` ${t("xfaHybrid")}`}
       </p>
 
       {sizes.length > 1 && (
-        <PageStrip source={input.file} pageCount={sizes.length} page={page} edited={pagesWithFields} onPage={setPage} markLabel="has fields" />
+        <PageStrip source={input.file} pageCount={sizes.length} page={page} edited={pagesWithFields} onPage={setPage} markLabel={t("markHasFields")} />
       )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -231,6 +237,8 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
 }
 
 export default function FillFormPage() {
+  const t = useT("fillForm");
+  const tc = useT("common");
   const worker = usePdfWorker();
   const { pageSizes, listForm, fillForm } = worker;
   const prepare = useCallback(
@@ -240,11 +248,11 @@ export default function FillFormPage() {
         return { sizes, form: await listForm(bytes) };
       } catch (err) {
         // The engine's size limits read as a malformed request; say what it means for the file.
-        if (err instanceof Error && TOO_LARGE.test(err.message)) throw new Error("This form is too large or malformed to fill.");
+        if (err instanceof Error && TOO_LARGE.test(err.message)) throw new UserError(t("tooLarge"));
         throw err;
       }
     },
-    [pageSizes, listForm],
+    [pageSizes, listForm, t],
   );
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker, prepare);
 
@@ -254,13 +262,13 @@ export default function FillFormPage() {
   return (
     <ToolShell
       wide={fillable}
-      title="Fill PDF Form: Type Into PDF Form Fields | MantisPDF"
-      description="Fill in PDF forms in your browser: text fields, checkboxes, radio buttons and lists, then download the filled or flattened PDF. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/fill-form"
-      heading="Fill PDF form"
-      intro="Type into the fields of a PDF form, then download it still editable or flattened. Everything stays on your device."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!input && (
         <div className="mx-auto mt-8 max-w-2xl">
@@ -273,19 +281,23 @@ export default function FillFormPage() {
           <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
           <p role="status" className="mt-3 text-sm text-gray-700 dark:text-[#bbb]">
             {form.xfa === "pure" ? (
-              "This form uses XFA, which is not supported."
+              t("xfaPure")
             ) : (
-              <>
-                This PDF has no fillable fields. Use{" "}
-                <Link to="/edit-pdf" className={linkClass}>
-                  Edit PDF
-                </Link>{" "}
-                to add text.
-              </>
+              <Trans
+                ns="fillForm"
+                k="noFields"
+                components={{
+                  link: (c) => (
+                    <Link to="/edit-pdf" className={linkClass}>
+                      {c}
+                    </Link>
+                  ),
+                }}
+              />
             )}
           </p>
           <button type="button" onClick={reset} className={`mt-6 ${secondaryButton}`}>
-            Choose another file
+            {tc("chooseAnother")}
           </button>
         </div>
       )}

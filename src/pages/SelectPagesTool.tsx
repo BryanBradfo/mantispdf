@@ -79,7 +79,7 @@ export default function SelectPagesTool({ mode }: { mode: "remove" | "extract" }
       <PageSEO title={t("seoTitle")} description={t("seoDescription")} path={PATH[mode]} />
       <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">{t("intro")} {tp("everythingLocal")}</p>
-      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!source ? (
         <div className="mt-8">

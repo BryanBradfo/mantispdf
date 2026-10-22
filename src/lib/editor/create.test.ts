@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { MIN_SIZE } from "./geometry";
 import { CLICK_SIZE, createItem, type CreateGesture, type CreateTool } from "./create";
-import { addError, type Rect } from "./model";
+import { addError as addErrorT, type Rect } from "./model";
+import { tFor } from "../../i18n/testUtils";
+
+const tEn = tFor("editPdf");
+const addError = (items: Parameters<typeof addErrorT>[0], item: Parameters<typeof addErrorT>[1]) => addErrorT(items, item, tEn);
 
 const drag = (tool: CreateTool, start: [number, number], current: [number, number]): CreateGesture => ({
   tool,

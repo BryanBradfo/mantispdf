@@ -93,7 +93,7 @@ export default function HeaderFooterPage() {
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!input && (
         <div className="mt-8">

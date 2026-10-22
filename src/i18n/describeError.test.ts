@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { describeError, UserError } from "./describeError";
+import { describeError, describeInitError, UserError } from "./describeError";
 import { createT } from "./translate";
 import { en } from "./locales/en";
 import fr from "./locales/fr/fr";
@@ -24,9 +24,9 @@ describe("describeError", () => {
   });
 
   it("in French, falls back to a generic message with the raw text as details", () => {
-    expect(describeError(new Error("Invalid edit settings: rect"), tFr, "fr")).toEqual({
+    expect(describeError(new Error("XRef stream entry 7 is odd"), tFr, "fr")).toEqual({
       message: fr.common.errorGeneric,
-      details: "Invalid edit settings: rect",
+      details: "XRef stream entry 7 is odd",
     });
   });
 
@@ -59,6 +59,38 @@ describe("describeError", () => {
     expect(describeError(new Error(raw), tFr, "fr")).toEqual({
       message: "Caractères non pris en charge par les polices PDF standard\u00a0: 日✓",
       details: null,
+    });
+  });
+
+  it.each([
+    ["Failed to parse PDF: Invalid file header", "Ce fichier n’est pas un PDF valide, ou il est endommagé.", true],
+    ["Failed to parse PDF 2: Invalid file header", "Le PDF 2 n’est pas valide, ou il est endommagé.", true],
+    ["Page 9 does not exist (the document has 4 pages)", "La page 9 n’existe pas (le document compte 4\u00a0pages).", false],
+    ["Invalid range 3–1 for a 4-page document", "La plage 3-1 n’est pas valide pour un document de 4\u00a0pages.", false],
+    ["Invalid edit settings: rect", "Réglages refusés par le moteur PDF.", true],
+    ["Redaction verification failed on page 2", "La vérification du caviardage a échoué (page 2). Le fichier n’a pas été enregistré.", false],
+    ["OCR engine could not start", "Le moteur OCR n’a pas pu démarrer. Vérifiez votre connexion à ce site et réessayez.", false],
+    ["WASM engine not initialized", "Le moteur PDF n’est pas encore prêt. Réessayez dans un instant.", false],
+  ])("maps the engine message %j", (raw, french, withDetails) => {
+    expect(describeError(new Error(raw), tFr, "fr")).toEqual({ message: french, details: withDetails ? raw : null });
+    expect(describeError(new Error(raw), tEn, "en")).toEqual({ message: raw, details: null });
+  });
+});
+
+describe("describeInitError", () => {
+  it("keeps the English alert", () => {
+    expect(describeInitError(null, tEn, "en")).toBeNull();
+    expect(describeInitError("RuntimeError: unreachable", tEn, "en")).toBe("WASM engine failed to load: RuntimeError: unreachable");
+  });
+
+  it("explains a known failure in French, else keeps the raw text as details", () => {
+    expect(describeInitError("PDF engine crashed", tFr, "fr")).toEqual({
+      message: "Le moteur WASM n’a pas pu se charger\u00a0: Le moteur PDF s’est arrêté. Rechargez la page.",
+      details: null,
+    });
+    expect(describeInitError("RuntimeError: unreachable", tFr, "fr")).toEqual({
+      message: "Le moteur PDF n’a pas pu se charger. Rechargez la page.",
+      details: "RuntimeError: unreachable",
     });
   });
 });

@@ -132,3 +132,28 @@ test("French Watermark: a narrow no-break space typed before ! is accepted", asy
   await page.getByRole("button", { name: "Ajouter le filigrane" }).click();
   await expect(page.getByText("Filigrane ajouté.")).toBeVisible({ timeout: 20000 });
 });
+
+test("French Redact: search, review and marks read in French", async ({ page }) => {
+  await page.goto("/fr/redact");
+  await expect(page.getByRole("heading", { name: "Caviarder" })).toBeVisible();
+  const input = page.locator('input[type="file"][data-engine-ready="true"]');
+  await input.waitFor({ state: "attached", timeout: 20000 });
+  await input.setInputFiles(fx("redact.pdf"));
+  await expect(page.getByTestId("redact-canvas")).toBeVisible({ timeout: 20000 });
+  await page.getByRole("searchbox", { name: "Texte à chercher" }).fill("SMITH");
+  await page.getByRole("button", { name: "Chercher", exact: true }).click();
+  await expect(page.getByText("1\u00a0résultat pour «\u00a0SMITH\u00a0» sur la page 1.")).toBeVisible({ timeout: 20000 });
+  await page.getByRole("button", { name: "Tout marquer" }).click();
+  await expect(page.getByRole("region", { name: "Marques" }).getByText("Résultat\u00a0: «\u00a0SMITH\u00a0»")).toBeVisible();
+});
+
+test("French Edit PDF: the toolbar and the empty panel are French", async ({ page }) => {
+  await page.goto("/fr/edit-pdf");
+  const input = page.locator('input[type="file"][data-engine-ready="true"]');
+  await input.waitFor({ state: "attached", timeout: 20000 });
+  await input.setInputFiles(fx("four-pages.pdf"));
+  const toolbar = page.getByRole("toolbar", { name: "Outils de modification" });
+  await expect(toolbar.getByRole("button", { name: "Texte (T)" })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText("Choisissez un outil, puis cliquez ou glissez sur la page.", { exact: false })).toBeVisible();
+});
+

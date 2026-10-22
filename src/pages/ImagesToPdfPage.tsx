@@ -139,7 +139,6 @@ const ImageCard = memo(function ImageCard({
 export default function ImagesToPdfPage() {
   const t = useT("imagesToPdf");
   const tg = useT("geometry");
-  const tc = useT("common");
   const describe = useDescribeError();
   // Read by the upload queue, which is built once: a language switch must not cancel pending uploads.
   const tRef = useLatestRef(t);
@@ -316,7 +315,7 @@ export default function ImagesToPdfPage() {
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       <div className="mt-8">
         <DropZone multiple onFiles={handleFiles} error={uploadError} accept="image/*" kind="image" hint={t("hint")} />
