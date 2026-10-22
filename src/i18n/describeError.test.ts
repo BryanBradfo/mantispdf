@@ -105,4 +105,16 @@ describe("describeInitError", () => {
   ])("maps the remaining engine message %j", (raw, french, withDetails) => {
     expect(describeError(new Error(raw), tFr, "fr")).toEqual({ message: french, details: withDetails ? raw : null });
   });
+
+});
+
+describe("desktop license errors", () => {
+  it.each([
+    ["please enter a license key", "Saisissez une clé de licence.", false],
+    ["this license key is not valid for MantisPDF Pro", "Cette clé de licence n’est pas valable pour MantisPDF Pro.", false],
+    ["license key could not be activated", "La clé de licence n’a pas pu être activée.", false],
+    ["network error contacting license server: dns error", "Impossible de joindre le serveur de licences. Vérifiez votre connexion et réessayez.", true],
+  ])("maps the desktop license message %j", (raw, french, withDetails) => {
+    expect(describeError(raw, tFr, "fr")).toEqual({ message: french, details: withDetails ? raw : null });
+  });
 });

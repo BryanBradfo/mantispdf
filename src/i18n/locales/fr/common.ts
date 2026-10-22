@@ -21,6 +21,10 @@ const common: Messages<typeof en> = {
     other: "La plage {start}-{end} n’est pas valide pour un document de {count}\u00a0pages.",
   },
   errorSettings: "Réglages refusés par le moteur PDF.",
+  errorLicenseEmpty: "Saisissez une clé de licence.",
+  errorLicenseWrongProduct: "Cette clé de licence n’est pas valable pour MantisPDF Pro.",
+  errorLicenseNotActivated: "La clé de licence n’a pas pu être activée.",
+  errorLicenseNetwork: "Impossible de joindre le serveur de licences. Vérifiez votre connexion et réessayez.",
   errorNoSuchPageNth: {
     one: "La page {page} n’existe pas dans le PDF {n} (il compte {count}\u00a0page).",
     other: "La page {page} n’existe pas dans le PDF {n} (il compte {count}\u00a0pages).",

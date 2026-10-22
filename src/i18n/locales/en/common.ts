@@ -22,6 +22,10 @@ export default {
     other: "Range {start}-{end} is not valid for a {count}-page document.",
   },
   errorSettings: "The PDF engine refused these settings.",
+  errorLicenseEmpty: "Enter a license key.",
+  errorLicenseWrongProduct: "This license key is not valid for MantisPDF Pro.",
+  errorLicenseNotActivated: "The license key could not be activated.",
+  errorLicenseNetwork: "Could not reach the license server. Check your connection and try again.",
   errorNoSuchPageNth: {
     one: "Page {page} does not exist in PDF {n} (it has {count} page).",
     other: "Page {page} does not exist in PDF {n} (it has {count} pages).",

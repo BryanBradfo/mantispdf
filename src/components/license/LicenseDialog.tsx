@@ -2,7 +2,8 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Loader2, Sparkles, X } from "lucide-react";
 import type { LicenseStatus } from "../../hooks/useLicense";
-import { useT } from "../../i18n";
+import { useDescribeError, useT, type UiError } from "../../i18n";
+import ErrorText from "../common/ErrorText";
 
 interface LicenseDialogProps {
   open: boolean;
@@ -24,7 +25,8 @@ export default function LicenseDialog({
   const t = useT("common");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const describe = useDescribeError();
+  const [error, setError] = useState<UiError | null>(null);
 
   const isPro = status.tier === "pro";
 
@@ -36,7 +38,7 @@ export default function LicenseDialog({
       await onActivate(key);
       setKey("");
     } catch (e) {
-      setError(String(e));
+      setError(describe(e));
     } finally {
       setBusy(false);
     }
@@ -48,7 +50,7 @@ export default function LicenseDialog({
     try {
       await onDeactivate();
     } catch (e) {
-      setError(String(e));
+      setError(describe(e));
     } finally {
       setBusy(false);
     }
@@ -136,7 +138,9 @@ export default function LicenseDialog({
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 font-mono text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-accent/70 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-100 dark:placeholder:text-zinc-600"
                     />
                     {error && (
-                      <p className="mt-2 text-xs text-red-500 dark:text-red-400">{error}</p>
+                      <div className="mt-2 text-xs text-red-500 dark:text-red-400">
+                        <ErrorText error={error} />
+                      </div>
                     )}
                     <button
                       onClick={activate}

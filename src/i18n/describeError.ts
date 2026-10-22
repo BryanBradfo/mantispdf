@@ -96,6 +96,11 @@ const KNOWN: readonly Known[] = [
   // Redaction (the engine refuses to save a file it could not verify).
   { pattern: /^Redaction verification failed on page (\d+)$/, describe: (m, t) => t("errorVerifyPage", { page: m[1] }) },
   { pattern: /^Redaction verification failed on the saved file$/, describe: (_, t) => t("errorVerifyFile") },
+  // Desktop license (src-tauri/src/license.rs).
+  { pattern: /^please enter a license key$/, describe: (_, t) => t("errorLicenseEmpty") },
+  { pattern: /^this license key is not valid for MantisPDF Pro$/, describe: (_, t) => t("errorLicenseWrongProduct") },
+  { pattern: /^license key could not be activated$/, describe: (_, t) => t("errorLicenseNotActivated") },
+  { pattern: /^network error contacting license server: /, describe: (_, t) => t("errorLicenseNetwork"), details: true },
   // OCR (lib/ocr/engine) and the worker.
   { pattern: /^OCR engine could not start$/, describe: (_, t) => t("errorOcrNotStarted") },
   { pattern: /^(WASM engine not initialized|Worker not initialized)$/, describe: (_, t) => t("errorNotReady") },
