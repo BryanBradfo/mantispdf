@@ -9,8 +9,15 @@ import FieldList, { listedFields } from "../components/forms/FieldList";
 import FormCanvas, { canvasControls } from "../components/forms/FormCanvas";
 import { dirtyIds, initialFormState, isDrawn, resetForm, setValue, type FormField, type FormInfo, type FormState, type FormValue } from "../lib/forms/model";
 import { tabOrder } from "../lib/forms/tabOrder";
-import { blockingProblem, missingRequired } from "../lib/forms/values";
+import { blockingProblem, missingRequired, shownText } from "../lib/forms/values";
 import { toWire } from "../lib/forms/toWire";
+import { fieldPlan, firstDrawn, formFonts, notoFamily, overflowRequest, overflowsLayout, uncoveredIn } from "../lib/forms/unicode";
+import { missingMessage } from "../lib/editor/unicodeText";
+import { pageFonts } from "../lib/fonts/fontFaces";
+import type { FontManifest } from "../lib/fonts/manifest";
+import { cjkFlavourFromLanguage } from "../lib/fonts/select";
+import { FormFontsContext, type FormFontsEnv } from "../components/forms/formFontsContext";
+import { valueOf } from "../lib/forms/model";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 
@@ -38,10 +45,14 @@ interface WorkspaceProps {
   error: string | null;
   setError: (error: string | null) => void;
   fillForm: ReturnType<typeof usePdfWorker>["fillForm"];
+  layoutText: ReturnType<typeof usePdfWorker>["layoutText"];
   onStartOver: () => void;
 }
 
-function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }: WorkspaceProps) {
+/** Wait after the last change before measuring Noto values with the engine. */
+const MEASURE_DEBOUNCE_MS = 200;
+
+function Workspace({ input, busy, run, error, setError, fillForm, layoutText, onStartOver }: WorkspaceProps) {
   const { sizes, form } = input.data;
   const ordered = useMemo(() => listedFields(tabOrder(form.fields)), [form.fields]);
   const [state, setState] = useState<FormState>(() => initialFormState(form));
@@ -60,6 +71,53 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
     [ordered],
   );
   const dirty = dirtyIds(state).length > 0;
+
+  // Values the standard fonts cannot encode are drawn with Noto fonts: the font list is fetched
+  // only once some value needs it.
+  const cjk = useMemo(() => cjkFlavourFromLanguage(typeof navigator === "undefined" ? undefined : navigator.language), []);
+  const needsNoto = useMemo(() => form.fields.some((f) => notoFamily(f, valueOf(state, f.id)) !== null), [form.fields, state]);
+  const [manifest, setManifest] = useState<FontManifest | null>(null);
+  useEffect(() => {
+    if (!needsNoto || manifest) return;
+    let live = true;
+    pageFonts
+      .manifest()
+      .then((m) => live && setManifest(m))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [needsNoto, manifest]);
+  // Whether each Noto value overflows its field, from the engine's own layout.
+  const [overflow, setOverflow] = useState<ReadonlyMap<number, boolean>>(new Map());
+  useEffect(() => {
+    if (!manifest || !needsNoto) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      const checks = form.fields.flatMap((field) => {
+        const value = valueOf(state, field.id);
+        const plan = fieldPlan(field, value, manifest, cjk);
+        const widget = firstDrawn(field);
+        if (!plan || !widget || plan.faces.length === 0) return [];
+        const request = overflowRequest(field, widget, shownText(field, value), plan);
+        return [layoutText(request).then((layout) => [field.id, overflowsLayout(field, widget, request.size, layout)] as const)];
+      });
+      void Promise.allSettled(checks).then((results) => {
+        if (!live) return;
+        const map = new Map<number, boolean>();
+        for (const r of results) if (r.status === "fulfilled") map.set(r.value[0], r.value[1]);
+        setOverflow(map);
+      });
+    }, MEASURE_DEBOUNCE_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [manifest, needsNoto, form.fields, state, cjk, layoutText]);
+  const fontsEnv = useMemo<FormFontsEnv>(
+    () => ({ uncovered: (f, v) => uncoveredIn(f, v, manifest, cjk), overflow: (id) => overflow.get(id) }),
+    [manifest, cjk, overflow],
+  );
 
   // Typed values live only in memory: warn before the tab is closed or reloaded.
   useEffect(() => {
@@ -108,7 +166,10 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
     const values = toWire(state);
     const name = `${baseName(input.file)}_${flatten ? "flattened" : "filled"}.pdf`;
     void run(
-      () => fillForm(input.bytes, values, flatten),
+      async () => {
+        const fonts = needsNoto ? formFonts(form.fields, state, manifest ?? (await pageFonts.manifest()), cjk) : undefined;
+        return fillForm(input.bytes, values, flatten, fonts);
+      },
       (out) => downloadBlob(out, name),
     );
   };
@@ -116,7 +177,7 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
   const download = () => {
     if (busy) return;
     // Values the engine would refuse block the download; empty required fields only warn.
-    const problem = blockingProblem(ordered, state);
+    const problem = blockingProblem(ordered, state, fontsEnv.uncovered, missingMessage);
     if (problem) {
       setMissing(null);
       setError(problem);
@@ -137,6 +198,7 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
   };
 
   return (
+    <FormFontsContext.Provider value={fontsEnv}>
     <div className="mt-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
@@ -226,12 +288,13 @@ function Workspace({ input, busy, run, error, setError, fillForm, onStartOver }:
         </aside>
       </div>
     </div>
+    </FormFontsContext.Provider>
   );
 }
 
 export default function FillFormPage() {
   const worker = usePdfWorker();
-  const { pageSizes, listForm, fillForm } = worker;
+  const { pageSizes, listForm, fillForm, layoutText } = worker;
   const prepare = useCallback(
     async (bytes: Uint8Array): Promise<Prepared> => {
       const sizes = await pageSizes(bytes);
@@ -291,7 +354,7 @@ export default function FillFormPage() {
 
       {input && fillable && (
         <>
-          <Workspace input={input} busy={busy} run={run} error={error} setError={setError} fillForm={fillForm} onStartOver={reset} />
+          <Workspace input={input} busy={busy} run={run} error={error} setError={setError} fillForm={fillForm} layoutText={layoutText} onStartOver={reset} />
         </>
       )}
     </ToolShell>

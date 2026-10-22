@@ -8,10 +8,13 @@ pub(crate) mod fill;
 pub(crate) mod flatten;
 pub(crate) mod job;
 pub(crate) mod tree;
+pub(crate) mod unicode;
+#[cfg(test)]
+mod unicode_tests;
 
 use crate::stamp::fonts::StdFont;
 
-pub use fill::fill_form;
+pub use fill::fill_form_with_fonts;
 pub use tree::list_form;
 
 /// Fields one form may have.

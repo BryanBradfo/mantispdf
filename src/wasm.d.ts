@@ -58,7 +58,8 @@ declare module "mantis-wasm" {
   ): unknown;
   /** The form fields; shape built by `forms::binding::form_to_js`. */
   export function list_form(pdf_bytes: Uint8Array): import("./lib/forms/model").FormInfo;
-  export function fill_form(pdf_bytes: Uint8Array, values: object, flatten: boolean): Uint8Array;
+  /** `fonts`: `{ files: [{ id, bytes }], fields: [{ field, faces, fakeBold }] }` for values in Noto fonts. */
+  export function fill_form(pdf_bytes: Uint8Array, values: object, flatten: boolean, fonts?: object): Uint8Array;
   /**
    * The PDF with an invisible OCR text layer; `pages` shaped as in `lib/ocr/textLayerWire`. Pages
    * that already had an OCR layer are left alone and listed in `alreadyOcrPages`.

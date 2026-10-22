@@ -244,11 +244,16 @@ pub fn add_text_layer(pdf_bytes: &[u8], pages: JsValue) -> Result<JsValue, JsVal
 
 /// Fill form fields (`values` from `src/lib/forms/toWire.ts`), optionally
 /// flattening every field into the pages.
+///
+/// `fonts` (optional): `{ files: [{ id, bytes }], fields: [{ field, faces, fakeBold }] }`, the
+/// embedded fonts text values the standard fonts cannot encode are drawn with (see
+/// `src/lib/forms/unicode.ts`).
 #[wasm_bindgen]
-pub fn fill_form(pdf_bytes: &[u8], values: JsValue, flatten: bool) -> Result<Vec<u8>, JsValue> {
+pub fn fill_form(pdf_bytes: &[u8], values: JsValue, flatten: bool, fonts: JsValue) -> Result<Vec<u8>, JsValue> {
     let raw = forms::binding::read_values(&values).map_err(|e| JsValue::from_str(&e))?;
     let values = forms::job::validate_values(raw).map_err(|e| JsValue::from_str(&e))?;
-    forms::fill_form(pdf_bytes, &values, flatten).map_err(|e| JsValue::from_str(&e))
+    let fonts = forms::binding::read_fonts(&fonts).map_err(|e| JsValue::from_str(&e))?;
+    forms::fill_form_with_fonts(pdf_bytes, &values, flatten, &fonts).map_err(|e| JsValue::from_str(&e))
 }
 
 #[wasm_bindgen]

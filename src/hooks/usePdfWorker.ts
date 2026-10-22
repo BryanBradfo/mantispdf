@@ -5,6 +5,7 @@ import { readFileAsArrayBuffer } from "../lib/fileHelpers";
 import type { ExtractResultSpec, ImageInputSpec, ImageLayoutSpec } from "../lib/imageInput";
 import { editJobTransferables, type EditJobSpec } from "../lib/editor/toJob";
 import type { TextLayout } from "../lib/fonts/jobFonts";
+import type { FormFontsWire } from "../lib/forms/unicode";
 import type { CropJobSpec, NupJobSpec, ResizeJobSpec } from "../lib/geometryJob";
 import type { StampJobSpec } from "../lib/stampJob";
 import type { FormInfo } from "../lib/forms/model";
@@ -348,8 +349,8 @@ export function usePdfWorker() {
 
   /** The PDF with `values` filled in (only changed fields), flattened when asked. */
   const fillForm = useCallback(
-    (pdfBytes: Uint8Array, values: FormWireEntry[], flatten: boolean): Promise<Uint8Array> =>
-      run(null, (id) => ({ type: "fill-form", id, pdfBytes, values, flatten }), asBytes),
+    (pdfBytes: Uint8Array, values: FormWireEntry[], flatten: boolean, fonts?: FormFontsWire): Promise<Uint8Array> =>
+      run(null, (id) => ({ type: "fill-form", id, pdfBytes, values, flatten, fonts }), asBytes),
     [run],
   );
 

@@ -21,6 +21,7 @@ mod tests;
 pub(crate) use embed::Embedder;
 pub(crate) use face::{Face, load_faces};
 pub(crate) use layout::layout_text;
+pub(crate) use marks::is_mark;
 
 use crate::edit_ops::Align;
 

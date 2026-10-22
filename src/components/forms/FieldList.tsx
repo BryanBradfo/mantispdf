@@ -1,4 +1,7 @@
 import { useId } from "react";
+import { useFormFonts } from "./formFontsContext";
+import { notoNotice } from "../../lib/forms/unicode";
+import { missingMessage } from "../../lib/editor/unicodeText";
 import { Link } from "react-router-dom";
 import { unsupportedMessage } from "../../lib/editor/afm";
 import { NO_VALUE, isDirty, isDrawn, valueOf, type FormField, type FormState, type FormValue } from "../../lib/forms/model";
@@ -194,18 +197,23 @@ interface Props {
 /** Every field in tab order, editable here as on the page. */
 export default function FieldList({ fields, state, onChange, page, onPage }: Props) {
   const base = useId();
+  const fonts = useFormFonts();
   return (
     <ol aria-label="Form fields" className="space-y-3">
       {fields.map((field) => {
         const labelId = `${base}-${field.id}`;
         const value = valueOf(state, field.id);
         const fieldPage = pageOf(field);
-        const bad = unsupportedIn(field, value);
+        // With the Noto fonts, only characters no font covers are refused.
+        const bad = fonts ? fonts.uncovered(field, value) : unsupportedIn(field, value);
+        const notice = notoNotice(field, value);
         const tooLong = lengthWarning(field, value);
         const kind = field.kind;
         const over =
           (kind.kind === "combo" || (kind.kind === "text" && !kind.password)) &&
-          field.widgets.some((w) => isDrawn(w) && overflows(kind, w, shownText(field, value)));
+          (notice
+            ? (fonts?.overflow(field.id) ?? false)
+            : field.widgets.some((w) => isDrawn(w) && overflows(kind, w, shownText(field, value))));
         return (
           <li
             key={field.id}
@@ -244,9 +252,10 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
             <PanelControl field={field} value={value} onChange={(v) => onChange(field.id, v)} labelId={labelId} />
             {bad !== "" && (
               <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
-                {unsupportedMessage(bad)}
+                {fonts ? missingMessage(bad) : unsupportedMessage(bad)}
               </p>
             )}
+            {notice && bad === "" && <p className="mt-1 text-xs text-gray-600 dark:text-[#999]">{notice}</p>}
             {tooLong && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{tooLong}</p>}
             {!tooLong && over && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{OVERFLOW_NOTE}.</p>}
             {kind.kind === "text" && kind.password && (

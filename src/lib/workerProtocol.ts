@@ -9,6 +9,7 @@ import type { PageStatusWire, RedactJobWire, RedactRectWire, RedactResultWire, S
 import type { RedactSearchResultWire } from "./redact/searchWire";
 import type { OcrPageWire } from "./ocr/textLayerWire";
 import type { TextLayout } from "./fonts/jobFonts";
+import type { FormFontsWire } from "./forms/unicode";
 
 /** Correlates a request with its response/progress/failure messages. */
 export type ReqId = number;
@@ -62,7 +63,8 @@ export type ToWorker =
   | { type: "set-metadata"; id: ReqId; pdfBytes: Uint8Array; title: string; author: string; subject: string; keywords: string }
   | { type: "unlock"; id: ReqId; pdfBytes: Uint8Array; password: string }
   | { type: "list-form"; id: ReqId; pdfBytes: Uint8Array }
-  | { type: "fill-form"; id: ReqId; pdfBytes: Uint8Array; values: FormWireEntry[]; flatten: boolean }
+  /** `fonts`: Noto fonts (file names) for values the standard fonts cannot encode. */
+  | { type: "fill-form"; id: ReqId; pdfBytes: Uint8Array; values: FormWireEntry[]; flatten: boolean; fonts?: FormFontsWire }
   | { type: "redact-plan"; id: ReqId; pdfBytes: Uint8Array; rects: RedactRectWire[] }
   /** The document as the redaction will see it (forms flattened): what rasters are drawn from. */
   | { type: "redact-prepare"; id: ReqId; pdfBytes: Uint8Array }

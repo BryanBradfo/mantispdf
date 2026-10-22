@@ -154,7 +154,14 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       }
 
       case "fill-form": {
-        const bytes = fill_form(msg.pdfBytes, msg.values, msg.flatten);
+        // Noto fonts by file name: the bytes come from this worker's loader (same origin).
+        const formFonts = msg.fonts
+          ? {
+              files: await Promise.all(msg.fonts.files.map(async (id) => ({ id, bytes: await fonts.font(id) }))),
+              fields: msg.fonts.fields,
+            }
+          : undefined;
+        const bytes = fill_form(msg.pdfBytes, msg.values, msg.flatten, formFonts);
         // A fresh copy out of WASM memory: hand it over instead of cloning.
         postSuccess(msg.id, { kind: "merge", bytes }, [bytes.buffer as ArrayBuffer]);
         break;
