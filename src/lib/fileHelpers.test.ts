@@ -42,4 +42,3 @@ describe("readFileAsArrayBuffer / readFileAsUint8Array", () => {
     }
   });
 });
-});
