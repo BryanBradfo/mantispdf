@@ -129,7 +129,9 @@ impl<'f, 'a> UnicodeFields<'f, 'a> {
             Layout::Comb(cells) => {
                 let cells = cells.max(1);
                 let cell = w / f64::from(cells);
-                let graphemes: Vec<&str> = graphemes(text).into_iter().take(cells as usize).collect();
+                // Cells left to right hold the graphemes in visual order: a right-to-left
+                // value reads correctly cell by cell (from the right).
+                let graphemes: Vec<&str> = visual_order(text, graphemes(text).into_iter().take(cells as usize).collect());
                 size = if da.size > 0.0 {
                     da.size
                 } else {
@@ -306,6 +308,26 @@ fn aligned_x(align: u8, width: f64, line_width: f64, padding: f64) -> f64 {
         2 => width - padding - line_width,
         _ => padding,
     }
+}
+
+/// `graphemes` (slices of `text`, in reading order) in visual order: the
+/// bidi algorithm on `text`, each right-to-left run reversed.
+fn visual_order<'t>(text: &'t str, graphemes: Vec<&'t str>) -> Vec<&'t str> {
+    if text.is_empty() {
+        return graphemes;
+    }
+    let start = |g: &str| g.as_ptr() as usize - text.as_ptr() as usize;
+    let info = unicode_bidi::ParagraphBidiInfo::new(text, None);
+    let (levels, runs) = info.visual_runs(0..text.len());
+    let mut out = Vec::with_capacity(graphemes.len());
+    for run in runs {
+        let mut inside: Vec<&str> = graphemes.iter().copied().filter(|g| run.contains(&start(g))).collect();
+        if levels[run.start].is_rtl() {
+            inside.reverse();
+        }
+        out.extend(inside);
+    }
+    out
 }
 
 /// `text` cut into user-perceived characters for comb cells: each character

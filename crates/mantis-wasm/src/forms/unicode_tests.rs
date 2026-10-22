@@ -250,3 +250,35 @@ fn three_long_multiline_values_fit_the_shaping_budget() {
         assert_eq!(size, 4.0, "far too long to fit: the smallest size");
     }
 }
+
+/// The glyph texts of page 1 in drawing order (flattened fields draw there).
+fn drawn_on_page(pdf: &[u8]) -> String {
+    let doc = load_pdf(pdf).unwrap();
+    let cache = std::rc::Rc::new(std::cell::RefCell::new(crate::redact::unicode::TextCache::new(crate::redact::JOB_DECODED)));
+    let page = doc.get_pages()[&1];
+    crate::redact::verify::page_text_glyphs(&doc, page, &mut crate::redact::Budget::page(crate::redact::JOB_DECODED), &cache)
+        .unwrap()
+        .iter()
+        .map(|g| g.text.as_deref().unwrap_or("?").to_string())
+        .collect()
+}
+
+#[test]
+fn right_to_left_comb_values_fill_cells_in_visual_order() {
+    // Read cell by cell from the right, the cells spell the value.
+    let comb = vec![("Ff", Object::Integer(1 << 24)), ("MaxLen", 8.into())];
+    let fonts = FormFonts {
+        files: vec![font!("NotoSans-subset.ttf"), font!("NotoSansHebrew-subset.ttf")],
+        fields: [(0, chain(&[0, 1]))].into_iter().collect(),
+    };
+    // A space takes its cell and draws nothing.
+    for (value, visual) in [("שלום", "םולש"), ("שלום 12", "12םולש")] {
+        let (pdf, _) = form(vec![comb.clone()]);
+        let out = fill_form_with_fonts(&pdf, &[(0, Value::Text(value.into()))], true, &fonts).unwrap();
+        assert_eq!(drawn_on_page(&out), visual, "{value}");
+    }
+    // Left-to-right values keep their order.
+    let (pdf, _) = form(vec![comb]);
+    let out = fill_form_with_fonts(&pdf, &[(0, Value::Text("Привет".into()))], true, &fonts).unwrap();
+    assert_eq!(drawn_on_page(&out), "Привет");
+}
