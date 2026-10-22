@@ -1,4 +1,5 @@
 import type { StampJobSpec } from "./stampJob";
+import type { NsT } from "../i18n";
 
 /** A box in preview pixels, origin top-left (CSS layout). */
 export interface PreviewBox {
@@ -70,10 +71,10 @@ export function resizeVisibleRect(rect: VisibleRect, delta: number, page: Size, 
 }
 
 /** Spoken description of a signature placement, from the top-left of the page as it is shown. */
-export function describePlacement(rect: VisibleRect, page: Size): string {
+export function describePlacement(rect: VisibleRect, page: Size, t: NsT<"sign">): string {
   const [x, y, w, h] = rect;
   const r = Math.round;
-  return `Signature ${r(w)} by ${r(h)} pt, ${r(x)} pt from the left, ${r(page[1] - (y + h))} pt from the top.`;
+  return t("describe", { width: r(w), height: r(h), x: r(x), top: r(page[1] - (y + h)) });
 }
 
 /** Default placement: about 180 pt wide, near the bottom-right corner, `aspect` = width / height. */

@@ -18,6 +18,18 @@ import resize from "./resize";
 import rotate from "./rotate";
 import seo from "./seo";
 import split from "./split";
+import stamp from "./stamp";
+import watermark from "./watermark";
+import pageNumbers from "./pageNumbers";
+import headerFooter from "./headerFooter";
+import bates from "./bates";
+import sign from "./sign";
+import encrypt from "./encrypt";
+import unlock from "./unlock";
+import sanitize from "./sanitize";
+import metadata from "./metadata";
+import removeMetadata from "./removeMetadata";
+import editMetadata from "./editMetadata";
 
 /** French, loaded as its own chunk when a `/fr` page is first rendered (or preloaded). */
 const fr: Dictionary<EnDictionary> = {
@@ -39,6 +51,18 @@ const fr: Dictionary<EnDictionary> = {
   crop,
   resize,
   nUp,
+  stamp,
+  watermark,
+  pageNumbers,
+  headerFooter,
+  bates,
+  sign,
+  encrypt,
+  unlock,
+  sanitize,
+  metadata,
+  removeMetadata,
+  editMetadata,
 };
 
 export default fr;

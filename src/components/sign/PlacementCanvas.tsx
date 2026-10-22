@@ -12,6 +12,7 @@ import {
   type Size,
   type VisibleRect,
 } from "../../lib/signPlacement";
+import { useT } from "../../i18n";
 
 /** Render width of the page preview (also its maximum on-screen width). */
 const PREVIEW_WIDTH = 560;
@@ -39,6 +40,8 @@ interface Props {
 type Gesture = { kind: "move" | "resize"; pointerX: number; pointerY: number; start: PreviewBox };
 
 export default function PlacementCanvas({ source, page, pageSize, signatureUrl, rect, onRect, caption }: Props) {
+  const t = useT("sign");
+  const tc = useT("common");
   const wrapRef = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState(PREVIEW_WIDTH);
   const gesture = useRef<Gesture | null>(null);
@@ -111,14 +114,14 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
     }
     e.preventDefault();
     onRect(next);
-    setAnnouncement(describePlacement(next, pageSize));
+    setAnnouncement(describePlacement(next, pageSize, t));
   };
 
   if (degenerate) {
     // Same root element as below, so the ResizeObserver keeps watching it.
     return (
       <div ref={wrapRef} className="w-full max-w-[560px]">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">This page has no visible area to sign on.</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
       </div>
     );
   }
@@ -130,7 +133,7 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
         className="relative select-none overflow-hidden rounded-lg border border-gray-300 shadow-sm dark:border-[#333]"
         style={{ width: pw, height: ph }}
       >
-        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={`Page ${page}`} className="h-full" />
+        <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={tc("pageN", { n: page })} className="h-full" />
         {caption && (
           <span
             aria-hidden="true"
@@ -147,8 +150,8 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
         )}
         <div
           role="group"
-          aria-roledescription="movable signature"
-          aria-label="Signature position"
+          aria-roledescription={t("movable")}
+          aria-label={t("positionLabel")}
           aria-describedby="signature-position-help"
           tabIndex={0}
           onPointerDown={begin("move")}
@@ -168,8 +171,7 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
         </div>
       </div>
       <p id="signature-position-help" className="mt-2 text-xs text-gray-500 dark:text-[#777]">
-        Drag the signature to move it, drag its corner to resize. Arrow keys move it by 1 pt, + and - resize it
-        (Shift: 10 pt).
+        {t("placementHelp")}
       </p>
       <p className="sr-only" aria-live="polite">{spoken}</p>
     </div>

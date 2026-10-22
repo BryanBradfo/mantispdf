@@ -13,24 +13,26 @@ export interface TextStyle {
 export const DEFAULT_STYLE: TextStyle = { font: "Helvetica", size: 11, color: "#000000", opacity: 1 };
 export const DEFAULT_MARGIN = 28;
 
-export const PAGE_NUMBER_PRESETS = [
-  { id: "n", label: "1", template: "{n}" },
-  { id: "page-n", label: "Page 1", template: "Page {n}" },
-  { id: "n-total", label: "1 / 12", template: "{n} / {total}" },
-  { id: "page-n-of", label: "Page 1 of 12", template: "Page {n} of {total}" },
-] as const;
+/**
+ * Page-number formats. The templates are printed on the page, so they follow the UI language;
+ * their tokens are passed back as themselves (`{ n: "{n}" }`) and resolved by the engine.
+ */
+export function pageNumberPresets(t: NsT<"stamp">): { id: string; label: string; template: string }[] {
+  return [
+    { id: "n", label: "1", template: "{n}" },
+    { id: "page-n", label: t("templatePage", { n: 1 }), template: t("templatePage", { n: "{n}" }) },
+    { id: "n-total", label: "1 / 12", template: "{n} / {total}" },
+    {
+      id: "page-n-of",
+      label: t("templatePageOf", { n: 1, total: 12 }),
+      template: t("templatePageOf", { n: "{n}", total: "{total}" }),
+    },
+  ];
+}
 
-export const ANCHOR_LABELS: Record<Anchor, string> = {
-  "top-left": "Top left",
-  "top-center": "Top center",
-  "top-right": "Top right",
-  "middle-left": "Middle left",
-  center: "Center",
-  "middle-right": "Middle right",
-  "bottom-left": "Bottom left",
-  "bottom-center": "Bottom center",
-  "bottom-right": "Bottom right",
-};
+export function anchorLabel(anchor: Anchor, t: NsT<"stamp">): string {
+  return t(`anchor.${anchor}`);
+}
 
 export function hexToRgb(hex: string): [number, number, number] {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -88,15 +90,21 @@ export function buildPageNumberJob(s: PageNumberSettings, ctx: JobContext): Stam
 }
 
 export const HEADER_FOOTER_SLOTS = [
-  { anchor: "top-left", label: "Header left" },
-  { anchor: "top-center", label: "Header center" },
-  { anchor: "top-right", label: "Header right" },
-  { anchor: "bottom-left", label: "Footer left" },
-  { anchor: "bottom-center", label: "Footer center" },
-  { anchor: "bottom-right", label: "Footer right" },
-] as const satisfies readonly { anchor: Anchor; label: string }[];
+  { anchor: "top-left" },
+  { anchor: "top-center" },
+  { anchor: "top-right" },
+  { anchor: "bottom-left" },
+  { anchor: "bottom-center" },
+  { anchor: "bottom-right" },
+] as const satisfies readonly { anchor: Anchor }[];
 
-export type HeaderFooterSlots = Record<(typeof HEADER_FOOTER_SLOTS)[number]["anchor"], string>;
+export type HeaderFooterAnchor = (typeof HEADER_FOOTER_SLOTS)[number]["anchor"];
+export type HeaderFooterSlots = Record<HeaderFooterAnchor, string>;
+
+/** "Header left", "Footer center", ... */
+export function slotLabel(anchor: HeaderFooterAnchor, t: NsT<"stamp">): string {
+  return t(`slot.${anchor}`);
+}
 
 export interface HeaderFooterSettings {
   slots: HeaderFooterSlots;
@@ -139,10 +147,11 @@ export function previewHeaderFooter(
   slots: HeaderFooterSlots,
   numberStart: number,
   ctx: JobContext,
+  t: NsT<"stamp">,
 ): { label: string; text: string }[] {
   const range = pageNumberRange(numberStart, ctx.pages);
   return HEADER_FOOTER_SLOTS.filter((slot) => slots[slot.anchor].trim() !== "").map((slot) => ({
-    label: slot.label,
+    label: slotLabel(slot.anchor, t),
     text: previewStampText(slots[slot.anchor], { n: range.first, total: range.last, date: ctx.date, filename: ctx.filename }),
   }));
 }
@@ -153,6 +162,6 @@ export function describePages(pages: readonly number[], total: number, t: NsT<"p
   return t("pagesSome", { count: pages.length, total });
 }
 
-export function describeStyle(style: TextStyle): string {
-  return `${style.font.replace("-", " ")} ${style.size} pt`;
+export function describeStyle(style: TextStyle, t: NsT<"stamp">): string {
+  return t("styleSummary", { font: style.font.replace("-", " "), size: style.size });
 }

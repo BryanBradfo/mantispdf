@@ -88,3 +88,24 @@ test("French Remove pages: range errors and the result count are in French", asy
   await range.fill("2, 9");
   await expect(page.getByText("La page 9 n’existe pas (le document compte 4 pages)")).toBeVisible();
 });
+
+test("French Page numbers: positions, formats and the printed text are French", async ({ page }) => {
+  await page.goto("/fr/page-numbers");
+  await expect(page.getByRole("heading", { name: "Numéros de page" })).toBeVisible();
+  await expect(async () => {
+    await page.locator('input[type="file"]').setInputFiles(fx("four-pages.pdf"));
+    await expect(page.getByText("four-pages.pdf (4 pages)")).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 20000 });
+  await page.getByRole("radio", { name: "En bas à droite" }).click();
+  await page.getByLabel("Format").selectOption({ label: "Page 1 sur 12" });
+  const summary = page.getByTestId("settings-summary");
+  await expect(summary).toContainText("En bas à droite");
+  await expect(summary).toContainText("Les 4 pages");
+  await expect(summary).toContainText('"Page 1 sur 4"');
+});
+
+test("French Encrypt: a non-PDF file is refused in French", async ({ page }) => {
+  await page.goto("/fr/encrypt");
+  await page.locator('input[type="file"]').setInputFiles({ name: "note.txt", mimeType: "text/plain", buffer: Buffer.from("x") });
+  await expect(page.getByText("Veuillez choisir un fichier PDF.")).toBeVisible();
+});

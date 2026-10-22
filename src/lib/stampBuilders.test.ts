@@ -6,12 +6,15 @@ import {
   describePages,
   hexToRgb,
   pageNumberRange,
+  describeStyle,
+  pageNumberPresets,
   previewHeaderFooter,
   previewStampText,
   todayIso,
   type HeaderFooterSlots,
 } from "./stampBuilders";
 import { tFor } from "../i18n/testUtils";
+const tStamp = tFor("stamp");
 
 const tPages = tFor("pages");
 
@@ -76,13 +79,13 @@ describe("buildHeaderFooterJob", () => {
 describe("previewHeaderFooter", () => {
   it("resolves the filled slots for the first selected page", () => {
     const slots = { ...empty, "top-left": "{filename} {date}", "bottom-center": "Page {n} of {total}", "bottom-right": "  " };
-    expect(previewHeaderFooter(slots, 5, { ...ctx, total: 6, pages: [2, 3, 4] })).toEqual([
+    expect(previewHeaderFooter(slots, 5, { ...ctx, total: 6, pages: [2, 3, 4] }, tStamp)).toEqual([
       { label: "Header left", text: "doc 2026-10-17" },
       { label: "Footer center", text: "Page 5 of 7" },
     ]);
   });
   it("is empty when nothing is filled", () => {
-    expect(previewHeaderFooter(empty, 1, ctx)).toEqual([]);
+    expect(previewHeaderFooter(empty, 1, ctx, tStamp)).toEqual([]);
   });
 });
 
@@ -122,5 +125,23 @@ describe("describePages in French", () => {
     expect(describePages([1], 1, t)).toBe("La seule page");
     expect(describePages([3], 12, t)).toBe("Page 3 sur 12");
     expect(describePages([2, 3], 12, t)).toBe("2 pages sur 12");
+  });
+});
+
+describe("stamp texts in French", () => {
+  const t = tFor("stamp", "fr");
+  it("labels the header and footer slots", () => {
+    const slots = { ...empty, "bottom-center": "{n}" };
+    expect(previewHeaderFooter(slots, 1, ctx, t)).toEqual([{ label: "Pied de page au centre", text: "1" }]);
+  });
+  it("describes the text style", () => {
+    expect(describeStyle({ font: "Helvetica-Bold", size: 11, color: "#000000", opacity: 1 }, tStamp)).toBe("Helvetica Bold 11 pt");
+    expect(describeStyle({ font: "Helvetica-Bold", size: 11, color: "#000000", opacity: 1 }, t)).toBe("Helvetica Bold 11\u00a0pt");
+  });
+  it("offers page-number formats whose text is French and keeps the tokens", () => {
+    expect(pageNumberPresets(tStamp).map((p) => p.template)).toEqual(["{n}", "Page {n}", "{n} / {total}", "Page {n} of {total}"]);
+    const fr = pageNumberPresets(t);
+    expect(fr.map((p) => p.template)).toEqual(["{n}", "Page {n}", "{n} / {total}", "Page {n} sur {total}"]);
+    expect(fr.map((p) => p.label)).toEqual(["1", "Page 1", "1 / 12", "Page 1 sur 12"]);
   });
 });

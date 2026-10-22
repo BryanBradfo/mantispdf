@@ -5,8 +5,11 @@ import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
+import { useT } from "../i18n";
 
 export default function UnlockPdfPage() {
+  const t = useT("unlock");
+  const tc = useT("common");
   const worker = usePdfWorker();
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker);
   const [password, setPassword] = useState("");
@@ -25,13 +28,13 @@ export default function UnlockPdfPage() {
 
   return (
     <ToolShell
-      title="Unlock PDF | MantisPDF"
-      description="Remove the password and restrictions from a PDF you are allowed to open. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/unlock"
-      heading="Unlock PDF"
-      intro="Remove the password and restrictions from a PDF you are allowed to open."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
 
       {!input && (
         <div className="mt-8">
@@ -43,7 +46,7 @@ export default function UnlockPdfPage() {
         <form className={panelClass} onSubmit={submit}>
           <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
           <label className="mt-4 block text-sm text-gray-700 dark:text-[#aaa]">
-            Password (leave empty if the PDF opens without one)
+            {t("password")}
             <input
               type="password"
               value={password}
@@ -55,10 +58,10 @@ export default function UnlockPdfPage() {
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
             <button type="submit" disabled={busy} className={`flex-1 ${primaryButton}`}>
-              {busy ? "Unlocking…" : "Unlock and download"}
+              {busy ? t("unlocking") : t("submit")}
             </button>
             <button type="button" onClick={() => { reset(); setPassword(""); }} className={secondaryButton}>
-              Choose another file
+              {tc("chooseAnother")}
             </button>
           </div>
         </form>

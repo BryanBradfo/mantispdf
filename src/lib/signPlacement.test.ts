@@ -14,6 +14,9 @@ import {
   trimTransparent,
   visibleToPreviewRect,
 } from "./signPlacement";
+import { tFor } from "../i18n/testUtils";
+
+const tSign = tFor("sign");
 
 describe("previewToVisibleRect", () => {
   it("maps a portrait preview to visible points with a bottom-left origin", () => {
@@ -224,8 +227,16 @@ describe("resizeVisibleRect", () => {
 
 describe("describePlacement", () => {
   it("rounds to whole points, measured from the top-left of the page", () => {
-    expect(describePlacement([100.4, 200.6, 150.2, 49.7], [600, 800])).toBe(
+    expect(describePlacement([100.4, 200.6, 150.2, 49.7], [600, 800], tSign)).toBe(
       "Signature 150 by 50 pt, 100 pt from the left, 550 pt from the top.",
+    );
+  });
+});
+
+describe("describePlacement in French", () => {
+  it("reads the box in French", () => {
+    expect(describePlacement([100, 200, 150, 50], [600, 800], tFor("sign", "fr"))).toBe(
+      "Signature de 150 sur 50\u00a0pt, à 100\u00a0pt du bord gauche et 550\u00a0pt du haut.",
     );
   });
 });

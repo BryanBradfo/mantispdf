@@ -4,19 +4,23 @@ import ErrorAlert from "../components/common/ErrorAlert";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName } from "./usePdfInput";
 import { METADATA_FIELDS, useMetadataInput } from "./useMetadataInput";
+import { useT } from "../i18n";
 
 export default function RemoveMetadataPage() {
+  const t = useT("removeMetadata");
+  const tm = useT("metadata");
+  const tc = useT("common");
   const { worker, input, error, setError, busy, pick, reset, run } = useMetadataInput();
 
   return (
     <ToolShell
-      title="Remove PDF Metadata | MantisPDF"
-      description="Remove the title, author, subject and keywords from a PDF. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/remove-metadata"
-      heading="Remove Metadata"
-      intro="Remove the title, author, subject and keywords stored inside a PDF."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
 
       {!input && (
         <div className="mt-8">
@@ -28,10 +32,10 @@ export default function RemoveMetadataPage() {
         <div className={panelClass}>
           <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
           <dl className="mt-4 space-y-2 text-sm">
-            {METADATA_FIELDS.map(([key, label]) => (
+            {METADATA_FIELDS.map((key) => (
               <div key={key} className="flex gap-3">
-                <dt className="w-24 shrink-0 text-gray-500 dark:text-[#555]">{label}</dt>
-                <dd className="min-w-0 break-words text-gray-800 dark:text-[#ccc]">{input.data[key] || "(empty)"}</dd>
+                <dt className="w-24 shrink-0 text-gray-500 dark:text-[#555]">{tm(key)}</dt>
+                <dd className="min-w-0 break-words text-gray-800 dark:text-[#ccc]">{input.data[key] || tm("empty")}</dd>
               </div>
             ))}
           </dl>
@@ -47,10 +51,10 @@ export default function RemoveMetadataPage() {
               disabled={busy}
               className={`flex-1 ${primaryButton}`}
             >
-              {busy ? "Working…" : "Remove metadata and download"}
+              {busy ? t("working") : t("submit")}
             </button>
             <button onClick={reset} className={secondaryButton}>
-              Choose another file
+              {tc("chooseAnother")}
             </button>
           </div>
         </div>

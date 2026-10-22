@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { gridStep } from "../../lib/gridNav";
-import { ANCHOR_LABELS } from "../../lib/stampBuilders";
+import { anchorLabel } from "../../lib/stampBuilders";
+import { useT } from "../../i18n";
 import type { Anchor } from "../../lib/stampJob";
 
 const ALL: Anchor[] = [
@@ -18,13 +19,14 @@ interface Props {
   layout?: "nine" | "six";
 }
 
-export default function PositionPicker({ value, onChange, label = "Position", layout = "nine" }: Props) {
+export default function PositionPicker({ value, onChange, label, layout = "nine" }: Props) {
+  const t = useT("stamp");
   const labelId = useId();
   const anchors = layout === "six" ? TOP_BOTTOM : ALL;
   const rows = layout === "six" ? 2 : 3;
   return (
     <div>
-      <span id={labelId} className="block text-sm font-medium text-gray-700 dark:text-[#aaa]">{label}</span>
+      <span id={labelId} className="block text-sm font-medium text-gray-700 dark:text-[#aaa]">{label ?? t("position")}</span>
       <div
         role="radiogroup"
         aria-labelledby={labelId}
@@ -39,8 +41,8 @@ export default function PositionPicker({ value, onChange, label = "Position", la
               type="button"
               role="radio"
               aria-checked={checked}
-              aria-label={ANCHOR_LABELS[a]}
-              title={ANCHOR_LABELS[a]}
+              aria-label={anchorLabel(a, t)}
+              title={anchorLabel(a, t)}
               tabIndex={checked ? 0 : -1}
               onClick={() => onChange(a)}
               onKeyDown={(e) => {
@@ -49,7 +51,7 @@ export default function PositionPicker({ value, onChange, label = "Position", la
                 e.preventDefault();
                 const next = anchors[j];
                 onChange(next);
-                (e.currentTarget.parentElement?.querySelector(`[aria-label="${ANCHOR_LABELS[next]}"]`) as HTMLElement | null)?.focus();
+                (e.currentTarget.parentElement?.querySelector(`[aria-label="${anchorLabel(next, t)}"]`) as HTMLElement | null)?.focus();
               }}
               className={`rounded-sm border focus:outline-none focus:ring-2 focus:ring-mantis-500 ${checked ? "border-mantis-600 bg-mantis-600" : "border-gray-200 bg-gray-100 hover:bg-mantis-100 dark:border-[#2a2a2a] dark:bg-[#1f1f1f]"}`}
             />

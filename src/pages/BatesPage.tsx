@@ -2,12 +2,13 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useMergeState } from "../hooks/useMergeState";
 import type { MergeFile } from "../hooks/useMergeState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
-import { downloadBlob, readFileAsUint8Array, validatePdfFile } from "../lib/fileHelpers";
+import { downloadBlob, isPdfFile, readFileAsUint8Array } from "../lib/fileHelpers";
+import { useDescribeError, useT, type UiError } from "../i18n";
 import { downloadAsZip } from "../lib/downloadZip";
 import { MAX_BATES, MAX_BATES_AFFIX, batesRanges, createBatesTokens, describeBatesRange } from "../lib/bates";
 import {
-  ANCHOR_LABELS,
   DEFAULT_MARGIN,
+  anchorLabel,
   DEFAULT_STYLE,
   describeStyle,
   hexToRgb,
@@ -27,12 +28,16 @@ let nextId = 0;
 const baseOf = (f: File) => f.name.replace(/\.pdf$/i, "");
 
 export default function BatesPage() {
+  const t = useT("bates");
+  const ts = useT("stamp");
+  const tc = useT("common");
+  const describe = useDescribeError();
   const worker = usePdfWorker();
   const [state, dispatch] = useMergeState();
   const tokens = useMemo(createBatesTokens, []);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
 
   const [anchor, setAnchor] = useState<Anchor>("bottom-right");
   const [prefix, setPrefix] = useState("");
@@ -48,23 +53,27 @@ export default function BatesPage() {
 
   const handleFiles = useCallback(
     async (picked: File[]) => {
-      if (worker.initError) return dispatch({ type: "upload-error", error: "PDF engine failed to load. Please reload the page." });
-      if (!worker.ready) return dispatch({ type: "upload-error", error: "Engine is still loading, please wait a moment." });
+      if (worker.initError) return dispatch({ type: "upload-error", error: tc("engineFailedReload") });
+      if (!worker.ready) return dispatch({ type: "upload-error", error: tc("engineLoading") });
       if (busy) return;
       const current = tokens.upload.begin();
       setAdding(true);
       try {
         const added: MergeFile[] = [];
         for (const file of picked) {
-          const invalid = validatePdfFile(file);
-          if (invalid) return dispatch({ type: "upload-error", error: `${file.name}: ${invalid}` });
+          if (!isPdfFile(file)) {
+            return dispatch({ type: "upload-error", error: tc("fileProblem", { name: file.name, problem: tc("invalidPdf") }) });
+          }
           try {
             const bytes = await readFileAsUint8Array(file);
             const numPages = await worker.countPages(bytes);
             if (!current()) return;
             added.push({ id: String(++nextId), file, bytes, numPages });
           } catch (err) {
-            if (current()) dispatch({ type: "upload-error", error: `${file.name}: ${err instanceof Error ? err.message : String(err)}` });
+            if (current()) {
+              const d = describe(err);
+              dispatch({ type: "upload-error", error: { ...d, message: tc("fileProblem", { name: file.name, problem: d.message }) } });
+            }
             return;
           }
         }
@@ -73,22 +82,22 @@ export default function BatesPage() {
         if (current()) setAdding(false);
       }
     },
-    [dispatch, worker, tokens, busy],
+    [dispatch, worker, tokens, busy, tc, describe],
   );
 
   const ranges = useMemo(
     () => batesRanges(files.map((f) => f.numPages), start, digits, prefix, suffix),
     [files, start, digits, prefix, suffix],
   );
-  const rangeText = describeBatesRange(ranges);
+  const rangeText = describeBatesRange(ranges, t);
 
   const problem =
-    files.length === 0 ? "Add at least one PDF."
-    : !Number.isInteger(start) || start < 0 ? "Start number must be a whole number, 0 or more."
-    : start + files.reduce((n, f) => n + f.numPages, 0) > MAX_BATES ? "Start number plus total pages is too large."
-    : !Number.isInteger(digits) || digits < 1 || digits > 12 ? "Digits must be between 1 and 12."
-    : !(style.size >= 6 && style.size <= 72) ? "Size must be between 6 and 72 pt."
-    : !(margin >= 0 && margin <= 300) ? "Margin must be between 0 and 300 pt."
+    files.length === 0 ? t("needFile")
+    : !Number.isInteger(start) || start < 0 ? t("startRange")
+    : start + files.reduce((n, f) => n + f.numPages, 0) > MAX_BATES ? t("tooLarge")
+    : !Number.isInteger(digits) || digits < 1 || digits > 12 ? t("digitsRange")
+    : !(style.size >= 6 && style.size <= 72) ? ts("sizeRange")
+    : !(margin >= 0 && margin <= 300) ? ts("marginRange")
     : null;
 
   const submit = async (e: React.FormEvent) => {
@@ -126,7 +135,7 @@ export default function BatesPage() {
       if (parts.length === 1) downloadBlob(parts[0].bytes, parts[0].name);
       else await downloadAsZip(parts, "bates", "bates");
     } catch (err) {
-      if (current()) setError(err instanceof Error ? err.message : String(err));
+      if (current()) setError(describe(err));
     } finally {
       if (current()) setBusy(false);
     }
@@ -145,13 +154,13 @@ export default function BatesPage() {
 
   return (
     <ToolShell
-      title="Bates Numbering for PDF | MantisPDF"
-      description="Add Bates numbers across one or many PDFs, continuing the count from file to file. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/bates"
-      heading="Bates numbering"
-      intro="Stamp a running identifier on every page, continuing across documents. Everything stays on your device."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
 
       <div className={`mt-8 ${busy ? "pointer-events-none opacity-50" : ""}`} inert={busy}>
         <DropZone multiple onFiles={(f) => void handleFiles(f)} error={state.uploadError} />
@@ -160,7 +169,7 @@ export default function BatesPage() {
       {files.length > 0 && (
         <form className={panelClass} onSubmit={(e) => void submit(e)}>
           <p className="text-sm text-gray-600 dark:text-[#888]">
-            {files.length} file{files.length !== 1 ? "s" : ""}. Drag to set the numbering order.
+            {t("files", { count: files.length })}
           </p>
           <div className="mt-3">
             <MergeFileList
@@ -171,18 +180,18 @@ export default function BatesPage() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-6">
-            <PositionPicker value={anchor} onChange={setAnchor} label="Position" />
+            <PositionPicker value={anchor} onChange={setAnchor} />
             <div className="grid min-w-[12rem] flex-1 grid-cols-2 gap-4">
               <label className={labelClass}>
-                Prefix
+                {t("prefix")}
                 <input value={prefix} onChange={(e) => setPrefix(e.target.value)} maxLength={MAX_BATES_AFFIX} placeholder="ACME-" className={inputClass} />
               </label>
               <label className={labelClass}>
-                Suffix
+                {t("suffix")}
                 <input value={suffix} onChange={(e) => setSuffix(e.target.value)} maxLength={MAX_BATES_AFFIX} className={inputClass} />
               </label>
               <label className={labelClass}>
-                Start number
+                {t("startNumber")}
                 <input
                   type="number" min={0} step={1} value={num(start)}
                   onChange={(e) => setStart(e.target.value === "" ? NaN : Number(e.target.value))}
@@ -190,7 +199,7 @@ export default function BatesPage() {
                 />
               </label>
               <label className={labelClass}>
-                Digits
+                {t("digits")}
                 <input
                   type="number" min={1} max={12} step={1} value={num(digits)}
                   onChange={(e) => setDigits(e.target.value === "" ? NaN : Number(e.target.value))}
@@ -203,7 +212,7 @@ export default function BatesPage() {
           <div className="mt-4"><TextStyleFields value={style} onChange={setStyle} /></div>
 
           <label className={`mt-4 ${labelClass}`}>
-            Margin from the edge (pt)
+            {ts("marginFromEdge")}
             <input
               type="number" min={0} max={300} value={num(margin)}
               onChange={(e) => setMargin(e.target.value === "" ? NaN : Number(e.target.value))}
@@ -212,7 +221,7 @@ export default function BatesPage() {
           </label>
 
           <LiveSummary
-            text={`${ANCHOR_LABELS[anchor]} · ${describeStyle(style)}${rangeText ? ` · ${rangeText}` : ""}`}
+            text={`${anchorLabel(anchor, ts)} · ${describeStyle(style, ts)}${rangeText ? ` · ${rangeText}` : ""}`}
             className="mt-4 text-sm text-gray-600 dark:text-[#888]"
           />
 
@@ -220,9 +229,9 @@ export default function BatesPage() {
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
             <button type="submit" disabled={busy || adding || problem !== null} className={`flex-1 ${primaryButton}`}>
-              {busy ? "Numbering…" : files.length > 1 ? "Add Bates numbers and download ZIP" : "Add Bates numbers and download"}
+              {busy ? t("numbering") : files.length > 1 ? t("submitZip") : t("submit")}
             </button>
-            <button type="button" onClick={clear} className={secondaryButton}>Start over</button>
+            <button type="button" onClick={clear} className={secondaryButton}>{tc("startOver")}</button>
           </div>
         </form>
       )}

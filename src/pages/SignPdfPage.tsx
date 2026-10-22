@@ -18,8 +18,8 @@ import {
 } from "../lib/signPlacement";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
+import { useT } from "../i18n";
 
-const SIGNED_ON = "Signed on {date}";
 
 function StepHeading({ n, children }: { n: number; children: string }) {
   return (
@@ -31,6 +31,8 @@ function StepHeading({ n, children }: { n: number; children: string }) {
 }
 
 export default function SignPdfPage() {
+  const t = useT("sign");
+  const tc = useT("common");
   const worker = usePdfWorker();
   const { pageSizes } = worker;
   const prepare = useCallback((bytes: Uint8Array) => pageSizes(bytes), [pageSizes]);
@@ -54,7 +56,9 @@ export default function SignPdfPage() {
     );
   }, [aspect, pageSize]);
 
-  const signedOn = addDate ? substituteJsTokens(SIGNED_ON, { date: todayIso(), filename: input ? baseName(input.file) : "" }) : null;
+  // Printed on the page, so in the UI language; {date} is resolved by the stamp tokens.
+  const signedOnTemplate = t("signedOn", { date: "{date}" });
+  const signedOn = addDate ? substituteJsTokens(signedOnTemplate, { date: todayIso(), filename: input ? baseName(input.file) : "" }) : null;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,13 +80,13 @@ export default function SignPdfPage() {
 
   return (
     <ToolShell
-      title="Sign PDF: Add Your Signature | MantisPDF"
-      description="Sign a PDF in your browser: draw, type or upload your signature and place it on the page. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/sign"
-      heading="Sign PDF"
-      intro="Draw, type or upload your signature and place it on any page. Everything stays on your device."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
 
       {!input && (
         <div className="mt-8">
@@ -93,26 +97,26 @@ export default function SignPdfPage() {
       {input && (
         <form className={panelClass} onSubmit={submit}>
           <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
-            {input.file.name} ({total} {total === 1 ? "page" : "pages"})
+            {tc("fileWithPagesParen", { name: input.file.name, count: total })}
           </p>
 
           <section className="mt-6">
-            <StepHeading n={1}>Create your signature</StepHeading>
+            <StepHeading n={1}>{t("stepCreate")}</StepHeading>
             <div className="mt-3"><SignaturePad onChange={setSignature} /></div>
           </section>
 
           {signature && pageSize && (
             <>
               <section className="mt-8">
-                <StepHeading n={2}>Choose the page</StepHeading>
-                <div className="mt-3 flex gap-2 overflow-x-auto pb-2" role="group" aria-label="Pages">
+                <StepHeading n={2}>{t("stepPage")}</StepHeading>
+                <div className="mt-3 flex gap-2 overflow-x-auto pb-2" role="group" aria-label={tc("pagesGroup")}>
                   {sizes.map((_, i) => {
                     const n = i + 1;
                     return (
                       <button
                         key={n}
                         type="button"
-                        aria-label={`Page ${n}`}
+                        aria-label={tc("pageN", { n })}
                         aria-pressed={page === n}
                         onClick={() => setPage(n)}
                         className={`w-20 shrink-0 overflow-hidden rounded-md border-2 bg-white text-xs dark:bg-[#111] ${
@@ -128,7 +132,7 @@ export default function SignPdfPage() {
               </section>
 
               <section className="mt-6">
-                <StepHeading n={3}>Place it</StepHeading>
+                <StepHeading n={3}>{t("stepPlace")}</StepHeading>
                 <div className="mt-3">
                   {rect && (
                     <PlacementCanvas
@@ -149,7 +153,7 @@ export default function SignPdfPage() {
                     onChange={(e) => setAddDate(e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
                   />
-                  Add "Signed on {todayIso()}" under the signature
+                  {t("addDate", { text: substituteJsTokens(signedOnTemplate, { date: todayIso(), filename: "" }) })}
                 </label>
               </section>
             </>
@@ -158,11 +162,11 @@ export default function SignPdfPage() {
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
             <button type="submit" disabled={busy || !ready} className={`flex-1 ${primaryButton}`}>
-              {busy ? "Signing…" : "Sign and download"}
+              {busy ? t("signing") : t("submit")}
             </button>
-            <button type="button" onClick={clear} className={secondaryButton}>Choose another file</button>
+            <button type="button" onClick={clear} className={secondaryButton}>{tc("chooseAnother")}</button>
           </div>
-          <p className="mt-4 text-xs text-gray-500 dark:text-[#777]">This adds a visual signature, not a cryptographic one.</p>
+          <p className="mt-4 text-xs text-gray-500 dark:text-[#777]">{t("visualOnly")}</p>
         </form>
       )}
     </ToolShell>
