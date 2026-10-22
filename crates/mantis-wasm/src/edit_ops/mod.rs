@@ -999,6 +999,38 @@ mod tests {
     }
 
     #[test]
+    fn one_font_per_face_across_the_document() {
+        let mut f = Fixture::new();
+        for _ in 0..2 {
+            f.page(Dictionary::new(), "0 0 1 rg 0 0 10 10 re f\n");
+        }
+        let pdf = f.finish();
+        let mut second = noto_item("Привет 你好", vec![0, 2], vec![]);
+        if let EditItem::Text { page, .. } = &mut second {
+            *page = 2;
+        }
+        let items = vec![noto_item("мир 世界", vec![0, 2], vec![]), second];
+        let out = edit_pdf(&pdf, &EditJob { items, fonts: vec![SANS.to_vec(), HEBREW.to_vec(), SC.to_vec()] }).unwrap();
+        let doc = load(&out);
+        let type0: Vec<ObjectId> = doc
+            .objects
+            .iter()
+            .filter(|(_, o)| o.as_dict().is_ok_and(|d| d.get(b"Subtype").ok().and_then(|s| s.as_name().ok()) == Some(b"Type0")))
+            .map(|(id, _)| *id)
+            .collect();
+        // Noto Sans and Noto Sans SC, once each; both pages point at the same objects.
+        assert_eq!(type0.len(), 2);
+        for p in page_ids(&doc) {
+            let fonts = category(&doc, p, b"Font");
+            let used: Vec<ObjectId> = fonts.iter().map(|(_, f)| f.as_reference().unwrap()).collect();
+            assert_eq!(used.len(), 2);
+            assert!(used.iter().all(|id| type0.contains(id)));
+        }
+        assert_eq!(search(&out, "Привет"), 1);
+        assert_eq!(search(&out, "世界"), 1);
+    }
+
+    #[test]
     fn noto_lines_are_clipped_like_standard_ones() {
         let mut item = noto_item("a\nb\nc\nd\ne\nf", vec![0], vec![]);
         if let EditItem::Text { rect, .. } = &mut item {
