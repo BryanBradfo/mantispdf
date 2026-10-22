@@ -4,13 +4,17 @@
 //! Per paragraph: each character gets a face; the paragraph is shaped once in
 //! logical runs (same face, same direction) to measure cluster widths; lines
 //! are broken on those widths; each line is then reordered (bidi) and shaped
-//! again in visual runs, so line edges get their own forms.
+//! again in visual runs, so line edges get their own forms; a reshaped line
+//! wider than the box (edge forms are wider than the measured middle forms)
+//! is shortened until it fits, keeping at least one cluster.
 
 use super::bidi::Paragraph;
-use super::breaks::break_lines;
+use super::breaks::{Breaker, EPS};
+use super::marks::is_mark;
 use super::shape::{ShapedGlyph, shape};
-use super::{Face, Glyph, Layout, LayoutError, LayoutParams, Line, Run, ShapeBudget};
+use super::{Face, Glyph, Layout, LayoutError, LayoutParams, Line, MAX_LAYOUT_CHARS, Run, ShapeBudget};
 use crate::edit_ops::Align;
+use std::collections::HashSet;
 use std::ops::Range;
 
 /// Characters that end a paragraph (CR LF counts once).
@@ -18,12 +22,18 @@ const PARAGRAPH_SEPARATORS: [char; 7] = ['\n', '\r', '\u{B}', '\u{C}', '\u{85}',
 
 /// Lays `text` out in a box `p.width` wide with `faces` (family first, then
 /// fallbacks). Lines are not clipped to a box height; the caller decides.
+/// The first baseline sits the tallest ascender of the faces on the first
+/// line below the top (the family's for an empty line), the others
+/// `line_height * size` apart.
 pub(crate) fn layout_text(
     faces: &[Face],
     text: &str,
     p: &LayoutParams,
     budget: &mut ShapeBudget,
 ) -> Result<Layout, LayoutError> {
+    if text.chars().nth(MAX_LAYOUT_CHARS).is_some() {
+        return Err(LayoutError::TooLong);
+    }
     let valid = p.size.is_finite()
         && p.size > 0.0
         && p.width.is_finite()
@@ -33,19 +43,41 @@ pub(crate) fn layout_text(
     if !valid {
         return Err(LayoutError::Params);
     }
-    let family = faces.first().ok_or(LayoutError::BadFont(0))?;
-    let first_baseline = family.ascender() * p.size / family.units_per_em();
+    if faces.is_empty() {
+        return Err(LayoutError::BadFont(0));
+    }
     let mut layout = Layout::default();
+    let mut missing = Missing::default();
     let normalized = text.replace("\r\n", "\n");
     for raw in normalized.split(PARAGRAPH_SEPARATORS) {
         // Tabs and other ASCII controls show as spaces (same byte length).
         let para: String = raw.chars().map(|c| if c.is_ascii_control() { ' ' } else { c }).collect();
-        for line in layout_paragraph(faces, &para, p, budget, &mut layout.missing)? {
-            let baseline_y = first_baseline + layout.lines.len() as f64 * p.line_height * p.size;
-            layout.lines.push(Line { baseline_y, ..line });
+        layout.lines.extend(layout_paragraph(faces, &para, p, budget, &mut missing)?);
+    }
+    let ascent = |f: usize| faces[f].ascender() * p.size / faces[f].units_per_em();
+    let first_runs = layout.lines.first().map_or(&[][..], |l| l.runs.as_slice());
+    let first_baseline = first_runs.iter().map(|r| ascent(r.face)).fold(None, |m: Option<f64>, a| Some(m.map_or(a, |m| m.max(a))));
+    let first_baseline = first_baseline.unwrap_or_else(|| ascent(0));
+    for (i, line) in layout.lines.iter_mut().enumerate() {
+        line.baseline_y = first_baseline + i as f64 * p.line_height * p.size;
+    }
+    layout.missing = missing.order;
+    Ok(layout)
+}
+
+/// Characters no face covers, once each, in text order.
+#[derive(Default)]
+struct Missing {
+    seen: HashSet<char>,
+    order: Vec<char>,
+}
+
+impl Missing {
+    fn add(&mut self, c: char) {
+        if self.seen.insert(c) {
+            self.order.push(c);
         }
     }
-    Ok(layout)
 }
 
 /// Lines of one paragraph, `baseline_y` left at 0.
@@ -54,7 +86,7 @@ fn layout_paragraph(
     para: &str,
     p: &LayoutParams,
     budget: &mut ShapeBudget,
-    missing: &mut Vec<char>,
+    missing: &mut Missing,
 ) -> Result<Vec<Line>, LayoutError> {
     let bidi = Paragraph::new(para);
     let face_at = assign_faces(faces, para, missing);
@@ -74,21 +106,20 @@ fn layout_paragraph(
         }
     }
 
+    let breaker = Breaker::new(para, &advance, &cluster_start, p.width);
     let mut lines = Vec::new();
-    for range in break_lines(para, &advance, &cluster_start, p.width) {
-        let mut runs = Vec::new();
-        for (visual, rtl) in bidi.visual_runs(range.clone()) {
-            let mut pieces = split_runs(para, visual, |b| face_at[b]);
-            if rtl {
-                pieces.reverse();
-            }
-            for piece in pieces {
-                let face = face_at[piece.start];
-                let shaped = shape(&faces[face], para, piece.clone(), range.clone(), rtl, budget)?;
-                runs.push(Run { face, rtl, glyphs: to_glyphs(para, piece, &shaped, rtl, scale(face)) });
-            }
+    let mut from = 0;
+    loop {
+        let (mut range, mut next) = breaker.next_line(from);
+        let mut runs = shape_line(faces, para, &bidi, &face_at, range.clone(), p, budget)?;
+        // Edge forms can make the reshaped line wider than measured.
+        while runs_width(&runs) > p.width + EPS {
+            let Some(cut) = breaker.shorter(&range) else { break };
+            range = range.start..breaker.trim(range.start, cut);
+            next = breaker.skip_blanks(cut);
+            runs = shape_line(faces, para, &bidi, &face_at, range.clone(), p, budget)?;
         }
-        let width: f64 = runs.iter().flat_map(|r| r.glyphs.iter()).map(|g| g.x_advance).sum();
+        let width = runs_width(&runs);
         let align = p.align.unwrap_or(if bidi.rtl() { Align::Right } else { Align::Left });
         let x = match align {
             Align::Left => 0.0,
@@ -96,45 +127,98 @@ fn layout_paragraph(
             Align::Right => p.width - width,
         };
         lines.push(Line { x, baseline_y: 0.0, width, rtl: bidi.rtl(), runs });
+        if next >= para.len() || next <= from {
+            break;
+        }
+        from = next;
     }
     Ok(lines)
 }
 
+fn runs_width(runs: &[Run]) -> f64 {
+    runs.iter().flat_map(|r| r.glyphs.iter()).map(|g| g.x_advance).sum()
+}
+
+/// The runs of the line `range` of `para`: bidi visual runs, split by face,
+/// each shaped with the line as context. Visual order, left to right.
+fn shape_line(
+    faces: &[Face],
+    para: &str,
+    bidi: &Paragraph,
+    face_at: &[usize],
+    range: Range<usize>,
+    p: &LayoutParams,
+    budget: &mut ShapeBudget,
+) -> Result<Vec<Run>, LayoutError> {
+    let mut runs = Vec::new();
+    for (visual, rtl) in bidi.visual_runs(range.clone()) {
+        let mut pieces = split_runs(para, visual, |b| face_at[b]);
+        if rtl {
+            pieces.reverse();
+        }
+        for piece in pieces {
+            let face = face_at[piece.start];
+            let shaped = shape(&faces[face], para, piece.clone(), range.clone(), rtl, budget)?;
+            let scale = p.size / faces[face].units_per_em();
+            runs.push(Run { face, rtl, glyphs: to_glyphs(para, piece, &shaped, rtl, scale) });
+        }
+    }
+    Ok(runs)
+}
+
 /// The face of each byte of `para` (the bytes of one character share it).
 ///
-/// A character goes to the first face that covers it (spec 1.2), except that
-/// whitespace, combining marks and invisible format characters stay in the
-/// previous character's face when it covers them (or when nothing does), so a
-/// mark shapes with its base and a space stays inside its word run.
+/// A character goes to the first face that covers it (spec 1.2), except:
+/// - a combining mark (Mn, Mc, Me) stays with its base's face when that face
+///   has it; otherwise its base (with the marks before it) moves to the
+///   first face that has them all; failing that, the mark goes to the first
+///   face that has it;
+/// - whitespace and invisible format characters stay in the previous
+///   character's face when it covers them (or when nothing does), so a space
+///   stays inside its word run.
+///
 /// Characters no face covers use the previous face, else face 0, and are
-/// added to `missing` (format characters excepted: they draw nothing).
-fn assign_faces(faces: &[Face], para: &str, missing: &mut Vec<char>) -> Vec<usize> {
-    let mut out = Vec::with_capacity(para.len());
+/// added to `missing` (whitespace and format characters excepted).
+fn assign_faces(faces: &[Face], para: &str, missing: &mut Missing) -> Vec<usize> {
+    let mut out: Vec<usize> = Vec::with_capacity(para.len());
     let mut prev: Option<usize> = None;
-    for c in para.chars() {
-        let sticky = c.is_whitespace() || is_mark(c) || is_format(c);
-        let first_cover = faces.iter().position(|f| f.covers(c));
-        let face = match prev {
-            Some(p) if sticky && (faces[p].covers(c) || first_cover.is_none()) => p,
-            _ => match first_cover {
-                Some(i) => i,
-                None => {
-                    if !is_format(c) && !c.is_whitespace() && !missing.contains(&c) {
-                        missing.push(c);
-                    }
-                    prev.unwrap_or(0)
-                }
-            },
+    // The current base character and its marks so far, from byte `cluster_at`.
+    let mut cluster: Vec<char> = Vec::new();
+    let mut cluster_at = 0;
+    for (at, c) in para.char_indices() {
+        let mark = is_mark(c);
+        let first_cover = || faces.iter().position(|f| f.covers(c));
+        let uncovered = |missing: &mut Missing, fallback: usize| {
+            if !is_format(c) && !c.is_whitespace() {
+                missing.add(c);
+            }
+            fallback
         };
+        let face = match prev {
+            Some(p) if mark && !cluster.is_empty() => {
+                if faces[p].covers(c) {
+                    p
+                } else if let Some(f) = faces.iter().position(|f| f.covers(c) && cluster.iter().all(|&b| f.covers(b))) {
+                    out[cluster_at..].fill(f);
+                    f
+                } else {
+                    first_cover().unwrap_or_else(|| uncovered(missing, p))
+                }
+            }
+            Some(p) if (c.is_whitespace() || is_format(c)) && (faces[p].covers(c) || first_cover().is_none()) => p,
+            _ => first_cover().unwrap_or_else(|| uncovered(missing, prev.unwrap_or(0))),
+        };
+        if mark && !cluster.is_empty() {
+            cluster.push(c);
+        } else {
+            cluster.clear();
+            cluster.push(c);
+            cluster_at = at;
+        }
         prev = Some(face);
         out.extend(std::iter::repeat_n(face, c.len_utf8()));
     }
     out
-}
-
-/// Nonspacing and enclosing marks (bidi class NSM covers Mn and Me).
-fn is_mark(c: char) -> bool {
-    unicode_bidi::bidi_class(c) == unicode_bidi::BidiClass::NSM
 }
 
 /// Invisible format characters that join, select variants or steer bidi.

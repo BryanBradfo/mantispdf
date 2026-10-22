@@ -193,7 +193,13 @@ fn devanagari_conjunct() {
     let line = one_line(&faces, "क्ष");
     assert!(glyph_count(&line) < 3, "ka + virama + ssa forms a conjunct, got {:?}", gids(&line));
     assert_eq!(visual_text(&line), "क्ष");
-    assert!(line.runs.iter().all(|r| r.face == 3));
+    // Noto Sans (the family) covers Devanagari, so it draws it (family first).
+    assert!(line.runs.iter().all(|r| r.face == 0));
+    // A family without Devanagari falls back to the Devanagari face.
+    let fallback = load_faces(&[SC, DEVANAGARI]).unwrap();
+    let line = one_line(&fallback, "क्ष");
+    assert!(line.runs.iter().all(|r| r.face == 1));
+    assert!(glyph_count(&line) < 3);
     // The i-matra is drawn before its consonant but its text stays whole.
     assert_eq!(visual_text(&one_line(&faces, "नमस्ते")), "नमस्ते");
     assert_eq!(visual_text(&one_line(&faces, "हिन्दी")), "हिन्दी");
@@ -419,4 +425,80 @@ fn hostile_text_never_panics() {
     let long = "مرحبا abc 你好 ".repeat(400);
     let layout = lay(&faces, &long, params(10.0, 120.0, None));
     assert!(layout.lines.len() > 10);
+}
+
+// ---- review fixes ----
+
+#[test]
+fn rtl_paragraph_with_number_and_latin() {
+    let faces = all_faces();
+    assert_eq!(visual_text(&one_line(&faces, "שלום 123 abc")), "abc 123 םולש");
+}
+
+#[test]
+fn brackets_are_mirrored_in_rtl_runs() {
+    let faces = all_faces();
+    let line = one_line(&faces, "שלום (עולם)");
+    let gid_of = |text: &str| {
+        line.runs.iter().flat_map(|r| r.glyphs.iter()).find(|g| g.cluster_text == text).map(|g| g.gid).unwrap()
+    };
+    let open = faces[0].hb.glyph_index('(').unwrap().0;
+    let close = faces[0].hb.glyph_index(')').unwrap().0;
+    assert_eq!(gid_of("("), close, "logical ( draws as )");
+    assert_eq!(gid_of(")"), open);
+    // Texts stay logical: the closing bracket, drawn leftmost, reads ")".
+    assert_eq!(visual_text(&line), ")םלוע( םולש");
+}
+
+#[test]
+fn force_cut_lines_fit_after_reshaping() {
+    // Cut inside Arabic words, edge forms are wider than the measured medial
+    // forms: lines are shortened until the reshaped line fits.
+    let faces = all_faces();
+    let text = "بببب ببببب بببب بببببب ببب";
+    for width in [20.0, 30.0, 45.0] {
+        let layout = lay(&faces, text, params(10.0, width, None));
+        for line in &layout.lines {
+            let clusters = line.runs.iter().flat_map(|r| r.glyphs.iter()).filter(|g| !g.cluster_text.is_empty()).count();
+            assert!(line.width <= width + 1e-9 || clusters == 1, "width {width}: line {} wide", line.width);
+        }
+        let letters: usize = layout.lines.iter().map(|l| visual_text(l).chars().filter(|c| *c == 'ب').count()).sum();
+        assert_eq!(letters, text.chars().filter(|c| *c == 'ب').count(), "width {width}");
+    }
+}
+
+#[test]
+fn first_baseline_clears_the_tallest_face_of_the_first_line() {
+    let faces = all_faces();
+    let ascent = |f: usize| faces[f].ascender() * 10.0 / faces[f].units_per_em();
+    assert!(ascent(5) > ascent(0), "the CJK face is taller");
+    let cjk = lay(&faces, "你好\nab", params(10.0, 100.0, None));
+    assert!((cjk.lines[0].baseline_y - ascent(5)).abs() < 1e-9);
+    assert!((cjk.lines[1].baseline_y - ascent(5) - 12.0).abs() < 1e-9);
+    let latin = lay(&faces, "ab\n你好", params(10.0, 100.0, None));
+    assert!((latin.lines[0].baseline_y - ascent(0)).abs() < 1e-9);
+}
+
+#[test]
+fn a_mark_moves_its_base_to_a_face_with_both() {
+    // '1' is in the CJK face (first here) but U+0302 is not; Noto Sans has both.
+    let faces = load_faces(&[SC, SANS]).unwrap();
+    let line = one_line(&faces, "1\u{302}");
+    assert_eq!(line.runs.iter().map(|r| r.face).collect::<Vec<_>>(), [1]);
+    assert_eq!(visual_text(&line), "1\u{302}");
+    // A spacing mark (Mc) stays with its base too.
+    let all = all_faces();
+    let line = one_line(&all, "कि");
+    assert_eq!(line.runs.len(), 1);
+}
+
+#[test]
+fn text_is_capped_before_any_work() {
+    let faces = all_faces();
+    let p = params(10.0, 100.0, None);
+    let long = "a".repeat(MAX_LAYOUT_CHARS + 1);
+    let err = layout_text(&faces, &long, &p, &mut ShapeBudget::per_job()).unwrap_err();
+    assert_eq!(err, LayoutError::TooLong);
+    assert_eq!(err.field(), "text");
+    assert!(layout_text(&faces, &long[1..], &p, &mut ShapeBudget::per_job()).is_ok());
 }

@@ -13,6 +13,7 @@ mod embed;
 mod embed_tests;
 mod face;
 mod layout;
+mod marks;
 mod shape;
 #[cfg(test)]
 mod tests;
@@ -27,6 +28,8 @@ use crate::edit_ops::Align;
 pub(crate) const MAX_FONTS: usize = 20;
 /// Font bytes one job may carry, all fonts together.
 pub(crate) const MAX_FONT_BYTES: usize = 64 * 1024 * 1024;
+/// Characters one `layout_text` call takes.
+pub(crate) const MAX_LAYOUT_CHARS: usize = 20_000;
 /// Characters one job may shape, all passes and boxes together.
 pub(crate) const MAX_SHAPED_CHARS: usize = 1_000_000;
 
@@ -40,6 +43,8 @@ pub(crate) enum LayoutError {
     Params,
     /// The job's shaping budget is spent.
     Budget,
+    /// More than `MAX_LAYOUT_CHARS` characters in one text.
+    TooLong,
 }
 
 impl LayoutError {
@@ -48,7 +53,7 @@ impl LayoutError {
         match self {
             LayoutError::TooManyFonts | LayoutError::FontBytes | LayoutError::BadFont(_) => "font",
             LayoutError::Params => "layout",
-            LayoutError::Budget => "text",
+            LayoutError::Budget | LayoutError::TooLong => "text",
         }
     }
 }
