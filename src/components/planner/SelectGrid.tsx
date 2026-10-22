@@ -17,7 +17,11 @@ export default function SelectGrid({ state, dispatch, mode }: { state: PlannerSt
             key={item.id}
             type="button"
             aria-pressed={on}
-            aria-label={mode === "remove" ? t("removeItem", { caption }) : t("extractItem", { caption })}
+            aria-label={
+              item.kind === "page" && state.sources.length === 1
+                ? t(mode === "remove" ? "removePage" : "extractPage", { page: item.page })
+                : t(mode === "remove" ? "removeItem" : "extractItem", { caption })
+            }
             onClick={() => dispatch({ type: "toggle-select", id: item.id })}
             className="rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 focus-visible:ring-offset-2"
           >

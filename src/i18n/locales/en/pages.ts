@@ -33,6 +33,9 @@ export default {
   deleteItem: "Delete {caption}",
   removeItem: "Remove {caption}",
   extractItem: "Extract {caption}",
+  // A page of a single document (the caption would be "Page N").
+  removePage: "Remove Page {page}",
+  extractPage: "Extract Page {page}",
 
   // Remove / Extract pages (shared)
   everythingLocal: "Everything runs in your browser.",

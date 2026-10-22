@@ -83,6 +83,7 @@ test("French Merge: full flow in French", async ({ page }) => {
 test("French Remove pages: range errors and the result count are in French", async ({ page }) => {
   await page.goto("/fr/remove-pages");
   await upload(page, [fx("four-pages.pdf")], "planner-card", 4);
+  await expect(page.getByRole("button", { name: "Retirer la page 2", exact: true })).toBeVisible();
   const range = page.getByLabel("Pages à supprimer");
   await range.fill("2-3");
   await expect(page.getByText("résultat\u00a0: 2 sur 4\u00a0pages")).toBeVisible();
@@ -220,5 +221,11 @@ test("a /fr first load fetches the page chunk without waiting for the French dic
   expect(started.has("fr") && started.has("MergePdfPage")).toBe(true);
   // Before startFirstLoad, the page chunk was only requested after the dictionary had arrived.
   expect(started.get("MergePdfPage")!).toBeLessThan(finished.get("fr")!);
+});
+
+test("French Extract pages: each page button names its page", async ({ page }) => {
+  await page.goto("/fr/extract-pages");
+  await upload(page, [fx("four-pages.pdf")], "planner-card", 4);
+  await expect(page.getByRole("button", { name: "Extraire la page 3", exact: true })).toBeVisible();
 });
 

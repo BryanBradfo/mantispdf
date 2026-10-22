@@ -31,6 +31,8 @@ const pages: Messages<typeof en> = {
   deleteItem: "Supprimer {caption}",
   removeItem: "Retirer {caption}",
   extractItem: "Extraire {caption}",
+  removePage: "Retirer la page {page}",
+  extractPage: "Extraire la page {page}",
 
   everythingLocal: "Tout se passe dans votre navigateur.",
   perPageZip: "Un fichier par page (ZIP)",
