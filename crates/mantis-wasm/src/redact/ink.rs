@@ -5,9 +5,11 @@
 //! reaches the neighbouring letters.
 //!
 //! An ink box only narrows that fallback when it is certain:
-//! - the code reaches its glyph without guessing: a Type0 CIDFontType2 with
-//!   CIDToGIDMap /Identity or a stream, or a symbolic simple TrueType font
-//!   without /Encoding whose program has only a (3,0) cmap;
+//! - the code reaches its glyph without guessing: only a Type0
+//!   CIDFontType2 with CIDToGIDMap /Identity or a stream (what our engine
+//!   writes). Simple TrueType fonts never qualify: viewers look their codes
+//!   up in different cmaps (code, 0xF000, 0xF100 or 0xF200 + code, by
+//!   encoding), so which glyph is drawn is a guess;
 //! - the glyph's outline reads (its box is computed from its points, never
 //!   from the glyf header), within ±`MAX_REACH` em; a glyph is empty only
 //!   when its loca range is empty;
@@ -17,7 +19,7 @@
 //! Anything else answers None, and the caller keeps its wide fallback.
 
 use super::Budget;
-use crate::rebuild::{Decoded, deref, strict_content_in};
+use crate::rebuild::{Decoded, strict_content_in};
 use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -41,8 +43,6 @@ enum GidMap {
     Identity,
     /// Two-byte CIDs through a CIDToGIDMap stream.
     Stream(ObjectId),
-    /// One-byte codes of a symbolic TrueType font through a (3,0) cmap only.
-    Symbolic,
 }
 
 /// The ink source of one font: references, nothing read at load.
@@ -84,19 +84,6 @@ impl Ink {
         Some(Ink { program: font_file2(doc, descriptor)?, map, answers: RefCell::default() })
     }
 
-    /// Ink of a simple TrueType font `font`: only a symbolic one (Flags bit
-    /// 3) without /Encoding (its program must also have only a (3,0) cmap).
-    pub(crate) fn for_simple_truetype(doc: &Document, font: &Dictionary, descriptor: Option<&Dictionary>) -> Option<Ink> {
-        if font.has(b"Encoding") {
-            return None;
-        }
-        let flags = descriptor?.get(b"Flags").ok().and_then(|f| deref(doc, f))?.as_i64().ok()?;
-        if flags & 4 == 0 {
-            return None;
-        }
-        Some(Ink { program: font_file2(doc, descriptor)?, map: GidMap::Symbolic, answers: RefCell::default() })
-    }
-
     /// The ink of `code`; None when it cannot be known with certainty.
     pub(crate) fn glyph(&self, code: u32, doc: &Document, budget: &mut Budget) -> Option<GlyphInk> {
         if let Some(answer) = self.answers.borrow().get(&code) {
@@ -120,7 +107,6 @@ impl Ink {
                 let at = 2 * usize::try_from(code).ok()?;
                 u16::from_be_bytes([*map.get(at)?, *map.get(at + 1)?])
             }
-            GidMap::Symbolic => symbolic_gid(&face, code)?,
         };
         if gid >= face.number_of_glyphs() {
             return None;
@@ -178,16 +164,4 @@ fn loca_empty(face: &ttf_parser::Face, gid: u16) -> Option<bool> {
         }
     };
     Some(offset(i)? == offset(i + 1)?)
-}
-
-/// Glyph id of one-byte `code` in a symbolic TrueType program whose only
-/// cmap is (3,0): at 0xF000 + code.
-fn symbolic_gid(face: &ttf_parser::Face, code: u32) -> Option<u16> {
-    let code = u8::try_from(code).ok()?;
-    let cmap = face.tables().cmap?;
-    let only = cmap.subtables.into_iter().all(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0);
-    if !only {
-        return None;
-    }
-    cmap.subtables.into_iter().find_map(|s| s.glyph_index(0xF000 + u32::from(code))).map(|g| g.0).filter(|&g| g != 0)
 }

@@ -183,13 +183,11 @@ impl Font {
         };
         let subtype = name(doc, font.get(b"Subtype").ok()).unwrap_or(b"");
         let glyphless = name(doc, font.get(b"BaseFont").ok()).is_some_and(|b| b == b"GlyphLessFont" || b.ends_with(b"+GlyphLessFont"));
+        // Glyph ink only for CID TrueType fonts (see `ink`).
         let mut ink = None;
         let (kind, (ascent, descent), plausible) = match subtype {
             b"Type1" | b"MMType1" | b"TrueType" => {
                 let descriptor = dict(doc, font.get(b"FontDescriptor").ok());
-                if subtype == b"TrueType" {
-                    ink = super::ink::Ink::for_simple_truetype(doc, font, descriptor);
-                }
                 let kind = Self::simple(doc, font, descriptor, &err)?;
                 let metrics = match (&kind, descriptor) {
                     // A standard font without descriptor: the AFM metrics,
@@ -662,25 +660,20 @@ mod tests {
     }
 
     #[test]
-    fn simple_fonts_use_ink_only_through_a_symbolic_3_0_cmap() {
-        let (_, ink, upem) = mark_gid();
-        let narrow = |b: [f64; 4]| (b[2] - (f64::from(ink.x_max) / upem).max(0.0)).abs() < 1e-9 && b[0] > -NARROW_GLYPH_REACH;
+    fn simple_truetype_fonts_keep_the_wide_box() {
+        // Even a symbolic font without /Encoding whose only cmap is (3,0):
+        // viewers disagree on which code reaches which glyph.
         let mut doc = Document::with_version("1.7");
-        // Symbolic, no /Encoding, only a (3,0) cmap: code 66 is the mark.
-        let certain = simple_truetype(&mut doc, THAI_SYMBOLIC, 4, None);
-        assert!(narrow(boxes(&doc, &certain, 66, &mut Budget::page(1 << 30)).0));
-        // Any /Encoding: codes may not reach the cmap as read.
-        let encoded = simple_truetype(&mut doc, THAI_SYMBOLIC, 4, Some(Object::Name(b"WinAnsiEncoding".to_vec())));
-        assert_eq!(boxes(&doc, &encoded, 66, &mut Budget::page(1 << 30)).0, WIDE);
-        // Not symbolic.
-        let plain = simple_truetype(&mut doc, THAI_SYMBOLIC, 32, None);
-        assert_eq!(boxes(&doc, &plain, 66, &mut Budget::page(1 << 30)).0, WIDE);
-        // A Mac (1,0) cmap is a guess.
-        let mac = simple_truetype(&mut doc, THAI_MAC, 4, None);
-        assert_eq!(boxes(&doc, &mac, 66, &mut Budget::page(1 << 30)).0, WIDE);
-        // Two cmaps that disagree: which one a viewer uses is a guess.
-        let mixed = simple_truetype(&mut doc, THAI_MIXED, 4, None);
-        assert_eq!(boxes(&doc, &mixed, 66, &mut Budget::page(1 << 30)).0, WIDE);
+        for (program, flags, encoding) in [
+            (THAI_SYMBOLIC, 4, None),
+            (THAI_SYMBOLIC, 4, Some(Object::Name(b"WinAnsiEncoding".to_vec()))),
+            (THAI_SYMBOLIC, 32, None),
+            (THAI_MAC, 4, None),
+            (THAI_MIXED, 4, None),
+        ] {
+            let font = simple_truetype(&mut doc, program, flags, encoding);
+            assert_eq!(boxes(&doc, &font, 66, &mut Budget::page(1 << 30)).0, WIDE);
+        }
     }
 
     #[test]
