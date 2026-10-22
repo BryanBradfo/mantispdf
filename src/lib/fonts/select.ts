@@ -32,6 +32,9 @@ const CJK_ORDER: CjkFlavour[] = ["SC", "TC", "JP", "KR"];
 const isInherited = (cp: number): boolean =>
   (cp >= 0x200b && cp <= 0x200f) || cp === 0x2060 || (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
 
+/** Combining marks and Common/Inherited characters (spaces, digits, punctuation) stay with the run before them when its font covers them. */
+const isSticky = (ch: string): boolean => /^[\p{M}\p{Script=Common}\p{Script=Inherited}]$/u.test(ch);
+
 function pick(manifest: FontManifest, family: string, bold: boolean): FontEntry | undefined {
   const faces = manifest.fonts.filter((f) => f.family === family);
   return (bold ? faces.find((f) => f.weight === 700) : undefined) ?? faces.find((f) => f.weight === 400);
@@ -52,7 +55,8 @@ export function selectFonts(manifest: FontManifest, text: string, options: Selec
   for (const ch of text) {
     const cp = ch.codePointAt(0)!;
     const previous = runs[runs.length - 1];
-    const font = isInherited(cp) && previous?.font ? previous.font : (chain.find((f) => fontCovers(f, cp)) ?? null);
+    const keep = previous?.font && (isInherited(cp) || (isSticky(ch) && fontCovers(previous.font, cp)));
+    const font = keep ? previous.font : (chain.find((f) => fontCovers(f, cp)) ?? null);
     if (previous && previous.font === font) previous.text += ch;
     else runs.push({ text: ch, font });
   }

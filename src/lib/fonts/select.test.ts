@@ -44,7 +44,7 @@ describe("selectFonts", () => {
 
   it("falls back per character in the chain order", () => {
     expect(sel("a ب א क ก 中")).toEqual([
-      ["a ", "Noto Sans"], ["ب", "Noto Sans Arabic"], [" ", "Noto Sans"], ["א", "Noto Sans Hebrew"], [" ", "Noto Sans"],
+      ["a ", "Noto Sans"], ["ب ", "Noto Sans Arabic"], ["א", "Noto Sans Hebrew"], [" ", "Noto Sans"],
       ["क", "Noto Sans Devanagari"], [" ", "Noto Sans"], ["ก", "Noto Sans Thai"], [" ", "Noto Sans"], ["中", "Noto Sans SC"],
     ]);
   });
@@ -87,5 +87,21 @@ describe("selectFonts", () => {
 
   it("an unknown family yields only unflagged-by-family fallbacks, never a throw", () => {
     expect(sel("a", "Nope")).toEqual([["a", null]]);
+  });
+
+  it("keeps neutral characters with the previous run, so Arabic with spaces is one run", () => {
+    expect(sel("بِسْمِ ٱللَّهِ")).toEqual([["بِسْمِ ٱللَّهِ", "Noto Sans Arabic"]]);
+    expect(sel("a, b 1")).toEqual([["a, b 1", "Noto Sans"]]);
+  });
+
+  it("keeps combining marks with the previous run's font when it covers them", () => {
+    const marks: [number, number] = [0x300, 0x36f];
+    const withMarks: FontManifest = {
+      version: 1,
+      fonts: manifest.fonts.map((f) => (["Noto Sans", "Noto Sans Arabic", "Noto Sans SC"].includes(f.family) ? { ...f, ranges: [...f.ranges, marks].sort((a, b) => a[0] - b[0]) } : f)),
+    };
+    const run = (text: string) => selectFonts(withMarks, text, { family: "Noto Sans", bold: false, cjk: "SC" }).map((r) => [r.text, r.font?.family]);
+    expect(run("ب\u0301")).toEqual([["ب\u0301", "Noto Sans Arabic"]]);
+    expect(run("中\u0301")).toEqual([["中\u0301", "Noto Sans SC"]]);
   });
 });

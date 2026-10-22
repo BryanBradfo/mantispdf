@@ -1,5 +1,11 @@
 import { fontUrl, isFontFileName, parseManifest, type FontManifest } from "./manifest";
 
+/** True when the bytes start with an sfnt signature (TrueType, 'true', OpenType 'OTTO' or a 'ttcf' collection). */
+function isSfnt(b: Uint8Array): boolean {
+  const tag = String.fromCharCode(b[0] ?? 0, b[1] ?? 0, b[2] ?? 0, b[3] ?? 0);
+  return tag === "\0\u0001\0\0" || tag === "true" || tag === "OTTO" || tag === "ttcf";
+}
+
 export type Fetcher = (url: string) => Promise<Response>;
 
 export interface FontLoader {
@@ -42,6 +48,8 @@ export function createFontLoader(fetcher: Fetcher = (url) => fetch(url)): FontLo
           .then(async (res) => {
             const bytes = new Uint8Array(await res.arrayBuffer());
             if (bytes.byteLength === 0) throw new Error(`Font ${file} is empty`);
+            // A dev server answers a missing file with index.html (status 200): never keep that as a font.
+            if (!isSfnt(bytes)) throw new Error(`Font ${file} is not a font file`);
             return bytes;
           })
           .catch((e: unknown) => {
