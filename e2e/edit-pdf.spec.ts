@@ -556,3 +556,29 @@ test("edit pdf: standard-font text never fetches the font list", async ({ page }
   expect(bytes.length).toBeGreaterThan(0);
   expect(fontRequests).toEqual([]);
 });
+
+test("edit pdf: a Noto box shrunk by hand stays shrunk after editing it", async ({ page }) => {
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  const overlay = page.getByTestId("editor-overlay");
+  await canvas.tool("Text (T)");
+  await canvas.click(100, 100);
+  await page.getByRole("textbox", { name: "Text box content" }).fill("مرحبا\nبالعالم\nالسلام");
+  await page.keyboard.press("Escape");
+  // The box grows to its three lines.
+  await expect(overlay.getByTestId("noto-text").locator("text")).toHaveCount(3, { timeout: 30000 });
+  // Shrink it by its bottom handle: two lines are clipped.
+  const handle = overlay.locator('[data-handle="s"] rect').first();
+  const hb = (await handle.boundingBox())!;
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2 - 40, { steps: 6 });
+  await page.mouse.up();
+  await expect(overlay.getByTestId("noto-text").locator("text")).toHaveCount(1, { timeout: 30000 });
+  // Edit mode and back, text unchanged: the box keeps the size it was given.
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("textbox", { name: "Text box content" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(1000);
+  await expect(overlay.getByTestId("noto-text").locator("text")).toHaveCount(1);
+});

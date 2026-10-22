@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { NotoFamily, Point, TextItem } from "../../lib/editor/model";
 import { planFonts } from "../../lib/editor/unicodeText";
 import type { TextLayout } from "../../lib/fonts/jobFonts";
@@ -34,12 +34,12 @@ export default function NotoText({ item, family, bold, toPx, scale, box }: Props
   const fakeBold = new Set(plan?.fakeBold.map((f) => f.file) ?? []);
   const key = JSON.stringify([files, item.text, item.size, item.rect[2], item.rect[3], item.align, item.lineHeight]);
   const [shown, setShown] = useState<{ key: string; layout: TextLayout | null; files: string[] } | null>(null);
-  // The box grows to its engine layout once per content change, never after the user resizes it.
-  const content = JSON.stringify([files, item.text, item.size, item.rect[2], item.align, item.lineHeight]);
-  const fitted = useRef<string | null>(null);
+  // The box grows to its engine layout once per content change (text, fonts, size, alignment,
+  // line height), never after the user resizes it: its size is not part of the content.
+  const content = JSON.stringify([files, item.text, item.size, item.align, item.lineHeight]);
   useEffect(() => {
-    if (!shown?.layout || !env?.fit || shown.key !== key || fitted.current === content) return;
-    fitted.current = content;
+    if (!shown?.layout || !env?.fit || !env.fitted || shown.key !== key || env.fitted.get(item.id) === content) return;
+    env.fitted.set(item.id, content);
     if (shown.layout.height > item.rect[3] + 1e-6) env.fit(item.id, shown.layout.height);
   }, [shown, key, content, env, item.id, item.rect]);
 

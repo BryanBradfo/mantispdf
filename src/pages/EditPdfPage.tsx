@@ -129,7 +129,12 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
     };
   }, [needsNoto, manifest]);
   const fit = useCallback((id: string, height: number) => dispatch({ type: "fit", id, height }), []);
-  const unicodeText = useMemo<UnicodeTextEnv>(() => ({ manifest, cjk, layoutText, fit }), [manifest, cjk, layoutText, fit]);
+  // What each text box was last fitted for (see UnicodeTextEnv.fitted): outlives its preview.
+  const fitted = useRef(new Map<string, string>());
+  const unicodeText = useMemo<UnicodeTextEnv>(
+    () => ({ manifest, cjk, layoutText, fit, fitted: fitted.current }),
+    [manifest, cjk, layoutText, fit],
+  );
 
   const { items, page, selectedId, editingId } = state;
   const setEditingId = (id: string | null) => dispatch({ type: "editText", id });

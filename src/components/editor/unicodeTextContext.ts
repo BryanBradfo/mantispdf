@@ -20,6 +20,11 @@ export interface UnicodeTextEnv {
   layoutText: (request: LayoutRequest) => Promise<TextLayout>;
   /** Grow text box `id` to `height` points (top edge fixed): its engine layout needs it. */
   fit?: (id: string, height: number) => void;
+  /**
+   * The content each text box was last fitted for, by item id. Kept by the editor, not the
+   * preview: a box that remounts (edit mode, page change) must not refit after a manual resize.
+   */
+  fitted?: Map<string, string>;
 }
 
 export const UnicodeTextContext = createContext<UnicodeTextEnv | null>(null);
