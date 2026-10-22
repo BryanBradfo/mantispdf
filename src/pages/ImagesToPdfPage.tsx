@@ -307,7 +307,7 @@ export default function ImagesToPdfPage() {
       <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
 
       <div className="mt-8">
-        <DropZone multiple onFiles={handleFiles} error={uploadError} accept="image/*" noun="image" hint="JPG, PNG, WebP, GIF, BMP" />
+        <DropZone multiple onFiles={handleFiles} error={uploadError} accept="image/*" kind="image" hint="JPG, PNG, WebP, GIF, BMP" />
       </div>
 
       {items.length > 0 && (

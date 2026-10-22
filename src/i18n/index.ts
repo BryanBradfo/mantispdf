@@ -1,5 +1,6 @@
 export { DEFAULT_LOCALE, LOCALES, localeFromPath, localePath, localizeRoutes, stripLocale } from "./locale";
 export type { Locale } from "./locale";
+export { readStoredLocale, shouldOfferFrench, storeLocale } from "./localeChoice";
 export { formatBytes, formatNumber } from "./format";
 export { describeError, type DescribedError } from "./describeError";
 export {

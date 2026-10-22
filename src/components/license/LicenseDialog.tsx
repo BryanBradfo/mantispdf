@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Loader2, Sparkles, X } from "lucide-react";
 import type { LicenseStatus } from "../../hooks/useLicense";
+import { useT } from "../../i18n";
 
 interface LicenseDialogProps {
   open: boolean;
@@ -20,6 +21,7 @@ export default function LicenseDialog({
   onDeactivate,
   checkoutUrl,
 }: LicenseDialogProps) {
+  const t = useT("common");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +73,7 @@ export default function LicenseDialog({
           <motion.div
             role="dialog"
             aria-modal="true"
-            aria-label="MantisPDF Pro license"
+            aria-label={t("licenseDialog")}
             initial={{ opacity: 0, scale: 0.96, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
@@ -80,7 +82,7 @@ export default function LicenseDialog({
           >
             <button
               onClick={onClose}
-              aria-label="Close"
+              aria-label={t("close")}
               className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/5 dark:hover:text-zinc-200"
             >
               <X className="h-4 w-4" />
@@ -94,11 +96,10 @@ export default function LicenseDialog({
               {isPro ? (
                 <>
                   <h2 className="mt-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                    MantisPDF Pro is active
+                    {t("licenseActiveTitle")}
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    Math OCR and the live LaTeX preview are unlocked. Thank you for
-                    supporting local-first software.
+                    {t("licenseActiveBody")}
                   </p>
                   {status.key_masked && (
                     <p className="mt-4 inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 font-mono text-xs text-zinc-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
@@ -112,17 +113,16 @@ export default function LicenseDialog({
                     className="mt-5 inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 disabled:opacity-50 dark:border-white/10 dark:text-zinc-300 dark:hover:text-white"
                   >
                     {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Deactivate on this device
+                    {t("licenseDeactivate")}
                   </button>
                 </>
               ) : (
                 <>
                   <h2 className="mt-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                    Unlock MantisPDF Pro
+                    {t("licenseUnlockTitle")}
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    Pro adds offline math OCR — convert equations to perfect LaTeX,
-                    rendered live. Enter your license key to activate.
+                    {t("licenseUnlockBody")}
                   </p>
 
                   <div className="mt-5">
@@ -144,7 +144,7 @@ export default function LicenseDialog({
                       className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-black shadow-glow transition-all hover:bg-accent-soft hover:shadow-glow-lg disabled:pointer-events-none disabled:opacity-40"
                     >
                       {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {busy ? "Activating…" : "Activate license"}
+                      {busy ? t("licenseActivating") : t("licenseActivate")}
                     </button>
                   </div>
 
@@ -154,7 +154,7 @@ export default function LicenseDialog({
                     rel="noopener noreferrer"
                     className="mt-4 block text-center text-xs text-zinc-500 transition-colors hover:text-accent-deep dark:text-zinc-400 dark:hover:text-accent"
                   >
-                    Don&apos;t have a key? Get MantisPDF Pro →
+                    {t("licenseGetKey")}
                   </a>
                 </>
               )}

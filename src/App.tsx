@@ -4,6 +4,8 @@ import { Analytics } from "@vercel/analytics/react";
 import TitleBar from "./components/desktop/TitleBar";
 import Header from "./components/layout/Header";
 import Footer from "./components/layout/Footer";
+import FrenchBanner from "./components/layout/FrenchBanner";
+import { HtmlLang } from "./components/seo/PageSEO";
 import { LocaleProvider, localizeRoutes } from "./i18n";
 import { APP_ROUTES } from "./routes";
 
@@ -23,8 +25,10 @@ export default function App() {
       {/* LocaleProvider suspends while a non-English dictionary chunk loads. */}
       <Suspense fallback={<PageSpinner />}>
         <LocaleProvider>
+          <HtmlLang />
           <div className="flex min-h-screen flex-col">
             <TitleBar />
+            <FrenchBanner />
             <Header />
             <main className="flex-1">
               <Suspense fallback={<PageSpinner />}>

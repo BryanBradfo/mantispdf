@@ -1,3 +1,5 @@
+import { useT } from "../../i18n";
+
 interface ErrorAlertProps {
   error: string | null;
   onDismiss?: () => void;
@@ -5,6 +7,7 @@ interface ErrorAlertProps {
 }
 
 export default function ErrorAlert({ error, onDismiss, className }: ErrorAlertProps) {
+  const t = useT("common");
   if (!error) return null;
   return (
     <div
@@ -13,7 +16,7 @@ export default function ErrorAlert({ error, onDismiss, className }: ErrorAlertPr
       {error}
       {onDismiss && (
         <button onClick={onDismiss} className="ml-4 underline">
-          Dismiss
+          {t("dismiss")}
         </button>
       )}
     </div>

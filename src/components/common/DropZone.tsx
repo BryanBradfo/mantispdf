@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { Trans, useT } from "../../i18n";
 
 interface DropZoneProps {
   onFile?: (file: File) => void;
@@ -7,8 +8,8 @@ interface DropZoneProps {
   error: string | null;
   /** File input accept filter; defaults to PDFs. */
   accept?: string;
-  /** Prompt noun (default "PDF") and hint line (default "PDF files"). */
-  noun?: string;
+  /** What the prompt asks for (default PDFs); `hint` overrides the line under it ("PDF files"). */
+  kind?: "pdf" | "image";
   hint?: string;
   /**
    * The PDF engine can take the file now. Exposed as `data-engine-ready="true"` on the file input
@@ -17,7 +18,8 @@ interface DropZoneProps {
   engineReady?: boolean;
 }
 
-export default function DropZone({ onFile, onFiles, multiple, error, accept = ".pdf,application/pdf", noun = "PDF", hint = "PDF files", engineReady }: DropZoneProps) {
+export default function DropZone({ onFile, onFiles, multiple, error, accept = ".pdf,application/pdf", kind = "pdf", hint, engineReady }: DropZoneProps) {
+  const t = useT("common");
   const [dragging, setDragging] = useState(false);
 
   const handleDrop = useCallback(
@@ -79,9 +81,13 @@ export default function DropZone({ onFile, onFiles, multiple, error, accept = ".
           />
         </svg>
         <p className="text-lg font-medium text-gray-700 dark:text-[#aaa]">
-          Drop your {noun}{multiple ? "s" : ""} here or <span className="text-mantis-600 underline">browse</span>
+          <Trans
+            ns="common"
+            k={kind === "image" ? (multiple ? "dropImages" : "dropImage") : multiple ? "dropPdfs" : "dropPdf"}
+            components={{ browse: (c) => <span className="text-mantis-600 underline">{c}</span> }}
+          />
         </p>
-        <p className="mt-1 text-sm text-gray-500 dark:text-[#555]">{hint}</p>
+        <p className="mt-1 text-sm text-gray-500 dark:text-[#555]">{hint ?? t("dropHintPdf")}</p>
         <input
           data-engine-ready={engineReady ? "true" : undefined}
           type="file"

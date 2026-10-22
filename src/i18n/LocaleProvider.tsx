@@ -21,15 +21,27 @@ const LOADERS: Record<Exclude<Locale, typeof DEFAULT_LOCALE>, () => Promise<AppD
   fr: () => import("./locales/fr").then((m) => m.default),
 };
 
-const loading = new Map<Locale, Promise<AppDictionary>>();
+/** A promise React's `use()` can read synchronously once settled (the documented thenable fields). */
+type TrackedPromise<T> = Promise<T> & { status?: "fulfilled"; value?: T };
 
-/** Starts (once) and returns the load of a locale's dictionary. */
+const loading = new Map<Locale, TrackedPromise<AppDictionary>>();
+
+/**
+ * Starts (once) and returns the load of a locale's dictionary. Call it early (switcher hover,
+ * banner) so the later render does not suspend: the settled promise is marked `fulfilled`, which
+ * `use()` reads without throwing.
+ */
 export function loadLocale(locale: Locale): Promise<AppDictionary> {
   if (locale === DEFAULT_LOCALE) return Promise.resolve(en);
   let p = loading.get(locale);
   if (!p) {
-    p = LOADERS[locale]();
-    loading.set(locale, p);
+    const tracked: TrackedPromise<AppDictionary> = LOADERS[locale]();
+    tracked.then((dict) => {
+      tracked.status = "fulfilled";
+      tracked.value = dict;
+    }, () => loading.delete(locale));
+    loading.set(locale, tracked);
+    p = tracked;
   }
   return p;
 }

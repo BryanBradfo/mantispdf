@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { act, type ReactNode, Suspense } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
@@ -74,6 +74,34 @@ describe("LocaleProvider + useT", () => {
   it("lazy-loads French under /fr", async () => {
     const el = await render("/fr/merge", <Probe />);
     expect(el.textContent).toBe("fr|Mot de passe incorrect");
+  });
+});
+
+describe("preloading", () => {
+  it("renders French without suspending once the chunk is loaded", async () => {
+    // Fresh module instance: React has never seen this load promise.
+    vi.resetModules();
+    const fresh = await import(".");
+    await fresh.loadLocale("fr");
+    function FreshProbe() {
+      return <p>{fresh.useT("common")("errorWrongPassword")}</p>;
+    }
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    // One synchronous commit: no fallback when the dictionary is already there.
+    act(() => {
+      root!.render(
+        <MemoryRouter initialEntries={["/fr"]}>
+          <Suspense fallback={<p>loading</p>}>
+            <fresh.LocaleProvider>
+              <FreshProbe />
+            </fresh.LocaleProvider>
+          </Suspense>
+        </MemoryRouter>,
+      );
+    });
+    expect(host.textContent).toBe("Mot de passe incorrect");
   });
 });
 

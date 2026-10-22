@@ -1,5 +1,5 @@
 import { lazy, type ReactElement } from "react";
-import { Link, Navigate } from "./i18n";
+import { Link, Navigate, useT } from "./i18n";
 
 const HomePage = lazy(() => import("./pages/HomePage"));
 const SplitPdfPage = lazy(() => import("./pages/SplitPdfPage"));
@@ -31,18 +31,19 @@ const ImagesToPdfPage = lazy(() => import("./pages/ImagesToPdfPage"));
 const ExtractImagesPage = lazy(() => import("./pages/ExtractImagesPage"));
 
 function NotFound() {
+  const t = useT("common");
   return (
     <div className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-4 text-center">
       <p className="text-5xl font-black text-mantis-500">404</p>
-      <h1 className="mt-4 text-2xl font-bold text-gray-900 dark:text-[#e5e5e5]">Page not found</h1>
+      <h1 className="mt-4 text-2xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("notFoundTitle")}</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        That page doesn’t exist. Let’s get you back to the PDF tools.
+        {t("notFoundBody")}
       </p>
       <Link
         to="/"
         className="mt-6 rounded-lg bg-mantis-500 px-4 py-2 font-medium text-white hover:bg-mantis-600"
       >
-        ← Back to all tools
+        {t("notFoundBack")}
       </Link>
     </div>
   );
@@ -58,6 +59,11 @@ export interface AppRoute {
  * (`localizeRoutes`: `/merge` and `/fr/merge` share an element). Paths are absolute; `Link` and
  * `Navigate` from `./i18n` keep the current locale prefix.
  */
+/** A legacy path kept only to redirect (not a page of its own: left out of the sitemap). */
+export function isRedirect(route: AppRoute): boolean {
+  return route.element.type === Navigate;
+}
+
 export const APP_ROUTES: readonly AppRoute[] = [
   { path: "/", element: <HomePage /> },
   { path: "/split", element: <SplitPdfPage /> },
