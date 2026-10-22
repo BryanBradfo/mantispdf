@@ -146,7 +146,9 @@ impl<'f, 'a> Embedder<'f, 'a> {
             let bold = fake_bold(run.face);
             if bold != stroked {
                 if bold {
-                    let _ = writeln!(out, "2 Tr {} w", fmt_num(FAKE_BOLD_EM * size));
+                    // Round joins: a mitre join makes readers (our redact interpreter) assume
+                    // the stroke reaches 10 half widths past the outline.
+                    let _ = writeln!(out, "2 Tr {} w 1 j", fmt_num(FAKE_BOLD_EM * size));
                 } else {
                     out.push_str("0 Tr\n");
                 }

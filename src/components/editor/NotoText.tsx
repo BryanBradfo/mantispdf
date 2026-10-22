@@ -100,7 +100,7 @@ export default function NotoText({ item, family, bold, toPx, scale, box }: Props
               // left-to-right text element a neutral at its end (a comma, a stop) would be
               // put on the wrong side.
               const [x, y] = toPx([x0 + run.x + (run.rtl ? run.width : 0), y0 + h - line.baselineY]);
-              const stroke = fakeBold.has(file) ? { stroke: cssColor(item.color), strokeWidth: FAKE_BOLD_EM * item.size * scale } : {};
+              const stroke = fakeBold.has(file) ? { stroke: cssColor(item.color), strokeWidth: FAKE_BOLD_EM * item.size * scale, strokeLinejoin: "round" as const } : {};
               return (
                 <text
                   key={`${i}-${k}`}

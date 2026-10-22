@@ -1075,6 +1075,21 @@ mod tests {
     }
 
     #[test]
+    fn redacting_a_word_in_synthetic_bold_spares_its_neighbour() {
+        // A stroked (fake bold) glyph's redact box grows by its stroke reach; with mitre joins
+        // that reach is 10 times the half width and swallowed the next ideograph.
+        let pdf = run_fonts(vec![noto_item("测试中文", vec![0, 2], vec![2])]).unwrap();
+        let options = crate::redact::search::SearchOptions { whole_word: false, case_sensitive: true };
+        let found = crate::redact::search::redact_search(&pdf, "测试", &options).unwrap();
+        assert_eq!(found.matches.len(), 1);
+        let rects = found.pages.iter().flat_map(|p| p.rects.iter().map(|r| crate::redact::RedactRect { page: p.page, rect: *r })).collect();
+        let job = crate::redact::RedactJob { rects, fill: crate::redact::Fill::Black, remove_metadata: true, rasters: Vec::new() };
+        let (out, _) = crate::redact::redact(&pdf, job).unwrap();
+        assert_eq!(search(&out, "测试"), 0);
+        assert_eq!(search(&out, "中文"), 1);
+    }
+
+    #[test]
     fn noto_font_errors() {
         // A chain naming a font the job does not carry.
         let e = run_fonts(vec![noto_item("x", vec![0, 7], vec![])]).unwrap_err();
