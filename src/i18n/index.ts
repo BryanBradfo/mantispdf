@@ -19,4 +19,5 @@ export type { Messages, PluralForms, TFunction } from "./types";
 export type { NsT } from "./nsT";
 export type { UiError } from "./describeError";
 export { describeProgress, type ProgressStep } from "./describeProgress";
+export { joinList } from "./joinList";
 export type { NamespaceName } from "./locales/en";

@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { entryText, selectedMarks, type SearchEntry } from "../../lib/redact/marking";
 import type { MarkInput } from "../../lib/redact/model";
 import { useT } from "../../i18n";
+import { pageListText } from "../../lib/redact/report";
 
 export interface SearchResult {
   query: string;
@@ -54,10 +55,12 @@ export default function SearchBar({ searching, result, onFind, onMark, onShow, l
     });
 
   const pagesLabel = (pages: number[]) =>
-    t("pageList", {
-      count: pages.length,
-      list: pages.length <= 8 ? pages.join(", ") : t("listMore", { list: pages.slice(0, 8).join(", "), count: pages.length - 8 }),
-    });
+    pages.length <= 8
+      ? pageListText(pages, t)
+      : t("pageList", {
+          count: pages.length,
+          list: t("listMore", { list: pages.slice(0, 8).join(t("listSep")), count: pages.length - 8 }),
+        });
 
   return (
     <section aria-labelledby={`${id}-title`} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-[#333] dark:bg-[#111]">

@@ -4,6 +4,7 @@ import type { OcrLanguage } from "./languages";
 import type { PipelinePage } from "./pipeline";
 import type { OcrWordWire } from "./textLayerWire";
 import type { NsT } from "../../i18n";
+import { joinList } from "../../i18n/joinList";
 
 /** Pages whose mean word confidence is below this are flagged as low quality scans. */
 export const LOW_QUALITY = 60;
@@ -132,7 +133,7 @@ export function wordLimitProblem(pages: readonly { page: number; words: readonly
 
 /** "page 3" / "pages 2, 5". */
 export function pageList(pages: readonly number[], t: NsT<"ocr">): string {
-  return t("pageList", { count: pages.length, list: pages.join(", ") });
+  return t("pageList", { count: pages.length, list: joinList(pages, t("listSep"), t("listLast")) });
 }
 
 /** The summary's first line. */
@@ -207,4 +208,4 @@ export const failedLine = (pages: readonly number[], t: NsT<"ocr">): string => t
 
 /** Pages a second pass left alone because they already had an OCR text layer. */
 export const alreadyOcrLine = (pages: readonly number[], t: NsT<"ocr">): string =>
-  t("alreadyOcr", { count: pages.length, list: pages.join(", ") });
+  t("alreadyOcr", { count: pages.length, list: joinList(pages, t("listSep"), t("listLast")) });

@@ -54,6 +54,22 @@ const KNOWN: readonly Known[] = [
     describe: (m, t) => t("errorNoSuchPage", { page: m[1], count: Number(m[2]) }),
   },
   {
+    pattern: /^Page (\d+) is out of range \(document has (\d+) pages\)$/,
+    describe: (m, t) => t("errorNoSuchPage", { page: m[1], count: Number(m[2]) }),
+  },
+  {
+    pattern: /^Page (\d+) is out of range \(document (\d+) has (\d+) pages\)$/,
+    describe: (m, t) => t("errorNoSuchPageNth", { page: m[1], n: m[2], count: Number(m[3]) }),
+  },
+  {
+    pattern: /^Page (\d+) appears more than once; duplicates are not allowed$/,
+    describe: (m, t) => t("errorDuplicatePage", { page: m[1] }),
+  },
+  { pattern: /^Bates number is too large$/, describe: (_, t) => t("errorBatesTooLarge") },
+  { pattern: /^Failed to merge PDF (\d+): /, describe: (m, t) => t("errorMergeNth", { n: m[1] }), details: true },
+  { pattern: /^Rotation must be a multiple of 90 degrees/, describe: (_, t) => t("errorRotation"), details: true },
+  { pattern: /^Could not get a 2D canvas context$/, describe: (_, t) => t("errorNoCanvas") },
+  {
     pattern: /^Invalid range (\d+)[–-](\d+) for a (\d+)-page document$/,
     describe: (m, t) => t("errorBadRange", { start: m[1], end: m[2], count: Number(m[3]) }),
   },

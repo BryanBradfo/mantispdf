@@ -24,7 +24,7 @@ const editPdf: Messages<typeof en> = {
   "tool.arrow": "Flèche",
   "tool.highlight": "Surligner",
   "tool.draw": "Dessiner",
-  "tool.whiteout": "Blanc",
+  "tool.whiteout": "Blanc correcteur",
   toolWithKey: "{label} ({key})",
   undoLabel: "Annuler (Ctrl+Z)",
   redoLabel: "Rétablir (Ctrl+Maj+Z)",

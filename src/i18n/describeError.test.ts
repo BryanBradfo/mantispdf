@@ -93,4 +93,16 @@ describe("describeInitError", () => {
       details: "RuntimeError: unreachable",
     });
   });
+
+  it.each([
+    ["Page 9 is out of range (document has 4 pages)", "La page 9 n’existe pas (le document compte 4\u00a0pages).", false],
+    ["Page 9 is out of range (document 2 has 4 pages)", "La page 9 n’existe pas dans le PDF 2 (il compte 4\u00a0pages).", false],
+    ["Page 3 appears more than once; duplicates are not allowed", "La page 3 apparaît plusieurs fois\u00a0; les doublons ne sont pas permis.", false],
+    ["Bates number is too large", "Le numéro Bates est trop grand.", false],
+    ["Failed to merge PDF 2: bad xref", "Le PDF 2 n’a pas pu être fusionné.", true],
+    ["Rotation must be a multiple of 90 degrees, got 45", "La rotation doit être un multiple de 90°.", true],
+    ["Could not get a 2D canvas context", "Le navigateur ne permet pas de dessiner l’image (canevas indisponible).", false],
+  ])("maps the remaining engine message %j", (raw, french, withDetails) => {
+    expect(describeError(new Error(raw), tFr, "fr")).toEqual({ message: french, details: withDetails ? raw : null });
+  });
 });

@@ -1,12 +1,25 @@
 /** The success report of a redaction, from the engine's counts. */
 import type { RedactResultWire } from "./toJob";
 import type { NsT } from "../../i18n";
+import { joinList } from "../../i18n/joinList";
+
+const joinPages = (pages: readonly number[], t: NsT<"redact">) => joinList(pages, t("listSep"), t("listLast"));
+
+/** Pages after a preposition: "page 1" / "pages 1, 2" (French: "la page 1" / "les pages 1 et 2"). */
+export function pageListText(pages: readonly number[], t: NsT<"redact">): string {
+  return t("pageList", { count: pages.length, list: joinPages(pages, t) });
+}
+
+/** Pages as a label: "page 4" / "pages 3, 4" (French: "pages 3 et 4"). */
+export function pageLabelText(pages: readonly number[], t: NsT<"redact">): string {
+  return t("pageLabels", { count: pages.length, list: joinPages(pages, t) });
+}
 
 /** The pages a search could not fully cover (undecodable or not searched), or null. */
 export function uncoveredNote(undecodable: readonly number[], unsearched: readonly number[], t: NsT<"redact">): string | null {
   const pages = [...new Set([...undecodable, ...unsearched])].sort((a, b) => a - b);
   if (pages.length === 0) return null;
-  return t("uncovered", { count: pages.length, list: pages.join(", ") });
+  return t("uncovered", { count: pages.length, list: joinPages(pages, t) });
 }
 
 /** The lines of the success report: only what happened, plus the pages search did not cover. */
@@ -19,8 +32,7 @@ export function reportLines(r: RedactResultWire, uncovered: readonly number[], t
   if (r.annotationsRemoved > 0) lines.push(t("annotationsRemoved", { count: r.annotationsRemoved }));
   for (const page of [...(r.widenedPages ?? [])].sort((a, b) => a - b)) lines.push(t("widened", { page }));
   if (r.pagesRasterized.length > 0) {
-    const pages = t("pageList", { count: r.pagesRasterized.length, list: r.pagesRasterized.join(", ") });
-    lines.push(t("rasterized", { pages }));
+    lines.push(t("rasterized", { pages: pageLabelText(r.pagesRasterized, t) }));
   }
   const note = uncoveredNote(uncovered, [], t);
   if (note) lines.push(note);

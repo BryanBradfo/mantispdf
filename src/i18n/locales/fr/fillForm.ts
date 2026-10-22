@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/fillForm";
 
 const fillForm: Messages<typeof en> = {
-  seoTitle: "Remplir un formulaire PDF\u00a0: saisissez dans les champs | MantisPDF",
+  seoTitle: "Remplir un formulaire PDF\u00a0: remplissez les champs | MantisPDF",
   seoDescription:
     "Remplissez des formulaires PDF dans votre navigateur\u00a0: champs de texte, cases à cocher, boutons radio et listes, puis téléchargez le PDF rempli ou aplati. Gratuit, privé, sans envoi.",
   heading: "Remplir un formulaire",
@@ -30,7 +30,7 @@ const fillForm: Messages<typeof en> = {
   formFields: "Champs du formulaire",
   "kind.text": "Texte",
   "kind.checkbox": "Case à cocher",
-  "kind.radio": "Choix",
+  "kind.radio": "Boutons radio",
   "kind.combo": "Liste déroulante",
   "kind.list": "Liste",
   "kind.signature": "Signature",

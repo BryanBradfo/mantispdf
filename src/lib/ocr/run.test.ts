@@ -234,6 +234,6 @@ describe("OCR texts in French", () => {
     expect(loadingLabelT({ status: "loading language traineddata", progress: 0.42 }, t)).toBe(
       "Chargement des données de langue 42\u00a0%",
     );
-    expect(failedLineT([2, 9], t)).toBe("Lecture impossible\u00a0: pages 2, 9.");
+    expect(failedLineT([2, 9], t)).toBe("Lecture impossible\u00a0: pages 2 et 9.");
   });
 });

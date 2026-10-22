@@ -2,11 +2,11 @@ import type { Messages } from "../../types";
 import type en from "../en/ocr";
 
 const ocr: Messages<typeof en> = {
-  seoTitle: "OCR PDF\u00a0: rendez les PDF numérisés cherchables | MantisPDF",
+  seoTitle: "OCR PDF\u00a0: rendez les PDF numérisés interrogeables | MantisPDF",
   seoDescription:
-    "Reconnaissez le texte des PDF numérisés dans votre navigateur et ajoutez-le comme couche de texte cherchable et copiable. Gratuit, privé, sans envoi.",
+    "Reconnaissez le texte des PDF numérisés dans votre navigateur et ajoutez-le comme couche de texte interrogeable et copiable. Gratuit, privé, sans envoi.",
   heading: "OCR",
-  intro: "Rendez le texte des PDF numérisés cherchable et copiable. Le texte est reconnu sur votre appareil, rien n’est envoyé.",
+  intro: "Rendez le texte des PDF numérisés interrogeable et copiable. Le texte est reconnu sur votre appareil, rien n’est envoyé.",
   tooManyPages: "L’OCR traite au plus {max}\u00a0pages à la fois. Divisez d’abord le PDF.",
   readingPage: "Lecture de la page {page}",
   notStarted: "Le moteur OCR n’a pas pu démarrer. Vérifiez votre connexion à ce site et réessayez.",
@@ -22,12 +22,14 @@ const ocr: Messages<typeof en> = {
   lowQuality:
     "Numérisation de faible qualité, vérifiez le résultat\u00a0: {pages}. Une numérisation de travers se lit mal\u00a0: <link>Faites pivoter les pages</link>, puis relancez l’OCR.",
   noText: "Aucun texte trouvé\u00a0: {pages}.",
-  downloadSearchable: "Télécharger le PDF cherchable",
+  downloadSearchable: "Télécharger le PDF interrogeable",
   downloadText: "Télécharger le texte",
   runAgain: "Relancer",
   run: "Lancer l’OCR",
   redactNote: "Lancez d’abord l’OCR pour caviarder des documents numérisés par recherche. <link>Caviarder</link>",
   pageList: { one: "page {list}", other: "pages {list}" },
+  listSep: ", ",
+  listLast: " et ",
   etaEstimating: "estimation du temps restant",
   etaAlmostDone: "presque terminé",
   etaSeconds: "environ {s}\u00a0s restantes",

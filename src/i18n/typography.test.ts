@@ -27,6 +27,7 @@ const RULES: [string, RegExp][] = [
   ["NBSP before %", /(\d|\}) ?%/],
   ["typographic apostrophe (’), not '", /'/],
   ["ellipsis character (…), not ...", /\.\.\./],
+  ["«\u00a0interrogeable\u00a0», not «\u00a0cherchable\u00a0»", /cherchable/i],
 ];
 
 describe("French typography", () => {

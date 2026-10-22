@@ -27,7 +27,7 @@ import {
 import { formatPageRanges, parsePageRanges } from "../lib/pagePlan";
 import { filteredPages, keepFallback, repeatTargets, searchEntries, type SearchEntry } from "../lib/redact/marking";
 import { chooseDpi, renderRaster } from "../lib/redact/raster";
-import { TOO_LARGE_REASON, neededRasters, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
+import { TOO_LARGE_REASON, neededRasters, pageLabelText, pageListText, plainReason, reportLines, uncoveredNote } from "../lib/redact/report";
 import { findMatches, type TextRun } from "../lib/redact/search";
 import {
   marksToRects,
@@ -75,7 +75,6 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   const t = useT("redact");
   const tc = useT("common");
   const describe = useDescribeError();
-  const pageList = (pages: readonly number[]) => t("pageList", { count: pages.length, list: pages.join(", ") });
   const sizes = input.data;
   const [state, setState] = useState<MarksState>(initialMarks);
   const [page, setPage] = useState(1);
@@ -508,18 +507,18 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           )}
           {coverage && coverage.textless.length > 0 && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              <Trans ns="redact" k="textless" values={{ pages: pageList(coverage.textless) }} components={{ link: ocrLink }} />
+              <Trans ns="redact" k="textless" values={{ pages: pageLabelText(coverage.textless, t) }} components={{ link: ocrLink }} />
             </p>
           )}
           {coverage && coverage.undecodable.length > 0 && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              {t("undecodable", { pages: pageList(coverage.undecodable) })}{" "}
+              {t("undecodable", { pages: pageListText(coverage.undecodable, t) })}{" "}
               <Trans ns="redact" k="undecodableHint" components={{ link: ocrLink }} />
             </p>
           )}
           {coverage && coverage.unsearched.length > 0 && (
             <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              {t("unsearched", { pages: pageList(coverage.unsearched), note: uncoveredNote([], coverage.unsearched, t) ?? "" })}
+              {t("unsearched", { pages: pageLabelText(coverage.unsearched, t), note: uncoveredNote([], coverage.unsearched, t) ?? "" })}
             </p>
           )}
           <MarksPanel

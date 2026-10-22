@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TOO_LARGE_REASON, neededRasters, plainReason as plainReasonT, reportLines as reportLinesT, uncoveredNote as uncoveredNoteT } from "./report";
+import { TOO_LARGE_REASON, pageLabelText, pageListText, neededRasters, plainReason as plainReasonT, reportLines as reportLinesT, uncoveredNote as uncoveredNoteT } from "./report";
 import type { RedactResultWire } from "./toJob";
 import { tFor } from "../../i18n/testUtils";
 
@@ -115,5 +115,28 @@ describe("redaction report in French", () => {
     ]);
     expect(plainReasonT("TYPE3 font", t)).toBe("utilise une police spéciale");
     expect(uncoveredNoteT([4], [], t)).toBe("La recherche n’a pas couvert la page 4\u00a0; vérifiez-la à la main.");
+  });
+});
+
+describe("French page lists", () => {
+  const t = tFor("redact", "fr");
+  it("reads naturally after a preposition and as a label", () => {
+    expect(t("matches", { count: 3, query: "SMITH", pages: pageListText([1], t) })).toBe(
+      "3\u00a0résultats pour «\u00a0SMITH\u00a0» sur la page 1.",
+    );
+    expect(t("matches", { count: 3, query: "SMITH", pages: pageListText([1, 2], t) })).toBe(
+      "3\u00a0résultats pour «\u00a0SMITH\u00a0» sur les pages 1 et 2.",
+    );
+    expect(t("undecodable", { pages: pageListText([4], t) })).toBe(
+      "La recherche peut manquer du texte sur la page 4. Marquez ces zones à la main.",
+    );
+    expect(pageLabelText([3, 4], t)).toBe("pages 3 et 4");
+    expect(pageLabelText([2, 5, 9], t)).toBe("pages 2, 5 et 9");
+    expect(reportLinesT(result({ pagesRasterized: [3, 4] }), [], t)).toContain("Converties en images\u00a0: pages 3 et 4.");
+  });
+
+  it("keeps English lists as they were", () => {
+    expect(pageListText([1, 2, 5], tEn)).toBe("pages 1, 2, 5");
+    expect(pageLabelText([4], tEn)).toBe("page 4");
   });
 });

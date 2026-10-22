@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { Link, Trans, UserError, useDescribeError, useT, type NsT } from "../i18n";
+import { Link, Trans, UserError, useDescribeError, useT, type NsT, type UiError } from "../i18n";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
@@ -24,6 +24,7 @@ import { buildEditJob } from "../lib/editor/toJob";
 import { jpegPassthrough, orientationToTransform, readExifOrientation } from "../lib/imageInput";
 import ToolShell, { primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
+import ErrorText from "../components/common/ErrorText";
 
 const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/bmp";
 
@@ -92,7 +93,7 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
   const [state, dispatch] = useReducer(editorReducer, undefined, () => initialEditorState());
   const [tool, setTool] = useState<Tool>("select");
   const [pendingImage, setPendingImage] = useState<ImageSource | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<UiError | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // True from a text box's creation to the commit of its first text: both are one gesture, so
   // they make a single undo step.
@@ -209,7 +210,7 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
       setPendingImage(source);
       setTool("image");
     } catch (err) {
-      setNotice(describe(err).message);
+      setNotice(describe(err));
     }
   };
 
@@ -280,9 +281,9 @@ function Workspace({ input, busy, run, setError, editPdf, onStartOver }: Workspa
       )}
 
       {notice && (
-        <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-[#1f1a0a] dark:text-amber-200">
-          {notice}
-        </p>
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-[#1f1a0a] dark:text-amber-200">
+          <ErrorText error={notice} />
+        </div>
       )}
       {tool === "image" && pendingImage && (
         <p className="text-sm text-gray-700 dark:text-[#aaa]">{t("placeImage")}</p>

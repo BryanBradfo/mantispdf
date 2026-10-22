@@ -10,7 +10,11 @@ export default {
   undecodableHint: "<link>Run OCR</link> with 'Skip pages that already contain text' turned off.",
   keepOriginal: "Redaction permanently removes the marked content. Keep your original file.",
   alsoRemoved: "Comments are removed from the whole document, and form fields are flattened.",
+  // A page list after a preposition ("on page 1"), and as a label ("Not searched: pages 3, 4").
   pageList: { one: "page {list}", other: "pages {list}" },
+  pageLabels: { one: "page {list}", other: "pages {list}" },
+  listSep: ", ",
+  listLast: ", ",
   addedTo: { one: "Added to {count} page.", other: "Added to {count} pages." },
   skippedSmall: "{added} Skipped (too small): {pages}.",
   tooManyRasters: "Too many pages need to be converted to images at once. Split the PDF first.",

@@ -28,6 +28,8 @@ export default {
   redactNote: "Run OCR first to redact scanned documents by search. <link>Redact PDF</link>",
   // lib/ocr/run
   pageList: { one: "page {list}", other: "pages {list}" },
+  listSep: ", ",
+  listLast: ", ",
   etaEstimating: "estimating time left",
   etaAlmostDone: "almost done",
   etaSeconds: "about {s} s left",
