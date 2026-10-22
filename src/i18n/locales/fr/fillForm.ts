@@ -17,7 +17,7 @@ const fillForm: Messages<typeof en> = {
     one: "{count}\u00a0champ obligatoire est vide\u00a0: {names}{more}. Télécharger quand même\u00a0?",
     other: "{count}\u00a0champs obligatoires sont vides\u00a0: {names}{more}. Télécharger quand même\u00a0?",
   },
-  missingMore: " et {count} autres",
+  missingMore: { one: " et {count}\u00a0autre", other: " et {count}\u00a0autres" },
   downloadAnyway: "Télécharger quand même",
   goToFirst: "Aller au premier",
   signedWarning: "Remplir ce formulaire invalide ses signatures numériques et ses droits d’utilisation.",

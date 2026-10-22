@@ -88,7 +88,7 @@ const redact: Messages<typeof en> = {
     one: "{count}\u00a0résultat pour «\u00a0{query}\u00a0» sur {pages}.",
     other: "{count}\u00a0résultats pour «\u00a0{query}\u00a0» sur {pages}.",
   },
-  listMore: "{list} et {count} autres",
+  listMore: { one: "{list} et {count}\u00a0autre", other: "{list} et {count}\u00a0autres" },
   results: "Résultats de la recherche",
   entryPage: "Page {page}\u00a0: ",
   show: "Afficher",

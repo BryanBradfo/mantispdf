@@ -43,7 +43,7 @@ const crop: Messages<typeof en> = {
     one: "La zone de rognage ne couvre pas la page {list}. Utilisez une plage de pages ou la détection automatique.",
     other: "La zone de rognage ne couvre pas les pages {list}. Utilisez une plage de pages ou la détection automatique.",
   },
-  missedMore: "{list} et {more} autres",
+  missedMore: { one: "{list} et {count}\u00a0autre", other: "{list} et {count}\u00a0autres" },
 };
 
 export default crop;

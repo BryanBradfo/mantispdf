@@ -91,7 +91,7 @@ export default {
     one: "{count} match for \"{query}\" on {pages}.",
     other: "{count} matches for \"{query}\" on {pages}.",
   },
-  listMore: "{list} and {count} more",
+  listMore: { one: "{list} and {count} more", other: "{list} and {count} more" },
   results: "Search results",
   entryPage: "Page {page}: ",
   show: "Show",

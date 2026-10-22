@@ -121,6 +121,6 @@ export function pagesMissedBy(rect: Rect, sizes: readonly Size[], pages: readonl
 export function missedPagesProblem(missed: readonly number[], t: NsT<"crop">): string | null {
   if (missed.length === 0) return null;
   const listed = missed.slice(0, LISTED_PAGES).join(", ");
-  const list = missed.length > LISTED_PAGES ? t("missedMore", { list: listed, more: missed.length - LISTED_PAGES }) : listed;
+  const list = missed.length > LISTED_PAGES ? t("missedMore", { list: listed, count: missed.length - LISTED_PAGES }) : listed;
   return t("missed", { count: missed.length, list });
 }

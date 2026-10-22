@@ -43,5 +43,5 @@ export default {
     one: "The crop area misses page {list}. Use a page range or auto-detect.",
     other: "The crop area misses pages {list}. Use a page range or auto-detect.",
   },
-  missedMore: "{list} and {more} more",
+  missedMore: { one: "{list} and {count} more", other: "{list} and {count} more" },
 } as const satisfies Namespace;

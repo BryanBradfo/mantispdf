@@ -16,7 +16,7 @@ export default {
     one: "{count} required field is empty: {names}{more}. Download anyway?",
     other: "{count} required fields are empty: {names}{more}. Download anyway?",
   },
-  missingMore: " and {count} more",
+  missingMore: { one: " and {count} more", other: " and {count} more" },
   downloadAnyway: "Download anyway",
   goToFirst: "Go to first",
   signedWarning: "Filling this form invalidates its digital signatures and usage rights.",
