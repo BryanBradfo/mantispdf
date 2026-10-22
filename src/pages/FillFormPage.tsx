@@ -88,11 +88,15 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
       live = false;
     };
   }, [needsNoto, manifest]);
-  // Whether each Noto value overflows its field, from the engine's own layout.
+  // Whether each Noto value overflows its field, from the engine's own layout. Only fields whose
+  // request changed since their last measure are laid out again.
   const [overflow, setOverflow] = useState<ReadonlyMap<number, boolean>>(new Map());
+  const measured = useRef(new Map<number, string>());
   useEffect(() => {
     if (!manifest || !needsNoto) return;
     let live = true;
+    // Requests sent and not applied yet: forgotten if this run is superseded, so they are sent again.
+    const pending: [number, string][] = [];
     const timer = setTimeout(() => {
       const checks = form.fields.flatMap((field) => {
         const value = valueOf(state, field.id);
@@ -101,18 +105,27 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
         // List boxes never overflow (their rows scroll).
         if (!plan || !widget || plan.faces.length === 0 || field.kind.kind === "list") return [];
         const request = overflowRequest(field, widget, shownText(field, value), plan);
+        const key = JSON.stringify(request);
+        if (measured.current.get(field.id) === key) return [];
+        measured.current.set(field.id, key);
+        pending.push([field.id, key]);
         return [layoutText(request).then((layout) => [field.id, overflowsLayout(field, widget, layout)] as const)];
       });
+      if (checks.length === 0) return;
       void Promise.allSettled(checks).then((results) => {
         if (!live) return;
-        const map = new Map<number, boolean>();
-        for (const r of results) if (r.status === "fulfilled") map.set(r.value[0], r.value[1]);
-        setOverflow(map);
+        pending.length = 0;
+        setOverflow((before) => {
+          const map = new Map(before);
+          for (const r of results) if (r.status === "fulfilled") map.set(r.value[0], r.value[1]);
+          return map;
+        });
       });
     }, MEASURE_DEBOUNCE_MS);
     return () => {
       live = false;
       clearTimeout(timer);
+      for (const [id, key] of pending) if (measured.current.get(id) === key) measured.current.delete(id);
     };
   }, [manifest, needsNoto, form.fields, state, cjk, layoutText]);
   const fontsEnv = useMemo<FormFontsEnv>(
@@ -295,7 +308,7 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
 
 export default function FillFormPage() {
   const worker = usePdfWorker();
-  const { pageSizes, listForm, fillForm, layoutText } = worker;
+  const { pageSizes, listForm, fillForm, layoutText, resetFonts } = worker;
   const prepare = useCallback(
     async (bytes: Uint8Array): Promise<Prepared> => {
       const sizes = await pageSizes(bytes);
@@ -310,6 +323,10 @@ export default function FillFormPage() {
     [pageSizes, listForm],
   );
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker, prepare);
+  // Start over frees the worker's preview fonts.
+  useEffect(() => {
+    if (input === null) resetFonts().catch(() => undefined);
+  }, [input, resetFonts]);
 
   const form = input?.data.form ?? null;
   const fillable = form !== null && form.xfa !== "pure" && listedFields(form.fields).length > 0;

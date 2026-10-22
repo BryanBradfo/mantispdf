@@ -2,13 +2,36 @@ import { toWasmJob } from "../lib/stampJob";
 import type { ExtractedImage } from "../lib/imageInput";
 import type { ToWorker, FromWorker, ReqId, SuccessPayload } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, edit_pdf, crop_pdf, resize_pdf, nup_pdf, images_to_pdf, extract_images, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf, list_form, fill_form, redact_plan, redact, redact_search, redact_prepare, add_text_layer, layout_text } from "mantis-wasm";
+import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, edit_pdf, crop_pdf, resize_pdf, nup_pdf, images_to_pdf, extract_images, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf, list_form, fill_form, redact_plan, redact, redact_search, redact_prepare, add_text_layer, FontStore } from "mantis-wasm";
 import { createFontLoader } from "../lib/fonts/loader";
 import { attachJobFonts, type TextLayout } from "../lib/fonts/jobFonts";
 
 let ready = false;
 /** Self-hosted fonts (same origin), fetched once per worker and kept for previews and downloads. */
 const fonts = createFontLoader();
+/**
+ * Font files copied into wasm memory once each for previews (layout-text runs on every pause in
+ * typing): a 10 MB CJK file is not copied again per call. Freed by `reset-fonts` (a page reset or
+ * leaving the editor), and started afresh when full.
+ */
+let store: FontStore | null = null;
+
+async function layoutStore(files: string[]): Promise<FontStore> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    store ??= new FontStore();
+    const missing = files.filter((f) => !store!.has(f));
+    try {
+      for (const f of missing) store.add(f, await fonts.font(f));
+      return store;
+    } catch (e) {
+      // Full (20 files or 64 MiB): start a store holding only what this layout needs.
+      store.free();
+      store = null;
+      if (attempt === 1) throw e;
+    }
+  }
+  throw new Error("unreachable");
+}
 
 function postProgress(id: ReqId, progress: number, message: string) {
   self.postMessage({ type: "progress", id, progress, message } satisfies FromWorker);
@@ -198,9 +221,16 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         break;
       }
 
+      case "reset-fonts": {
+        store?.free();
+        store = null;
+        postSuccess(msg.id, { kind: "count", count: 0 });
+        break;
+      }
+
       case "layout-text": {
-        const files = await Promise.all(msg.fonts.map((f) => fonts.font(f)));
-        const layout = layout_text(files, msg.text, msg.size, msg.width, msg.height, msg.align, msg.lineHeight) as TextLayout;
+        const held = await layoutStore(msg.fonts);
+        const layout = held.layout_text(msg.fonts, msg.text, msg.size, msg.width, msg.height, msg.align, msg.lineHeight) as TextLayout;
         postSuccess(msg.id, { kind: "text-layout", layout });
         break;
       }

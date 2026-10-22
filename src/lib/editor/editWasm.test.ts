@@ -12,7 +12,14 @@ const PKG = fileURLToPath(new URL("../../../crates/mantis-wasm/pkg/", import.met
 const built = existsSync(`${PKG}mantis_wasm_bg.wasm`);
 const PDF = new Uint8Array(readFileSync(new URL("../../../e2e/fixtures/one-page.pdf", import.meta.url)));
 
+type Store = {
+  has: (id: string) => boolean;
+  add: (id: string, bytes: Uint8Array) => void;
+  layout_text: (ids: string[], text: string, size: number, width: number, height: number, align: string, lineHeight: number) => unknown;
+  free: () => void;
+};
 type Wasm = {
+  FontStore: new () => Store;
   edit_pdf: (pdf: Uint8Array, job: unknown) => Uint8Array;
   layout_text: (fonts: unknown, text: string, size: number, width: number, height: number, align: string, lineHeight: number) => unknown;
   initSync: (m: { module: BufferSource }) => unknown;
@@ -138,5 +145,23 @@ describe.skipIf(!built)("edit_pdf binding", () => {
       expect(again.lines).toHaveLength(lines);
       expect(fitted[1] + fitted[3]).toBeCloseTo(estimated[1] + estimated[3]);
     }
+  });
+
+  it("keeps preview fonts in a store: copied once, laid out by id, bounded", () => {
+    const sans = font("NotoSans-subset.ttf");
+    const sc = font("NotoSansSC-subset.ttf");
+    const store = new wasm.FontStore();
+    store.add("sans", sans);
+    store.add("sc", sc);
+    expect(store.has("sc")).toBe(true);
+    const held = store.layout_text(["sans", "sc"], "Hi 你好", 12, 200, 100, "auto", 1.2);
+    expect(held).toEqual(wasm.layout_text([sans, sc], "Hi 你好", 12, 200, 100, "auto", 1.2));
+    expect(() => store.layout_text(["nope"], "x", 12, 10, 10, "auto", 1.2)).toThrow("Invalid edit settings: font");
+    // 64 MiB together at most, checked before copying.
+    const big = new Uint8Array(40 << 20);
+    store.add("big", big);
+    expect(() => store.add("bigger", big)).toThrow("Invalid edit settings: font");
+    expect(store.has("bigger")).toBe(false);
+    store.free();
   });
 });

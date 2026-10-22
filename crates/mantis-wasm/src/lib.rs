@@ -177,16 +177,75 @@ pub fn layout_text(
 ) -> Result<JsValue, JsValue> {
     let err = |e: String| JsValue::from_str(&e);
     let bytes = edit_ops::binding::read_layout_fonts(&fonts).map_err(err)?;
-    let align = match align {
-        "left" => Some(edit_ops::Align::Left),
-        "center" => Some(edit_ops::Align::Center),
-        "right" => Some(edit_ops::Align::Right),
-        "auto" => None,
-        _ => return Err(err(edit_ops::invalid("align"))),
-    };
+    let align = parse_align(align).map_err(err)?;
     let refs: Vec<&[u8]> = bytes.iter().map(Vec::as_slice).collect();
     let layout = edit_ops::unitext::preview_layout(&refs, text, size, width, height, align, line_height).map_err(err)?;
     Ok(edit_ops::binding::preview_to_js(&layout))
+}
+
+/// The worker's font cache for `layout_text` previews: font files copied into
+/// wasm memory once each (by id), then laid out by id. `free()` it when the
+/// page is reset; `add` refuses past 20 files or 64 MiB (checked on the JS
+/// length, before copying): start a new store then.
+#[wasm_bindgen]
+pub struct FontStore {
+    inner: edit_ops::unitext::FontStore,
+}
+
+impl Default for FontStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[wasm_bindgen]
+impl FontStore {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> FontStore {
+        FontStore { inner: edit_ops::unitext::FontStore::default() }
+    }
+
+    pub fn has(&self, id: &str) -> bool {
+        self.inner.has(id)
+    }
+
+    pub fn add(&mut self, id: &str, bytes: &js_sys::Uint8Array) -> Result<(), JsValue> {
+        if self.inner.has(id) {
+            return Ok(());
+        }
+        if !self.inner.fits(bytes.length() as usize) {
+            return Err(JsValue::from_str(&edit_ops::invalid("font")));
+        }
+        self.inner.add(id, bytes.to_vec()).map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// `layout_text` with the held fonts `ids` (chain order, family first).
+    #[allow(clippy::too_many_arguments)]
+    pub fn layout_text(
+        &self,
+        ids: Vec<String>,
+        text: &str,
+        size: f64,
+        width: f64,
+        height: f64,
+        align: &str,
+        line_height: f64,
+    ) -> Result<JsValue, JsValue> {
+        let err = |e: String| JsValue::from_str(&e);
+        let align = parse_align(align).map_err(err)?;
+        let layout = self.inner.layout(&ids, text, size, width, height, align, line_height).map_err(err)?;
+        Ok(edit_ops::binding::preview_to_js(&layout))
+    }
+}
+
+fn parse_align(align: &str) -> Result<Option<edit_ops::Align>, String> {
+    match align {
+        "left" => Ok(Some(edit_ops::Align::Left)),
+        "center" => Ok(Some(edit_ops::Align::Center)),
+        "right" => Ok(Some(edit_ops::Align::Right)),
+        "auto" => Ok(None),
+        _ => Err(edit_ops::invalid("align")),
+    }
 }
 
 /// Which pages with areas can be redacted in place: `[{ page, reason }]`,

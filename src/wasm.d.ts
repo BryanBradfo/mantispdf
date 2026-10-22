@@ -1,6 +1,15 @@
 declare module "mantis-wasm" {
   export default function init(): Promise<void>;
   export function get_page_count(pdf_bytes: Uint8Array): number;
+  /** Font files kept in wasm memory for `layout_text` previews (the worker's font cache). */
+  export class FontStore {
+    constructor();
+    has(id: string): boolean;
+    /** Throws "Invalid edit settings: font" past 20 files or 64 MiB (nothing copied then). */
+    add(id: string, bytes: Uint8Array): void;
+    layout_text(ids: string[], text: string, size: number, width: number, height: number, align: string, line_height: number): unknown;
+    free(): void;
+  }
   export class WasmPdf {
     constructor(bytes: Uint8Array);
     page_count(): number;

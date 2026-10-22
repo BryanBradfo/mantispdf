@@ -385,9 +385,13 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
 
 export default function EditPdfPage() {
   const worker = usePdfWorker();
-  const { pageSizes, editPdf, layoutText } = worker;
+  const { pageSizes, editPdf, layoutText, resetFonts } = worker;
   const prepare = useCallback((bytes: Uint8Array) => pageSizes(bytes), [pageSizes]);
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker, prepare);
+  // Start over frees the worker's preview fonts.
+  useEffect(() => {
+    if (input === null) resetFonts().catch(() => undefined);
+  }, [input, resetFonts]);
 
   return (
     <ToolShell

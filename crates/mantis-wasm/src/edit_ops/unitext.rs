@@ -5,7 +5,7 @@
 
 use super::{Align, MAX_FONT_SIZE, MAX_LINE_HEIGHT, MIN_FONT_SIZE, MIN_LINE_HEIGHT, invalid};
 use crate::stamp::engine::MAX_COORD;
-use crate::unifont::{Face, LayoutParams, Line, ShapeBudget, layout_text, load_faces};
+use crate::unifont::{Face, LayoutParams, Line, MAX_FONT_BYTES, MAX_FONTS, ShapeBudget, layout_text, load_faces};
 
 /// One line of a box, with the PDF origin of its pen (visible space).
 #[derive(Debug, Clone)]
@@ -92,6 +92,58 @@ pub(crate) struct PreviewLayout {
     /// Box height (points) that shows every line: the last baseline plus the
     /// family's descender (the clipping rule of `place_lines`).
     pub height: f64,
+}
+
+/// Font files kept in wasm memory across preview layouts (the worker's font
+/// cache): each file is copied in once, not on every keystroke. Faces are
+/// parsed per layout (about 20 us for a 10 MB CJK file, against about 1 ms to
+/// copy it). Holds at most `MAX_FONTS` files and `MAX_FONT_BYTES` together.
+#[derive(Debug, Default)]
+pub(crate) struct FontStore {
+    files: Vec<(String, Vec<u8>)>,
+}
+
+impl FontStore {
+    pub(crate) fn has(&self, id: &str) -> bool {
+        self.files.iter().any(|(f, _)| f == id)
+    }
+
+    /// Whether a file of `len` bytes still fits (checked before copying it).
+    pub(crate) fn fits(&self, len: usize) -> bool {
+        let total: usize = self.files.iter().map(|(_, b)| b.len()).sum();
+        self.files.len() < MAX_FONTS && total.saturating_add(len) <= MAX_FONT_BYTES
+    }
+
+    /// Keeps `bytes` as `id` (once: an id already held is not replaced).
+    pub(crate) fn add(&mut self, id: &str, bytes: Vec<u8>) -> Result<(), String> {
+        if self.has(id) {
+            return Ok(());
+        }
+        if !self.fits(bytes.len()) {
+            return Err(invalid("font"));
+        }
+        self.files.push((id.to_string(), bytes));
+        Ok(())
+    }
+
+    /// `preview_layout` with the held fonts `ids` (chain order).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn layout(
+        &self,
+        ids: &[String],
+        text: &str,
+        size: f64,
+        width: f64,
+        height: f64,
+        align: Option<Align>,
+        line_height: f64,
+    ) -> Result<PreviewLayout, String> {
+        let fonts: Vec<&[u8]> = ids
+            .iter()
+            .map(|id| self.files.iter().find(|(f, _)| f == id).map(|(_, b)| b.as_slice()).ok_or_else(|| invalid("font")))
+            .collect::<Result<_, _>>()?;
+        preview_layout(&fonts, text, size, width, height, align, line_height)
+    }
 }
 
 /// The lines the PDF will hold for a box `width` x `height` (points), for the
@@ -220,5 +272,38 @@ mod fit_tests {
             let short = place_lines(&chain, [0.0, 0.0, 200.0, preview.height - 0.01], text, 14.0, None, 1.2, &mut ShapeBudget::per_job()).unwrap();
             assert_eq!(short.len(), count - 1, "{text}");
         }
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    const SANS: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSans-subset.ttf"));
+    const SC: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSansSC-subset.ttf"));
+
+    #[test]
+    fn the_store_lays_out_with_held_fonts() {
+        let mut store = FontStore::default();
+        store.add("sans", SANS.to_vec()).unwrap();
+        store.add("sc", SC.to_vec()).unwrap();
+        // An id held already is not copied again.
+        store.add("sans", Vec::new()).unwrap();
+        let ids = ["sans".to_string(), "sc".to_string()];
+        let held = store.layout(&ids, "Hi 你好", 12.0, 200.0, 100.0, None, 1.2).unwrap();
+        assert_eq!(held, preview_layout(&[SANS, SC], "Hi 你好", 12.0, 200.0, 100.0, None, 1.2).unwrap());
+        assert_eq!(store.layout(&["nope".to_string()], "x", 12.0, 10.0, 10.0, None, 1.2).unwrap_err(), "Invalid edit settings: font");
+    }
+
+    #[test]
+    fn the_store_is_bounded() {
+        let mut store = FontStore::default();
+        for i in 0..MAX_FONTS {
+            store.add(&format!("f{i}"), vec![0; 1]).unwrap();
+        }
+        assert_eq!(store.add("one more", vec![0; 1]).unwrap_err(), "Invalid edit settings: font");
+        let mut store = FontStore::default();
+        assert!(!store.fits(MAX_FONT_BYTES + 1));
+        assert!(store.add("big", vec![0; 16]).is_ok() && store.fits(MAX_FONT_BYTES - 16) && !store.fits(MAX_FONT_BYTES - 15));
     }
 }

@@ -40,6 +40,8 @@ export type ToWorker =
   | { type: "sanitize"; id: ReqId; pdfBytes: Uint8Array; keepComments: boolean }
   | { type: "stamp"; id: ReqId; pdfBytes: Uint8Array; job: StampJobSpec }
   | { type: "edit-pdf"; id: ReqId; pdfBytes: Uint8Array; job: EditJobSpec }
+  /** Frees the worker's preview font cache (page reset, leaving the editor). */
+  | { type: "reset-fonts"; id: ReqId }
   /** The engine's lines for an embedded-font text box; `fonts` are file names under /fonts-runtime/ (chain order). */
   | {
       type: "layout-text";
