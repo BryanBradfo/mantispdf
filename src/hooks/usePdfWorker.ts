@@ -341,7 +341,7 @@ export function usePdfWorker() {
     [run],
   );
 
-  /** Frees the worker's preview font cache (a page reset or leaving a page that previews Noto text). */
+  /** Frees the worker's preview font store (start over; leaving a page ends its worker anyway). */
   const resetFonts = useCallback((): Promise<void> => run(null, (id) => ({ type: "reset-fonts", id }), () => undefined), [run]);
 
   /** The form fields of a PDF (engine traversal order; ids are what `fillForm` takes). */
