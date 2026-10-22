@@ -92,7 +92,7 @@ export default function PdfToImagePage() {
 
           <div>
             <p className="mb-2 text-sm font-medium text-gray-700 dark:text-[#aaa]">{t("format")}</p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {(["png", "jpeg"] as ImageFormat[]).map((f) => (
                 <button
                   key={f}
@@ -111,7 +111,7 @@ export default function PdfToImagePage() {
 
           <div>
             <p className="mb-2 text-sm font-medium text-gray-700 dark:text-[#aaa]">{t("resolution")}</p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {scaleOptions.map(({ value, label }) => (
                 <button
                   key={value}
