@@ -1,4 +1,4 @@
-import { LOCALES, type Locale } from "./locale";
+import { DEFAULT_LOCALE, LOCALES, localeFromPath, type Locale } from "./locale";
 
 const KEY = "locale";
 
@@ -28,4 +28,13 @@ export function shouldOfferFrench(opts: {
 }): boolean {
   const first = opts.languages[0]?.toLowerCase() ?? "";
   return opts.locale === "en" && opts.stored === null && (first === "fr" || first.startsWith("fr-"));
+}
+
+/**
+ * The locale to render: the `/fr` prefix wins; an unprefixed path uses `stored` (pass the stored
+ * choice only where it should apply, i.e. the desktop app), else English.
+ */
+export function resolveLocale(pathname: string, stored: Locale | null): Locale {
+  const fromPath = localeFromPath(pathname);
+  return fromPath !== DEFAULT_LOCALE ? fromPath : (stored ?? DEFAULT_LOCALE);
 }

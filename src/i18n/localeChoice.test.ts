@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { readStoredLocale, shouldOfferFrench, storeLocale } from "./localeChoice";
+import { readStoredLocale, resolveLocale, shouldOfferFrench, storeLocale } from "./localeChoice";
 
 beforeEach(() => localStorage.clear());
 
@@ -34,5 +34,22 @@ describe("shouldOfferFrench", () => {
     expect(shouldOfferFrench({ ...base, locale: "fr" })).toBe(false);
     expect(shouldOfferFrench({ ...base, languages: ["en-US", "fr"] })).toBe(false);
     expect(shouldOfferFrench({ ...base, languages: [] })).toBe(false);
+  });
+});
+
+describe("resolveLocale", () => {
+  it("takes the locale from the /fr prefix first", () => {
+    expect(resolveLocale("/fr/merge", null)).toBe("fr");
+    expect(resolveLocale("/fr/merge", "en")).toBe("fr");
+  });
+
+  it("uses the stored choice for an unprefixed path (desktop app)", () => {
+    expect(resolveLocale("/merge", "fr")).toBe("fr");
+    expect(resolveLocale("/", "fr")).toBe("fr");
+  });
+
+  it("defaults to English", () => {
+    expect(resolveLocale("/merge", null)).toBe("en");
+    expect(resolveLocale("/merge", "en")).toBe("en");
   });
 });

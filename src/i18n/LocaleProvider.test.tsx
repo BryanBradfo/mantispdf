@@ -6,13 +6,16 @@ import {
   LocaleProvider,
   Link,
   Navigate,
+  Trans,
   loadLocale,
   localeFromPath,
-  renderRich,
   useLocale,
   useLocaleNavigate,
   useT,
 } from ".";
+import { renderRich } from "./LocaleProvider";
+import * as barrel from ".";
+import ErrorBoundary from "../components/common/ErrorBoundary";
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -46,7 +49,7 @@ async function render(path: string, ui: ReactNode) {
   });
   // A /fr render suspends on the French chunk; let it resolve and React retry.
   await act(async () => {
-    await loadLocale(localeFromPath(path));
+    await loadLocale(localeFromPath(path)).catch(() => {});
   });
   return host;
 }
@@ -166,5 +169,133 @@ describe("renderRich", () => {
   it("leaves a tag without a component as plain text", async () => {
     const el = await render("/", <p>{renderRich("A <b>bold</b> move", {})}</p>);
     expect(el.textContent).toBe("A bold move");
+  });
+});
+
+describe("Trans", () => {
+  it("renders a message with tags through its components", async () => {
+    const el = await render(
+      "/",
+      <Trans ns="common" k="dropPdf" components={{ browse: (c) => <b>{c}</b> }} />,
+    );
+    expect(el.innerHTML).toBe("Drop your PDF here or <b>browse</b>");
+  });
+
+  it("needs no components for a message without tags", async () => {
+    const el = await render("/", <Trans ns="common" k="errorWrongPassword" />);
+    expect(el.textContent).toBe("Wrong password");
+  });
+
+  it("type-checks components", () => {
+    // @ts-expect-error `browse` needs a component
+    void (<Trans ns="common" k="dropPdf" />);
+    expect(true).toBe(true);
+  });
+
+  it("is the only rich-text API the barrel exports", () => {
+    expect("renderRich" in barrel).toBe(false);
+  });
+});
+
+describe("a French chunk that fails to load", () => {
+  it("falls back to English with a notice, and a retry loads it again", async () => {
+    vi.resetModules();
+    let calls = 0;
+    vi.doMock("./locales/fr/fr", () => {
+      calls += 1;
+      throw new Error("chunk failed");
+    });
+    const fresh = await import(".");
+    function FreshProbe() {
+      return <p>{fresh.useT("common")("errorWrongPassword")}</p>;
+    }
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        <MemoryRouter initialEntries={["/fr/merge"]}>
+          <Suspense fallback={<p>loading</p>}>
+            <fresh.LocaleProvider>
+              <FreshProbe />
+            </fresh.LocaleProvider>
+          </Suspense>
+        </MemoryRouter>,
+      );
+    });
+    await act(async () => {
+      await fresh.loadLocale("fr").catch(() => {});
+    });
+    expect(host.textContent).toContain("Wrong password");
+    expect(host.querySelector("[role=status]")?.textContent).toContain("could not be loaded");
+
+    // The failed promise is not cached: retrying calls the loader again.
+    const before = calls;
+    await act(async () => host.querySelector<HTMLButtonElement>("[role=status] button")!.click());
+    await act(async () => {
+      await fresh.loadLocale("fr").catch(() => {});
+    });
+    expect(calls).toBeGreaterThan(before);
+    vi.doUnmock("./locales/fr/fr");
+  });
+});
+
+describe("ErrorBoundary", () => {
+  it("shows a notice instead of a blank app when a child throws", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    function Boom(): never {
+      throw new Error("boom");
+    }
+    const el = await render(
+      "/",
+      <ErrorBoundary>
+        <Boom />
+      </ErrorBoundary>,
+    );
+    spy.mockRestore();
+    expect(el.querySelector("[role=alert]")?.textContent).toContain("Something went wrong");
+  });
+});
+
+describe("desktop app (Tauri)", () => {
+  it("shows the stored language on an unprefixed path", async () => {
+    vi.resetModules();
+    vi.doMock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
+    const fresh = await import(".");
+    fresh.storeLocale("fr");
+    function FreshProbe() {
+      return (
+        <p>
+          {fresh.useLocale()}|{fresh.useT("common")("errorWrongPassword")}
+        </p>
+      );
+    }
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        <MemoryRouter initialEntries={["/merge"]}>
+          <Suspense fallback={<p>loading</p>}>
+            <fresh.LocaleProvider>
+              <FreshProbe />
+            </fresh.LocaleProvider>
+          </Suspense>
+        </MemoryRouter>,
+      );
+    });
+    await act(async () => {
+      await fresh.loadLocale("fr");
+    });
+    expect(host.textContent).toBe("fr|Mot de passe incorrect");
+    vi.doUnmock("@tauri-apps/api/core");
+    localStorage.clear();
+  });
+
+  it("ignores a stored choice in the browser (URLs decide)", async () => {
+    localStorage.setItem("locale", "fr");
+    const el = await render("/merge", <Probe />);
+    expect(el.textContent).toBe("en|Wrong password");
+    localStorage.clear();
   });
 });

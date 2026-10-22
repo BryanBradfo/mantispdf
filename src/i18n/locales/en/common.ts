@@ -13,6 +13,12 @@ export default {
   // Shared controls
   dismiss: "Dismiss",
   close: "Close",
+  retry: "Retry",
+
+  // Failures (LocaleProvider, ErrorBoundary)
+  localeLoadFailed: "The French version could not be loaded, so this page is shown in English.",
+  crashTitle: "Something went wrong on this page.",
+  crashReload: "Reload the page",
 
   // ProgressOverlay
   progressError: "Error",

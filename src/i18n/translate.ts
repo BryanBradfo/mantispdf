@@ -50,7 +50,7 @@ export type RichChunk = string | { tag: string; text: string };
 /** Splits `a <link>b</link> c` into text and tagged chunks (one level, no nesting). */
 export function splitRich(text: string): RichChunk[] {
   const chunks: RichChunk[] = [];
-  const re = /<(\w+)>(.*?)<\/\1>/g;
+  const re = /<(\w+)>([\s\S]*?)<\/\1>/g;
   let last = 0;
   for (const m of text.matchAll(re)) {
     if (m.index > last) chunks.push(text.slice(last, m.index));

@@ -11,6 +11,11 @@ const common: Messages<typeof en> = {
 
   dismiss: "Fermer",
   close: "Fermer",
+  retry: "Réessayer",
+
+  localeLoadFailed: "La version française n’a pas pu être chargée, cette page s’affiche donc en anglais.",
+  crashTitle: "Une erreur s’est produite sur cette page.",
+  crashReload: "Recharger la page",
 
   progressError: "Erreur",
   progressProcessing: "Traitement en cours",

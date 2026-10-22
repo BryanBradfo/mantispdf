@@ -108,6 +108,10 @@ describe("splitRich", () => {
     ]);
   });
 
+  it("keeps a tagged chunk that spans lines", () => {
+    expect(splitRich("A <b>two\nlines</b> B")).toEqual(["A ", { tag: "b", text: "two\nlines" }, " B"]);
+  });
+
   it("returns the text unchanged when there are no tags", () => {
     expect(splitRich("Plain")).toEqual(["Plain"]);
   });

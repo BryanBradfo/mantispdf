@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { describeError } from "./describeError";
 import { createT } from "./translate";
 import { en } from "./locales/en";
-import fr from "./locales/fr";
+import fr from "./locales/fr/fr";
 
 const tEn = createT(en.common, en.common, "en");
 const tFr = createT(fr.common, en.common, "fr");

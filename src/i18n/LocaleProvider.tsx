@@ -1,4 +1,5 @@
-import { createContext, Fragment, use, useCallback, useContext, useMemo, type ReactNode } from "react";
+import { createContext, Fragment, use, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { isTauri } from "@tauri-apps/api/core";
 import {
   Link as RouterLink,
   Navigate as RouterNavigate,
@@ -9,7 +10,8 @@ import {
   type NavigateProps,
   type To,
 } from "react-router-dom";
-import { DEFAULT_LOCALE, localeFromPath, localePath, type Locale } from "./locale";
+import { DEFAULT_LOCALE, localePath, type Locale } from "./locale";
+import { readStoredLocale, resolveLocale } from "./localeChoice";
 import { en, type EnDictionary, type NamespaceName } from "./locales/en";
 import { createT, splitRich } from "./translate";
 import type { Dictionary, TagsOf, TArgs, TFunction } from "./types";
@@ -18,30 +20,71 @@ type AppDictionary = Dictionary<EnDictionary>;
 
 /** Every non-default locale's lazy chunk. Adding a language = adding its loader here. */
 const LOADERS: Record<Exclude<Locale, typeof DEFAULT_LOCALE>, () => Promise<AppDictionary>> = {
-  fr: () => import("./locales/fr").then((m) => m.default),
+  fr: () => import("./locales/fr/fr").then((m) => m.default),
 };
 
 /** A promise React's `use()` can read synchronously once settled (the documented thenable fields). */
 type TrackedPromise<T> = Promise<T> & { status?: "fulfilled"; value?: T };
 
-const loading = new Map<Locale, TrackedPromise<AppDictionary>>();
+function track<T>(p: Promise<T>): Promise<T> {
+  const tracked: TrackedPromise<T> = p;
+  tracked.then(
+    (value) => {
+      tracked.status = "fulfilled";
+      tracked.value = value;
+    },
+    () => {},
+  );
+  return tracked;
+}
 
-/**
- * Starts (once) and returns the load of a locale's dictionary. Call it early (switcher hover,
- * banner) so the later render does not suspend: the settled promise is marked `fulfilled`, which
- * `use()` reads without throwing.
- */
+/** Loads in flight or done. A failed load is removed so the next call tries again. */
+const loading = new Map<Locale, Promise<AppDictionary>>();
+/** Dictionaries already loaded: a render reads them synchronously (no suspend after a preload). */
+const loaded = new Map<Locale, AppDictionary>();
+
+/** Starts (once) and returns the load of a locale's dictionary. Call it early (switcher hover, banner). */
 export function loadLocale(locale: Locale): Promise<AppDictionary> {
   if (locale === DEFAULT_LOCALE) return Promise.resolve(en);
   let p = loading.get(locale);
   if (!p) {
-    const tracked: TrackedPromise<AppDictionary> = LOADERS[locale]();
-    tracked.then((dict) => {
-      tracked.status = "fulfilled";
-      tracked.value = dict;
-    }, () => loading.delete(locale));
-    loading.set(locale, tracked);
-    p = tracked;
+    p = LOADERS[locale]().then(
+      (dict) => {
+        loaded.set(locale, dict);
+        return dict;
+      },
+      (err: unknown) => {
+        loading.delete(locale);
+        throw err;
+      },
+    );
+    loading.set(locale, p);
+  }
+  return p;
+}
+
+interface Settled {
+  dict: AppDictionary;
+  failed: boolean;
+}
+
+/**
+ * What a render waits for: the dictionary, or English plus `failed` when the chunk cannot load.
+ * Never rejects, so a failure never reaches an error boundary. Kept until `retry` so a failing
+ * network does not loop.
+ */
+const settling = new Map<Locale, Promise<Settled>>();
+
+function settle(locale: Locale): Promise<Settled> {
+  let p = settling.get(locale);
+  if (!p) {
+    p = track(
+      loadLocale(locale).then(
+        (dict) => ({ dict, failed: false }),
+        () => ({ dict: en, failed: true }),
+      ),
+    );
+    settling.set(locale, p);
   }
   return p;
 }
@@ -53,15 +96,43 @@ interface LocaleState {
 
 const LocaleContext = createContext<LocaleState>({ locale: DEFAULT_LOCALE, dict: en });
 
+function LoadFailedNotice({ onRetry }: { onRetry: () => void }) {
+  const t = createT(en.common, en.common, DEFAULT_LOCALE);
+  return (
+    <div
+      role="status"
+      className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"
+    >
+      {t("localeLoadFailed")}{" "}
+      <button type="button" onClick={onRetry} className="font-medium underline">
+        {t("retry")}
+      </button>
+    </div>
+  );
+}
+
 /**
- * Reads the locale from the URL (`/fr/...` is French) and provides its dictionary. A non-English
- * dictionary suspends on first use, so render this under a `<Suspense>` boundary.
+ * Provides the locale and its dictionary. The `/fr` prefix decides; on the desktop app (Tauri) an
+ * unprefixed path uses the stored choice. A non-English dictionary suspends on first use (render
+ * this under `<Suspense>`); if its chunk fails, the page shows in English with a retry notice.
  */
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const locale = localeFromPath(useLocation().pathname);
-  const dict = locale === DEFAULT_LOCALE ? en : use(loadLocale(locale));
+  const pathname = useLocation().pathname;
+  const locale = resolveLocale(pathname, isTauri() ? readStoredLocale() : null);
+  const [, setAttempt] = useState(0);
+  const ready = locale === DEFAULT_LOCALE ? en : loaded.get(locale);
+  const { dict, failed } = ready ? { dict: ready, failed: false } : use(settle(locale));
   const value = useMemo(() => ({ locale, dict }), [locale, dict]);
-  return <LocaleContext value={value}>{children}</LocaleContext>;
+  const retry = useCallback(() => {
+    settling.delete(locale);
+    setAttempt((n) => n + 1);
+  }, [locale]);
+  return (
+    <LocaleContext value={value}>
+      {failed && <LoadFailedNotice onRetry={retry} />}
+      {children}
+    </LocaleContext>
+  );
 }
 
 export function useLocale(): Locale {
@@ -120,17 +191,27 @@ export function renderRich(text: string, components: Partial<RichComponents<stri
   });
 }
 
+type TransMessage<NS extends NamespaceName, K extends keyof EnDictionary[NS]> = EnDictionary[NS][K];
+
 type TransProps<NS extends NamespaceName, K extends keyof EnDictionary[NS] & string> = {
   ns: NS;
   k: K;
-  /** One renderer per tag in the English message (`<link>` -> `link`). */
-  components: RichComponents<TagsOf<EnDictionary[NS][K]>>;
-} & (TArgs<EnDictionary[NS][K]> extends [] ? { values?: undefined } : { values: TArgs<EnDictionary[NS][K]>[0] });
+} & ([TagsOf<TransMessage<NS, K>>] extends [never]
+  ? { components?: undefined }
+  : {
+      /** One renderer per tag in the English message (`<link>` -> `link`). */
+      components: RichComponents<TagsOf<TransMessage<NS, K>>>;
+    }) &
+  (TArgs<TransMessage<NS, K>> extends [] ? { values?: undefined } : { values: TArgs<TransMessage<NS, K>>[0] });
 
-/** `<Trans ns="merge" k="help" components={{ link: (c) => <Link to="/split">{c}</Link> }} />` */
+/**
+ * A translated sentence with inline elements:
+ * `<Trans ns="merge" k="help" components={{ link: (c) => <Link to="/split">{c}</Link> }} />`.
+ */
 export function Trans<NS extends NamespaceName, K extends keyof EnDictionary[NS] & string>(
   props: TransProps<NS, K>,
 ) {
   const t = useT(props.ns) as (key: string, params?: object) => string;
-  return <>{renderRich(t(props.k, props.values), props.components)}</>;
+  const components: Partial<RichComponents<string>> = props.components ?? {};
+  return <>{renderRich(t(props.k, props.values), components)}</>;
 }
