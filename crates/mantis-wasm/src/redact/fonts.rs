@@ -188,7 +188,7 @@ impl Font {
             b"Type1" | b"MMType1" | b"TrueType" => {
                 let descriptor = dict(doc, font.get(b"FontDescriptor").ok());
                 if subtype == b"TrueType" {
-                    ink = super::ink::Ink::for_simple_truetype(doc, descriptor);
+                    ink = super::ink::Ink::for_simple_truetype(doc, font, descriptor);
                 }
                 let kind = Self::simple(doc, font, descriptor, &err)?;
                 let metrics = match (&kind, descriptor) {
@@ -443,22 +443,38 @@ impl Font {
         len == 1 && code == 32
     }
 
+    /// True when the advance `w0` says nothing about where the glyph draws:
+    /// no width, or a declared width too small to be true (below a quarter
+    /// of the plausible width, capped at 0.5 em).
+    fn is_narrow(&self, w0: f64) -> bool {
+        w0 < MIN_INK_WIDTH || w0 < BOGUS_WIDTH_SHARE * self.plausible.min(PLAUSIBLE_CAP)
+    }
+
+    /// The certain ink of a narrow glyph `code` of width `w0` from the
+    /// embedded TrueType program (see `ink`), read within `budget`; None for
+    /// a wide glyph or when it is not certain.
+    pub(crate) fn ink_for(&self, code: u32, w0: f64, doc: &Document, budget: &mut super::Budget) -> Option<GlyphInk> {
+        if !self.is_narrow(w0) {
+            return None;
+        }
+        self.ink.as_ref()?.glyph(code, doc, budget)
+    }
+
     /// `[x0, y0, x1, y1]` (em, before font size, scaling and rise) of the
-    /// box that decides whether glyph `code` of width `w0` is under an area:
-    /// its advance, from the descent to the ascent (descriptor, or AFM for
-    /// the standard fonts, clamped). A narrow glyph (no width, or a declared
-    /// width too small to be true: below a quarter of the plausible width,
-    /// capped at 0.5 em) says nothing about where it draws: its advance
-    /// joined with its real ink (embedded TrueType program) when that is
-    /// known; else it reaches 0.6 em each way (no width) or spans the
-    /// plausible width.
-    pub(crate) fn glyph_box(&self, code: u32, w0: f64) -> [f64; 4] {
-        let narrow = w0 < MIN_INK_WIDTH || w0 < BOGUS_WIDTH_SHARE * self.plausible.min(PLAUSIBLE_CAP);
-        if !narrow {
+    /// box that decides whether a glyph of width `w0` is under an area: its
+    /// advance, from the descent to the ascent (descriptor, or AFM for the
+    /// standard fonts, clamped). A narrow glyph spans its advance joined with
+    /// its certain `ink` when known; otherwise it reaches 0.6 em each way (no
+    /// width) or spans the plausible width (a width too small to be true).
+    pub(crate) fn glyph_box(&self, w0: f64, ink: Option<GlyphInk>) -> [f64; 4] {
+        if !self.is_narrow(w0) {
             return [0.0, self.descent, w0, self.ascent];
         }
-        match self.glyph_ink(code) {
-            Some(GlyphInk::Box([x0, _, x1, _])) => [x0.min(0.0), self.descent, x1.max(w0).max(x0.min(0.0) + MIN_INK_WIDTH), self.ascent],
+        match ink {
+            Some(GlyphInk::Box([x0, _, x1, _])) => {
+                let left = x0.min(0.0);
+                [left, self.descent, x1.max(w0).max(left + MIN_INK_WIDTH), self.ascent]
+            }
             Some(GlyphInk::Empty) => [0.0, self.descent, w0.max(MIN_INK_WIDTH), self.ascent],
             None if w0 < MIN_INK_WIDTH => [-NARROW_GLYPH_REACH, self.descent, NARROW_GLYPH_REACH.max(w0), self.ascent],
             None => [0.0, self.descent, self.plausible, self.ascent],
@@ -466,36 +482,24 @@ impl Font {
     }
 
     /// What a removed glyph's fill must cover: `glyph_box` widened 0.05 em
-    /// on each side, joined with the glyph's ink when that was read (a mark
-    /// above the ascent or left of its origin).
-    pub(crate) fn ink_box(&self, code: u32, w0: f64) -> [f64; 4] {
-        let [x0, y0, x1, y1] = self.glyph_box(code, w0);
-        let [x0, y0, x1, y1] = match self.known_ink(code) {
-            Some([a, b, c, d]) => [x0.min(a), y0.min(b), x1.max(c), y1.max(d)],
-            None => [x0, y0, x1, y1],
+    /// on each side, joined with the glyph's ink when known (a mark above
+    /// the ascent or left of its origin).
+    pub(crate) fn ink_box(&self, w0: f64, ink: Option<GlyphInk>) -> [f64; 4] {
+        let [x0, y0, x1, y1] = self.glyph_box(w0, ink);
+        let [x0, y0, x1, y1] = match ink {
+            Some(GlyphInk::Box([a, b, c, d])) => [x0.min(a), y0.min(b), x1.max(c), y1.max(d)],
+            _ => [x0, y0, x1, y1],
         };
         [x0 - CORE_X_MARGIN, y0, x1 + CORE_X_MARGIN, y1]
-    }
-
-    /// The ink of `code`, read from the font program when needed.
-    fn glyph_ink(&self, code: u32) -> Option<GlyphInk> {
-        self.ink.as_ref()?.glyph(code)
-    }
-
-    /// The ink box of `code` only when it was already read (narrow glyphs):
-    /// wide glyphs never make the program be decoded.
-    fn known_ink(&self, code: u32) -> Option<[f64; 4]> {
-        match self.ink.as_ref()?.cached(code)? {
-            GlyphInk::Box(b) => Some(b),
-            GlyphInk::Empty => None,
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::redact::Budget;
     use lopdf::dictionary;
+    use ttf_parser::loca;
 
     fn identity_font(doc: &mut Document, w: Vec<Object>) -> Object {
         let cid = doc.add_object(dictionary! { "Type" => "Font", "Subtype" => "CIDFontType0", "W" => w });
@@ -519,8 +523,8 @@ mod tests {
         let plain = simple_with_descriptor(&mut doc, dictionary! {});
         let plain = Font::load(&doc, b"F", &plain).unwrap();
         // The removal box is the advance; the ink box adds 0.05 em each side.
-        assert_eq!(plain.glyph_box(65, 0.5), [0.0, -0.2, 0.5, 0.9]);
-        assert_eq!(plain.ink_box(65, 0.5), [-0.05, -0.2, 0.55, 0.9]);
+        assert_eq!(plain.glyph_box(0.5, None), [0.0, -0.2, 0.5, 0.9]);
+        assert_eq!(plain.ink_box(0.5, None), [-0.05, -0.2, 0.55, 0.9]);
         let bbox = |v: [i64; 4]| Object::Array(v.iter().map(|n| Object::Integer(*n)).collect());
         // A wide /FontBBox no longer widens it (it reached neighbouring lines).
         let wide = simple_with_descriptor(
@@ -528,11 +532,11 @@ mod tests {
             dictionary! { "Ascent" => 800, "Descent" => -200, "FontBBox" => bbox([-200, -300, 1200, 1100]) },
         );
         let wide = Font::load(&doc, b"F", &wide).unwrap();
-        assert_eq!(wide.glyph_box(65, 0.5), [0.0, -0.2, 0.5, 0.8]);
+        assert_eq!(wide.glyph_box(0.5, None), [0.0, -0.2, 0.5, 0.8]);
         // Descriptor heights are clamped to -0.35..1.0 em.
         let tall = simple_with_descriptor(&mut doc, dictionary! { "Ascent" => 1400, "Descent" => -600 });
         let tall = Font::load(&doc, b"F", &tall).unwrap();
-        assert_eq!(tall.glyph_box(65, 0.5), [0.0, -0.35, 0.5, 1.0]);
+        assert_eq!(tall.glyph_box(0.5, None), [0.0, -0.35, 0.5, 1.0]);
     }
 
     #[test]
@@ -541,14 +545,14 @@ mod tests {
         let avg = simple_with_descriptor(&mut doc, dictionary! { "AvgWidth" => 400 });
         let avg = Font::load(&doc, b"F", &avg).unwrap();
         // Below a quarter of 0.4 em: bogus, the box spans 0.4 em.
-        assert_eq!(avg.glyph_box(65, 0.05)[2], 0.4);
-        assert_eq!(avg.glyph_box(65, 0.2)[2], 0.2);
+        assert_eq!(avg.glyph_box(0.05, None)[2], 0.4);
+        assert_eq!(avg.glyph_box(0.2, None)[2], 0.2);
         let bbox = |v: [i64; 4]| Object::Array(v.iter().map(|n| Object::Integer(*n)).collect());
         let wide = simple_with_descriptor(&mut doc, dictionary! { "FontBBox" => bbox([-166, -225, 1000, 931]) });
         let wide = Font::load(&doc, b"F", &wide).unwrap();
         // A wide /FontBBox does not make an honest 'i' (0.222 em) bogus.
-        assert_eq!(wide.glyph_box(65, 0.222)[2], 0.222);
-        assert!((wide.glyph_box(65, 0.011)[2] - 1.166).abs() < 1e-9);
+        assert_eq!(wide.glyph_box(0.222, None)[2], 0.222);
+        assert!((wide.glyph_box(0.011, None)[2] - 1.166).abs() < 1e-9);
     }
 
     #[test]
@@ -578,43 +582,158 @@ mod tests {
         assert_eq!(font.width(10).unwrap(), 1.0);
     }
 
-    /// A Type0 font over `program` (FontFile2), Identity CIDs, every width 0.
-    fn embedded(doc: &mut Document, program: &[u8]) -> Object {
-        let file = doc.add_object(lopdf::Stream::new(dictionary! {}, program.to_vec()));
-        let descriptor = doc.add_object(dictionary! {
-            "Type" => "FontDescriptor", "Ascent" => 900, "Descent" => -200, "FontFile2" => file,
+    const THAI: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSansThai-subset.ttf"));
+    const THAI_SYMBOLIC: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/ThaiMark-sym.ttf"));
+    const THAI_MAC: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/ThaiMark-mac.ttf"));
+    /// (3,0) maps code 66 to the mark, a (1,0) cmap maps it to a letter.
+    const THAI_MIXED: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/ThaiMark-mixed.ttf"));
+    const WIDE: [f64; 4] = [-NARROW_GLYPH_REACH, -0.2, NARROW_GLYPH_REACH, 0.9];
+
+    fn program(doc: &mut Document, bytes: &[u8]) -> lopdf::ObjectId {
+        doc.add_object(lopdf::Stream::new(dictionary! {}, bytes.to_vec()))
+    }
+
+    fn descriptor(doc: &mut Document, file: lopdf::ObjectId, flags: i64) -> lopdf::ObjectId {
+        doc.add_object(dictionary! {
+            "Type" => "FontDescriptor", "Ascent" => 900, "Descent" => -200, "Flags" => flags, "FontFile2" => file,
             "FontBBox" => vec![0.into(), (-200).into(), 1000.into(), 900.into()],
-        });
+        })
+    }
+
+    /// A Type0 font over the FontFile2 `file`, every width 0.
+    fn embedded_with(doc: &mut Document, file: lopdf::ObjectId, map: Object) -> Object {
+        let descriptor = descriptor(doc, file, 4);
         let cid = doc.add_object(dictionary! {
-            "Type" => "Font", "Subtype" => "CIDFontType2", "DW" => 0, "FontDescriptor" => descriptor, "CIDToGIDMap" => "Identity",
+            "Type" => "Font", "Subtype" => "CIDFontType2", "DW" => 0, "FontDescriptor" => descriptor, "CIDToGIDMap" => map,
         });
         Object::Dictionary(dictionary! {
             "Type" => "Font", "Subtype" => "Type0", "Encoding" => "Identity-H", "DescendantFonts" => vec![cid.into()],
         })
     }
 
+    fn embedded(doc: &mut Document, bytes: &[u8]) -> Object {
+        let file = program(doc, bytes);
+        embedded_with(doc, file, Object::Name(b"Identity".to_vec()))
+    }
+
+    /// A simple TrueType font over `bytes`: codes 65 (width 500) and 66 (width 0).
+    fn simple_truetype(doc: &mut Document, bytes: &[u8], flags: i64, encoding: Option<Object>) -> Object {
+        let file = program(doc, bytes);
+        let descriptor = descriptor(doc, file, flags);
+        let mut font = dictionary! {
+            "Type" => "Font", "Subtype" => "TrueType", "BaseFont" => "ThaiMark", "FirstChar" => 65,
+            "Widths" => vec![500.into(), 0.into()], "FontDescriptor" => descriptor,
+        };
+        if let Some(e) = encoding {
+            font.set("Encoding", e);
+        }
+        Object::Dictionary(font)
+    }
+
+    fn mark_gid() -> (u16, ttf_parser::Rect, f64) {
+        let face = ttf_parser::Face::parse(THAI, 0).unwrap();
+        let mark = face.glyph_index('\u{E48}').unwrap();
+        (mark.0, face.glyph_bounding_box(mark).unwrap(), f64::from(face.units_per_em()))
+    }
+
+    fn boxes(doc: &Document, obj: &Object, code: u32, budget: &mut Budget) -> ([f64; 4], [f64; 4]) {
+        let font = Font::load(doc, b"F", obj).unwrap();
+        let ink = font.ink_for(code, 0.0, doc, budget);
+        (font.glyph_box(0.0, ink), font.ink_box(0.0, ink))
+    }
+
     #[test]
     fn zero_width_marks_are_boxed_by_their_ink() {
-        let thai: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSansThai-subset.ttf"));
-        let face = ttf_parser::Face::parse(thai, 0).unwrap();
-        let mark = face.glyph_index('\u{E48}').unwrap();
-        let ink = face.glyph_bounding_box(mark).unwrap();
-        let upem = f64::from(face.units_per_em());
+        let (mark, ink, upem) = mark_gid();
         let mut doc = Document::with_version("1.7");
-        let obj = embedded(&mut doc, thai);
-        let font = Font::load(&doc, b"F", &obj).unwrap();
-        let [x0, _, x1, _] = font.glyph_box(u32::from(mark.0), 0.0);
-        assert!((x0 - (f64::from(ink.x_min) / upem).min(0.0)).abs() < 1e-9, "{x0}");
-        assert!((x1 - (f64::from(ink.x_max) / upem).max(0.0)).abs() < 1e-9, "{x1}");
-        assert!(x0 > -NARROW_GLYPH_REACH && x1 < NARROW_GLYPH_REACH);
+        let obj = embedded(&mut doc, THAI);
+        let (glyph, fill) = boxes(&doc, &obj, u32::from(mark), &mut Budget::page(1 << 30));
+        assert!((glyph[0] - (f64::from(ink.x_min) / upem).min(0.0)).abs() < 1e-9, "{glyph:?}");
+        assert!((glyph[2] - (f64::from(ink.x_max) / upem).max(0.0)).abs() < 1e-9, "{glyph:?}");
+        assert!(glyph[0] > -NARROW_GLYPH_REACH && glyph[2] < NARROW_GLYPH_REACH);
         // The fill covers the ink above the ascent too.
-        let [_, _, _, top] = font.ink_box(u32::from(mark.0), 0.0);
-        assert!(top >= f64::from(ink.y_max) / upem);
-        // A glyph id past the program, or a program that does not parse: the wide fallback.
-        assert_eq!(font.glyph_box(0xFFF0, 0.0), [-NARROW_GLYPH_REACH, -0.2, NARROW_GLYPH_REACH, 0.9]);
+        assert!(fill[3] >= f64::from(ink.y_max) / upem);
+        // A glyph id past the program: the wide fallback.
+        assert_eq!(boxes(&doc, &obj, 0xFFF0, &mut Budget::page(1 << 30)).0, WIDE);
+        // A program that does not parse: the wide fallback.
         let mut doc = Document::with_version("1.7");
         let obj = embedded(&mut doc, b"not a font program");
-        let font = Font::load(&doc, b"F", &obj).unwrap();
-        assert_eq!(font.glyph_box(5, 0.0), [-NARROW_GLYPH_REACH, -0.2, NARROW_GLYPH_REACH, 0.9]);
+        assert_eq!(boxes(&doc, &obj, 5, &mut Budget::page(1 << 30)).0, WIDE);
+    }
+
+    #[test]
+    fn simple_fonts_use_ink_only_through_a_symbolic_3_0_cmap() {
+        let (_, ink, upem) = mark_gid();
+        let narrow = |b: [f64; 4]| (b[2] - (f64::from(ink.x_max) / upem).max(0.0)).abs() < 1e-9 && b[0] > -NARROW_GLYPH_REACH;
+        let mut doc = Document::with_version("1.7");
+        // Symbolic, no /Encoding, only a (3,0) cmap: code 66 is the mark.
+        let certain = simple_truetype(&mut doc, THAI_SYMBOLIC, 4, None);
+        assert!(narrow(boxes(&doc, &certain, 66, &mut Budget::page(1 << 30)).0));
+        // Any /Encoding: codes may not reach the cmap as read.
+        let encoded = simple_truetype(&mut doc, THAI_SYMBOLIC, 4, Some(Object::Name(b"WinAnsiEncoding".to_vec())));
+        assert_eq!(boxes(&doc, &encoded, 66, &mut Budget::page(1 << 30)).0, WIDE);
+        // Not symbolic.
+        let plain = simple_truetype(&mut doc, THAI_SYMBOLIC, 32, None);
+        assert_eq!(boxes(&doc, &plain, 66, &mut Budget::page(1 << 30)).0, WIDE);
+        // A Mac (1,0) cmap is a guess.
+        let mac = simple_truetype(&mut doc, THAI_MAC, 4, None);
+        assert_eq!(boxes(&doc, &mac, 66, &mut Budget::page(1 << 30)).0, WIDE);
+        // Two cmaps that disagree: which one a viewer uses is a guess.
+        let mixed = simple_truetype(&mut doc, THAI_MIXED, 4, None);
+        assert_eq!(boxes(&doc, &mixed, 66, &mut Budget::page(1 << 30)).0, WIDE);
+    }
+
+    #[test]
+    fn a_glyph_whose_outline_does_not_read_keeps_the_fallback() {
+        let (mark, _, _) = mark_gid();
+        // Break the mark's glyf entry (its range from loca stays non-empty).
+        let face = ttf_parser::Face::parse(THAI, 0).unwrap();
+        let loca = face.raw_face().table(ttf_parser::Tag::from_bytes(b"loca")).unwrap();
+        let glyf_at = |tag: &[u8; 4]| {
+            let count = u16::from_be_bytes([THAI[4], THAI[5]]) as usize;
+            (0..count).map(|i| &THAI[12 + 16 * i..28 + 16 * i]).find(|r| &r[..4] == tag).map(|r| u32::from_be_bytes([r[8], r[9], r[10], r[11]]) as usize).unwrap()
+        };
+        let count = std::num::NonZeroU16::new(face.number_of_glyphs()).unwrap();
+        let table = loca::Table::parse(count, face.tables().head.index_to_location_format, loca).unwrap();
+        let range = table.glyph_range(ttf_parser::GlyphId(mark)).unwrap();
+        assert!(!range.is_empty());
+        let mut bad = THAI.to_vec();
+        let start = glyf_at(b"glyf") + range.start;
+        // numberOfContours 1, then an end point index past every point: no outline.
+        bad[start..start + 2].copy_from_slice(&1i16.to_be_bytes());
+        for b in &mut bad[start + 10..start + 12] {
+            *b = 0xFF;
+        }
+        assert!(ttf_parser::Face::parse(&bad, 0).unwrap().glyph_bounding_box(ttf_parser::GlyphId(mark)).is_none());
+        let mut doc = Document::with_version("1.7");
+        let obj = embedded(&mut doc, &bad);
+        assert_eq!(boxes(&doc, &obj, u32::from(mark), &mut Budget::page(1 << 30)).0, WIDE);
+        // A glyph with an empty loca range (no outline, the space) is empty: its advance only.
+        let space = face.glyph_index(' ').unwrap();
+        assert!(table.glyph_range(space).is_none(), "ttf-parser reports no range for an empty glyph");
+        let obj = embedded(&mut doc, THAI);
+        assert_eq!(boxes(&doc, &obj, u32::from(space.0), &mut Budget::page(1 << 30)).0, [0.0, -0.2, MIN_INK_WIDTH, 0.9]);
+    }
+
+    #[test]
+    fn a_shared_font_program_is_decoded_once_and_charged() {
+        let (mark, _, _) = mark_gid();
+        let mut doc = Document::with_version("1.7");
+        let file = doc.add_object(crate::page_content::flate_stream(dictionary! {}, THAI));
+        let one = embedded_with(&mut doc, file, Object::Name(b"Identity".to_vec()));
+        let two = embedded_with(&mut doc, file, Object::Name(b"Identity".to_vec()));
+        let start = 1 << 30;
+        let mut budget = Budget::page(start);
+        boxes(&doc, &one, u32::from(mark), &mut budget);
+        assert_eq!(budget.decoded, start - THAI.len(), "the decode is charged to the job");
+        boxes(&doc, &two, u32::from(mark), &mut budget);
+        assert_eq!(budget.decoded, start - THAI.len(), "the second font reuses the decoded program");
+        // A page budget made for the next page of the job shares it too.
+        let mut next = budget.next_page(budget.decoded);
+        boxes(&doc, &one, u32::from(mark), &mut next);
+        assert_eq!(next.decoded, start - THAI.len());
+        // Too little budget left: no ink, the fallback.
+        let mut tight = Budget::page(THAI.len() - 1);
+        assert_eq!(boxes(&doc, &one, u32::from(mark), &mut tight).0, WIDE);
     }
 }

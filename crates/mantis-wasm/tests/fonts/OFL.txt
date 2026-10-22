@@ -1,6 +1,7 @@
 Test fixtures: subsets of Noto fonts made with fontTools pyftsubset 4.61.1 (layout tables kept)
 from the @expo-google-fonts packages noto-sans@0.4.2, noto-sans-arabic@0.4.3, noto-sans-hebrew@0.4.1,
 noto-sans-devanagari@0.4.1, noto-sans-thai@0.4.2 and noto-sans-sc@0.4.4. Used by the Rust tests only.
+ThaiMark-*.ttf: the Thai subset with its cmap replaced ((3,0), (1,0) or both) to test code mappings.
 
 Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'
 Copyright 2022 The Noto Project Authors (https://github.com/notofonts/arabic)

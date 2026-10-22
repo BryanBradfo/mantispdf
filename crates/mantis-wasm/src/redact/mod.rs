@@ -137,12 +137,14 @@ fn redact_pages(
     let pages = doc.get_pages();
     let mut decoded = JOB_DECODED;
     let mut out = Vec::new();
+    // Shares the decoded font programs between the pages.
+    let job = Budget::page(decoded);
     for (&number, areas) in by_page {
         let Some(&page) = pages.get(&number) else {
             continue;
         };
         let rects = page_rects_user(doc, page, areas);
-        let mut budget = Budget::page(decoded);
+        let mut budget = job.next_page(decoded);
         let result = if plan {
             plan_page(doc, page, &rects, &mut budget).map(|()| Report::default())
         } else {
@@ -349,12 +351,20 @@ pub(crate) struct Budget {
     pub(crate) events: usize,
     /// Decoded content bytes still allowed (the job's remaining share).
     pub(crate) decoded: usize,
+    /// Font programs decoded so far in the job (read for glyph ink).
+    pub(crate) programs: ink::Programs,
 }
 
 impl Budget {
     /// A fresh page allowance drawing on `decoded` bytes of the job budget.
     pub(crate) fn page(decoded: usize) -> Budget {
-        Budget { ops: MAX_PAGE_OPS, events: MAX_PAGE_EVENTS, decoded }
+        Budget { ops: MAX_PAGE_OPS, events: MAX_PAGE_EVENTS, decoded, programs: ink::Programs::default() }
+    }
+
+    /// The allowance of the job's next page: `decoded` bytes left, the font
+    /// programs decoded so far shared.
+    pub(crate) fn next_page(&self, decoded: usize) -> Budget {
+        Budget { programs: self.programs.clone(), ..Budget::page(decoded) }
     }
 
     pub(crate) fn take_op(&mut self) -> Result<(), Unsupported> {

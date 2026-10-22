@@ -433,6 +433,8 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
     let mut decoded = JOB_DECODED;
     // Fonts' text maps, shared by every page of the job.
     let cache = Rc::new(RefCell::new(TextCache::new(decoded)));
+    // Shares the decoded font programs between the pages.
+    let job = Budget::page(decoded);
     for (number, page) in doc.get_pages() {
         // Past the limit (or once it is reached): not searched at all.
         if result.truncated || (total >= MAX_RECTS && !needle.is_empty()) {
@@ -442,7 +444,7 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
         }
         cache.borrow_mut().set_limit(decoded);
         let before = cache.borrow().charged();
-        let mut budget = Budget::page(decoded);
+        let mut budget = job.next_page(decoded);
         let scanned = page_text_scan(&doc, page, &mut budget, &cache);
         decoded = budget.decoded.saturating_sub(cache.borrow().charged() - before);
         let Ok((glyphs, images)) = scanned else {
