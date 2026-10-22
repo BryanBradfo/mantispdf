@@ -5,8 +5,9 @@ use ttf_parser::gpos::PositioningSubtable;
 use ttf_parser::gsub::SubstitutionSubtable;
 use ttf_parser::opentype_layout::{ChainedContextLookup, ContextLookup, LayoutTable};
 
-/// One font, parsed once; borrows the caller's bytes.
+/// One font, parsed once; borrows the caller's bytes (subset when embedded).
 pub(crate) struct Face<'a> {
+    pub(crate) data: &'a [u8],
     pub(crate) hb: rustybuzz::Face<'a>,
 }
 
@@ -18,7 +19,7 @@ impl<'a> Face<'a> {
         if !lookups_resolve(hb.tables().gsub, hb.tables().gpos) {
             return None;
         }
-        Some(Face { hb })
+        Some(Face { data, hb })
     }
 
     pub(crate) fn units_per_em(&self) -> f64 {

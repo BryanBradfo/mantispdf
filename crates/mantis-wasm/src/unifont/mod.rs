@@ -8,12 +8,16 @@
 
 mod bidi;
 mod breaks;
+mod embed;
+#[cfg(test)]
+mod embed_tests;
 mod face;
 mod layout;
 mod shape;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use embed::Embedder;
 pub(crate) use face::{Face, load_faces};
 pub(crate) use layout::layout_text;
 
