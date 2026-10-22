@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
-import { formatNumber, useLocale, useT } from "../../i18n";
+import { formatNumber, useLocale, useT, type UiError } from "../../i18n";
+import ErrorText from "./ErrorText";
 
 interface ProgressOverlayProps {
   progress: number;
   message: string;
-  error: string | null;
+  error: UiError | null;
   onDismissError: () => void;
 }
 
@@ -35,9 +36,9 @@ export default function ProgressOverlay({ progress, message, error, onDismissErr
       <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl dark:bg-[#141414] dark:shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
         {error ? (
           <>
-            <p className="mb-4 text-sm font-medium text-red-600 dark:text-red-400" aria-live="assertive">
-              {error}
-            </p>
+            <div className="mb-4 text-sm font-medium text-red-600 dark:text-red-400" aria-live="assertive">
+              <ErrorText error={error} />
+            </div>
             <button
               ref={dismissRef}
               onClick={onDismissError}

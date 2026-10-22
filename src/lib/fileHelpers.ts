@@ -1,3 +1,9 @@
+/** True for a file the browser reports as a PDF. */
+export function isPdfFile(file: File): boolean {
+  return file.type === "application/pdf";
+}
+
+/** English message for a non-PDF file. Pages that are translated use `isPdfFile` and `common.invalidPdf`. */
 export function validatePdfFile(file: File): string | null {
   if (file.type !== "application/pdf") {
     return "Please upload a PDF file.";

@@ -20,6 +20,7 @@ import {
 } from "../lib/stampBuilders";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
+import { useT } from "../i18n";
 
 const INITIAL_SLOTS: HeaderFooterSlots = {
   "top-left": "", "top-center": "", "top-right": "",
@@ -27,6 +28,8 @@ const INITIAL_SLOTS: HeaderFooterSlots = {
 };
 
 export default function HeaderFooterPage() {
+  // Only the shared page description is translated here so far (Task 4 does the rest).
+  const tp = useT("pages");
   const worker = usePdfWorker();
   const { countPages } = worker;
   const prepare = useCallback((bytes: Uint8Array) => countPages(bytes), [countPages]);
@@ -53,7 +56,7 @@ export default function HeaderFooterPage() {
   const ctx = { total, pages: selected, filename: input ? baseName(input.file) : "", date: todayIso() };
   const preview = previewHeaderFooter(slots, Number.isFinite(numberStart) ? numberStart : 1, ctx);
   const firstPage = selected.length > 0 ? selected.reduce((a, b) => Math.min(a, b)) : null;
-  const summary = `${filled.length} text${filled.length === 1 ? "" : "s"} (${filled.map((s) => s.label.toLowerCase()).join(", ") || "none"}) · ${describePages(selected, total)} · ${describeStyle(style)}`;
+  const summary = `${filled.length} text${filled.length === 1 ? "" : "s"} (${filled.map((s) => s.label.toLowerCase()).join(", ") || "none"}) · ${describePages(selected, total, tp)} · ${describeStyle(style)}`;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

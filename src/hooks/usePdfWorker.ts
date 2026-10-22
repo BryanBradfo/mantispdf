@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FromWorker, SuccessPayload, ToWorker } from "../lib/workerProtocol";
+import type { FromWorker, ProgressStep, SuccessPayload, ToWorker } from "../lib/workerProtocol";
+import { describeProgress, useT } from "../i18n";
 import type { PdfPart } from "../types/pdf";
 import { readFileAsArrayBuffer } from "../lib/fileHelpers";
 import type { ExtractResultSpec, ImageInputSpec, ImageLayoutSpec } from "../lib/imageInput";
@@ -44,7 +45,8 @@ interface WorkerState {
   watermarking: boolean;
   encrypting: boolean;
   progress: number;
-  progressMessage: string;
+  /** Translated into `progressMessage` for the current locale. */
+  progressStep: ProgressStep | null;
 }
 
 type BusyFlag = "splitting" | "merging" | "compressing" | "rotating" | "watermarking" | "encrypting";
@@ -59,7 +61,7 @@ const initialState: WorkerState = {
   watermarking: false,
   encrypting: false,
   progress: 0,
-  progressMessage: "",
+  progressStep: null,
 };
 
 // Payload extractors with a runtime kind-check (no unsafe casts).
@@ -151,6 +153,7 @@ export function usePdfWorker() {
   const workerRef = useRef<Worker | null>(null);
   const clientRef = useRef<PdfWorkerClient | null>(null);
   const [state, setState] = useState<WorkerState>(initialState);
+  const t = useT("common");
 
   const setFlag = useCallback((flag: BusyFlag, value: boolean) => {
     setState((s) => ({ ...s, [flag]: value }));
@@ -192,7 +195,7 @@ export function usePdfWorker() {
         watermarking: false,
         encrypting: false,
         progress: 0,
-        progressMessage: "",
+        progressStep: null,
       }));
     };
     worker.onerror = (e) => fail(e.message || "PDF engine crashed");
@@ -216,12 +219,12 @@ export function usePdfWorker() {
     ): Promise<T> => {
       const client = clientRef.current;
       if (!client) return Promise.reject(new Error("Worker not initialized"));
-      if (flag) setState((s) => ({ ...s, [flag]: true, progress: 0, progressMessage: "Starting…" }));
+      if (flag) setState((s) => ({ ...s, [flag]: true, progress: 0, progressStep: { step: "starting" } }));
       return client
         .request(build, extract, {
           transfer: options.transfer,
           onProgress: options.trackProgress
-            ? (progress, message) => setState((s) => ({ ...s, progress, progressMessage: message }))
+            ? (progress, step) => setState((s) => ({ ...s, progress, progressStep: step }))
             : undefined,
         })
         .finally(() => {
@@ -469,6 +472,7 @@ export function usePdfWorker() {
   return useMemo(
     () => ({
       ...state,
+      progressMessage: describeProgress(state.progressStep, t),
       splitPdf,
       mergePdfs,
       countPages,
@@ -500,6 +504,7 @@ export function usePdfWorker() {
     }),
     [
       state,
+      t,
       splitPdf,
       mergePdfs,
       countPages,

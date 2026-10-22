@@ -10,9 +10,51 @@ export default {
   errorLocked: "This PDF is password-protected. Unlock it first.",
   errorLockedNth: "PDF {n} is password-protected. Unlock it first.",
 
+  // Engine and file input (every tool)
+  engineFailed: "WASM engine failed to load: {error}",
+  engineFailedReload: "PDF engine failed to load. Please reload the page.",
+  engineLoading: "Engine is still loading, please wait a moment.",
+  invalidPdf: "Please upload a PDF file.",
+  readFailed: "Failed to read this PDF.",
+  readFailedNamed: "Failed to read {name}.",
+  fileProblem: "{name}: {problem}",
+  loadingPdf: "Loading PDF…",
+  previewLoadingText: "Loading preview…",
+  fileWithPages: { one: "{name} · {count} page", other: "{name} · {count} pages" },
+  fileWithPagesParen: { one: "{name} ({count} page)", other: "{name} ({count} pages)" },
+
+  // Worker progress steps (describeProgress)
+  progressStarting: "Starting…",
+  progressSplitting: "Splitting into {parts} parts…",
+  progressExtracting: "Extracting part {part} of {of}…",
+  progressPreparing: "Preparing download…",
+  progressMerging: "Merging {count} documents…",
+  progressDone: "Done",
+
+  // Drag and drop (SortableGrid, screen readers)
+  dragItem: "item",
+  dragInstructions:
+    "To pick up a draggable item, press the space bar. While dragging, use the arrow keys to move the item. Press space again to drop the item in its new position, or press escape to cancel.",
+  dragPickedUp: "Picked up {name}, position {position} of {count}.",
+  dragOver: "{name} is over position {position}.",
+  dragDropped: "Dropped {name} at position {position}.",
+  dragDroppedNowhere: "Dropped {name}.",
+  dragCancelled: "Cancelled. {name} returned to position {position}.",
+
   // Shared controls
   dismiss: "Dismiss",
   close: "Close",
+  reset: "Reset",
+  processing: "Processing…",
+  download: "Download",
+  downloadZip: "Download ZIP",
+  newFile: "New file",
+  startOver: "Start over",
+  chooseAnother: "Choose another file",
+  allTools: "← All tools",
+  selectAll: "Select all",
+  selectNone: "Select none",
+  selection: "Selection",
   retry: "Retry",
 
   // Failures (LocaleProvider, ErrorBoundary)

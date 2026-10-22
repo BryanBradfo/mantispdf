@@ -1,5 +1,6 @@
 /** Pure layout math for the Resize and N-up mini-previews. Mirrors the Rust engine (geometry_ops). */
 import { mmToPt, type NupJobSpec, type Orientation, type Rect, type ResizeJobSpec } from "./geometryJob";
+import type { NsT } from "../i18n";
 
 export type Size = [number, number];
 
@@ -78,19 +79,18 @@ export function fitInCell(cell: Rect, [vw, vh]: Size): Rect {
 export const MIN_SHEET_PT = 36;
 export const MAX_SHEET_PT = 14400;
 
-const CUSTOM_SIZE_PROBLEM = "Custom size must be between 13 and 5080 mm on each side.";
-const MARGIN_PROBLEM = "Margin must be between 0 and 200 mm.";
-const NO_ROOM_PROBLEM = "The margin leaves no room on the sheet. Use a smaller margin.";
-
 const mmInRange = (mm: number) => mm >= 0 && mm <= 200;
 const noRoom = ([w, h]: Size, marginMm: number) => Math.min(w, h) - 2 * mmToPt(marginMm) <= 0;
 
 /** Why the Resize settings cannot run, or null. `size` is null for an invalid custom size. */
-export function resizeProblem({ selected, size, marginMm }: { selected: number; size: Size | null; marginMm: number }): string | null {
-  if (selected === 0) return "Select at least one page.";
-  if (!size) return CUSTOM_SIZE_PROBLEM;
-  if (!mmInRange(marginMm)) return MARGIN_PROBLEM;
-  if (noRoom(size, marginMm)) return NO_ROOM_PROBLEM;
+export function resizeProblem(
+  { selected, size, marginMm }: { selected: number; size: Size | null; marginMm: number },
+  t: NsT<"geometry">,
+): string | null {
+  if (selected === 0) return t("selectAtLeastOne");
+  if (!size) return t("customSize");
+  if (!mmInRange(marginMm)) return t("marginRange");
+  if (noRoom(size, marginMm)) return t("noRoom");
   return null;
 }
 
@@ -104,26 +104,26 @@ export function nupProblem(o: {
   first: Size | undefined;
   marginMm: number;
   gapMm: number;
-}): string | null {
-  if (!o.sheet) return CUSTOM_SIZE_PROBLEM;
+}, t: NsT<"geometry">): string | null {
+  if (!o.sheet) return t("customSize");
   if (o.sheet === "same" && o.first && !o.first.every((v) => v >= MIN_SHEET_PT && v <= MAX_SHEET_PT)) {
-    return "The first page is too small or too large to be the sheet size (1 to 200 in). Pick a paper size.";
+    return t("firstPageSize");
   }
-  if (!mmInRange(o.marginMm)) return MARGIN_PROBLEM;
-  if (!mmInRange(o.gapMm)) return "Gap must be between 0 and 200 mm.";
+  if (!mmInRange(o.marginMm)) return t("marginRange");
+  if (!mmInRange(o.gapMm)) return t("gapRange");
   if (!o.first) return null;
   const sheet = nupSheetSize({ perSheet: o.perSheet, sheet: o.sheet, orientation: o.orientation }, o.first);
-  if (noRoom(sheet, o.marginMm)) return NO_ROOM_PROBLEM;
+  if (noRoom(sheet, o.marginMm)) return t("noRoom");
   if (nupCells(o.perSheet, sheet, o.order, mmToPt(o.marginMm), mmToPt(o.gapMm)).length === 0) {
-    return "The margin and gap leave no room for the pages.";
+    return t("noRoomPages");
   }
   return null;
 }
 
 /** "W x H mm" of a custom size, with "?" for an empty field. */
-export function mmSizeLabel([w, h]: [number, number]): string {
+export function mmSizeLabel([w, h]: [number, number], t: NsT<"geometry">): string {
   const show = (v: number) => (Number.isFinite(v) ? String(v) : "?");
-  return `${show(w)} x ${show(h)} mm`;
+  return t("mmSize", { width: show(w), height: show(h) });
 }
 
 export type { Orientation };

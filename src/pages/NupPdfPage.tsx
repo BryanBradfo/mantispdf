@@ -10,14 +10,11 @@ import { mmToPt, type NupJobSpec, type Orientation } from "../lib/geometryJob";
 import { fitInCell, mmSizeLabel, nupCells, nupGrid, nupProblem, nupSheetSize } from "../lib/geometryLayout";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
+import { useT } from "../i18n";
 
 const PER_SHEET = [2, 4, 6, 8, 9, 16] as const;
 
-const ORIENTATIONS: { id: Orientation; label: string }[] = [
-  { id: "auto", label: "Auto (landscape for 2 and 8)" },
-  { id: "portrait", label: "Portrait" },
-  { id: "landscape", label: "Landscape" },
-];
+const ORIENTATIONS: readonly Orientation[] = ["auto", "portrait", "landscape"];
 
 /** Small grid icon for a per-sheet choice. */
 function LayoutIcon({ n }: { n: NupJobSpec["perSheet"] }) {
@@ -42,6 +39,9 @@ function LayoutIcon({ n }: { n: NupJobSpec["perSheet"] }) {
 }
 
 export default function NupPdfPage() {
+  const t = useT("nUp");
+  const tg = useT("geometry");
+  const tc = useT("common");
   const worker = usePdfWorker();
   const { pageSizes } = worker;
   const prepare = useCallback((bytes: Uint8Array) => pageSizes(bytes), [pageSizes]);
@@ -72,14 +72,24 @@ export default function NupPdfPage() {
     return { sheet, cells };
   }, [sheetPt, sizes, perSheet, orientation, order, margin, gap]);
 
-  const problem = nupProblem({ perSheet, sheet: sheetPt, orientation, order, first: sizes[0], marginMm, gapMm });
+  const problem = nupProblem({ perSheet, sheet: sheetPt, orientation, order, first: sizes[0], marginMm, gapMm }, tg);
   // The blank-pages warning describes the output of these exact settings only.
   const settings = JSON.stringify([perSheet, paper, customMm, orientation, order, marginMm, gapMm, border]);
   const blankPages = undecodable.settings === settings ? undecodable.pages : [];
 
   const sheetsCount = Math.ceil(total / perSheet);
-  const paperLabel = paper === "same" ? "same as first page" : paper === CUSTOM_PAPER ? mmSizeLabel(customMm) : paper;
-  const summary = `${perSheet} per sheet · ${paperLabel} · ${orientation} · ${order} · margin ${marginMm || 0} mm, gap ${gapMm || 0} mm · ${sheetsCount} sheet${sheetsCount === 1 ? "" : "s"}`;
+  const paperLabel = paper === "same" ? t("sameAsFirst") : paper === CUSTOM_PAPER ? mmSizeLabel(customMm, tg) : paper;
+  const orientationWord = { auto: tg("wordAuto"), portrait: tg("wordPortrait"), landscape: tg("wordLandscape") }[orientation];
+  const summary = t("summary", {
+    perSheet,
+    paper: paperLabel,
+    orientation: orientationWord,
+    order: order === "rows" ? t("rowsWord") : t("columnsWord"),
+    margin: marginMm || 0,
+    gap: gapMm || 0,
+    count: sheetsCount,
+  });
+  const orientationLabel = { auto: t("orientationAuto"), portrait: tg("portrait"), landscape: tg("landscape") };
 
   const items = useMemo(() => {
     if (!preview || problem || !input) return [];
@@ -109,13 +119,13 @@ export default function NupPdfPage() {
 
   return (
     <ToolShell
-      title="N-up PDF: Several Pages per Sheet | MantisPDF"
-      description="Put 2, 4, 6, 8, 9 or 16 PDF pages on each sheet. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/n-up"
-      heading="N-up pages"
-      intro="Place several pages on each sheet, for handouts or saving paper. Everything stays on your device."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
 
       {!input && (
         <div className="mt-8">
@@ -125,10 +135,10 @@ export default function NupPdfPage() {
 
       {input && (
         <form className={panelClass} onSubmit={submit}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name} ({total} pages)</p>
+          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
 
           <fieldset className="mt-4">
-            <legend className="text-sm text-gray-700 dark:text-[#aaa]">Pages per sheet</legend>
+            <legend className="text-sm text-gray-700 dark:text-[#aaa]">{t("perSheet")}</legend>
             <div className="mt-1 flex flex-wrap gap-2">
               {PER_SHEET.map((n) => (
                 <button
@@ -153,37 +163,37 @@ export default function NupPdfPage() {
             <div className="min-w-[14rem] flex-1 space-y-4">
               <PaperSizeFields paper={paper} onPaper={setPaper} customMm={customMm} onCustomMm={setCustomMm} allowSame />
               <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-                Orientation
+                {tg("orientation")}
                 <select value={orientation} onChange={(e) => setOrientation(e.target.value as Orientation)} className={inputClass}>
-                  {ORIENTATIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  {ORIENTATIONS.map((o) => <option key={o} value={o}>{orientationLabel[o]}</option>)}
                 </select>
               </label>
               <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-                Order
+                {t("order")}
                 <select value={order} onChange={(e) => setOrder(e.target.value as NupJobSpec["order"])} className={inputClass}>
-                  <option value="rows">Rows (left to right, then down)</option>
-                  <option value="columns">Columns (top to bottom, then right)</option>
+                  <option value="rows">{t("rows")}</option>
+                  <option value="columns">{t("columns")}</option>
                 </select>
               </label>
               <div className="flex gap-3">
                 <label className="block flex-1 text-sm text-gray-700 dark:text-[#aaa]">
-                  Margin (mm)
+                  {tg("margin")}
                   <input type="number" min={0} max={200} value={Number.isFinite(marginMm) ? marginMm : ""}
                     onChange={(e) => setMarginMm(e.target.value === "" ? NaN : Number(e.target.value))} className={inputClass} />
                 </label>
                 <label className="block flex-1 text-sm text-gray-700 dark:text-[#aaa]">
-                  Gap (mm)
+                  {t("gap")}
                   <input type="number" min={0} max={200} value={Number.isFinite(gapMm) ? gapMm : ""}
                     onChange={(e) => setGapMm(e.target.value === "" ? NaN : Number(e.target.value))} className={inputClass} />
                 </label>
               </div>
               <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
                 <input type="checkbox" checked={border} onChange={(e) => setBorder(e.target.checked)} />
-                Draw a border around each page
+                {t("border")}
               </label>
             </div>
             <div className="flex flex-col items-center gap-2">
-              <p className="text-sm text-gray-700 dark:text-[#aaa]">Preview (first sheet)</p>
+              <p className="text-sm text-gray-700 dark:text-[#aaa]">{t("previewFirst")}</p>
               {preview && !problem ? (
                 <SheetPreview
                   sheet={preview.sheet}
@@ -191,25 +201,24 @@ export default function NupPdfPage() {
                   cells={preview.cells}
                   bordered={border}
                   source={input.file}
-                  label={`First sheet with ${Math.min(perSheet, total)} pages`}
+                  label={t("firstSheetLabel", { n: Math.min(perSheet, total) })}
                   maxSide={280}
                 />
               ) : (
-                <p className="text-xs text-gray-500 dark:text-[#888]">Fix the settings to see a preview.</p>
+                <p className="text-xs text-gray-500 dark:text-[#888]">{tg("fixSettings")}</p>
               )}
             </div>
           </div>
 
           <p className="mt-4 text-xs text-gray-500 dark:text-[#888]">
-            Note: comments, links and form fields are not carried to the sheets. Only the visible page content is.
+            {t("note")}
           </p>
 
           <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
 
           {made && blankPages.length > 0 && (
             <div role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-[#2a2210] dark:text-amber-200">
-              {blankPages.length === 1 ? "Page" : "Pages"} {blankPages.join(", ")} could not be read and{" "}
-              {blankPages.length === 1 ? "was" : "were"} left blank on the sheets.
+              {t("blankPages", { count: blankPages.length, list: blankPages.join(", ") })}
             </div>
           )}
 
@@ -217,9 +226,9 @@ export default function NupPdfPage() {
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
             <button type="submit" disabled={busy || problem !== null} className={`flex-1 ${primaryButton}`}>
-              {busy ? "Arranging…" : "Arrange and download"}
+              {busy ? t("arranging") : t("submit")}
             </button>
-            <button type="button" onClick={clear} className={secondaryButton}>Choose another file</button>
+            <button type="button" onClick={clear} className={secondaryButton}>{tc("chooseAnother")}</button>
           </div>
         </form>
       )}

@@ -4,6 +4,7 @@ import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { placementPreviewSize, visibleToPreviewRect, type Size } from "../../lib/signPlacement";
 import { HANDLES, describeCrop, moveCropRect, resizeCropRect, type Handle } from "../../lib/cropBox";
 import type { Rect } from "../../lib/geometryJob";
+import { useT } from "../../i18n";
 
 /** Render width of the page preview (also its maximum on-screen width). */
 const PREVIEW_WIDTH = 560;
@@ -41,6 +42,8 @@ interface Props {
 type Gesture = { handle: Handle | "move"; pointerX: number; pointerY: number; start: Rect };
 
 export default function CropCanvas({ source, page, pageSize, rect, onRect }: Props) {
+  const t = useT("crop");
+  const tc = useT("common");
   const wrapRef = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState(PREVIEW_WIDTH);
   const gesture = useRef<Gesture | null>(null);
@@ -100,14 +103,14 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
     const resize = e.ctrlKey || e.metaKey;
     const next = resize ? resizeCropRect(rect, "se", d[0], d[1], pageSize) : moveCropRect(rect, d[0], d[1], pageSize);
     onRect(next);
-    setAnnouncement(describeCrop(next, pageSize));
+    setAnnouncement(describeCrop(next, pageSize, t));
   };
 
   if (degenerate) {
     // Same root element as below, so the ResizeObserver keeps watching it.
     return (
       <div ref={wrapRef} className="w-full max-w-[560px]">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">This page has no visible area to crop.</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
       </div>
     );
   }
@@ -116,7 +119,7 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
     <div ref={wrapRef} className="w-full max-w-[560px]">
       <div data-crop-frame className="relative select-none" style={{ width: pw, height: ph }}>
         <div className="absolute inset-0 overflow-hidden rounded-lg border border-gray-300 shadow-sm dark:border-[#333]">
-          <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={`Page ${page}`} className="h-full" />
+          <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={tc("pageN", { n: page })} className="h-full" />
           {/* Dims everything outside the box; the frame clips the shadow. */}
           <div
             aria-hidden="true"
@@ -129,7 +132,7 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
           <div
             role="group"
             aria-roledescription="resizable crop box"
-            aria-label="Crop area"
+            aria-label={t("cropArea")}
             aria-describedby="crop-area-help"
             tabIndex={0}
             onPointerDown={begin("move")}

@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { pdfjs } from "../lib/pdf";
+import { UserError, useDescribeError, useT, type UiError } from "../i18n";
 
 export type ImageFormat = "png" | "jpeg";
 export type RenderScale = 1 | 2 | 3 | 4 | 5;
@@ -17,7 +18,9 @@ interface ConvertOptions {
 
 export function usePdfToImage() {
   const [converting, setConverting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const t = useT("pdfToImage");
+  const describe = useDescribeError();
+  const [error, setError] = useState<UiError | null>(null);
 
   const convertPdfToImages = useCallback(
     async (file: File, { format, scale, onProgress }: ConvertOptions): Promise<ImagePart[]> => {
@@ -29,7 +32,7 @@ export function usePdfToImage() {
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         setConverting(false);
-        throw new Error("Could not get a 2D canvas context");
+        throw new UserError(t("noCanvas"));
       }
       let pdf: Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]> | null = null;
       try {
@@ -48,7 +51,7 @@ export function usePdfToImage() {
           await page.render({ canvasContext: ctx, viewport }).promise;
           const blob = await new Promise<Blob>((res, rej) =>
             canvas.toBlob(
-              (b) => (b ? res(b) : rej(new Error("Failed to render page to image (page may exceed the browser's canvas size limit, so try a lower scale)"))),
+              (b) => (b ? res(b) : rej(new UserError(t("renderFailed")))),
               mimeType,
               format === "jpeg" ? 0.92 : undefined,
             ),
@@ -60,7 +63,7 @@ export function usePdfToImage() {
         onProgress(pdf.numPages, pdf.numPages);
         return parts;
       } catch (err) {
-        setError(String(err));
+        setError(describe(err));
         throw err;
       } finally {
         // Release pdf.js worker-side resources and the canvas backing store.
@@ -70,7 +73,7 @@ export function usePdfToImage() {
         setConverting(false);
       }
     },
-    [],
+    [t, describe],
   );
 
   return { converting, error, setError, convertPdfToImages };

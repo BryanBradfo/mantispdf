@@ -28,6 +28,7 @@ import {
 import { exportText } from "../lib/ocr/text";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
+import type { UiError } from "../i18n";
 
 /** The engine's page limit (`add_text_layer`). */
 const MAX_PAGES = 2000;
@@ -52,8 +53,8 @@ interface WorkspaceProps {
   input: PdfInput<[number, number][]>;
   busy: boolean;
   run: <R>(work: () => Promise<R>, done: (result: R) => void) => Promise<void>;
-  error: string | null;
-  setError: (error: string | null) => void;
+  error: UiError | null;
+  setError: (error: UiError | null) => void;
   addTextLayer: ReturnType<typeof usePdfWorker>["addTextLayer"];
   onStartOver: () => void;
 }

@@ -1,11 +1,12 @@
 import { useCallback, useState } from "react";
-import { Trans, useT } from "../../i18n";
+import { Trans, useT, type UiError } from "../../i18n";
+import ErrorText from "./ErrorText";
 
 interface DropZoneProps {
   onFile?: (file: File) => void;
   onFiles?: (files: File[]) => void;
   multiple?: boolean;
-  error: string | null;
+  error: UiError | null;
   /** File input accept filter; defaults to PDFs. */
   accept?: string;
   /** What the prompt asks for (default PDFs); `hint` overrides the line under it ("PDF files"). */
@@ -98,7 +99,9 @@ export default function DropZone({ onFile, onFiles, multiple, error, accept = ".
         />
       </label>
       {error && (
-        <p className="mt-3 text-center text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
+        <div className="mt-3 text-center text-sm font-medium text-red-600 dark:text-red-400">
+          <ErrorText error={error} />
+        </div>
       )}
     </div>
   );

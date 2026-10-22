@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "../i18n";
+import { Link, Trans, useLocale, useT } from "../i18n";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
@@ -18,13 +18,14 @@ import { baseName, usePdfInput } from "./usePdfInput";
 /** The engine accepts at most this many per-page boxes in one job. */
 const MAX_PER_PAGE = 10_000;
 
-const SCOPES: { id: CropScope; label: string }[] = [
-  { id: "this", label: "This page" },
-  { id: "all", label: "All pages" },
-  { id: "range", label: "Page range" },
-];
+const SCOPES: readonly CropScope[] = ["this", "all", "range"];
 
 export default function CropPdfPage() {
+  const t = useT("crop");
+  const tc = useT("common");
+  const tp = useT("pages");
+  const tg = useT("geometry");
+  const locale = useLocale();
   const worker = usePdfWorker();
   const { pageSizes } = worker;
   const prepare = useCallback((bytes: Uint8Array) => pageSizes(bytes), [pageSizes]);
@@ -76,7 +77,7 @@ export default function CropPdfPage() {
   const detect = (all: boolean) => {
     if (!input || busy) return;
     if (all && total > MAX_PER_PAGE) {
-      setError(`Auto-detect works on up to ${MAX_PER_PAGE} pages at a time. Use one box for all pages instead.`);
+      setError(t("autoTooMany", { max: MAX_PER_PAGE }));
       return;
     }
     stopDetection();
@@ -101,14 +102,14 @@ export default function CropPdfPage() {
       (found) => {
         if (all) {
           setPerPage(found);
-          setNotice(`Detected margins on ${found.size} ${found.size === 1 ? "page" : "pages"}. Each page gets its own box.`);
+          setNotice(t("detectedAll", { count: found.size }));
           return;
         }
         const box = found.get(shownPage);
         if (!box) return;
         if (perPageRef.current) setPerPage((cur) => (cur ? new Map(cur).set(shownPage, box) : cur));
         else setRect(box);
-        setNotice(`Detected margins on page ${shownPage}.`);
+        setNotice(t("detectedOne", { page: shownPage }));
       },
     );
   };
@@ -123,17 +124,22 @@ export default function CropPdfPage() {
   );
 
   const problem =
-    perPage ? (perPage.size > MAX_PER_PAGE ? `Auto-detect works on up to ${MAX_PER_PAGE} pages at a time.` : null)
-    : scope === "range" && selected.length === 0 ? "Select at least one page."
-    : missedPagesProblem(missed);
+    perPage ? (perPage.size > MAX_PER_PAGE ? t("autoTooManyShort", { max: MAX_PER_PAGE }) : null)
+    : scope === "range" && selected.length === 0 ? tg("selectAtLeastOne")
+    : missedPagesProblem(missed, t);
 
   const r = Math.round;
   const target =
-    scope === "this" ? `page ${page}` : scope === "all" ? "all pages" : describePages(selected, total).toLowerCase();
+    scope === "this"
+      ? t("targetPage", { page })
+      : scope === "all"
+        ? t("targetAll")
+        : describePages(selected, total, tp).toLocaleLowerCase(locale);
+  const permanentTag = permanent ? ` · ${t("permanentTag")}` : "";
   const summary = perPage
-    ? `Detected box on each of ${perPage.size} pages${permanent ? " · permanent" : ""}`
+    ? t("summaryPerPage", { count: perPage.size }) + permanentTag
     : shown
-      ? `${r(shown[2])} x ${r(shown[3])} pt · ${target}${permanent ? " · permanent" : ""}`
+      ? t("summaryBox", { width: r(shown[2]), height: r(shown[3]), target }) + permanentTag
       : "";
 
   const submit = (e: React.FormEvent) => {
@@ -163,13 +169,13 @@ export default function CropPdfPage() {
 
   return (
     <ToolShell
-      title="Crop PDF Pages | MantisPDF"
-      description="Crop PDF pages in your browser: draw the crop box or detect the margins automatically. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/crop"
-      heading="Crop PDF"
-      intro="Trim the margins of your pages, by hand or automatically. Everything stays on your device."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
 
       {!input && (
         <div className="mt-8">
@@ -180,18 +186,18 @@ export default function CropPdfPage() {
       {input && (
         <form className={panelClass} onSubmit={submit}>
           <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
-            {input.file.name} ({total} {total === 1 ? "page" : "pages"})
+            {tc("fileWithPagesParen", { name: input.file.name, count: total })}
           </p>
 
           {total > 1 && (
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-2" role="group" aria-label="Pages">
+            <div className="mt-4 flex gap-2 overflow-x-auto pb-2" role="group" aria-label={tc("pagesGroup")}>
               {sizes.map((_, i) => {
                 const n = i + 1;
                 return (
                   <button
                     key={n}
                     type="button"
-                    aria-label={`Page ${n}`}
+                    aria-label={tc("pageN", { n })}
                     aria-pressed={page === n}
                     disabled={detecting}
                     onClick={() => setPage(n)}
@@ -215,10 +221,10 @@ export default function CropPdfPage() {
 
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" onClick={() => detect(false)} disabled={busy} className={secondaryButton}>
-              Auto-detect margins on this page
+              {t("autoThis")}
             </button>
             <button type="button" onClick={() => detect(true)} disabled={busy} className={secondaryButton}>
-              Auto-detect margins on all pages
+              {t("autoAll")}
             </button>
           </div>
           {progress && (
@@ -226,11 +232,11 @@ export default function CropPdfPage() {
               <progress
                 value={progress.done}
                 max={progress.total}
-                aria-label="Detecting margins"
+                aria-label={t("detecting")}
                 className="h-2 w-full max-w-sm overflow-hidden rounded-full accent-mantis-600"
               />
               <p className="mt-1 text-xs text-gray-600 dark:text-[#888]">
-                Detecting margins: page {progress.done} of {progress.total}
+                {t("detectingProgress", { done: progress.done, total: progress.total })}
               </p>
             </div>
           )}
@@ -238,30 +244,30 @@ export default function CropPdfPage() {
 
           {perPage ? (
             <div className="mt-4 text-sm text-gray-700 dark:text-[#aaa]">
-              <p>Each page is cropped to its own detected box. Pick a page above to adjust its box.</p>
+              <p>{t("perPageNote")}</p>
               <button
                 type="button"
                 disabled={detecting}
                 onClick={() => { setPerPage(null); setNotice(""); }}
                 className={`mt-2 disabled:opacity-60 ${secondaryButton}`}
               >
-                Use one box for all pages instead
+                {t("useOneBox")}
               </button>
             </div>
           ) : (
             <fieldset className="mt-4" disabled={detecting}>
-              <legend className="text-sm text-gray-700 dark:text-[#aaa]">Apply to</legend>
+              <legend className="text-sm text-gray-700 dark:text-[#aaa]">{t("applyTo")}</legend>
               <div className="mt-1 flex flex-wrap gap-4 text-sm text-gray-700 dark:text-[#aaa]">
                 {SCOPES.map((s) => (
-                  <label key={s.id} className="flex items-center gap-2">
-                    <input type="radio" name="scope" checked={scope === s.id} onChange={() => setScope(s.id)} />
-                    {s.id === "this" ? `${s.label} (${page})` : s.label}
+                  <label key={s} className="flex items-center gap-2">
+                    <input type="radio" name="scope" checked={scope === s} onChange={() => setScope(s)} />
+                    {s === "this" ? t("scopeThis", { page }) : s === "all" ? t("scopeAll") : t("scopeRange")}
                   </label>
                 ))}
               </div>
               {scope === "range" && (
                 <div className="mt-3">
-                  <RangeInput label="Pages to crop" total={total} selectedPages={selected} onPages={setRange} />
+                  <RangeInput label={t("rangeLabel")} total={total} selectedPages={selected} onPages={setRange} />
                 </div>
               )}
             </fieldset>
@@ -274,13 +280,21 @@ export default function CropPdfPage() {
               onChange={(e) => setPermanent(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
             />
-            Make permanent (also shrink the page itself, for viewers that ignore the crop)
+            {t("makePermanent")}
           </label>
 
           <p className="mt-4 rounded-lg bg-white/70 p-3 text-xs text-gray-600 dark:bg-[#111] dark:text-[#888]">
-            Content outside the crop is hidden, not deleted. Use{" "}
-            <Link to="/sanitize" className="font-medium text-mantis-700 underline dark:text-mantis-400">Sanitize</Link>{" "}
-            to remove hidden content.
+            <Trans
+              ns="crop"
+              k="hiddenNote"
+              components={{
+                link: (c) => (
+                  <Link to="/sanitize" className="font-medium text-mantis-700 underline dark:text-mantis-400">
+                    {c}
+                  </Link>
+                ),
+              }}
+            />
           </p>
 
           <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
@@ -289,9 +303,9 @@ export default function CropPdfPage() {
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
             <button type="submit" disabled={busy || problem !== null || !shown} className={`flex-1 ${primaryButton}`}>
-              {busy && !detecting ? "Cropping…" : "Crop and download"}
+              {busy && !detecting ? t("cropping") : t("submit")}
             </button>
-            <button type="button" onClick={clear} className={secondaryButton}>Choose another file</button>
+            <button type="button" onClick={clear} className={secondaryButton}>{tc("chooseAnother")}</button>
           </div>
         </form>
       )}

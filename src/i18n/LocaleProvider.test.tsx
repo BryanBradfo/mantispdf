@@ -80,31 +80,51 @@ describe("LocaleProvider + useT", () => {
   });
 });
 
-describe("preloading", () => {
-  it("renders French without suspending once the chunk is loaded", async () => {
-    // Fresh module instance: React has never seen this load promise.
-    vi.resetModules();
-    const fresh = await import(".");
-    await fresh.loadLocale("fr");
-    function FreshProbe() {
-      return <p>{fresh.useT("common")("errorWrongPassword")}</p>;
-    }
-    host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-    // One synchronous commit: no fallback when the dictionary is already there.
-    act(() => {
-      root!.render(
-        <MemoryRouter initialEntries={["/fr"]}>
-          <Suspense fallback={<p>loading</p>}>
-            <fresh.LocaleProvider>
-              <FreshProbe />
-            </fresh.LocaleProvider>
-          </Suspense>
-        </MemoryRouter>,
+/**
+ * A fresh copy of the i18n module (empty load caches) together with its own React, renderer and
+ * router: after `vi.resetModules()` they must all come from the same module graph, or hooks run
+ * against a different React than the renderer. `setup` installs mocks before anything is imported.
+ */
+async function freshEnv(setup?: () => void) {
+  vi.resetModules();
+  setup?.();
+  const [react, client, router, i18n] = await Promise.all([
+    import("react"),
+    import("react-dom/client"),
+    import("react-router-dom"),
+    import("."),
+  ]);
+  const el = document.createElement("div");
+  document.body.append(el);
+  const freshRoot = client.createRoot(el);
+  const render = (path: string, ui: ReactNode) =>
+    react.act(() => {
+      freshRoot.render(
+        <router.MemoryRouter initialEntries={[path]}>
+          <react.Suspense fallback={<p>loading</p>}>
+            <i18n.LocaleProvider>{ui}</i18n.LocaleProvider>
+          </react.Suspense>
+        </router.MemoryRouter>,
       );
     });
-    expect(host.textContent).toBe("Mot de passe incorrect");
+  const cleanup = () => {
+    react.act(() => freshRoot.unmount());
+    el.remove();
+  };
+  return { act: react.act, i18n, el, render, cleanup };
+}
+
+describe("preloading", () => {
+  it("renders French without suspending once the chunk is loaded", async () => {
+    const env = await freshEnv();
+    await env.i18n.loadLocale("fr");
+    function FreshProbe() {
+      return <p>{env.i18n.useT("common")("errorWrongPassword")}</p>;
+    }
+    // One synchronous commit: no fallback when the dictionary is already there.
+    env.render("/fr", <FreshProbe />);
+    expect(env.el.textContent).toBe("Mot de passe incorrect");
+    env.cleanup();
   });
 });
 
@@ -199,43 +219,33 @@ describe("Trans", () => {
 
 describe("a French chunk that fails to load", () => {
   it("falls back to English with a notice, and a retry loads it again", async () => {
-    vi.resetModules();
     let calls = 0;
-    vi.doMock("./locales/fr/fr", () => {
-      calls += 1;
-      throw new Error("chunk failed");
-    });
-    const fresh = await import(".");
+    const env = await freshEnv(() =>
+      vi.doMock("./locales/fr/fr", () => {
+        calls += 1;
+        throw new Error("chunk failed");
+      }),
+    );
     function FreshProbe() {
-      return <p>{fresh.useT("common")("errorWrongPassword")}</p>;
+      return <p>{env.i18n.useT("common")("errorWrongPassword")}</p>;
     }
-    host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-    await act(async () => {
-      root!.render(
-        <MemoryRouter initialEntries={["/fr/merge"]}>
-          <Suspense fallback={<p>loading</p>}>
-            <fresh.LocaleProvider>
-              <FreshProbe />
-            </fresh.LocaleProvider>
-          </Suspense>
-        </MemoryRouter>,
-      );
+    await env.act(async () => {
+      env.render("/fr/merge", <FreshProbe />);
     });
-    await act(async () => {
-      await fresh.loadLocale("fr").catch(() => {});
+    await env.act(async () => {
+      await env.i18n.loadLocale("fr").catch(() => {});
     });
-    expect(host.textContent).toContain("Wrong password");
-    expect(host.querySelector("[role=status]")?.textContent).toContain("could not be loaded");
+    expect(env.el.textContent).toContain("Wrong password");
+    expect(env.el.querySelector("[role=status]")?.textContent).toContain("could not be loaded");
 
     // The failed promise is not cached: retrying calls the loader again.
     const before = calls;
-    await act(async () => host.querySelector<HTMLButtonElement>("[role=status] button")!.click());
-    await act(async () => {
-      await fresh.loadLocale("fr").catch(() => {});
+    await env.act(async () => env.el.querySelector<HTMLButtonElement>("[role=status] button")!.click());
+    await env.act(async () => {
+      await env.i18n.loadLocale("fr").catch(() => {});
     });
     expect(calls).toBeGreaterThan(before);
+    env.cleanup();
     vi.doUnmock("./locales/fr/fr");
   });
 });
@@ -259,35 +269,23 @@ describe("ErrorBoundary", () => {
 
 describe("desktop app (Tauri)", () => {
   it("shows the stored language on an unprefixed path", async () => {
-    vi.resetModules();
-    vi.doMock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
-    const fresh = await import(".");
-    fresh.storeLocale("fr");
+    const env = await freshEnv(() => vi.doMock("@tauri-apps/api/core", () => ({ isTauri: () => true })));
+    env.i18n.storeLocale("fr");
     function FreshProbe() {
       return (
         <p>
-          {fresh.useLocale()}|{fresh.useT("common")("errorWrongPassword")}
+          {env.i18n.useLocale()}|{env.i18n.useT("common")("errorWrongPassword")}
         </p>
       );
     }
-    host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-    await act(async () => {
-      root!.render(
-        <MemoryRouter initialEntries={["/merge"]}>
-          <Suspense fallback={<p>loading</p>}>
-            <fresh.LocaleProvider>
-              <FreshProbe />
-            </fresh.LocaleProvider>
-          </Suspense>
-        </MemoryRouter>,
-      );
+    await env.act(async () => {
+      env.render("/merge", <FreshProbe />);
     });
-    await act(async () => {
-      await fresh.loadLocale("fr");
+    await env.act(async () => {
+      await env.i18n.loadLocale("fr");
     });
-    expect(host.textContent).toBe("fr|Mot de passe incorrect");
+    expect(env.el.textContent).toBe("fr|Mot de passe incorrect");
+    env.cleanup();
     vi.doUnmock("@tauri-apps/api/core");
     localStorage.clear();
   });

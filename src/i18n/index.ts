@@ -2,7 +2,7 @@ export { DEFAULT_LOCALE, LOCALES, localeFromPath, localePath, localizeRoutes, st
 export type { Locale } from "./locale";
 export { readStoredLocale, resolveLocale, shouldOfferFrench, storeLocale } from "./localeChoice";
 export { formatBytes, formatNumber } from "./format";
-export { describeError, type DescribedError } from "./describeError";
+export { describeError, UserError, type DescribedError } from "./describeError";
 export {
   Link,
   LocaleProvider,
@@ -11,8 +11,12 @@ export {
   loadLocale,
   useLocale,
   useLocaleNavigate,
+  useDescribeError,
   useLocalePath,
   useT,
 } from "./LocaleProvider";
 export type { Messages, PluralForms, TFunction } from "./types";
+export type { NsT } from "./nsT";
+export type { UiError } from "./describeError";
+export { describeProgress, type ProgressStep } from "./describeProgress";
 export type { NamespaceName } from "./locales/en";

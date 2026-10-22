@@ -1,10 +1,10 @@
 import { useCallback, useRef, useState } from "react";
-import { Link } from "../i18n";
+import { Link, useDescribeError, useT, type UiError } from "../i18n";
 import { PageSEO } from "../components/seo/PageSEO";
 import { useMergeState } from "../hooks/useMergeState";
 import type { MergeFile } from "../hooks/useMergeState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
-import { validatePdfFile, readFileAsUint8Array, downloadBlob } from "../lib/fileHelpers";
+import { isPdfFile, readFileAsUint8Array, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import MergeFileList from "../components/merge/MergeFileList";
@@ -16,20 +16,22 @@ let nextId = 0;
 export default function MergePdfPage() {
   const [state, dispatch] = useMergeState();
   const worker = usePdfWorker();
-  const [mergeError, setMergeError] = useState<string | null>(null);
+  const t = useT("merge");
+  const tc = useT("common");
+  const describe = useDescribeError();
+  const [mergeError, setMergeError] = useState<UiError | null>(null);
   const [downloaded, setDownloaded] = useState(false);
 
   const handleFiles = useCallback(
     async (files: File[]) => {
       if (!worker.ready) {
-        dispatch({ type: "upload-error", error: "Engine is still loading, please wait a moment." });
+        dispatch({ type: "upload-error", error: tc("engineLoading") });
         return;
       }
       const newMergeFiles: MergeFile[] = [];
       for (const file of files) {
-        const validationError = validatePdfFile(file);
-        if (validationError) {
-          dispatch({ type: "upload-error", error: `${file.name}: ${validationError}` });
+        if (!isPdfFile(file)) {
+          dispatch({ type: "upload-error", error: tc("fileProblem", { name: file.name, problem: tc("invalidPdf") }) });
           return;
         }
         try {
@@ -37,13 +39,13 @@ export default function MergePdfPage() {
           const numPages = await worker.countPages(bytes);
           newMergeFiles.push({ id: String(++nextId), file, bytes, numPages });
         } catch {
-          dispatch({ type: "upload-error", error: `Failed to read ${file.name}.` });
+          dispatch({ type: "upload-error", error: tc("readFailedNamed", { name: file.name }) });
           return;
         }
       }
       dispatch({ type: "files-added", files: newMergeFiles });
     },
-    [dispatch, worker],
+    [dispatch, worker, tc],
   );
 
   const filesRef = useRef(state.files);
@@ -58,9 +60,9 @@ export default function MergePdfPage() {
       downloadBlob(merged, "merged.pdf");
       setDownloaded(true);
     } catch (err) {
-      setMergeError(String(err));
+      setMergeError(describe(err));
     }
-  }, [worker]);
+  }, [worker, describe]);
 
   const handleReset = useCallback(() => {
     dispatch({ type: "reset" });
@@ -84,16 +86,16 @@ export default function MergePdfPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <PageSEO
-        title="Merge PDF Files | MantisPDF"
-        description="Combine multiple PDFs into one document. Drag to reorder pages. Free, private, no upload required."
+        title={t("seoTitle")}
+        description={t("seoDescription")}
         path="/merge"
       />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Merge PDF</h1>
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        Upload multiple PDFs, grab a card to reorder, then merge into a single document.
+        {t("intro")}
       </p>
 
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
 
       <div className="mt-8">
         <DropZone
@@ -107,8 +109,7 @@ export default function MergePdfPage() {
         <>
           <div className="mt-6 flex items-center justify-between">
             <p className="text-sm text-gray-500 dark:text-[#555]">
-              {state.files.length} file{state.files.length !== 1 ? "s" : ""} &middot;{" "}
-              {totalPages} total page{totalPages !== 1 ? "s" : ""}
+              {t("files", { count: state.files.length })} &middot; {t("totalPages", { count: totalPages })}
             </p>
             <div className="flex items-center gap-3">
               {downloaded && (
@@ -116,7 +117,7 @@ export default function MergePdfPage() {
                   to="/"
                   className="rounded-lg border border-mantis-500 px-3 py-1.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
                 >
-                  ← All tools
+                  {tc("allTools")}
                 </Link>
               )}
               <MergeActions

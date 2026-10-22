@@ -1,3 +1,4 @@
+import type { UiError } from "../i18n";
 import { useReducer } from "react";
 
 export interface MergeFile {
@@ -9,7 +10,7 @@ export interface MergeFile {
 
 interface MergeState {
   files: MergeFile[];
-  uploadError: string | null;
+  uploadError: UiError | null;
 }
 
 type MergeAction =
@@ -17,7 +18,7 @@ type MergeAction =
   | { type: "remove-file"; id: string }
   | { type: "reorder"; fromIndex: number; toIndex: number }
   | { type: "reset" }
-  | { type: "upload-error"; error: string };
+  | { type: "upload-error"; error: UiError };
 
 function mergeReducer(state: MergeState, action: MergeAction): MergeState {
   switch (action.type) {

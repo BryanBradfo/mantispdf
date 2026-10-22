@@ -1,7 +1,7 @@
 import type { Messages } from "../../types";
 import type en from "../en/common";
 
-// Typography:   (non-breaking space) before : ; ! ? and inside « », no em-dash.
+// Typography: \u00a0 (non-breaking space) before : ; ! ? and inside « », no em-dash.
 const common: Messages<typeof en> = {
   errorGeneric: "Une erreur s’est produite pendant le traitement du PDF.",
   errorDetails: "Détails",
@@ -11,11 +11,50 @@ const common: Messages<typeof en> = {
 
   dismiss: "Fermer",
   close: "Fermer",
+  reset: "Réinitialiser",
+  processing: "Traitement…",
+  download: "Télécharger",
+  downloadZip: "Télécharger le ZIP",
+  newFile: "Nouveau fichier",
+  startOver: "Recommencer",
+  chooseAnother: "Choisir un autre fichier",
+  allTools: "← Tous les outils",
+  selectAll: "Tout sélectionner",
+  selectNone: "Ne rien sélectionner",
+  selection: "Sélection",
   retry: "Réessayer",
 
   localeLoadFailed: "La version française n’a pas pu être chargée, cette page s’affiche donc en anglais.",
   crashTitle: "Une erreur s’est produite sur cette page.",
   crashReload: "Recharger la page",
+
+  engineFailed: "Le moteur WASM n’a pas pu se charger\u00a0: {error}",
+  engineFailedReload: "Le moteur PDF n’a pas pu se charger. Rechargez la page.",
+  engineLoading: "Le moteur est encore en cours de chargement, patientez un instant.",
+  invalidPdf: "Veuillez choisir un fichier PDF.",
+  readFailed: "Impossible de lire ce PDF.",
+  readFailedNamed: "Impossible de lire {name}.",
+  fileProblem: "{name}\u00a0: {problem}",
+  loadingPdf: "Chargement du PDF…",
+  previewLoadingText: "Chargement de l’aperçu…",
+  fileWithPages: { one: "{name} · {count}\u00a0page", other: "{name} · {count}\u00a0pages" },
+  fileWithPagesParen: { one: "{name} ({count}\u00a0page)", other: "{name} ({count}\u00a0pages)" },
+
+  progressStarting: "Démarrage…",
+  progressSplitting: "Découpage en {parts} parties…",
+  progressExtracting: "Extraction de la partie {part} sur {of}…",
+  progressPreparing: "Préparation du téléchargement…",
+  progressMerging: "Fusion de {count} documents…",
+  progressDone: "Terminé",
+
+  dragItem: "élément",
+  dragInstructions:
+    "Pour saisir un élément déplaçable, appuyez sur la barre d’espace. Pendant le déplacement, utilisez les flèches pour le déplacer. Appuyez de nouveau sur espace pour le déposer à sa nouvelle position, ou sur Échap pour annuler.",
+  dragPickedUp: "{name} saisi, position {position} sur {count}.",
+  dragOver: "{name} est au-dessus de la position {position}.",
+  dragDropped: "{name} déposé à la position {position}.",
+  dragDroppedNowhere: "{name} déposé.",
+  dragCancelled: "Annulé. {name} est revenu à la position {position}.",
 
   progressError: "Erreur",
   progressProcessing: "Traitement en cours",
@@ -62,10 +101,10 @@ const common: Messages<typeof en> = {
   licenseDeactivate: "Désactiver sur cet appareil",
   licenseUnlockTitle: "Débloquer MantisPDF Pro",
   licenseUnlockBody:
-    "Pro ajoute l’OCR mathématique hors ligne : convertissez vos équations en LaTeX impeccable, affiché en direct. Saisissez votre clé de licence pour l’activer.",
+    "Pro ajoute l’OCR mathématique hors ligne\u00a0: convertissez vos équations en LaTeX impeccable, affiché en direct. Saisissez votre clé de licence pour l’activer.",
   licenseActivating: "Activation…",
   licenseActivate: "Activer la licence",
-  licenseGetKey: "Vous n’avez pas de clé ? Obtenir MantisPDF Pro →",
+  licenseGetKey: "Vous n’avez pas de clé\u00a0? Obtenir MantisPDF Pro →",
 };
 
 export default common;

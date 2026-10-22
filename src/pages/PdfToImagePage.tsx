@@ -1,13 +1,15 @@
 import { useCallback, useState } from "react";
-import { Link } from "../i18n";
+import { Link, useT } from "../i18n";
 import { downloadBlobsAsZip } from "../lib/downloadZip";
 import { PageSEO } from "../components/seo/PageSEO";
-import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
+import { isPdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ProgressOverlay from "../components/common/ProgressOverlay";
 import { usePdfToImage, type ImageFormat, type RenderScale } from "../hooks/usePdfToImage";
 
 export default function PdfToImagePage() {
+  const t = useT("pdfToImage");
+  const tc = useT("common");
   const { converting, error, setError, convertPdfToImages } = usePdfToImage();
   const [file, setFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -17,15 +19,14 @@ export default function PdfToImagePage() {
   const [downloaded, setDownloaded] = useState(false);
 
   const handleFile = useCallback((f: File) => {
-    const validationError = validatePdfFile(f);
-    if (validationError) {
-      setUploadError(validationError);
+    if (!isPdfFile(f)) {
+      setUploadError(tc("invalidPdf"));
       return;
     }
     setUploadError(null);
     setFile(f);
     setDownloaded(false);
-  }, []);
+  }, [tc]);
 
   const handleConvert = useCallback(async () => {
     if (!file) return;
@@ -59,24 +60,21 @@ export default function PdfToImagePage() {
     setError(null);
   }, [setError]);
 
-  const scaleOptions: { value: RenderScale; label: string }[] = [
-    { value: 1, label: "1× (72 dpi)" },
-    { value: 2, label: "2× (144 dpi)" },
-    { value: 3, label: "3× (216 dpi)" },
-    { value: 4, label: "4× (288 dpi)" },
-    { value: 5, label: "5× (360 dpi)" },
-  ];
+  const scaleOptions: { value: RenderScale; label: string }[] = ([1, 2, 3, 4, 5] as const).map((value) => ({
+    value,
+    label: t("scale", { scale: value, dpi: value * 72 }),
+  }));
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <PageSEO
-        title="PDF to Images: Export Pages as PNG or JPEG | MantisPDF"
-        description="Convert each PDF page to a PNG or JPEG image. No upload, no data sent to any server."
+        title={t("seoTitle")}
+        description={t("seoDescription")}
         path="/pdf-to-image"
       />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">PDF to Images</h1>
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        Export each page of your PDF as a PNG or JPEG image. All processing happens locally in your browser.
+        {t("intro")}
       </p>
 
       {!file && (
@@ -88,12 +86,12 @@ export default function PdfToImagePage() {
       {file && !converting && (
         <div className="mt-8 space-y-6">
           <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-[#222] dark:bg-[#0c0c0c]">
-            <p className="mb-1 text-sm font-medium text-gray-700 dark:text-[#aaa]">Selected file</p>
+            <p className="mb-1 text-sm font-medium text-gray-700 dark:text-[#aaa]">{t("selectedFile")}</p>
             <p className="truncate text-sm text-gray-500 dark:text-[#555]">{file.name}</p>
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-medium text-gray-700 dark:text-[#aaa]">Format</p>
+            <p className="mb-2 text-sm font-medium text-gray-700 dark:text-[#aaa]">{t("format")}</p>
             <div className="flex gap-2">
               {(["png", "jpeg"] as ImageFormat[]).map((f) => (
                 <button
@@ -112,7 +110,7 @@ export default function PdfToImagePage() {
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-medium text-gray-700 dark:text-[#aaa]">Resolution</p>
+            <p className="mb-2 text-sm font-medium text-gray-700 dark:text-[#aaa]">{t("resolution")}</p>
             <div className="flex gap-2">
               {scaleOptions.map(({ value, label }) => (
                 <button
@@ -135,21 +133,21 @@ export default function PdfToImagePage() {
               onClick={handleConvert}
               className="flex-1 rounded-lg bg-mantis-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-mantis-700 focus:outline-none focus:ring-2 focus:ring-mantis-500 focus:ring-offset-2"
             >
-              Convert to images
+              {t("convert")}
             </button>
             {downloaded && (
               <Link
                 to="/"
                 className="rounded-lg border border-mantis-500 px-4 py-2.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
               >
-                ← All tools
+                {tc("allTools")}
               </Link>
             )}
             <button
               onClick={handleReset}
               className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
             >
-              Reset
+              {tc("reset")}
             </button>
           </div>
         </div>
@@ -158,7 +156,7 @@ export default function PdfToImagePage() {
       {converting && (
         <ProgressOverlay
           progress={progress ? progress.current / progress.total : 0}
-          message={`Converting page ${(progress?.current ?? 0) + 1} of ${progress?.total ?? "…"}…`}
+          message={t("converting", { page: (progress?.current ?? 0) + 1, total: progress?.total ?? "…" })}
           error={error}
           onDismissError={() => { setError(null); }}
         />

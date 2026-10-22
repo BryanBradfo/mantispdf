@@ -11,6 +11,9 @@ import {
   todayIso,
   type HeaderFooterSlots,
 } from "./stampBuilders";
+import { tFor } from "../i18n/testUtils";
+
+const tPages = tFor("pages");
 
 const ctx = { total: 3, pages: [1, 2, 3], filename: "doc", date: "2026-10-17" };
 const empty: HeaderFooterSlots = {
@@ -26,9 +29,9 @@ describe("helpers", () => {
     expect(todayIso(new Date(2026, 0, 5))).toBe("2026-01-05");
   });
   it("describePages", () => {
-    expect(describePages([1, 2, 3], 3)).toBe("All 3 pages");
-    expect(describePages([3], 12)).toBe("Page 3 of 12");
-    expect(describePages([2, 3], 12)).toBe("2 of 12 pages");
+    expect(describePages([1, 2, 3], 3, tPages)).toBe("All 3 pages");
+    expect(describePages([3], 12, tPages)).toBe("Page 3 of 12");
+    expect(describePages([2, 3], 12, tPages)).toBe("2 of 12 pages");
   });
 });
 
@@ -109,5 +112,15 @@ describe("previewStampText", () => {
   });
   it("a file name containing a token prints literally", () => {
     expect(previewStampText("{filename}", { ...v, filename: "report {n}" })).toBe("report {n}");
+  });
+});
+
+describe("describePages in French", () => {
+  it("describes the selection", () => {
+    const t = tFor("pages", "fr");
+    expect(describePages([1, 2, 3], 3, t)).toBe("Les 3\u00a0pages");
+    expect(describePages([1], 1, t)).toBe("La seule page");
+    expect(describePages([3], 12, t)).toBe("Page 3 sur 12");
+    expect(describePages([2, 3], 12, t)).toBe("2 pages sur 12");
   });
 });

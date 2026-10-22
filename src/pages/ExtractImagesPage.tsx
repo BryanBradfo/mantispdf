@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePdfWorker } from "../hooks/usePdfWorker";
-import { errorMessage } from "../lib/fileHelpers";
 import { downloadAsZip } from "../lib/downloadZip";
 import {
   PngCache,
@@ -17,6 +16,7 @@ import ErrorAlert from "../components/common/ErrorAlert";
 import LiveSummary from "../components/stamp/LiveSummary";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
+import { useDescribeError, useT } from "../i18n";
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -40,6 +40,8 @@ function ImageCard({
   checked: boolean;
   onToggle: () => void;
 }) {
+  const t = useT("extractImages");
+  const tc = useT("common");
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const ref = useRef<HTMLLabelElement>(null);
@@ -92,14 +94,13 @@ function ImageCard({
         {url ? (
           <img src={url} alt={imageFileName(img)} className="max-h-full max-w-full object-contain" />
         ) : (
-          <span className="text-gray-500 dark:text-[#777]">{failed ? "Preview unavailable" : "Loading preview…"}</span>
+          <span className="text-gray-500 dark:text-[#777]">{failed ? tc("previewUnavailable") : tc("previewLoadingText")}</span>
         )}
       </div>
       <div className="flex items-center gap-2 p-2 text-gray-700 dark:text-[#aaa]">
-        <input type="checkbox" checked={checked} onChange={onToggle} aria-label={`Select ${imageFileName(img)}`} />
+        <input type="checkbox" checked={checked} onChange={onToggle} aria-label={t("selectNamed", { name: imageFileName(img) })} />
         <span>
-          Page {img.page}
-          {size ? ` · ${size.width}×${size.height}` : ""}
+          {size ? t("cardPageSize", { page: img.page, width: size.width, height: size.height }) : t("cardPage", { page: img.page })}
         </span>
       </div>
     </label>
@@ -107,6 +108,9 @@ function ImageCard({
 }
 
 export default function ExtractImagesPage() {
+  const t = useT("extractImages");
+  const tc = useT("common");
+  const describe = useDescribeError();
   const worker = usePdfWorker();
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker);
   // Only the skip report is kept from the worker result: holding the whole result would keep every
@@ -194,7 +198,7 @@ export default function ExtractImagesPage() {
       const parts: { name: string; bytes: Uint8Array }[] = [];
       for (let i = 0; i < chosen.length; i++) {
         if (stale()) return;
-        setProgress(`Preparing ${i + 1} of ${chosen.length}…`);
+        setProgress(t("preparing", { n: i + 1, total: chosen.length }));
         const img = chosen[i];
         const bytes =
           img.kind === "jpeg" ? img.bytes : new Uint8Array(await (await active.blob(img)).arrayBuffer());
@@ -203,7 +207,7 @@ export default function ExtractImagesPage() {
       if (stale()) return;
       await downloadAsZip(parts, baseName(input.file), "images");
     } catch (err) {
-      if (!stale()) setError(errorMessage(err));
+      if (!stale()) setError(describe(err));
     } finally {
       if (!stale()) setProgress(null);
     }
@@ -217,22 +221,22 @@ export default function ExtractImagesPage() {
     reset();
   };
 
-  const skippedText = skipped ? skippedSummary(skipped) : "";
-  const keptText = skipped ? keptWithoutAlphaSummary(skipped) : "";
+  const skippedText = skipped ? skippedSummary(skipped, t) : "";
+  const keptText = skipped ? keptWithoutAlphaSummary(skipped, t) : "";
   // One polite announcement for the whole result, instead of a live region per card.
   const announcement = skipped
-    ? [`${images.length} ${images.length === 1 ? "image" : "images"} found`, keptText, skippedText].filter(Boolean).join(". ") + "."
+    ? [t("found", { count: images.length }), keptText, skippedText].filter(Boolean).join(". ") + "."
     : "";
 
   return (
     <ToolShell
-      title="Extract images from PDF | MantisPDF"
-      description="Pull the embedded images out of a PDF as JPEG or PNG files. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/extract-images"
-      heading="Extract images"
-      intro="Save the images embedded in a PDF as JPEG or PNG files."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initError ? tc("engineFailed", { error: worker.initError }) : null} className="mt-4" />
 
       {!input && (
         <div className="mt-8">
@@ -249,10 +253,10 @@ export default function ExtractImagesPage() {
           {!extracted && (
             <div className="mt-4 flex gap-3">
               <button type="button" onClick={extract} disabled={busy} className={`flex-1 ${primaryButton}`}>
-                {busy ? "Extracting…" : "Extract images"}
+                {busy ? t("extracting") : t("extract")}
               </button>
               <button type="button" onClick={doReset} className={secondaryButton}>
-                Choose another file
+                {tc("chooseAnother")}
               </button>
             </div>
           )}
@@ -262,15 +266,15 @@ export default function ExtractImagesPage() {
               <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-700 dark:text-[#aaa]">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={skipSmall} onChange={(e) => setSkipSmall(e.target.checked)} />
-                  Skip images smaller than 32 px on both sides
+                  {t("skipSmall")}
                 </label>
-                <div role="group" aria-label="Selection" className="flex gap-4">
+                <div role="group" aria-label={tc("selection")} className="flex gap-4">
                   <button
                     type="button"
                     className="underline"
                     onClick={() => setSelected((cur) => new Set([...cur, ...visible.map(imageKey)]))}
                   >
-                    Select all
+                    {tc("selectAll")}
                   </button>
                   <button
                     type="button"
@@ -280,13 +284,13 @@ export default function ExtractImagesPage() {
                       setSelected((cur) => new Set([...cur].filter((k) => !hide.has(k))));
                     }}
                   >
-                    Select none
+                    {tc("selectNone")}
                   </button>
                 </div>
               </div>
 
               {visible.length === 0 ? (
-                <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">No images to show in this PDF.</p>
+                <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">{t("noImages")}</p>
               ) : (
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {cache && visible.map((img) => (
@@ -304,7 +308,7 @@ export default function ExtractImagesPage() {
               {keptText && <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">{keptText}</p>}
               {skippedText && <p className={`${keptText ? "mt-1" : "mt-4"} text-sm text-gray-600 dark:text-[#888]`}>{skippedText}</p>}
               <LiveSummary
-                text={`${chosen.length} of ${visible.length} selected`}
+                text={t("selectedOf", { chosen: chosen.length, total: visible.length })}
                 className="mt-2 text-sm text-gray-600 dark:text-[#888]"
               />
               <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
@@ -315,10 +319,10 @@ export default function ExtractImagesPage() {
                   disabled={chosen.length === 0 || progress !== null}
                   className={`flex-1 ${primaryButton}`}
                 >
-                  {progress ?? (chosen.length > 1 ? "Download ZIP" : "Download")}
+                  {progress ?? (chosen.length > 1 ? tc("downloadZip") : tc("download"))}
                 </button>
                 <button type="button" onClick={doReset} disabled={progress !== null} className={secondaryButton}>
-                  Choose another file
+                  {tc("chooseAnother")}
                 </button>
               </div>
             </>

@@ -13,6 +13,7 @@ import { blockingProblem, missingRequired } from "../lib/forms/values";
 import { toWire } from "../lib/forms/toWire";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
+import type { UiError } from "../i18n";
 
 interface Prepared {
   sizes: [number, number][];
@@ -35,8 +36,8 @@ interface WorkspaceProps {
   busy: boolean;
   run: <R>(work: () => Promise<R>, done: (result: R) => void) => Promise<void>;
   /** Download errors, shown under the button row that caused them. */
-  error: string | null;
-  setError: (error: string | null) => void;
+  error: UiError | null;
+  setError: (error: UiError | null) => void;
   fillForm: ReturnType<typeof usePdfWorker>["fillForm"];
   onStartOver: () => void;
 }

@@ -1,4 +1,5 @@
 import { resolveEngineTokens, substituteJsTokens, type Anchor, type StampJobSpec, type StdFont, type TextStampSpec } from "./stampJob";
+import type { NsT } from "../i18n";
 
 export interface TextStyle {
   font: StdFont;
@@ -146,10 +147,10 @@ export function previewHeaderFooter(
   }));
 }
 
-export function describePages(pages: readonly number[], total: number): string {
-  if (pages.length === total) return `All ${total} pages`;
-  if (pages.length === 1) return `Page ${pages[0]} of ${total}`;
-  return `${pages.length} of ${total} pages`;
+export function describePages(pages: readonly number[], total: number, t: NsT<"pages">): string {
+  if (pages.length === total) return t("pagesAll", { count: total });
+  if (pages.length === 1) return t("pagesOne", { page: pages[0], total });
+  return t("pagesSome", { count: pages.length, total });
 }
 
 export function describeStyle(style: TextStyle): string {

@@ -23,10 +23,13 @@ import {
 import type { Anchor } from "../lib/stampJob";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
+import { useT } from "../i18n";
 
 const CUSTOM = "custom";
 
 export default function PageNumbersPage() {
+  // Only the shared page description is translated here so far (Task 4 does the rest).
+  const tp = useT("pages");
   const worker = usePdfWorker();
   const { countPages } = worker;
   const prepare = useCallback((bytes: Uint8Array) => countPages(bytes), [countPages]);
@@ -59,7 +62,7 @@ export default function PageNumbersPage() {
     date: todayIso(),
     filename: input ? baseName(input.file) : "",
   });
-  const summary = `${ANCHOR_LABELS[anchor]} · ${describePages(selected, total)} · ${describeStyle(style)} · "${firstShown}"`;
+  const summary = `${ANCHOR_LABELS[anchor]} · ${describePages(selected, total, tp)} · ${describeStyle(style)} · "${firstShown}"`;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

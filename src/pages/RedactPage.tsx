@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "../i18n";
+import { Link, useT, type UiError } from "../i18n";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import { pdfjs } from "../lib/pdf";
@@ -76,13 +76,14 @@ interface WorkspaceProps {
   input: PdfInput<[number, number][]>;
   busy: boolean;
   run: <R>(work: () => Promise<R>, done: (result: R) => void) => Promise<void>;
-  error: string | null;
-  setError: (error: string | null) => void;
+  error: UiError | null;
+  setError: (error: UiError | null) => void;
   worker: ReturnType<typeof usePdfWorker>;
   onStartOver: () => void;
 }
 
 function Workspace({ input, busy, run, error, setError, worker, onStartOver }: WorkspaceProps) {
+  const tp = useT("pages");
   const sizes = input.data;
   const [state, setState] = useState<MarksState>(initialMarks);
   const [page, setPage] = useState(1);
@@ -240,7 +241,7 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   /** Copy `rect` from this page to the pages of `text` ("all", or ranges like "2-5, 8"). */
   const repeat = (rect: Rect, text: string) => {
     if (lockedRef.current) return;
-    const parsed = text === "all" ? { ok: true as const, pages: sizes.map((_, i) => i + 1) } : parsePageRanges(text, sizes.length);
+    const parsed = text === "all" ? { ok: true as const, pages: sizes.map((_, i) => i + 1) } : parsePageRanges(text, sizes.length, tp);
     if (!parsed.ok) {
       setRepeatNote(parsed.error);
       return;

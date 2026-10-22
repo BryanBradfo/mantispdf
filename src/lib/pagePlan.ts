@@ -12,10 +12,12 @@ export function encodePlan(entries: readonly PlanEntry[]): Int32Array {
   return out;
 }
 
+import type { NsT } from "../i18n";
+
 export type RangeParse = { ok: true; pages: number[] } | { ok: false; error: string };
 
 /** Parse "1-3, 7, 10-" (also "-4") into sorted unique 1-based pages within 1..total. */
-export function parsePageRanges(text: string, total: number): RangeParse {
+export function parsePageRanges(text: string, total: number, t: NsT<"pages">): RangeParse {
   const pages = new Set<number>();
   for (const raw of text.split(",")) {
     const token = raw.replace(/\s+/g, "");
@@ -30,12 +32,12 @@ export function parsePageRanges(text: string, total: number): RangeParse {
       start = range[1] === "" ? 1 : Number(range[1]);
       end = range[2] === "" ? total : Number(range[2]);
     } else {
-      return { ok: false, error: `Cannot read "${raw.trim()}"` };
+      return { ok: false, error: t("rangeUnreadable", { text: raw.trim() }) };
     }
-    if (start < 1 || end < 1) return { ok: false, error: "Page numbers start at 1" };
-    if (start > total) return { ok: false, error: `Page ${start} does not exist (the document has ${total} pages)` };
-    if (end > total) return { ok: false, error: `Page ${end} does not exist (the document has ${total} pages)` };
-    if (start > end) return { ok: false, error: `Range ${start}-${end} is backwards` };
+    if (start < 1 || end < 1) return { ok: false, error: t("rangeStartsAt1") };
+    if (start > total) return { ok: false, error: t("rangeNoSuchPage", { page: start, total }) };
+    if (end > total) return { ok: false, error: t("rangeNoSuchPage", { page: end, total }) };
+    if (start > end) return { ok: false, error: t("rangeBackwards", { start, end }) };
     for (let p = start; p <= end; p++) pages.add(p);
   }
   return { ok: true, pages: [...pages].sort((a, b) => a - b) };

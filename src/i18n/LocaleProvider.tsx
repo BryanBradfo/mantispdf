@@ -14,6 +14,7 @@ import { DEFAULT_LOCALE, localePath, type Locale } from "./locale";
 import { readStoredLocale, resolveLocale } from "./localeChoice";
 import { en, type EnDictionary, type NamespaceName } from "./locales/en";
 import { createT, splitRich } from "./translate";
+import { describeError, type DescribedError } from "./describeError";
 import type { Dictionary, TagsOf, TArgs, TFunction } from "./types";
 
 type AppDictionary = Dictionary<EnDictionary>;
@@ -25,6 +26,14 @@ const LOADERS: Record<Exclude<Locale, typeof DEFAULT_LOCALE>, () => Promise<AppD
 
 /** A promise React's `use()` can read synchronously once settled (the documented thenable fields). */
 type TrackedPromise<T> = Promise<T> & { status?: "fulfilled"; value?: T };
+
+/** A promise `use()` reads synchronously from the first render (no suspend). */
+function fulfilled<T>(value: T): Promise<T> {
+  const p: TrackedPromise<T> = Promise.resolve(value);
+  p.status = "fulfilled";
+  p.value = value;
+  return p;
+}
 
 function track<T>(p: Promise<T>): Promise<T> {
   const tracked: TrackedPromise<T> = p;
@@ -78,12 +87,15 @@ const settling = new Map<Locale, Promise<Settled>>();
 function settle(locale: Locale): Promise<Settled> {
   let p = settling.get(locale);
   if (!p) {
-    p = track(
-      loadLocale(locale).then(
-        (dict) => ({ dict, failed: false }),
-        () => ({ dict: en, failed: true }),
-      ),
-    );
+    const ready = loaded.get(locale);
+    p = ready
+      ? fulfilled({ dict: ready, failed: false })
+      : track(
+          loadLocale(locale).then(
+            (dict) => ({ dict, failed: false }),
+            () => ({ dict: en, failed: true }),
+          ),
+        );
     settling.set(locale, p);
   }
   return p;
@@ -120,8 +132,9 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const pathname = useLocation().pathname;
   const locale = resolveLocale(pathname, isTauri() ? readStoredLocale() : null);
   const [, setAttempt] = useState(0);
-  const ready = locale === DEFAULT_LOCALE ? en : loaded.get(locale);
-  const { dict, failed } = ready ? { dict: ready, failed: false } : use(settle(locale));
+  // Always `use()` for a non-default locale, even when already loaded (a fulfilled promise reads
+  // synchronously): a render that suspended must take the same path when React replays it.
+  const { dict, failed } = locale === DEFAULT_LOCALE ? { dict: en, failed: false } : use(settle(locale));
   const value = useMemo(() => ({ locale, dict }), [locale, dict]);
   const retry = useCallback(() => {
     settling.delete(locale);
@@ -143,6 +156,13 @@ export function useLocale(): Locale {
 export function useT<NS extends NamespaceName>(ns: NS): TFunction<EnDictionary[NS]> {
   const { locale, dict } = useContext(LocaleContext);
   return useMemo(() => createT(dict[ns], en[ns], locale), [dict, ns, locale]);
+}
+
+/** `describeError` bound to the current locale: `const describe = useDescribeError(); setError(describe(err))`. */
+export function useDescribeError(): (err: unknown) => DescribedError {
+  const locale = useLocale();
+  const t = useT("common");
+  return useCallback((err: unknown) => describeError(err, t, locale), [t, locale]);
 }
 
 /** `localePath` bound to the current locale: `useLocalePath()("/merge")` -> `/fr/merge` under /fr. */

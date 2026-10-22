@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { encodePlan, formatPageRanges, parsePageRanges } from "./pagePlan";
+import { tFor } from "../i18n/testUtils";
+
+const tPages = tFor("pages");
 
 describe("encodePlan", () => {
   it("encodes pages and blanks as triples", () => {
@@ -13,12 +16,12 @@ describe("encodePlan", () => {
 
 describe("parsePageRanges", () => {
   const ok = (text: string, total = 10) => {
-    const r = parsePageRanges(text, total);
+    const r = parsePageRanges(text, total, tPages);
     if (!r.ok) throw new Error(r.error);
     return r.pages;
   };
   const err = (text: string, total = 10) => {
-    const r = parsePageRanges(text, total);
+    const r = parsePageRanges(text, total, tPages);
     if (r.ok) throw new Error("expected an error");
     return r.error;
   };
@@ -54,7 +57,16 @@ describe("formatPageRanges", () => {
   });
   it("round-trips with parse", () => {
     const pages = [1, 2, 5, 6, 7, 9];
-    const r = parsePageRanges(formatPageRanges(pages), 9);
+    const r = parsePageRanges(formatPageRanges(pages), 9, tPages);
     expect(r).toEqual({ ok: true, pages });
+  });
+});
+
+describe("parsePageRanges in French", () => {
+  const tFr = tFor("pages", "fr");
+  it("explains a bad range in French", () => {
+    expect(parsePageRanges("9", 4, tFr)).toEqual({ ok: false, error: "La page 9 n’existe pas (le document compte 4\u00a0pages)" });
+    expect(parsePageRanges("x", 4, tFr)).toEqual({ ok: false, error: "Impossible de lire «\u00a0x\u00a0»" });
+    expect(parsePageRanges("4-2", 4, tFr)).toEqual({ ok: false, error: "La plage 4-2 est à l’envers" });
   });
 });

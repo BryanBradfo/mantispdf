@@ -4,7 +4,7 @@ import type en from "../en/home";
 const home: Messages<typeof en> = {
   badge: "🔒 Aucun fichier envoyé · Fonctionne avec WebAssembly",
   heading: "Outils PDF",
-  tagline: "100 % privé, 100 % rapide",
+  tagline: "100\u00a0% privé, 100\u00a0% rapide",
   intro:
     "Tout le traitement s’effectue directement dans votre navigateur grâce à WebAssembly. Vos fichiers ne quittent jamais votre appareil, pas même une milliseconde.",
   comingSoon: "Bientôt disponible",
@@ -28,11 +28,11 @@ const home: Messages<typeof en> = {
   "pdfToImage.title": "PDF en images",
   "pdfToImage.desc": "Exportez chaque page du PDF en image PNG ou JPEG.",
   "watermark.title": "Filigrane",
-  "watermark.desc": "Apposez un texte sur chaque page : confidentiel, brouillon ou toute autre mention.",
+  "watermark.desc": "Apposez un texte sur chaque page\u00a0: confidentiel, brouillon ou toute autre mention.",
   "encrypt.title": "Chiffrer",
   "encrypt.desc": "Protégez votre PDF par un mot de passe pour que seuls les lecteurs autorisés puissent l’ouvrir.",
   "sanitize.title": "Assainir",
-  "sanitize.desc": "Retirez les données cachées : métadonnées, scripts, pièces jointes et données de formulaire.",
+  "sanitize.desc": "Retirez les données cachées\u00a0: métadonnées, scripts, pièces jointes et données de formulaire.",
   "removeMetadata.title": "Supprimer les métadonnées",
   "removeMetadata.desc": "Effacez le titre, l’auteur, le sujet et les mots-clés.",
   "editMetadata.title": "Modifier les métadonnées",

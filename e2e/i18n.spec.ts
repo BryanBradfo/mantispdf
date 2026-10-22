@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import { fileURLToPath } from "node:url";
 
 test("French home: French copy, html lang, cards link under /fr, hreflang alternates", async ({ page }) => {
   await page.goto("/fr");
@@ -53,4 +54,37 @@ test.describe("French browser", () => {
     await expect(page).toHaveURL(/\/fr$/);
     await expect(page.getByRole("heading", { name: "Outils PDF" })).toBeVisible();
   });
+});
+
+const fx = (n: string) => fileURLToPath(new URL(`./fixtures/${n}`, import.meta.url));
+
+/** Upload once the WASM engine is ready (pages reject uploads until then). */
+async function upload(page: Page, files: string[], testId: string, count: number) {
+  await expect(async () => {
+    await page.locator('input[type="file"]').setInputFiles(files);
+    await expect(page.getByTestId(testId)).toHaveCount(count, { timeout: 3000 });
+  }).toPass({ timeout: 20000 });
+}
+
+test("French Merge: full flow in French", async ({ page }) => {
+  await page.goto("/fr/merge");
+  await expect(page.getByRole("heading", { name: "Fusionner PDF" })).toBeVisible();
+  await expect(page).toHaveTitle("Fusionner des PDF | MantisPDF");
+  await expect(page.getByText("Glissez vos PDF ici ou parcourez vos fichiers")).toBeVisible();
+  await upload(page, [fx("alpha.pdf"), fx("bravo.pdf")], "merge-card", 2);
+  await expect(page.getByText("2 fichiers · 2 pages au total")).toBeVisible();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Fusionner 2 fichiers" }).click();
+  expect((await download).suggestedFilename()).toBe("merged.pdf");
+  await expect(page.getByRole("link", { name: "← Tous les outils" })).toHaveAttribute("href", "/fr");
+});
+
+test("French Remove pages: range errors and the result count are in French", async ({ page }) => {
+  await page.goto("/fr/remove-pages");
+  await upload(page, [fx("four-pages.pdf")], "planner-card", 4);
+  const range = page.getByLabel("Pages à supprimer");
+  await range.fill("2-3");
+  await expect(page.getByText("résultat : 2 sur 4 pages")).toBeVisible();
+  await range.fill("2, 9");
+  await expect(page.getByText("La page 9 n’existe pas (le document compte 4 pages)")).toBeVisible();
 });

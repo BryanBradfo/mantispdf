@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExtractedImage } from "./imageInput";
 import { PngCache, filterImages, imageFileName, jpegSize, keptWithoutAlphaSummary, reasonName, skippedSummary } from "./extractImages";
+import { tFor } from "../i18n/testUtils";
+
+const tEx = tFor("extractImages");
 
 const rgba = (page: number, index: number, w: number, h: number): ExtractedImage => ({
   page, index, kind: "rgba", width: w, height: h, pixels: new Uint8Array(w * h * 4),
@@ -29,11 +32,11 @@ describe("extract images helpers", () => {
   });
 
   it("summarises skipped reasons", () => {
-    expect(skippedSummary([])).toBe("");
-    expect(skippedSummary([{ reason: "jpeg2000", count: 2 }, { reason: "corrupt", count: 1 }])).toBe(
+    expect(skippedSummary([], tEx)).toBe("");
+    expect(skippedSummary([{ reason: "jpeg2000", count: 2 }, { reason: "corrupt", count: 1 }], tEx)).toBe(
       "3 images skipped: 2 JPEG 2000, 1 corrupt",
     );
-    expect(skippedSummary([{ reason: "inline", count: 1 }])).toBe("1 image skipped: 1 inline (embedded in page content, not extractable)");
+    expect(skippedSummary([{ reason: "inline", count: 1 }], tEx)).toBe("1 image skipped: 1 inline (embedded in page content, not extractable)");
   });
 
   it("reports images kept without transparency on their own, outside the skipped total", () => {
@@ -41,19 +44,19 @@ describe("extract images helpers", () => {
       { reason: "alpha dropped", count: 2 },
       { reason: "corrupt", count: 1 },
     ];
-    expect(skippedSummary(skipped)).toBe("1 image skipped: 1 corrupt");
-    expect(keptWithoutAlphaSummary(skipped)).toBe("2 images kept without transparency");
-    expect(skippedSummary([{ reason: "alpha dropped", count: 1 }])).toBe("");
-    expect(keptWithoutAlphaSummary([{ reason: "alpha dropped", count: 1 }])).toBe("1 image kept without transparency");
-    expect(keptWithoutAlphaSummary([{ reason: "corrupt", count: 3 }])).toBe("");
+    expect(skippedSummary(skipped, tEx)).toBe("1 image skipped: 1 corrupt");
+    expect(keptWithoutAlphaSummary(skipped, tEx)).toBe("2 images kept without transparency");
+    expect(skippedSummary([{ reason: "alpha dropped", count: 1 }], tEx)).toBe("");
+    expect(keptWithoutAlphaSummary([{ reason: "alpha dropped", count: 1 }], tEx)).toBe("1 image kept without transparency");
+    expect(keptWithoutAlphaSummary([{ reason: "corrupt", count: 3 }], tEx)).toBe("");
   });
 });
 
 describe("reasonName", () => {
   it("maps known engine reasons and passes unknown ones through", () => {
-    expect(reasonName("alpha dropped")).toBe("kept without transparency");
-    expect(reasonName("inline")).toBe("inline (embedded in page content, not extractable)");
-    expect(reasonName("mystery")).toBe("mystery");
+    expect(reasonName("alpha dropped", tEx)).toBe("kept without transparency");
+    expect(reasonName("inline", tEx)).toBe("inline (embedded in page content, not extractable)");
+    expect(reasonName("mystery", tEx)).toBe("mystery");
   });
 });
 
@@ -110,5 +113,15 @@ describe("PngCache", () => {
     await expect(cache.blob(rg(4))).rejects.toThrow("Cancelled");
     expect(g.convert).toHaveBeenCalledTimes(2);
     expect(cache.disposed).toBe(true);
+  });
+});
+
+describe("extract-images summaries in French", () => {
+  const t = tFor("extractImages", "fr");
+  it("summarises in French", () => {
+    expect(skippedSummary([{ reason: "jpeg2000", count: 2 }, { reason: "corrupt", count: 1 }], t)).toBe(
+      "3 images ignorées\u00a0: JPEG 2000 (2), image corrompue (1)",
+    );
+    expect(keptWithoutAlphaSummary([{ reason: "alpha dropped", count: 1 }], t)).toBe("1 image conservée sans transparence");
   });
 });

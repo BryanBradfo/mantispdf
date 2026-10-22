@@ -1,4 +1,5 @@
 import type { CropJobSpec, Rect } from "./geometryJob";
+import type { NsT } from "../i18n";
 
 export type Size = [number, number];
 
@@ -59,10 +60,10 @@ export function resizeCropRect(rect: Rect, handle: Handle, dx: number, dy: numbe
 }
 
 /** Spoken description of the crop box, from the top-left of the page as it is shown. */
-export function describeCrop(rect: Rect, page: Size): string {
+export function describeCrop(rect: Rect, page: Size, t: NsT<"crop">): string {
   const [x, y, w, h] = rect;
   const r = Math.round;
-  return `Crop area ${r(w)} by ${r(h)} pt, ${r(x)} pt from the left, ${r(page[1] - (y + h))} pt from the top.`;
+  return t("describeCrop", { width: r(w), height: r(h), x: r(x), top: r(page[1] - (y + h)) });
 }
 
 export type CropScope = "this" | "all" | "range";
@@ -117,10 +118,9 @@ export function pagesMissedBy(rect: Rect, sizes: readonly Size[], pages: readonl
 }
 
 /** The message for pages a shared crop box misses; null when there are none. */
-export function missedPagesProblem(missed: readonly number[]): string | null {
+export function missedPagesProblem(missed: readonly number[], t: NsT<"crop">): string | null {
   if (missed.length === 0) return null;
   const listed = missed.slice(0, LISTED_PAGES).join(", ");
-  const more = missed.length > LISTED_PAGES ? ` and ${missed.length - LISTED_PAGES} more` : "";
-  const noun = missed.length === 1 ? "page" : "pages";
-  return `The crop area misses ${noun} ${listed}${more}. Use a page range or auto-detect.`;
+  const list = missed.length > LISTED_PAGES ? t("missedMore", { list: listed, more: missed.length - LISTED_PAGES }) : listed;
+  return t("missed", { count: missed.length, list });
 }
