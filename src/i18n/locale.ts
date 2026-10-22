@@ -9,6 +9,18 @@ function isLocale(s: string): s is Locale {
   return (LOCALES as readonly string[]).includes(s);
 }
 
+/**
+ * Collapses a leading run of `/` and `\` into one `/`. Browsers read `//host` and `/\host` (and
+ * `\\host`) as protocol-relative URLs, so a path that kept them would link off-site (open redirect).
+ */
+function collapseLeadingSlashes(path: string): string {
+  return path.replace(/^[/\\]+/, "/");
+}
+
+function isAbsolute(path: string): boolean {
+  return path.startsWith("/") || path.startsWith("\\");
+}
+
 /** First path segment, e.g. `fr` for `/fr/merge?x`. */
 function firstSegment(path: string): string {
   return /^\/([^/?#]*)/.exec(path)?.[1] ?? "";
@@ -16,24 +28,28 @@ function firstSegment(path: string): string {
 
 /** The locale a path belongs to: `/fr/...` is French, anything else English. */
 export function localeFromPath(pathname: string): Locale {
-  const seg = firstSegment(pathname);
+  const seg = firstSegment(collapseLeadingSlashes(pathname));
   return isLocale(seg) && PREFIXED.includes(seg) ? seg : DEFAULT_LOCALE;
 }
 
-/** Removes the locale prefix: `/fr/merge` -> `/merge`, `/fr` -> `/`. */
+/**
+ * Removes the locale prefix: `/fr/merge` -> `/merge`, `/fr` -> `/`. An absolute result always
+ * starts with exactly one `/` (never `//` or `/\`).
+ */
 export function stripLocale(path: string): string {
-  if (localeFromPath(path) === DEFAULT_LOCALE) return path;
-  const rest = path.slice(1 + firstSegment(path).length);
-  if (rest === "" || rest === "/") return "/";
-  return rest.startsWith("/") ? rest : `/${rest}`;
+  if (!isAbsolute(path)) return path;
+  const p = collapseLeadingSlashes(path);
+  if (localeFromPath(p) === DEFAULT_LOCALE) return p;
+  return collapseLeadingSlashes(`/${p.slice(1 + firstSegment(p).length)}`);
 }
 
 /**
  * The URL of an app path in `locale`: `/merge` -> `/fr/merge`, `/` -> `/fr`. Accepts an already
  * prefixed path (so it also switches locales) and keeps `?query#hash`. Relative paths pass through.
+ * Never returns a protocol-relative value.
  */
 export function localePath(path: string, locale: Locale): string {
-  if (!path.startsWith("/")) return path;
+  if (!isAbsolute(path)) return path;
   const bare = stripLocale(path);
   if (locale === DEFAULT_LOCALE) return bare;
   const cut = bare.search(/[?#]/);

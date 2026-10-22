@@ -71,3 +71,39 @@ describe("localizeRoutes", () => {
     ]);
   });
 });
+
+describe("protocol-relative inputs (open redirect guard)", () => {
+  it.each([
+    ["//evil.com", "en", "/evil.com"],
+    ["//evil.com", "fr", "/fr/evil.com"],
+    ["/\\evil.com", "en", "/evil.com"],
+    ["/\\evil.com", "fr", "/fr/evil.com"],
+    ["/fr//evil.com", "en", "/evil.com"],
+    ["/fr//evil.com", "fr", "/fr/evil.com"],
+    ["/fr/\\evil.com", "en", "/evil.com"],
+    ["\\\\evil.com", "en", "/evil.com"],
+    ["\\\\evil.com", "fr", "/fr/evil.com"],
+    ["///evil.com/x?y#z", "fr", "/fr/evil.com/x?y#z"],
+  ] as const)("localePath(%j, %s) -> %s", (path, locale, expected) => {
+    expect(localePath(path, locale)).toBe(expected);
+  });
+
+  it.each([
+    ["//evil.com", "/evil.com"],
+    ["/\\evil.com", "/evil.com"],
+    ["/fr//evil.com", "/evil.com"],
+    ["/fr/\\evil.com", "/evil.com"],
+    ["\\\\evil.com", "/evil.com"],
+  ])("stripLocale(%j) -> %s", (path, expected) => {
+    expect(stripLocale(path)).toBe(expected);
+  });
+
+  it("never returns a protocol-relative value", () => {
+    const nasty = ["//a", "/\\a", "\\/a", "\\\\a", "/fr//a", "/fr/\\a", "/fr\\\\a", "//fr//a", "/fr/", "/fr"];
+    for (const p of nasty) {
+      for (const out of [stripLocale(p), localePath(p, "en"), localePath(p, "fr")]) {
+        expect(out, `${JSON.stringify(p)} -> ${JSON.stringify(out)}`).not.toMatch(/^[/\\]{2}/);
+      }
+    }
+  });
+});

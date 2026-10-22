@@ -19,7 +19,7 @@ export default function LanguageSwitcher() {
       {LOCALES.map((l) => (
         <RouterLink
           key={l}
-          to={localePath(pathname + search + hash, l)}
+          to={{ pathname: localePath(pathname, l), search, hash }}
           lang={l}
           hrefLang={l}
           aria-label={names[l]}

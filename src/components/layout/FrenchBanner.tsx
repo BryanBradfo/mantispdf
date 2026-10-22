@@ -34,7 +34,7 @@ export default function FrenchBanner() {
     >
       <span>{t("bannerFrench")}</span>
       <RouterLink
-        to={localePath(pathname + search + hash, "fr")}
+        to={{ pathname: localePath(pathname, "fr"), search, hash }}
         onClick={() => storeLocale("fr")}
         className="font-medium text-mantis-700 underline dark:text-mantis-400"
       >
