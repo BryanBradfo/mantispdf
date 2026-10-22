@@ -106,6 +106,9 @@ const KNOWN: readonly Known[] = [
   { pattern: /^(WASM engine not initialized|Worker not initialized)$/, describe: (_, t) => t("errorNotReady") },
 ];
 
+/** The KNOWN patterns, for the guard test that checks each message still exists in the sources. */
+export const KNOWN_ERROR_PATTERNS: readonly RegExp[] = KNOWN.map((k) => k.pattern);
+
 /** An error whose message is already translated for the user: `describeError` shows it as it is. */
 export class UserError extends Error {}
 
