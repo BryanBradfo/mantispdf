@@ -388,16 +388,26 @@ test("edit pdf: keys typed right after placing a text box are all text", async (
   await expect(page.getByRole("button", { name: "Undo (Ctrl+Z)" })).toBeDisabled();
 });
 
-test("edit pdf: a saved text box with characters the PDF fonts lack is outlined in red", async ({ page }) => {
+test("edit pdf: a text box with characters no font has is outlined in red", async ({ page }) => {
   await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
   const canvas = new Canvas(page, [612, 792]);
   const overlay = page.getByTestId("editor-overlay");
+  // Characters the standard fonts lack switch the box to Noto: no warning.
   await canvas.tool("Text (T)");
   await canvas.click(100, 100);
   await page.getByRole("textbox", { name: "Text box content" }).fill("ok 日本");
   await page.keyboard.press("Escape");
+  await expect(overlay.getByTestId("noto-text")).toHaveCount(1, { timeout: 30000 });
+  await expect(page.getByTestId("font-switch-notice")).toHaveText("Uses Noto Sans for these characters");
   await page.keyboard.press("Escape"); // deselect: the warning must not depend on the selection
   const warning = overlay.locator('[data-warning="unsupported-text"]');
+  await expect(warning).toHaveCount(0);
+  // An emoji has no font: outlined in red.
+  await canvas.tool("Text (T)");
+  await canvas.click(110, 108);
+  await page.getByRole("textbox", { name: "Text box content" }).fill("ok 😀");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
   await expect(warning).toHaveCount(1);
   await expect(warning).toHaveAttribute("stroke", "#dc2626");
   // Fixing the text removes the outline.
@@ -493,4 +503,83 @@ test("edit pdf: /edit still redirects to /organize and the home page lists the t
   await page.getByRole("link", { name: /Edit PDF/ }).click();
   await expect(page).toHaveURL(/\/edit-pdf$/);
   await expect(page.getByRole("heading", { name: "Edit PDF", level: 1 })).toBeVisible();
+});
+
+test("edit pdf: the preview draws right-to-left runs as the PDF does, punctuation included", async ({ page }) => {
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  const overlay = page.getByTestId("editor-overlay");
+  // In a right-to-left paragraph the final "!" or "." is drawn at the left end (the PDF's order).
+  // The Arabic comma is drawn with the Arabic font: inside the right-to-left run, at its end.
+  for (const [i, [text, mark, letter]] of [["שלום!", "!", "ש"], ["مرحبا.", ".", "م"], ["مرحبا،", "،", "م"]].entries()) {
+    await canvas.tool("Text (T)");
+    await canvas.click(100, 100 + 80 * i);
+    await page.getByRole("textbox", { name: "Text box content" }).fill(text);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    const box = overlay.getByTestId("noto-text").nth(i);
+    await expect(box.locator("text", { hasText: letter })).toHaveCount(1, { timeout: 30000 });
+    // The centre of each character on screen, whichever run holds it.
+    const [markX, letterX] = await box.evaluate(
+      (g, [m, l]) => {
+        const at = (ch: string) => {
+          for (const el of Array.from(g.querySelectorAll("text"))) {
+            const chars = Array.from(el.textContent ?? "");
+            const k = chars.indexOf(ch);
+            if (k < 0) continue;
+            const r = (el as SVGTextElement).getExtentOfChar(k);
+            return r.x + r.width / 2;
+          }
+          return NaN;
+        };
+        return [at(m), at(l)];
+      },
+      [mark, letter],
+    );
+    expect(markX, `${text}: "${mark}" left of "${letter}"`).toBeLessThan(letterX);
+  }
+});
+
+test("edit pdf: standard-font text never fetches the font list", async ({ page }) => {
+  const fontRequests: string[] = [];
+  await page.route("**/fonts-runtime/**", (route) => {
+    fontRequests.push(route.request().url());
+    return route.abort();
+  });
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  await canvas.tool("Text (T)");
+  await canvas.click(100, 100);
+  await page.getByRole("textbox", { name: "Text box content" }).fill("Plain café text");
+  await page.keyboard.press("Escape");
+  const bytes = await download(page);
+  expect(bytes.length).toBeGreaterThan(0);
+  expect(fontRequests).toEqual([]);
+});
+
+test("edit pdf: a Noto box shrunk by hand stays shrunk after editing it", async ({ page }) => {
+  await openEditor(page, fx("one-page.pdf"), "one-page.pdf (1 page)");
+  const canvas = new Canvas(page, [612, 792]);
+  const overlay = page.getByTestId("editor-overlay");
+  await canvas.tool("Text (T)");
+  await canvas.click(100, 100);
+  await page.getByRole("textbox", { name: "Text box content" }).fill("مرحبا\nبالعالم\nالسلام");
+  await page.keyboard.press("Escape");
+  // The box grows to its three lines.
+  await expect(overlay.getByTestId("noto-text").locator("text")).toHaveCount(3, { timeout: 30000 });
+  // Shrink it by its bottom handle: two lines are clipped.
+  const handle = overlay.locator('[data-handle="s"] rect').first();
+  const hb = (await handle.boundingBox())!;
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2 - 40, { steps: 6 });
+  await page.mouse.up();
+  await expect(overlay.getByTestId("noto-text").locator("text")).toHaveCount(1, { timeout: 30000 });
+  // Edit mode and back, text unchanged: the box keeps the size it was given.
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("textbox", { name: "Text box content" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  // Once the preview shows its current layout with no fit pending, the box is still shrunk.
+  await expect(overlay.getByTestId("noto-text")).toHaveAttribute("data-settled", "true", { timeout: 30000 });
+  await expect(overlay.getByTestId("noto-text").locator("text")).toHaveCount(1);
 });

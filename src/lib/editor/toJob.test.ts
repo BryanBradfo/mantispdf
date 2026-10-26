@@ -180,3 +180,30 @@ describe("buildEditJob", () => {
     expect(editJobTransferables(job)).toHaveLength(1);
   });
 });
+
+describe("buildEditJob text fonts", () => {
+  const box = (font: Item & { kind: "text" } extends { font: infer F } ? F : never, text: string): Item => ({
+    id: "t",
+    kind: "text",
+    page: 1,
+    rect: [1, 2, 3, 4],
+    text,
+    font,
+    size: 12,
+    color: [0, 0, 0],
+    opacity: 1,
+    align: "auto",
+    lineHeight: 1.2,
+  });
+
+  it("sends embedded-font boxes with their font files and keeps standard ones as they were", async () => {
+    const resolver = vi.fn((item: { text: string }) =>
+      item.text === "ok" ? { family: "standard" as const, font: "Courier" as const } : { family: "noto" as const, faces: ["A.ttf", "B.ttf"], fakeBold: ["B.ttf"] },
+    );
+    const job = await buildEditJob([box("Courier", "ok"), box("Helvetica-Bold", "你好")], undefined, resolver);
+    expect(job.items[0]).toEqual({ kind: "text", page: 1, rect: [1, 2, 3, 4], text: "ok", font: "Courier", size: 12, color: [0, 0, 0], opacity: 1, align: "auto", lineHeight: 1.2 });
+    expect(job.items[1]).toMatchObject({ family: "noto", font: "Helvetica-Bold", faces: ["A.ttf", "B.ttf"], fakeBold: ["B.ttf"], align: "auto" });
+    expect(job.items[1]).not.toHaveProperty("id");
+    expect(job.fonts).toBeUndefined();
+  });
+});

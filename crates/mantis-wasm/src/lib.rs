@@ -19,6 +19,7 @@ mod redact;
 mod rotate;
 mod split;
 mod stamp;
+mod unifont;
 mod watermark;
 
 pub use compress::compress_pdf;
@@ -159,6 +160,71 @@ pub fn edit_pdf(pdf_bytes: &[u8], job: JsValue) -> Result<Vec<u8>, JsValue> {
     edit_ops::edit_pdf(pdf_bytes, &job).map_err(|e| JsValue::from_str(&e))
 }
 
+/// The worker's font cache for text box previews (`layout_text`): font files copied into
+/// wasm memory once each (by id), then laid out by id. `free()` it when the
+/// page is reset; `add` refuses past 20 files or 64 MiB (checked on the JS
+/// length, before copying): start a new store then.
+#[wasm_bindgen]
+pub struct FontStore {
+    inner: edit_ops::unitext::FontStore,
+}
+
+impl Default for FontStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[wasm_bindgen]
+impl FontStore {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> FontStore {
+        FontStore { inner: edit_ops::unitext::FontStore::default() }
+    }
+
+    pub fn has(&self, id: &str) -> bool {
+        self.inner.has(id)
+    }
+
+    pub fn add(&mut self, id: &str, bytes: &js_sys::Uint8Array) -> Result<(), JsValue> {
+        if self.inner.has(id) {
+            return Ok(());
+        }
+        if !self.inner.fits(bytes.length() as usize) {
+            return Err(JsValue::from_str(&edit_ops::invalid("font")));
+        }
+        self.inner.add(id, bytes.to_vec()).map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// `layout_text` with the held fonts `ids` (chain order, family first).
+    #[allow(clippy::too_many_arguments)]
+    pub fn layout_text(
+        &self,
+        ids: Vec<String>,
+        text: &str,
+        size: f64,
+        width: f64,
+        height: f64,
+        align: &str,
+        line_height: f64,
+    ) -> Result<JsValue, JsValue> {
+        let err = |e: String| JsValue::from_str(&e);
+        let align = parse_align(align).map_err(err)?;
+        let layout = self.inner.layout(&ids, text, size, width, height, align, line_height).map_err(err)?;
+        Ok(edit_ops::binding::preview_to_js(&layout))
+    }
+}
+
+fn parse_align(align: &str) -> Result<Option<edit_ops::Align>, String> {
+    match align {
+        "left" => Ok(Some(edit_ops::Align::Left)),
+        "center" => Ok(Some(edit_ops::Align::Center)),
+        "right" => Ok(Some(edit_ops::Align::Right)),
+        "auto" => Ok(None),
+        _ => Err(edit_ops::invalid("align")),
+    }
+}
+
 /// Which pages with areas can be redacted in place: `[{ page, reason }]`,
 /// `reason` null or why the page needs a raster. See
 /// `src/lib/redact/toJob.ts` for the shapes.
@@ -214,11 +280,16 @@ pub fn add_text_layer(pdf_bytes: &[u8], pages: JsValue) -> Result<JsValue, JsVal
 
 /// Fill form fields (`values` from `src/lib/forms/toWire.ts`), optionally
 /// flattening every field into the pages.
+///
+/// `fonts` (optional): `{ files: [{ id, bytes }], fields: [{ field, faces, fakeBold }] }`, the
+/// embedded fonts text values the standard fonts cannot encode are drawn with (see
+/// `src/lib/forms/unicode.ts`).
 #[wasm_bindgen]
-pub fn fill_form(pdf_bytes: &[u8], values: JsValue, flatten: bool) -> Result<Vec<u8>, JsValue> {
+pub fn fill_form(pdf_bytes: &[u8], values: JsValue, flatten: bool, fonts: JsValue) -> Result<Vec<u8>, JsValue> {
     let raw = forms::binding::read_values(&values).map_err(|e| JsValue::from_str(&e))?;
     let values = forms::job::validate_values(raw).map_err(|e| JsValue::from_str(&e))?;
-    forms::fill_form(pdf_bytes, &values, flatten).map_err(|e| JsValue::from_str(&e))
+    let fonts = forms::binding::read_fonts(&fonts).map_err(|e| JsValue::from_str(&e))?;
+    forms::fill_form_with_fonts(pdf_bytes, &values, flatten, &fonts).map_err(|e| JsValue::from_str(&e))
 }
 
 #[wasm_bindgen]

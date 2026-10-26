@@ -49,7 +49,7 @@ pub(crate) fn font_resource(font: StdFont) -> &'static str {
     }
 }
 
-fn color_op(components: &[f64], stroke: bool) -> Option<String> {
+pub(crate) fn color_op(components: &[f64], stroke: bool) -> Option<String> {
     let op = match (components.len(), stroke) {
         (1, false) => "g",
         (1, true) => "G",
@@ -63,7 +63,7 @@ fn color_op(components: &[f64], stroke: bool) -> Option<String> {
     Some(format!("{} {op}", nums.join(" ")))
 }
 
-fn da_components(color: DaColor) -> Vec<f64> {
+pub(crate) fn da_components(color: DaColor) -> Vec<f64> {
     match color {
         DaColor::Gray(g) => vec![g],
         DaColor::Rgb(c) => c.to_vec(),

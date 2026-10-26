@@ -8,18 +8,22 @@ import {
   type ItemPatch,
   type Paint,
   type Rgb,
-  type StdFont,
+  type EditFont,
   type StrokedKind,
 } from "../../lib/editor/model";
 import { fitTextRect } from "../../lib/editor/textFit";
+import { resolveFont, startsRightToLeft } from "../../lib/editor/unicodeText";
 import { hexToRgb, rgbToHex } from "./svgStyle";
 import { formatNumber, useLocale, useT } from "../../i18n";
 
-const FONTS: { value: StdFont; label: string }[] = [
+const FONTS: { value: EditFont; label: string }[] = [
   { value: "Helvetica", label: "Helvetica" },
   { value: "Helvetica-Bold", label: "Helvetica Bold" },
   { value: "Times-Roman", label: "Times Roman" },
   { value: "Courier", label: "Courier" },
+  { value: "Noto Sans", label: "Noto Sans" },
+  { value: "Noto Serif", label: "Noto Serif" },
+  { value: "Noto Sans Mono", label: "Noto Sans Mono" },
 ];
 
 
@@ -207,12 +211,16 @@ export default function PropertiesPanel(props: Props) {
   switch (item.kind) {
     case "text": {
       // Font and size changes grow the box so no line is lost.
-      const restyle = (patch: { font?: StdFont; size?: number; lineHeight?: number }) => {
+      const restyle = (patch: { font?: EditFont; size?: number; lineHeight?: number }) => {
         const font = patch.font ?? item.font;
         const size = patch.size ?? item.size;
         const lineHeight = patch.lineHeight ?? item.lineHeight;
         onChange({ ...patch, rect: fitTextRect(item.rect, item.text, font, size, lineHeight) });
       };
+      const resolved = resolveFont(item.font, item.text);
+      const switched = resolved.kind === "noto" && resolved.switched ? resolved.family : null;
+      // "auto" shows the alignment it gives: right for right-to-left text.
+      const shownAlign = item.align === "auto" ? (startsRightToLeft(item.text) ? "right" : "left") : item.align;
       const aligns: { value: Align; label: string; icon: LucideIcon }[] = [
         { value: "left", label: t("alignLeft"), icon: TextAlignStart },
         { value: "center", label: t("alignCenter"), icon: TextAlignCenter },
@@ -225,12 +233,17 @@ export default function PropertiesPanel(props: Props) {
           </button>
           <label className={`${labelClass} col-span-2`}>
             {t("font")}
-            <select value={item.font} onChange={(e) => restyle({ font: e.target.value as StdFont })} className={fieldClass}>
+            <select value={item.font} onChange={(e) => restyle({ font: e.target.value as EditFont })} className={fieldClass}>
               {FONTS.map((f) => (
                 <option key={f.value} value={f.value}>{f.label}</option>
               ))}
             </select>
           </label>
+          {switched && (
+            <p className="col-span-2 text-xs text-gray-600 dark:text-[#999]" data-testid="font-switch-notice">
+              {tc("usesFontFor", { family: switched })}
+            </p>
+          )}
           <NumberField
             label={t("size")}
             value={item.size}
@@ -256,10 +269,10 @@ export default function PropertiesPanel(props: Props) {
                 key={value}
                 type="button"
                 aria-label={label}
-                aria-pressed={item.align === value}
+                aria-pressed={shownAlign === value}
                 title={label}
                 onClick={() => onChange({ align: value })}
-                className={`${smallButton} flex-1 ${item.align === value ? "border-mantis-600 bg-mantis-50 dark:bg-[#0f1a0f]" : ""}`}
+                className={`${smallButton} flex-1 ${shownAlign === value ? "border-mantis-600 bg-mantis-50 dark:bg-[#0f1a0f]" : ""}`}
               >
                 <Icon aria-hidden="true" className="h-4 w-4" />
               </button>

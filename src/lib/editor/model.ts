@@ -17,6 +17,12 @@ export type Rgb = [number, number, number];
 /** Stroke or fill paint of a rectangle or ellipse. */
 export type Paint = { kind: "none" } | { kind: "rgb"; color: Rgb };
 export type Align = "left" | "center" | "right";
+/** Alignment of a text box: "auto" (not chosen) is right for right-to-left paragraphs, else left. */
+export type TextAlign = Align | "auto";
+/** The Noto families of the font menu (self-hosted, any script). */
+export type NotoFamily = "Noto Sans" | "Noto Serif" | "Noto Sans Mono";
+/** A text box font: a standard PDF font or a Noto family. */
+export type EditFont = StdFont | NotoFamily;
 export type Rotation = 0 | 90 | 180 | 270;
 
 /**
@@ -41,11 +47,11 @@ export interface TextItem extends Base {
   kind: "text";
   rect: Rect;
   text: string;
-  font: StdFont;
+  font: EditFont;
   size: number;
   color: Rgb;
   opacity: number;
-  align: Align;
+  align: TextAlign;
   lineHeight: number;
 }
 

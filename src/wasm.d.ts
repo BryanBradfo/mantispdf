@@ -1,6 +1,15 @@
 declare module "mantis-wasm" {
   export default function init(): Promise<void>;
   export function get_page_count(pdf_bytes: Uint8Array): number;
+  /** Font files kept in wasm memory for `layout_text` previews (the worker's font cache). */
+  export class FontStore {
+    constructor();
+    has(id: string): boolean;
+    /** Throws "Invalid edit settings: font" past 20 files or 64 MiB (nothing copied then). */
+    add(id: string, bytes: Uint8Array): void;
+    layout_text(ids: string[], text: string, size: number, width: number, height: number, align: string, line_height: number): unknown;
+    free(): void;
+  }
   export class WasmPdf {
     constructor(bytes: Uint8Array);
     page_count(): number;
@@ -48,7 +57,8 @@ declare module "mantis-wasm" {
   export function edit_pdf(pdf_bytes: Uint8Array, job: object): Uint8Array;
   /** The form fields; shape built by `forms::binding::form_to_js`. */
   export function list_form(pdf_bytes: Uint8Array): import("./lib/forms/model").FormInfo;
-  export function fill_form(pdf_bytes: Uint8Array, values: object, flatten: boolean): Uint8Array;
+  /** `fonts`: `{ files: [{ id, bytes }], fields: [{ field, faces, fakeBold }] }` for values in Noto fonts. */
+  export function fill_form(pdf_bytes: Uint8Array, values: object, flatten: boolean, fonts?: object): Uint8Array;
   /**
    * The PDF with an invisible OCR text layer; `pages` shaped as in `lib/ocr/textLayerWire`. Pages
    * that already had an OCR layer are left alone and listed in `alreadyOcrPages`.

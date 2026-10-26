@@ -17,14 +17,22 @@ use crate::rebuild::{add_rotation, deref};
 use crate::stamp::engine::MAX_COORD;
 use crate::stamp::fonts::{StdFont, encode_winansi, winansi_byte};
 use crate::stamp::page_writer::font_object;
+use super::unicode::{FieldFont, FormFonts, UnicodeFields};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat, dictionary};
 use std::collections::{HashMap, HashSet};
 
 /// Fill `values` (field id from `list_form`, new value) and return the saved
 /// PDF, with the fields baked into the pages when `flatten` is set.
+#[cfg(test)]
 pub fn fill_form(pdf: &[u8], values: &[(u32, Value)], flatten: bool) -> Result<Vec<u8>, String> {
+    fill_form_with_fonts(pdf, values, flatten, &FormFonts::default())
+}
+
+/// `fill_form` with embedded fonts: a text value (new or kept) the standard
+/// fonts cannot encode is drawn with the faces `fonts` gives its field.
+pub fn fill_form_with_fonts(pdf: &[u8], values: &[(u32, Value)], flatten: bool, fonts: &FormFonts) -> Result<Vec<u8>, String> {
     let mut doc = load_pdf(pdf)?;
-    fill(&mut doc, values, flatten)?;
+    fill(&mut doc, values, flatten, fonts)?;
     if flatten {
         super::flatten::flatten_document(&mut doc)?;
     }
@@ -51,13 +59,22 @@ enum Shown {
 
 #[cfg(test)]
 pub(crate) fn fill_document(doc: &mut Document, values: &[(u32, Value)]) -> Result<(), String> {
-    fill(doc, values, false)
+    fill(doc, values, false, &FormFonts::default())
 }
 
 /// `for_flatten`: a value our fonts cannot draw and that has no appearance
 /// to keep is an error (flattening would drop it).
-fn fill(doc: &mut Document, values: &[(u32, Value)], for_flatten: bool) -> Result<(), String> {
+fn fill(doc: &mut Document, values: &[(u32, Value)], for_flatten: bool, fonts: &FormFonts) -> Result<(), String> {
     let tree = read_form(doc)?;
+    for (&id, font) in &fonts.fields {
+        let known = (id as usize) < tree.info.fields.len();
+        if !known || font.faces.is_empty() || font.faces.iter().chain(&font.fake_bold).any(|&i| i >= fonts.files.len()) {
+            return Err(invalid("font"));
+        }
+    }
+    // Parsed only when some field draws with embedded fonts.
+    let faces = if fonts.fields.is_empty() { Vec::new() } else { super::unicode::load(fonts)? };
+    let mut unicode = UnicodeFields::new(&faces);
     let mut seen = HashSet::new();
     let mut changes = Vec::new();
     for (id, value) in values {
@@ -68,7 +85,7 @@ fn fill(doc: &mut Document, values: &[(u32, Value)], for_flatten: bool) -> Resul
         if !seen.insert(*id) {
             return Err(invalid("field"));
         }
-        if let Some(change) = validate(field, field_ref, value)? {
+        if let Some(change) = validate(field, field_ref, value, fonts.fields.contains_key(id))? {
             changes.push((index, change));
         }
     }
@@ -77,9 +94,10 @@ fn fill(doc: &mut Document, values: &[(u32, Value)], for_flatten: bool) -> Resul
         .and_then(|f| f.get(b"NeedAppearances").ok())
         .is_some_and(|v| matches!(v, Object::Boolean(true)));
     let changed: HashSet<usize> = changes.iter().map(|(i, _)| *i).collect();
-    let mut fonts: HashMap<StdFont, ObjectId> = HashMap::new();
+    let mut std_fonts: HashMap<StdFont, ObjectId> = HashMap::new();
     for (index, change) in changes {
-        apply(doc, &tree.info.fields[index], &tree.refs[index], change, &mut fonts);
+        let font = fonts.fields.get(&(index as u32)).map(|f| (&mut unicode, f));
+        apply(doc, &tree.info.fields[index], &tree.refs[index], change, &mut std_fonts, font)?;
     }
     // We own every appearance (/NeedAppearances false): refresh unchanged
     // text and choice fields that have a value when the source asked for a
@@ -105,7 +123,7 @@ fn fill(doc: &mut Document, values: &[(u32, Value)], for_flatten: bool) -> Resul
                 dict.remove(b"RV");
             }
             let all: Vec<usize> = (0..field.widgets.len()).collect();
-            draw_field(doc, field, field_ref, &Shown::Text(String::new()), &all, &mut fonts);
+            draw_field(doc, field, field_ref, &Shown::Text(String::new()), &all, &mut std_fonts, None)?;
             continue;
         }
         let Some(shown) = current_shown(field) else {
@@ -116,7 +134,9 @@ fn fill(doc: &mut Document, values: &[(u32, Value)], for_flatten: bool) -> Resul
         if !(rebuild_all || missing) {
             continue;
         }
-        if !shown_in_standard_fonts(field, &shown) {
+        let font = fonts.fields.get(&(index as u32));
+        let embedded = font.is_some();
+        if !embedded && !shown_in_standard_fonts(field, &shown) {
             // Our fonts cannot show it: keep the file's appearances, and let
             // viewers build the missing ones with the field's own fonts.
             if missing && for_flatten {
@@ -129,8 +149,9 @@ fn fill(doc: &mut Document, values: &[(u32, Value)], for_flatten: bool) -> Resul
             continue;
         }
         let only: Vec<usize> = (0..field.widgets.len()).filter(|&i| !field.widgets[i].hidden).collect();
-        draw_field(doc, field, field_ref, &shown, &only, &mut fonts);
+        draw_field(doc, field, field_ref, &shown, &only, &mut std_fonts, font.map(|f| (&mut unicode, f)))?;
     }
+    unicode.finish(doc)?;
     mark_form(doc, viewers_must_rebuild);
     Ok(())
 }
@@ -222,12 +243,17 @@ fn same_value(a: &Value, b: &Value) -> bool {
 /// Text the standard fonts can show (line breaks allowed in multiline; a
 /// tab is drawn as a space). The unsupported-characters error names the
 /// field.
-fn check_text(text: &str, multiline: bool, label: &str) -> Result<(), String> {
+/// With `embedded` fonts any text goes (characters no font covers draw as
+/// empty boxes; the UI flags them).
+fn check_text(text: &str, multiline: bool, label: &str, embedded: bool) -> Result<(), String> {
     if text.chars().count() > MAX_VALUE_CHARS {
         return Err(invalid("value"));
     }
     if !multiline && text.contains(['\r', '\n']) {
         return Err(invalid("value"));
+    }
+    if embedded {
+        return Ok(());
     }
     encode_winansi(&text.replace(['\r', '\n', '\t'], " "))
         .map(|_| ())
@@ -239,7 +265,7 @@ fn drawn_text(text: &str) -> String {
     text.replace('\t', " ")
 }
 
-fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option<Change>, String> {
+fn validate(field: &Field, field_ref: &FieldRef, value: &Value, embedded: bool) -> Result<Option<Change>, String> {
     if field.read_only {
         return if same_value(value, &field.value) { Ok(None) } else { Err(invalid("read-only")) };
     }
@@ -247,7 +273,9 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option
         FieldKind::Signature | FieldKind::Button => return Err(invalid("value")),
         FieldKind::Text { multiline, max_len, password, .. } => {
             let text = text_of(value)?;
-            check_text(&text, *multiline, &field.label)?;
+            check_text(&text, *multiline, &field.label, embedded)?;
+            // MaxLen counts code points of /V (the PDF spec; viewers truncate by it), also in a
+            // comb field drawn with one grapheme per cell.
             if max_len.is_some_and(|m| text.chars().count() > m as usize) {
                 return Err(invalid("max-length"));
             }
@@ -262,11 +290,11 @@ fn validate(field: &Field, field_ref: &FieldRef, value: &Value) -> Result<Option
             }
             let shown = match field.options.iter().find(|(export, _)| *export == text) {
                 Some((_, display)) => {
-                    check_text(display, false, &field.label)?;
+                    check_text(display, false, &field.label, embedded)?;
                     drawn_text(display)
                 }
                 None if text.is_empty() || *editable => {
-                    check_text(&text, false, &field.label)?;
+                    check_text(&text, false, &field.label, embedded)?;
                     drawn_text(&text)
                 }
                 None => return Err(invalid("value")),
@@ -339,7 +367,14 @@ pub(crate) fn text_string(text: &str) -> Object {
     Object::String(bytes, StringFormat::Literal)
 }
 
-fn apply(doc: &mut Document, field: &Field, field_ref: &FieldRef, change: Change, fonts: &mut HashMap<StdFont, ObjectId>) {
+fn apply(
+    doc: &mut Document,
+    field: &Field,
+    field_ref: &FieldRef,
+    change: Change,
+    fonts: &mut HashMap<StdFont, ObjectId>,
+    unicode: Option<(&mut UnicodeFields, &FieldFont)>,
+) -> Result<(), String> {
     let all: Vec<usize> = (0..field_ref.widgets.len()).collect();
     match change {
         Change::Text { value, shown, combo } => {
@@ -355,7 +390,7 @@ fn apply(doc: &mut Document, field: &Field, field_ref: &FieldRef, change: Change
                     dict.remove(b"I");
                 }
             }
-            draw_field(doc, field, field_ref, &Shown::Text(shown), &all, fonts);
+            draw_field(doc, field, field_ref, &Shown::Text(shown), &all, fonts, unicode)?;
         }
         Change::List { selected, multi } => {
             if let Ok(dict) = doc.get_dictionary_mut(field_ref.obj) {
@@ -376,7 +411,7 @@ fn apply(doc: &mut Document, field: &Field, field_ref: &FieldRef, change: Change
                     }
                 }
             }
-            draw_field(doc, field, field_ref, &Shown::List(selected), &all, fonts);
+            draw_field(doc, field, field_ref, &Shown::List(selected), &all, fonts, unicode)?;
         }
         Change::Button { state } => {
             let off = b"Off".to_vec();
@@ -403,6 +438,7 @@ fn apply(doc: &mut Document, field: &Field, field_ref: &FieldRef, change: Change
             }
         }
     }
+    Ok(())
 }
 
 /// New appearances for the widgets `only` (indices) of a text or choice
@@ -414,7 +450,8 @@ fn draw_field(
     shown: &Shown,
     only: &[usize],
     fonts: &mut HashMap<StdFont, ObjectId>,
-) {
+    mut unicode: Option<(&mut UnicodeFields, &FieldFont)>,
+) -> Result<(), String> {
     let layout = match field.kind {
         FieldKind::Text { multiline: true, .. } => Layout::Multiline,
         FieldKind::Text { comb: true, max_len: Some(n), .. } => Layout::Comb(n),
@@ -428,11 +465,63 @@ fn draw_field(
         let (Some(widget), Some(wref)) = (field.widgets.get(i), field_ref.widgets.get(i)) else {
             continue;
         };
+        // Text the standard fonts cannot encode: the field's embedded fonts.
+        if let Some((fields, font)) = unicode.as_mut() {
+            let standard = |t: &str| t.chars().all(|c| matches!(c, '\r' | '\n' | '\t') || winansi_byte(c).is_some());
+            match shown {
+                Shown::Text(text) if !standard(text) => {
+                    set_unicode_appearance(doc, wref.obj, |doc, frame, resources| {
+                        fields.text_appearance(doc, frame, &wref.da, widget.align, layout, text, font, resources)
+                    })?;
+                    continue;
+                }
+                // Options in other scripts: every row in the field's faces.
+                Shown::List(selected) if !displays.iter().all(|d| standard(d)) => {
+                    set_unicode_appearance(doc, wref.obj, |doc, frame, resources| {
+                        fields.list_appearance(doc, frame, &wref.da, &displays, selected, font, resources)
+                    })?;
+                    continue;
+                }
+                _ => {}
+            }
+        }
         set_appearance(doc, wref.obj, Some(wref.da.font), fonts, |frame| match shown {
             Shown::Text(text) => text_appearance(frame, &wref.da, widget.align, layout, text),
             Shown::List(selected) => list_appearance(frame, &wref.da, &displays, selected),
         });
     }
+    Ok(())
+}
+
+/// `set_appearance` for content drawn with embedded fonts: `content` adds
+/// the fonts it draws to the /Font resources it is given.
+fn set_unicode_appearance(
+    doc: &mut Document,
+    widget: ObjectId,
+    content: impl FnOnce(&mut Document, &Frame, &mut Dictionary) -> Result<Vec<u8>, String>,
+) -> Result<(), String> {
+    let Some((frame, matrix)) = doc.get_dictionary(widget).ok().and_then(|w| widget_frame(doc, w)) else {
+        if let Ok(dict) = doc.get_dictionary_mut(widget) {
+            dict.remove(b"AP");
+        }
+        return Ok(());
+    };
+    let mut font_dict = Dictionary::new();
+    let body = content(doc, &frame, &mut font_dict)?;
+    let mut dict = dictionary! {
+        "Type" => "XObject",
+        "Subtype" => "Form",
+        "BBox" => vec![0.into(), 0.into(), real(frame.width), real(frame.height)],
+        "Resources" => dictionary! { "Font" => font_dict },
+    };
+    if let Some(m) = matrix {
+        dict.set("Matrix", m.iter().map(|&v| real(v)).collect::<Vec<_>>());
+    }
+    let stream = doc.add_object(Stream::new(dict, body));
+    if let Ok(dict) = doc.get_dictionary_mut(widget) {
+        dict.set("AP", dictionary! { "N" => stream });
+    }
+    Ok(())
 }
 
 /// The widget box in its own form space: /Rect size, swapped for a quarter

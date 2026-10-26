@@ -6,7 +6,9 @@
 
 use super::job::{RawEntry, RawValue};
 use super::{Field, FieldKind, FormInfo, MAX_FIELDS, MAX_OPTIONS, MAX_VALUE_CHARS, Value, Widget, Xfa, invalid};
-use js_sys::{Array, JsString, Object, Reflect};
+use super::unicode::{FieldFont, FormFonts};
+use crate::unifont::{MAX_FONT_BYTES, MAX_FONTS};
+use js_sys::{Array, JsString, Object, Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue};
 
 fn get(obj: &JsValue, key: &str, path: &str) -> Result<JsValue, String> {
@@ -83,6 +85,74 @@ pub(crate) fn read_values(values: &JsValue) -> Result<Vec<RawEntry>, String> {
         out.push(RawEntry { id: num(&entry, "id", &path)?, value: value(&entry, &path)? });
     }
     Ok(out)
+}
+
+/// A JS array of at most `MAX_FONTS` strings.
+fn ids(v: &JsValue, path: &str) -> Result<Vec<String>, String> {
+    if !Array::is_array(v) {
+        return Err(invalid(path));
+    }
+    let list: Array = v.clone().unchecked_into();
+    if list.length() as usize > MAX_FONTS {
+        return Err(invalid(path));
+    }
+    list.iter().map(|s| s.as_string().ok_or_else(|| invalid(path))).collect()
+}
+
+/// The fonts of a fill job, absent (undefined or null) for none:
+/// `{ files: [{ id, bytes }], fields: [{ field, faces: [ids], fakeBold?: [ids] }] }`.
+/// The font count and total size are checked on the JS lengths before
+/// anything is copied.
+pub(crate) fn read_fonts(fonts: &JsValue) -> Result<FormFonts, String> {
+    if fonts.is_undefined() || fonts.is_null() {
+        return Ok(FormFonts::default());
+    }
+    let files = array(fonts, "files", "fonts")?;
+    if files.length() as usize > MAX_FONTS {
+        return Err(invalid("font"));
+    }
+    let mut entries = Vec::with_capacity(files.length() as usize);
+    let mut total = 0usize;
+    for (i, entry) in files.iter().enumerate() {
+        let path = format!("fonts.files[{i}]");
+        let id = string(&entry, "id", &path)?;
+        let bytes = get(&entry, "bytes", &path)?;
+        if !bytes.is_instance_of::<Uint8Array>() {
+            return Err(invalid(&format!("{path}.bytes")));
+        }
+        let bytes: Uint8Array = bytes.unchecked_into();
+        total = total.saturating_add(bytes.length() as usize);
+        if total > MAX_FONT_BYTES {
+            return Err(invalid("font"));
+        }
+        if entries.iter().any(|(other, _): &(String, Uint8Array)| *other == id) {
+            return Err(invalid("fonts"));
+        }
+        entries.push((id, bytes));
+    }
+    let index = |id: &str, path: &str| entries.iter().position(|(other, _)| other == id).ok_or_else(|| invalid(path));
+    let list = array(fonts, "fields", "fonts")?;
+    if list.length() as usize > MAX_FIELDS {
+        return Err(invalid("fonts.fields"));
+    }
+    let mut fields = std::collections::HashMap::new();
+    for (i, entry) in list.iter().enumerate() {
+        let path = format!("fonts.fields[{i}]");
+        let field = num(&entry, "field", &path)?;
+        if !(field.is_finite() && field.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(&field)) {
+            return Err(invalid(&format!("{path}.field")));
+        }
+        let faces = ids(&get(&entry, "faces", &path)?, &format!("{path}.faces"))?;
+        let fake_bold = match Reflect::get(&entry, &JsValue::from_str("fakeBold")) {
+            Ok(v) if !v.is_undefined() && !v.is_null() => ids(&v, &format!("{path}.fakeBold"))?,
+            _ => Vec::new(),
+        };
+        let faces: Vec<usize> = faces.iter().map(|id| index(id, &format!("{path}.faces"))).collect::<Result<_, _>>()?;
+        let fake_bold: Vec<usize> = fake_bold.iter().map(|id| index(id, &format!("{path}.fakeBold"))).collect::<Result<_, _>>()?;
+        fields.insert(field as u32, FieldFont { faces, fake_bold });
+    }
+    let files = entries.into_iter().map(|(_, bytes)| bytes.to_vec()).collect();
+    Ok(FormFonts { files, fields })
 }
 
 fn set(obj: &Object, key: &str, v: impl Into<JsValue>) {

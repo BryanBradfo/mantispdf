@@ -6,12 +6,38 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { fitRectToHeight, fitTextRect } from "./textFit";
 
 const PKG = fileURLToPath(new URL("../../../crates/mantis-wasm/pkg/", import.meta.url));
 const built = existsSync(`${PKG}mantis_wasm_bg.wasm`);
 const PDF = new Uint8Array(readFileSync(new URL("../../../e2e/fixtures/one-page.pdf", import.meta.url)));
 
-type Wasm = { edit_pdf: (pdf: Uint8Array, job: unknown) => Uint8Array; initSync: (m: { module: BufferSource }) => unknown };
+type Store = {
+  has: (id: string) => boolean;
+  add: (id: string, bytes: Uint8Array) => void;
+  layout_text: (ids: string[], text: string, size: number, width: number, height: number, align: string, lineHeight: number) => unknown;
+  free: () => void;
+};
+type Wasm = {
+  FontStore: new () => Store;
+  edit_pdf: (pdf: Uint8Array, job: unknown) => Uint8Array;
+  initSync: (m: { module: BufferSource }) => unknown;
+};
+/** `layout_text` through a fresh store holding `fonts` (ids "0", "1"...), freed after. */
+function layoutText(fonts: Uint8Array[], text: string, size: number, width: number, height: number, align: string, lineHeight: number): unknown {
+  const store = new wasm.FontStore();
+  try {
+    const ids = fonts.map((f, i) => {
+      store.add(String(i), f);
+      return String(i);
+    });
+    return store.layout_text(ids, text, size, width, height, align, lineHeight);
+  } finally {
+    store.free();
+  }
+}
+const FONT_DIR = "../../../crates/mantis-wasm/tests/fonts/";
+const font = (name: string) => new Uint8Array(readFileSync(new URL(`${FONT_DIR}${name}`, import.meta.url)));
 let wasm: Wasm;
 
 beforeAll(async () => {
@@ -53,5 +79,101 @@ describe.skipIf(!built)("edit_pdf binding", () => {
     const over = [...Array.from({ length: 5999 }, () => [1, 1]), ["x", 0]];
     expect(() => edit([stroke(ok), stroke(over)])).toThrow("Invalid edit settings: points");
     expect(() => edit([stroke(ok.slice(0, 10000)), stroke(ok.slice(0, 10000))])).not.toThrow();
+  });
+
+  it("draws a Noto text box with the job's fonts", () => {
+    const fonts = [
+      { id: "sans", bytes: font("NotoSans-subset.ttf") },
+      { id: "sc", bytes: font("NotoSansSC-subset.ttf") },
+    ];
+    const item = {
+      kind: "text", page: 1, rect: [50, 600, 300, 60], text: "Привет 你好", family: "noto", font: "Noto Sans",
+      faces: ["sans", "sc"], fakeBold: ["sc"], size: 14, color: [0, 0, 0], opacity: 1, align: "auto", lineHeight: 1.2,
+    };
+    const out = wasm.edit_pdf(PDF, { items: [item], fonts });
+    const text = new TextDecoder("latin1").decode(out);
+    expect(text).toContain("/Type0");
+    expect(text).toContain("/CIDFontType2");
+    // A face the job does not carry, or bytes that are not a font.
+    expect(() => wasm.edit_pdf(PDF, { items: [{ ...item, faces: ["sans", "nope"] }], fonts })).toThrow("Invalid edit settings: items[0].faces");
+    expect(() => wasm.edit_pdf(PDF, { items: [item], fonts: [{ id: "sans", bytes: new Uint8Array(8) }, fonts[1]] })).toThrow("Invalid edit settings: font");
+    expect(() => wasm.edit_pdf(PDF, { items: [{ ...item, family: "fancy" }], fonts })).toThrow("Invalid edit settings: items[0].family");
+  });
+
+  it("refuses more than 20 fonts or 64 MiB of them before copying", () => {
+    const one = { id: "x", bytes: new Uint8Array(1) };
+    const many = Array.from({ length: 21 }, (_, i) => ({ ...one, id: `f${i}` }));
+    expect(() => wasm.edit_pdf(PDF, { items: [], fonts: many })).toThrow("Invalid edit settings: font");
+    // Views over one 40 MiB buffer: the total is counted on the lengths, nothing is copied.
+    const big = new Uint8Array(40 << 20);
+    expect(() => wasm.edit_pdf(PDF, { items: [], fonts: [{ id: "a", bytes: big }, { id: "b", bytes: big }] })).toThrow("Invalid edit settings: font");
+    expect(() => layoutText([big, big], "x", 12, 100, 100, "auto", 1.2)).toThrow("Invalid edit settings: font");
+  });
+
+  it("lays out text for the preview as the PDF will", () => {
+    const layout = layoutText([font("NotoSans-subset.ttf"), font("NotoSansHebrew-subset.ttf")], "Hi שלום\nmore", 12, 200, 100, "auto", 1.2) as {
+      lines: { baselineY: number; runs: { face: number; rtl: boolean; x: number; width: number; text: string }[] }[];
+      missing: string;
+    };
+    expect(layout.lines).toHaveLength(2);
+    expect(layout.lines[0].runs.map((r) => [r.face, r.rtl, r.text])).toEqual([[0, false, "Hi "], [1, true, "שלום"]]);
+    expect(layout.lines[1].baselineY - layout.lines[0].baselineY).toBeCloseTo(14.4);
+    expect(layout.missing).toBe("");
+    expect(() => layoutText([font("NotoSans-subset.ttf")], "x", 12, 100, 100, "justify", 1.2)).toThrow("Invalid edit settings: align");
+  });
+
+  it("pdf.js reads Noto text in reading order, also across lines and with harakat", async () => {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const fonts = [
+      { id: "sans", bytes: font("NotoSans-subset.ttf") },
+      { id: "ar", bytes: font("NotoSansArabic-subset.ttf") },
+      { id: "he", bytes: font("NotoSansHebrew-subset.ttf") },
+    ];
+    const box = (text: string, y: number, width: number) => ({
+      kind: "text", page: 1, rect: [50, y, width, 80], text, family: "noto", font: "Noto Sans",
+      faces: ["sans", "ar", "he"], fakeBold: [], size: 14, color: [0, 0, 0], opacity: 1, align: "auto", lineHeight: 1.2,
+    });
+    // "مرحبا" ends the first line, "بالعالم" starts the second.
+    const items = [box("Hi مرحبا بالعالم", 600, 90), box("مَرْحَبًا שָׁלוֹם", 400, 400)];
+    const out = wasm.edit_pdf(PDF, { items, fonts });
+    const doc = await pdfjs.getDocument({ data: out, verbosity: 0 }).promise;
+    const content = await (await doc.getPage(1)).getTextContent();
+    const text = content.items.map((i) => ("str" in i ? i.str : "")).join("|");
+    for (const word of ["مرحبا", "بالعالم", "مَرْحَبًا", "שָׁלוֹם"]) expect(text).toContain(word);
+    await doc.destroy();
+  });
+
+  it("fits a box to the engine's lines: two and three Arabic lines all show", () => {
+    const fonts = [font("NotoSans-subset.ttf"), font("NotoSansArabic-subset.ttf")];
+    for (const text of ["مرحبا\nبالعالم", "مرحبا\nبالعالم\nالسلام"]) {
+      const lines = text.split("\n").length;
+      // The box the editor's estimate gives (textFit): too short for Noto Sans Arabic.
+      const estimated = fitTextRect([50, 600, 200, 10], text, "Helvetica", 14, 1.2);
+      type Layout = { lines: unknown[]; height: number };
+      const first = layoutText(fonts, text, 14, 200, estimated[3], "auto", 1.2) as Layout;
+      // Fitted to the height the engine reports, every line shows.
+      const fitted = fitRectToHeight(estimated, first.height);
+      const again = layoutText(fonts, text, 14, 200, fitted[3], "auto", 1.2) as Layout;
+      expect(again.lines).toHaveLength(lines);
+      expect(fitted[1] + fitted[3]).toBeCloseTo(estimated[1] + estimated[3]);
+    }
+  });
+
+  it("keeps preview fonts in a store: copied once, laid out by id, bounded", () => {
+    const sans = font("NotoSans-subset.ttf");
+    const sc = font("NotoSansSC-subset.ttf");
+    const store = new wasm.FontStore();
+    store.add("sans", sans);
+    store.add("sc", sc);
+    expect(store.has("sc")).toBe(true);
+    const held = store.layout_text(["sans", "sc"], "Hi 你好", 12, 200, 100, "auto", 1.2);
+    expect(held).toEqual(layoutText([sans, sc], "Hi 你好", 12, 200, 100, "auto", 1.2));
+    expect(() => store.layout_text(["nope"], "x", 12, 10, 10, "auto", 1.2)).toThrow("Invalid edit settings: font");
+    // 64 MiB together at most, checked before copying.
+    const big = new Uint8Array(40 << 20);
+    store.add("big", big);
+    expect(() => store.add("bigger", big)).toThrow("Invalid edit settings: font");
+    expect(store.has("bigger")).toBe(false);
+    store.free();
   });
 });

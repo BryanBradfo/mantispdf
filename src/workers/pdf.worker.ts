@@ -2,9 +2,16 @@ import { toWasmJob } from "../lib/stampJob";
 import type { ExtractedImage } from "../lib/imageInput";
 import type { ToWorker, FromWorker, ProgressStep, ReqId, SuccessPayload } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
-import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, edit_pdf, crop_pdf, resize_pdf, nup_pdf, images_to_pdf, extract_images, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf, list_form, fill_form, redact_plan, redact, redact_search, redact_prepare, add_text_layer } from "mantis-wasm";
+import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, edit_pdf, crop_pdf, resize_pdf, nup_pdf, images_to_pdf, extract_images, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf, list_form, fill_form, redact_plan, redact, redact_search, redact_prepare, add_text_layer, FontStore } from "mantis-wasm";
+import { createFontLoader } from "../lib/fonts/loader";
+import { attachJobFonts, type TextLayout } from "../lib/fonts/jobFonts";
+import { createFontStoreCache } from "../lib/fonts/fontStore";
 
 let ready = false;
+/** Self-hosted fonts (same origin), fetched once per worker and kept for previews and downloads. */
+const fonts = createFontLoader();
+/** The preview font store (font files in wasm memory, by id): see lib/fonts/fontStore.ts. */
+const previewFonts = createFontStoreCache(() => new FontStore(), (file) => fonts.font(file));
 
 function postProgress(id: ReqId, progress: number, step: ProgressStep) {
   self.postMessage({ type: "progress", id, progress, step } satisfies FromWorker);
@@ -150,7 +157,14 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       }
 
       case "fill-form": {
-        const bytes = fill_form(msg.pdfBytes, msg.values, msg.flatten);
+        // Noto fonts by file name: the bytes come from this worker's loader (same origin).
+        const formFonts = msg.fonts
+          ? {
+              files: await Promise.all(msg.fonts.files.map(async (id) => ({ id, bytes: await fonts.font(id) }))),
+              fields: msg.fonts.fields,
+            }
+          : undefined;
+        const bytes = fill_form(msg.pdfBytes, msg.values, msg.flatten, formFonts);
         // A fresh copy out of WASM memory: hand it over instead of cloning.
         postSuccess(msg.id, { kind: "merge", bytes }, [bytes.buffer as ArrayBuffer]);
         break;
@@ -187,8 +201,23 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         break;
       }
 
+      case "reset-fonts": {
+        // Frees the preview font store (start over in Edit PDF or Fill form).
+        previewFonts.reset();
+        postSuccess(msg.id, { kind: "count", count: 0 });
+        break;
+      }
+
+      case "layout-text": {
+        const layout = (await previewFonts.withStore(msg.fonts, (held) =>
+          held.layout_text(msg.fonts, msg.text, msg.size, msg.width, msg.height, msg.align, msg.lineHeight),
+        )) as TextLayout;
+        postSuccess(msg.id, { kind: "text-layout", layout });
+        break;
+      }
+
       case "edit-pdf": {
-        const bytes = edit_pdf(msg.pdfBytes, msg.job);
+        const bytes = edit_pdf(msg.pdfBytes, await attachJobFonts(msg.job, fonts));
         // A fresh copy out of WASM memory: hand it over instead of cloning.
         postSuccess(msg.id, { kind: "merge", bytes }, [bytes.buffer as ArrayBuffer]);
         break;

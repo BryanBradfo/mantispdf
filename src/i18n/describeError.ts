@@ -36,6 +36,11 @@ const KNOWN: readonly Known[] = [
     pattern: /^Characters not supported by the standard PDF fonts: (.+)$/,
     describe: (m, t) => t("errorUnsupportedChars", { chars: m[1] }),
   },
+  // Unicode fonts (lib/editor/unicodeText noFontError): characters no font covers.
+  {
+    pattern: /^No font can show these characters: (.+) \(text box on page (\d+)\)\.$/,
+    describe: (m, t) => t("errorNoFontCharsPage", { chars: m[1], page: m[2] }),
+  },
   { pattern: /^PDF engine crashed$/, describe: (_, t) => t("errorEngineCrashed") },
   { pattern: /^PDF engine sent an unreadable message$/, describe: (_, t) => t("errorEngineUnreadable") },
   { pattern: /^Canvas is not available$/, describe: (_, t) => t("errorNoCanvas") },
