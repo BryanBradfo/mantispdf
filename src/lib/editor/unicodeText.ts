@@ -85,6 +85,14 @@ export function startsRightToLeft(text: string): boolean {
   return false;
 }
 
+/**
+ * The engine-style (English) error for a text box whose characters no font covers: thrown into the
+ * download's error path, where describeError translates it (KNOWN patterns).
+ */
+export function noFontError(chars: string, page: number): string {
+  return `No font can show these characters: ${chars} (text box on page ${page}).`;
+}
+
 /** Message for characters no font covers (they would print as empty boxes). */
 export function missingMessage(missing: string, t: NsT<"common">): string {
   return t("noFontChars", { chars: missing });

@@ -49,7 +49,6 @@ export default {
   // FieldControl, FormCanvas
   labelOption: "{label}: {option}",
   labelProblem: "{label}: {problem}",
-  labelCannotSave: "{label}: characters the PDF fonts cannot save",
   labelRequired: "{label} (required)",
   labelReadOnly: "{label} (read-only)",
   labelReadOnlyValue: "{label} (read-only): {value}",

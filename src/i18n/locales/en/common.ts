@@ -48,6 +48,7 @@ export default {
   errorTooManyStamps: "Too many stamps.",
   errorFontSize: "Font size must be a positive number.",
   errorUnsupportedChars: "Characters not supported by the standard PDF fonts: {chars}",
+  errorNoFontCharsPage: "No font can show these characters: {chars} (text box on page {page}).",
   errorEngineCrashed: "PDF engine crashed",
   errorEngineUnreadable: "PDF engine sent an unreadable message",
   errorNoCanvas: "Canvas is not available",

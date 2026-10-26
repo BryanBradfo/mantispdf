@@ -7,8 +7,6 @@ export default {
   heading: "Edit PDF",
   intro: "Add text, images, shapes, highlights and drawings to any page. Everything stays on your device.",
   imageUnreadable: "{name} could not be read as an image.",
-  unsupportedChars: "Characters not supported by the standard PDF fonts: {chars}",
-  textBoxProblem: "{problem} (text box on page {page}).",
   discardConfirm: "Discard all your edits and start over?",
   placeImage: "Click or drag on the page to place the image.",
   pickTool: "Pick a tool, then click or drag on the page. Select an item to change its colour, size or order.",
@@ -62,7 +60,6 @@ export default {
   backward: "Backward",
   duplicate: "Duplicate",
   // EditorCanvas, TextEditOverlay
-  unsupportedWarning: "Some characters cannot be saved with the standard PDF fonts",
   editorRole: "page editor",
   editorLabel: "Page {page} editor, {tool} tool",
   editorLabelSelected: "Page {page} editor, {tool} tool, an item is selected",
@@ -70,12 +67,12 @@ export default {
     "Drag to create, click an item to select it. Arrow keys move the selection by 1 pt (Shift: 10 pt), Delete removes it, Ctrl+Z undoes. Shift while resizing keeps the proportions.",
   textContent: "Text box content",
   noVisibleArea: "This page has no visible area to edit.",
-  overlayUnsupported: "{problem}. They cannot be saved with the standard PDF fonts.",
   // lib/editor/model limits
   tooManyEdits: "A document can hold at most {max} edits.",
   noArea: "This item has no area, so it was not added.",
   tooManyImages: "A document can hold at most {max} images.",
   imageBytes: "Images can add up to at most 256 MB of image data per document.",
+  // Noto text preview (NotoText)
   notoFontsFailed: "The fonts for this text could not be loaded",
   notoMissingChars: "Some characters have no font",
 } as const satisfies Namespace;

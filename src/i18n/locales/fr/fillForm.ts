@@ -48,7 +48,6 @@ const fillForm: Messages<typeof en> = {
   overflow: "Trop long pour ce champ\u00a0: le PDF le coupera",
   labelOption: "{label}\u00a0: {option}",
   labelProblem: "{label}\u00a0: {problem}",
-  labelCannotSave: "{label}\u00a0: caractères que les polices PDF ne peuvent pas enregistrer",
   labelRequired: "{label} (obligatoire)",
   labelReadOnly: "{label} (lecture seule)",
   labelReadOnlyValue: "{label} (lecture seule)\u00a0: {value}",

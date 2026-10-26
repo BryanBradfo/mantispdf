@@ -21,7 +21,7 @@ import {
 import { editorReducer } from "../lib/editor/reducer";
 import { fitTextRect } from "../lib/editor/textFit";
 import { buildEditJob, type TextFontSpec } from "../lib/editor/toJob";
-import { missingMessage, planFonts, resolveFont } from "../lib/editor/unicodeText";
+import { noFontError, planFonts, resolveFont } from "../lib/editor/unicodeText";
 import { pageFonts } from "../lib/fonts/fontFaces";
 import type { FontManifest } from "../lib/fonts/manifest";
 import { cjkFlavourFromLanguage, type CjkFlavour } from "../lib/fonts/select";
@@ -83,13 +83,13 @@ function textFonts(manifest: FontManifest, cjk: CjkFlavour) {
 }
 
 /** The first text box with characters no font can show, as a message. */
-function textProblem(items: readonly Item[], manifest: FontManifest, cjk: CjkFlavour, t: NsT<"editPdf">, tc: NsT<"common">): string | null {
+function textProblem(items: readonly Item[], manifest: FontManifest, cjk: CjkFlavour): string | null {
   for (const it of items) {
     if (it.kind !== "text") continue;
     const resolved = resolveFont(it.font, it.text);
     if (resolved.kind === "standard") continue;
     const { missing } = planFonts(manifest, it.text, resolved.family, resolved.bold, cjk);
-    if (missing !== "") return t("textBoxProblem", { problem: missingMessage(missing, tc), page: it.page });
+    if (missing !== "") return noFontError(missing, it.page);
   }
   return null;
 }
@@ -261,7 +261,7 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
         // Standard fonts only: no font list, no fonts.
         if (!needsNoto) return editPdf(input.bytes, await buildEditJob(items));
         const fonts = manifest ?? (await pageFonts.manifest());
-        const problem = textProblem(items, fonts, cjk, t, tc);
+        const problem = textProblem(items, fonts, cjk);
         if (problem) throw new Error(problem);
         return editPdf(input.bytes, await buildEditJob(items, undefined, textFonts(fonts, cjk)));
       },

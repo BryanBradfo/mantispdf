@@ -47,6 +47,7 @@ const common: Messages<typeof en> = {
   errorTooManyStamps: "Trop de tampons.",
   errorFontSize: "La taille de police doit être un nombre positif.",
   errorUnsupportedChars: "Caractères non pris en charge par les polices PDF standard\u00a0: {chars}",
+  errorNoFontCharsPage: "Aucune police ne peut afficher ces caractères\u00a0: {chars} (zone de texte de la page\u00a0{page}).",
   errorEngineCrashed: "Le moteur PDF s’est arrêté. Rechargez la page.",
   errorEngineUnreadable: "Le moteur PDF a envoyé une réponse illisible. Rechargez la page.",
   errorNoCanvas: "Le navigateur ne permet pas de dessiner l’image (canevas indisponible).",
