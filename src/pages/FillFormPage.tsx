@@ -11,7 +11,7 @@ import { dirtyIds, initialFormState, isDrawn, resetForm, setValue, type FormFiel
 import { tabOrder } from "../lib/forms/tabOrder";
 import { blockingProblem, missingRequired, shownText } from "../lib/forms/values";
 import { toWire } from "../lib/forms/toWire";
-import { fieldPlan, firstDrawn, formFonts, notoFamily, overflowRequest, overflowsLayout, uncoveredIn } from "../lib/forms/unicode";
+import { fieldPlan, firstDrawn, fontProblem, formFonts, notoFamily, overflowRequest, overflowsLayout, uncoveredIn } from "../lib/forms/unicode";
 import { missingMessage } from "../lib/editor/unicodeText";
 import { pageFonts } from "../lib/fonts/fontFaces";
 import type { FontManifest } from "../lib/fonts/manifest";
@@ -184,7 +184,14 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
     const name = `${baseName(input.file)}_${flatten ? "flattened" : "filled"}.pdf`;
     void run(
       async () => {
-        const fonts = needsNoto ? formFonts(form.fields, state, manifest ?? (await pageFonts.manifest()), cjk) : undefined;
+        let fonts;
+        if (needsNoto) {
+          const loaded = manifest ?? (await pageFonts.manifest());
+          // The click may have come before the font list loaded: check uncovered characters again.
+          const problem = fontProblem(ordered, state, loaded, cjk, t, tc);
+          if (problem) throw new UserError(problem);
+          fonts = formFonts(form.fields, state, loaded, cjk);
+        }
         return fillForm(input.bytes, values, flatten, fonts);
       },
       (out) => downloadBlob(out, name),

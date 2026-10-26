@@ -71,7 +71,6 @@ async function readImageSource(file: File, t: NsT<"editPdf">): Promise<ImageSour
   return { blob: file, ...size, bytes: imagePayloadBytes(bytes.length, size.width, size.height, passthrough) };
 }
 
-/** First text box whose content the standard fonts cannot save, as a user message. */
 /** How each text box is drawn: its standard font, or the Noto font files it needs (chain order). */
 function textFonts(manifest: FontManifest, cjk: CjkFlavour) {
   return (item: TextItem): TextFontSpec => {

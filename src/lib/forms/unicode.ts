@@ -5,14 +5,14 @@
  * engine gets (`fill_form`'s `fonts`) and judges overflow from the engine's own layout.
  */
 import { unsupportedChars } from "../editor/afm";
-import { planFonts, resolveFont, type FontPlan } from "../editor/unicodeText";
+import { missingMessage, planFonts, resolveFont, type FontPlan } from "../editor/unicodeText";
 import type { NotoFamily } from "../editor/model";
 import type { FontManifest } from "../fonts/manifest";
 import type { CjkFlavour } from "../fonts/select";
 import type { TextLayout } from "../fonts/jobFonts";
 import { LEADING, PADDING, widgetFrame } from "./layout";
 import { isDrawn, valueOf, type FormField, type FormState, type FormValue, type FormWidget } from "./model";
-import { shownText } from "./values";
+import { blockingProblem, shownText } from "./values";
 import type { NsT } from "../../i18n";
 
 /** The fonts of a fill job, by file name; the worker attaches the bytes. */
@@ -48,6 +48,21 @@ export function fieldPlan(field: FormField, value: FormValue, manifest: FontMani
 export function uncoveredIn(field: FormField, value: FormValue, manifest: FontManifest | null, cjk: CjkFlavour): string {
   if (!manifest) return "";
   return fieldPlan(field, value, manifest, cjk)?.missing ?? "";
+}
+
+/**
+ * The download's blocking problem judged with a loaded font list. The click-time check cannot see
+ * uncovered characters until the manifest arrives, so the save path runs this once it has awaited it.
+ */
+export function fontProblem(
+  fields: readonly FormField[],
+  state: FormState,
+  manifest: FontManifest,
+  cjk: CjkFlavour,
+  t: NsT<"fillForm">,
+  tc: NsT<"common">,
+): string | null {
+  return blockingProblem(fields, state, t, (f, v) => uncoveredIn(f, v, manifest, cjk), (bad) => missingMessage(bad, tc));
 }
 
 /** "Uses Noto Sans for these characters" when the value switches the field to a Noto family. */
