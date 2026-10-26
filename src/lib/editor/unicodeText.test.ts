@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { tFor } from "../../i18n/testUtils";
 import type { FontEntry, FontManifest } from "../fonts/manifest";
 import { fitTextRect } from "./textFit";
 import { isNoto, metricFont, missingMessage, planFonts, resolveFont, startsRightToLeft } from "./unicodeText";
@@ -68,7 +69,8 @@ describe("planFonts", () => {
 
   it("lists characters no font covers once, never whitespace", () => {
     expect(planFonts(manifest, "a😀 😀\u{1F600}ক", "Noto Sans", false, "SC").missing).toBe("😀ক");
-    expect(missingMessage("😀")).toBe("No font can show these characters: 😀");
+    expect(missingMessage("😀", tFor("common"))).toBe("No font can show these characters: 😀");
+    expect(missingMessage("😀", tFor("common", "fr"))).toBe("Aucune police ne peut afficher ces caractères\u00a0: 😀");
   });
 });
 

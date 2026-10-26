@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { tFor } from "../../i18n/testUtils";
 import type { FontEntry, FontManifest } from "../fonts/manifest";
 import { initialFormState, setValue, type FormField, type FormInfo, type FormValue, type FormWidget } from "./model";
 import { fieldPlan, formFonts, notoFamily, notoNotice, overflowRequest, overflowsLayout, uncoveredIn } from "./unicode";
@@ -51,7 +52,8 @@ describe("Noto values in forms", () => {
     expect(notoFamily(field(0, { widgets: [widget({ font: "Times-Roman" })] }), text("Привет"))).toEqual({ family: "Noto Serif", bold: false });
     expect(notoFamily(field(0, { widgets: [widget({ font: "Helvetica-Bold" })] }), text("你好"))).toEqual({ family: "Noto Sans", bold: true });
     expect(notoFamily(field(0, { kind: { kind: "checkbox" } }), { kind: "names", names: ["日"] })).toBeNull();
-    expect(notoNotice(field(0, { widgets: [widget({ font: "Courier" })] }), text("Привет"))).toBe("Uses Noto Sans Mono for these characters");
+    expect(notoNotice(field(0, { widgets: [widget({ font: "Courier" })] }), text("Привет"), tFor("common"))).toBe("Uses Noto Sans Mono for these characters");
+    expect(notoNotice(field(0), text("Привет"), tFor("common", "fr"))).toBe("Utilise Noto Sans pour ces caractères");
     // A list box draws every option: options in other scripts need Noto whatever is selected.
     const list = field(0, {
       kind: { kind: "list", multi: false },
@@ -92,8 +94,9 @@ describe("Noto values in forms", () => {
     const info: FormInfo = { xfa: "none", signed: false, fields: [field(0)] };
     const state = setValue(initialFormState(info), 0, text("你好 😀"));
     const uncovered = (f: FormField, v: FormValue) => uncoveredIn(f, v, manifest, "SC");
-    expect(blockingProblem(info.fields, state, uncovered, missingMessage)).toBe('No font can show these characters: 😀 (field "f0").');
-    expect(blockingProblem(info.fields, setValue(state, 0, text("你好")), uncovered, missingMessage)).toBeNull();
+    const message = (bad: string) => missingMessage(bad, tFor("common"));
+    expect(blockingProblem(info.fields, state, tFor("fillForm"), uncovered, message)).toBe('No font can show these characters: 😀 (field "f0").');
+    expect(blockingProblem(info.fields, setValue(state, 0, text("你好")), tFor("fillForm"), uncovered, message)).toBeNull();
   });
 
   it("judge overflow from the engine's lines", () => {

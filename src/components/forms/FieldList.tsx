@@ -2,8 +2,7 @@ import { useId } from "react";
 import { useFormFonts } from "./formFontsContext";
 import { notoNotice } from "../../lib/forms/unicode";
 import { missingMessage } from "../../lib/editor/unicodeText";
-import { Link } from "react-router-dom";
-import { unsupportedMessage } from "../../lib/editor/afm";
+import { Link, Trans, useT } from "../../i18n";
 import { NO_VALUE, isDirty, isDrawn, valueOf, type FormField, type FormState, type FormValue } from "../../lib/forms/model";
 import { overflows } from "../../lib/forms/layout";
 import {
@@ -19,17 +18,7 @@ import {
   toggled,
   unsupportedIn,
 } from "../../lib/forms/values";
-import { OVERFLOW_NOTE } from "./FieldControl";
 
-const KIND_LABEL: Record<FormField["kind"]["kind"], string> = {
-  text: "Text",
-  checkbox: "Checkbox",
-  radio: "Choice",
-  combo: "Drop-down",
-  list: "List",
-  signature: "Signature",
-  button: "Button",
-};
 
 const fieldClass =
   "mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 focus:border-mantis-500 focus:outline-none focus:ring-1 focus:ring-mantis-500 disabled:cursor-not-allowed disabled:bg-gray-100 dark:border-[#333] dark:bg-[#111] dark:text-[#ddd] dark:disabled:bg-[#1a1a1a]";
@@ -42,6 +31,7 @@ export const listedFields = (fields: readonly FormField[]): FormField[] =>
   fields.filter((f) => f.kind.kind !== "button" && pageOf(f) !== null);
 
 function PanelControl({ field, value, onChange, labelId }: { field: FormField; value: FormValue; onChange: (v: FormValue) => void; labelId: string }) {
+  const t = useT("fillForm");
   const disabled = field.readOnly;
   const kind = field.kind;
   const label = field.label || field.name;
@@ -80,14 +70,14 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
             <label key={state} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-[#bbb]">
               <input
                 type="checkbox"
-                aria-label={states.length === 1 ? label : `${label}: ${state}`}
+                aria-label={states.length === 1 ? label : t("labelOption", { label, option: state })}
                 aria-required={required}
                 disabled={disabled}
                 checked={namesOf(value).includes(state)}
                 onChange={() => onChange(toggled(value, state))}
                 className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
               />
-              {states.length === 1 ? "Checked" : state}
+              {states.length === 1 ? t("checked") : state}
             </label>
           ))}
         </div>
@@ -100,19 +90,19 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
             <label key={state} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-[#bbb]">
               <input
                 type="radio"
-                aria-label={`${label}: ${radioLabel(field, state)}`}
+                aria-label={t("labelOption", { label, option: radioLabel(field, state, t) })}
                 name={`list-field-${field.id}`}
                 disabled={disabled}
                 checked={namesOf(value).includes(state)}
                 onChange={() => onChange({ kind: "names", names: [state] })}
                 className="h-4 w-4 border-gray-300 text-mantis-600 focus:ring-mantis-500"
               />
-              {radioLabel(field, state)}
+              {radioLabel(field, state, t)}
             </label>
           ))}
           {!disabled && namesOf(value).length > 0 && (
             <button type="button" onClick={() => onChange(NO_VALUE)} className="text-xs text-gray-500 underline dark:text-[#888]">
-              Clear
+              {t("clear")}
             </button>
           )}
         </div>
@@ -145,7 +135,7 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
           onChange={(e) => onChange(e.target.value === "" ? NO_VALUE : { kind: "text", text: e.target.value })}
           className={fieldClass}
         >
-          <option value="">(none)</option>
+          <option value="">{t("none")}</option>
           {choiceOptions(field, value).map((o, i) => (
             <option key={i} value={o.exportValue}>{o.display}</option>
           ))}
@@ -171,12 +161,18 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
     case "signature":
       return (
         <p className="mt-1 text-sm text-gray-600 dark:text-[#999]">
-          Download the filled form, then sign it with{" "}
           {/* A new tab: leaving this page would lose the values typed so far. */}
-          <Link to="/sign" target="_blank" rel="noopener" className="font-medium text-mantis-700 underline dark:text-mantis-400">
-            Sign PDF
-          </Link>
-          .
+          <Trans
+            ns="fillForm"
+            k="signHint"
+            components={{
+              link: (c) => (
+                <Link to="/sign" target="_blank" rel="noopener" className="font-medium text-mantis-700 underline dark:text-mantis-400">
+                  {c}
+                </Link>
+              ),
+            }}
+          />
         </p>
       );
     case "button":
@@ -196,18 +192,20 @@ interface Props {
 
 /** Every field in tab order, editable here as on the page. */
 export default function FieldList({ fields, state, onChange, page, onPage }: Props) {
+  const t = useT("fillForm");
+  const tc = useT("common");
   const base = useId();
   const fonts = useFormFonts();
   return (
-    <ol aria-label="Form fields" className="space-y-3">
+    <ol aria-label={t("formFields")} className="space-y-3">
       {fields.map((field) => {
         const labelId = `${base}-${field.id}`;
         const value = valueOf(state, field.id);
         const fieldPage = pageOf(field);
         // With the Noto fonts, only characters no font covers are refused.
         const bad = fonts ? fonts.uncovered(field, value) : unsupportedIn(field, value);
-        const notice = notoNotice(field, value);
-        const tooLong = lengthWarning(field, value);
+        const notice = notoNotice(field, value, tc);
+        const tooLong = lengthWarning(field, value, t);
         const kind = field.kind;
         const over =
           (kind.kind === "combo" || (kind.kind === "text" && !kind.password)) &&
@@ -229,37 +227,37 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
                     <span className="ml-0.5 text-red-600" aria-hidden="true">
                       *
                     </span>
-                    <span className="sr-only"> (required)</span>
+                    <span className="sr-only"> {t("required")}</span>
                   </>
                 )}
-                {isDirty(state, field.id) && <span className="sr-only"> (changed)</span>}
+                {isDirty(state, field.id) && <span className="sr-only"> {t("changed")}</span>}
               </span>
               {fieldPage !== null && (
                 <button
                   type="button"
                   onClick={() => onPage(fieldPage)}
-                  aria-label={`Show page ${fieldPage}`}
+                  aria-label={t("showPage", { page: fieldPage })}
                   className="shrink-0 text-xs text-gray-500 underline hover:text-gray-800 dark:text-[#888]"
                 >
-                  p. {fieldPage}
+                  {t("pageShort", { page: fieldPage })}
                 </button>
               )}
             </div>
             <p className="text-xs text-gray-500 dark:text-[#777]">
-              {KIND_LABEL[field.kind.kind]}
-              {field.readOnly && " (read-only)"}
+              {t(`kind.${field.kind.kind}`)}
+              {field.readOnly && ` ${t("readOnly")}`}
             </p>
             <PanelControl field={field} value={value} onChange={(v) => onChange(field.id, v)} labelId={labelId} />
             {bad !== "" && (
               <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
-                {fonts ? missingMessage(bad) : unsupportedMessage(bad)}
+                {fonts ? missingMessage(bad, tc) : t("unsupportedChars", { chars: bad })}
               </p>
             )}
             {notice && bad === "" && <p className="mt-1 text-xs text-gray-600 dark:text-[#999]">{notice}</p>}
             {tooLong && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{tooLong}</p>}
-            {!tooLong && over && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{OVERFLOW_NOTE}.</p>}
+            {!tooLong && over && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{t("overflow")}.</p>}
             {kind.kind === "text" && kind.password && (
-              <p className="mt-1 text-xs text-gray-500 dark:text-[#888]">Password fields are not saved in the file, as in Acrobat.</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-[#888]">{t("passwordNote")}</p>
             )}
           </li>
         );

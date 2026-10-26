@@ -13,6 +13,7 @@ import type { TextLayout } from "../fonts/jobFonts";
 import { LEADING, PADDING, widgetFrame } from "./layout";
 import { isDrawn, valueOf, type FormField, type FormState, type FormValue, type FormWidget } from "./model";
 import { shownText } from "./values";
+import type { NsT } from "../../i18n";
 
 /** The fonts of a fill job, by file name; the worker attaches the bytes. */
 export interface FormFontsWire {
@@ -50,9 +51,9 @@ export function uncoveredIn(field: FormField, value: FormValue, manifest: FontMa
 }
 
 /** "Uses Noto Sans for these characters" when the value switches the field to a Noto family. */
-export function notoNotice(field: FormField, value: FormValue): string | null {
+export function notoNotice(field: FormField, value: FormValue, t: NsT<"common">): string | null {
   const noto = notoFamily(field, value);
-  return noto ? `Uses ${noto.family} for these characters` : null;
+  return noto ? t("usesFontFor", { family: noto.family }) : null;
 }
 
 /** The fonts of every field whose value (changed or kept) needs Noto, or undefined when none does. */

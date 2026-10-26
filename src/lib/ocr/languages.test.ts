@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OCR_LANGUAGES, defaultLanguages } from "./languages";
+import { OCR_LANGUAGES, defaultLanguages, languageLabel } from "./languages";
 
 describe("OCR languages", () => {
   it("offers the seven Latin-script languages with their tesseract codes", () => {
@@ -18,5 +18,14 @@ describe("OCR languages", () => {
     expect(defaultLanguages(["en-US", "fr"])).toEqual(["eng"]);
     expect(defaultLanguages(["ja", "zh-CN"])).toEqual(["eng"]);
     expect(defaultLanguages([])).toEqual(["eng"]);
+  });
+});
+
+describe("languageLabel", () => {
+  it("names each language in the UI language, capitalised", () => {
+    expect(OCR_LANGUAGES.map((l) => languageLabel(l.code, "en"))).toEqual(OCR_LANGUAGES.map((l) => l.label));
+    expect(languageLabel("fra", "fr")).toBe("Français");
+    expect(languageLabel("eng", "fr")).toBe("Anglais");
+    expect(languageLabel("nld", "fr")).toBe("Néerlandais");
   });
 });

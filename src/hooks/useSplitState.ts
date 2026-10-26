@@ -1,15 +1,16 @@
+import type { UiError } from "../i18n";
 import { useReducer } from "react";
 
 interface SplitState {
   file: File | null;
   numPages: number;
   splitPoints: Set<number>; // page numbers after which to split
-  uploadError: string | null;
+  uploadError: UiError | null;
 }
 
 type SplitAction =
   | { type: "file-loaded"; file: File; numPages: number }
-  | { type: "upload-error"; error: string }
+  | { type: "upload-error"; error: UiError }
   | { type: "toggle-split"; page: number }
   | { type: "reset" };
 

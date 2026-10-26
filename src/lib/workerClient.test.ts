@@ -71,11 +71,11 @@ describe("PdfWorkerClient", () => {
     );
     const id = (sent[0] as { id: number }).id;
 
-    client.handleMessage({ type: "progress", id, progress: 0.5, message: "halfway" });
-    expect(onProgress).toHaveBeenCalledWith(0.5, "halfway");
+    client.handleMessage({ type: "progress", id, progress: 0.5, step: { step: "splitting", parts: 2 } });
+    expect(onProgress).toHaveBeenCalledWith(0.5, { step: "splitting", parts: 2 });
 
     // Progress for an unknown id is ignored (no throw).
-    client.handleMessage({ type: "progress", id: 9999, progress: 1, message: "stray" });
+    client.handleMessage({ type: "progress", id: 9999, progress: 1, step: { step: "done" } });
     expect(onProgress).toHaveBeenCalledTimes(1);
   });
 

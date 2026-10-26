@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useT } from "../../i18n";
 import { LIMITS, type TextItem } from "../../lib/editor/model";
 import { visibleToPreviewRect, type Size } from "../../lib/editor/geometry";
 import { cssColor, cssFont, textareaBaselineShift } from "./svgStyle";
@@ -23,6 +24,8 @@ interface Props {
  * baseline sits where the engine draws it, and the text does not jump on commit.
  */
 export default function TextEditOverlay({ item, previewSize, pageSize, onCommit }: Props) {
+  const t = useT("editPdf");
+  const tc = useT("common");
   const ref = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState(item.text);
   const [areaHeight, setAreaHeight] = useState(0);
@@ -79,7 +82,7 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
         ref={ref}
         value={text}
         maxLength={LIMITS.textChars}
-        aria-label="Text box content"
+        aria-label={t("textContent")}
         aria-invalid={bad !== ""}
         aria-describedby={bad !== "" ? messageId : undefined}
         spellCheck
@@ -122,7 +125,7 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
           className="absolute z-10 max-w-xs rounded-md bg-red-600 px-2 py-1 text-xs text-white shadow"
           style={{ left: box.left, top: box.top + Math.max(box.height, areaHeight + shift) + 4 }}
         >
-          {missingMessage(bad)}
+          {missingMessage(bad, tc)}
         </p>
       )}
     </>

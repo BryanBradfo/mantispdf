@@ -1,4 +1,5 @@
 import { createLatest } from "./latest";
+import type { NsT } from "../i18n";
 
 /** Longest Bates prefix or suffix the engine accepts (characters). */
 export const MAX_BATES_AFFIX = 100;
@@ -33,12 +34,12 @@ export function batesRanges(counts: readonly number[], start: number, digits: nu
 }
 
 /** "ACME-000001 to ACME-000037" across all files, or null when there are no pages. */
-export function describeBatesRange(ranges: readonly BatesRange[]): string | null {
+export function describeBatesRange(ranges: readonly BatesRange[], t: NsT<"bates">): string | null {
   const used = ranges.filter((r) => r.end >= r.start);
   if (used.length === 0) return null;
   const first = used[0].first;
   const last = used[used.length - 1].last;
-  return first === last ? first : `${first} to ${last}`;
+  return first === last ? first : t("range", { first, last });
 }
 
 /** Largest value a Bates counter may reach. */

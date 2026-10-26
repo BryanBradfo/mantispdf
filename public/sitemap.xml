@@ -1,31 +1,451 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://mantispdf.vercel.app/</loc><lastmod>2025-01-01</lastmod><priority>1.0</priority></url>
-  <url><loc>https://mantispdf.vercel.app/split</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/merge</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/compress</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/rotate</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/organize</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/remove-pages</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/extract-pages</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/watermark</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/encrypt</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/pdf-to-image</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/sanitize</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/remove-metadata</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/edit-metadata</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/unlock</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/page-numbers</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/header-footer</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/bates</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/sign</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/crop</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/resize</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/n-up</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/edit-pdf</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/fill-form</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/redact</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/ocr</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/images-to-pdf</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
-  <url><loc>https://mantispdf.vercel.app/extract-images</loc><lastmod>2025-01-01</lastmod><priority>0.8</priority></url>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://mantispdf.vercel.app/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/split</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/split"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/split"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/split"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/merge</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/merge"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/merge"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/merge"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/compress</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/compress"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/compress"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/compress"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/rotate</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/rotate"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/rotate"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/rotate"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/organize</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/organize"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/organize"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/organize"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/remove-pages</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/remove-pages"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/remove-pages"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/remove-pages"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/extract-pages</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/extract-pages"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/extract-pages"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/extract-pages"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/watermark</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/watermark"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/watermark"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/watermark"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/encrypt</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/encrypt"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/encrypt"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/encrypt"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/pdf-to-image</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/pdf-to-image"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/pdf-to-image"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/pdf-to-image"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/sanitize</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/sanitize"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/sanitize"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/sanitize"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/remove-metadata</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/remove-metadata"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/remove-metadata"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/remove-metadata"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/edit-metadata</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/edit-metadata"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/edit-metadata"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/edit-metadata"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/unlock</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/unlock"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/unlock"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/unlock"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/page-numbers</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/page-numbers"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/page-numbers"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/page-numbers"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/header-footer</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/header-footer"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/header-footer"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/header-footer"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/bates</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/bates"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/bates"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/bates"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/sign</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/sign"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/sign"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/sign"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/crop</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/crop"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/crop"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/crop"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/resize</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/resize"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/resize"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/resize"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/n-up</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/n-up"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/n-up"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/n-up"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/edit-pdf</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/edit-pdf"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/edit-pdf"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/edit-pdf"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fill-form</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/fill-form"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/fill-form"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/fill-form"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/redact</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/redact"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/redact"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/redact"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/ocr</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/ocr"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/ocr"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/ocr"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/images-to-pdf</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/images-to-pdf"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/images-to-pdf"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/images-to-pdf"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/extract-images</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/extract-images"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/extract-images"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/extract-images"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/split</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/split"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/split"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/split"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/merge</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/merge"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/merge"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/merge"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/compress</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/compress"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/compress"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/compress"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/rotate</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/rotate"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/rotate"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/rotate"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/organize</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/organize"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/organize"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/organize"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/remove-pages</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/remove-pages"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/remove-pages"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/remove-pages"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/extract-pages</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/extract-pages"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/extract-pages"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/extract-pages"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/watermark</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/watermark"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/watermark"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/watermark"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/encrypt</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/encrypt"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/encrypt"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/encrypt"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/pdf-to-image</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/pdf-to-image"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/pdf-to-image"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/pdf-to-image"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/sanitize</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/sanitize"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/sanitize"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/sanitize"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/remove-metadata</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/remove-metadata"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/remove-metadata"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/remove-metadata"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/edit-metadata</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/edit-metadata"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/edit-metadata"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/edit-metadata"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/unlock</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/unlock"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/unlock"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/unlock"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/page-numbers</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/page-numbers"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/page-numbers"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/page-numbers"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/header-footer</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/header-footer"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/header-footer"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/header-footer"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/bates</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/bates"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/bates"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/bates"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/sign</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/sign"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/sign"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/sign"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/crop</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/crop"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/crop"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/crop"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/resize</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/resize"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/resize"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/resize"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/n-up</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/n-up"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/n-up"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/n-up"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/edit-pdf</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/edit-pdf"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/edit-pdf"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/edit-pdf"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/fill-form</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/fill-form"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/fill-form"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/fill-form"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/redact</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/redact"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/redact"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/redact"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/ocr</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/ocr"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/ocr"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/ocr"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/images-to-pdf</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/images-to-pdf"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/images-to-pdf"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/images-to-pdf"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.vercel.app/fr/extract-images</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.vercel.app/extract-images"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.vercel.app/fr/extract-images"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.vercel.app/extract-images"/>
+    <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
 </urlset>

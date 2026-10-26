@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildCropJob, cropTargetPages, describeCrop, fitCropToPage, missedPagesProblem, moveCropRect, pagesMissedBy, resizeCropRect, type CropChoice } from "./cropBox";
 import type { Rect } from "./geometryJob";
+import { tFor } from "../i18n/testUtils";
+
+const tCrop = tFor("crop");
 
 const letter: [number, number] = [612, 792];
 
@@ -43,7 +46,7 @@ describe("resizeCropRect", () => {
 
 describe("describeCrop", () => {
   it("speaks size and distance from the top-left", () => {
-    expect(describeCrop([10, 20, 300, 400], letter)).toBe("Crop area 300 by 400 pt, 10 pt from the left, 372 pt from the top.");
+    expect(describeCrop([10, 20, 300, 400], letter, tCrop)).toBe("Crop area 300 by 400 pt, 10 pt from the left, 372 pt from the top.");
   });
 });
 
@@ -99,13 +102,13 @@ describe("pagesMissedBy", () => {
 
 describe("missedPagesProblem", () => {
   it("names the pages", () => {
-    expect(missedPagesProblem([])).toBeNull();
-    expect(missedPagesProblem([3])).toBe("The crop area misses page 3. Use a page range or auto-detect.");
-    expect(missedPagesProblem([2, 4])).toBe("The crop area misses pages 2, 4. Use a page range or auto-detect.");
+    expect(missedPagesProblem([], tCrop)).toBeNull();
+    expect(missedPagesProblem([3], tCrop)).toBe("The crop area misses page 3. Use a page range or auto-detect.");
+    expect(missedPagesProblem([2, 4], tCrop)).toBe("The crop area misses pages 2, 4. Use a page range or auto-detect.");
   });
   it("shortens a long list", () => {
     const many = Array.from({ length: 14 }, (_, i) => i + 1);
-    expect(missedPagesProblem(many)).toBe(
+    expect(missedPagesProblem(many, tCrop)).toBe(
       "The crop area misses pages 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 and 4 more. Use a page range or auto-detect.",
     );
   });
@@ -123,5 +126,16 @@ describe("cropTargetPages", () => {
     const sizes: [number, number][] = [[612, 792], [612, 792], [612, 792], [100, 100]];
     const pages = cropTargetPages({ scope: "all", page: 1, range: [1, 2], total: 4 });
     expect(pagesMissedBy([300, 300, 100, 100], sizes, pages)).toEqual([4]);
+  });
+});
+
+describe("crop messages in French", () => {
+  const t = tFor("crop", "fr");
+  it("describes the box and the missed pages", () => {
+    expect(describeCrop([10, 20, 300, 400], [612, 792], t)).toBe(
+      "Zone de rognage de 300 sur 400\u00a0pt, à 10\u00a0pt du bord gauche et 372\u00a0pt du haut.",
+    );
+    expect(missedPagesProblem([3], t)).toBe("La zone de rognage ne couvre pas la page 3. Utilisez une plage de pages ou la détection automatique.");
+    expect(missedPagesProblem([2, 4], t)).toBe("La zone de rognage ne couvre pas les pages 2, 4. Utilisez une plage de pages ou la détection automatique.");
   });
 });

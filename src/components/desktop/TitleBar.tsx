@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { X, Minus, Plus } from "lucide-react";
+import { useT } from "../../i18n";
 
 /**
  * Custom window title bar for the Tauri desktop shell.
@@ -13,6 +14,7 @@ import { X, Minus, Plus } from "lucide-react";
  * traffic-light controls, driven by the Tauri v2 window API.
  */
 export default function TitleBar() {
+  const t = useT("common");
   const desktop = isTauri();
   const [maximized, setMaximized] = useState(false);
 
@@ -46,21 +48,21 @@ export default function TitleBar() {
       <div className="group flex items-center gap-2 pl-3.5">
         <button
           onClick={() => appWindow.close()}
-          aria-label="Close window"
+          aria-label={t("windowClose")}
           className="flex h-3 w-3 items-center justify-center rounded-full bg-[#ff5f57] ring-1 ring-inset ring-black/10 transition hover:brightness-95"
         >
           <X className="h-2 w-2 text-black/60 opacity-0 group-hover:opacity-100" strokeWidth={3.5} />
         </button>
         <button
           onClick={() => appWindow.minimize()}
-          aria-label="Minimize window"
+          aria-label={t("windowMinimize")}
           className="flex h-3 w-3 items-center justify-center rounded-full bg-[#febc2e] ring-1 ring-inset ring-black/10 transition hover:brightness-95"
         >
           <Minus className="h-2 w-2 text-black/60 opacity-0 group-hover:opacity-100" strokeWidth={3.5} />
         </button>
         <button
           onClick={() => appWindow.toggleMaximize()}
-          aria-label={maximized ? "Restore window" : "Maximize window"}
+          aria-label={maximized ? t("windowRestore") : t("windowMaximize")}
           className="flex h-3 w-3 items-center justify-center rounded-full bg-[#28c840] ring-1 ring-inset ring-black/10 transition hover:brightness-95"
         >
           <Plus className="h-2 w-2 text-black/60 opacity-0 group-hover:opacity-100" strokeWidth={3.5} />

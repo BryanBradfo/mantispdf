@@ -8,13 +8,17 @@ import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import { encodePlan } from "../lib/pagePlan";
 import { usePlannerUpload } from "./usePlannerUpload";
+import { useDescribeError, useT, type UiError } from "../i18n";
 
 export default function OrganizePdfPage() {
   const worker = usePdfWorker();
   const [state, dispatch] = usePagePlanner();
   const { addFiles, loading, cancel } = usePlannerUpload(worker, dispatch);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const t = useT("organize");
+  const tc = useT("common");
+  const describe = useDescribeError();
+  const [error, setError] = useState<UiError | null>(null);
 
   const { entries } = buildPlan(state, "organize");
   const pageCount = entries.length;
@@ -27,24 +31,24 @@ export default function OrganizePdfPage() {
     try {
       downloadBlob(await worker.applyPagePlan(plan.buffers, encodePlan(plan.entries)), "organized.pdf");
     } catch (err) {
-      setError(String(err));
+      setError(describe(err));
     } finally {
       setBusy(false);
     }
-  }, [state, worker]);
+  }, [state, worker, describe]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
       <PageSEO
-        title="Organize PDF Pages | MantisPDF"
-        description="Reorder, rotate, duplicate, delete and insert blank pages across several PDFs. Free, private, nothing is uploaded."
+        title={t("seoTitle")}
+        description={t("seoDescription")}
         path="/organize"
       />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Organize PDF</h1>
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        Drop one or more PDFs, then drag pages into place, rotate, duplicate, delete or add blank pages.
+        {t("intro")}
       </p>
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       <div className="mt-8">
         <DropZone multiple onFiles={addFiles} error={state.uploadError} />
@@ -52,7 +56,7 @@ export default function OrganizePdfPage() {
       {loading && (
         <div className="mt-6 flex items-center gap-3 text-gray-500 dark:text-[#555]">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent motion-reduce:animate-none" />
-          Loading PDF…
+          {tc("loadingPdf")}
         </div>
       )}
 
@@ -60,21 +64,21 @@ export default function OrganizePdfPage() {
         <>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-gray-500 dark:text-[#555]">
-              {pageCount} page{pageCount !== 1 ? "s" : ""} in the result · {state.sources.length} file{state.sources.length !== 1 ? "s" : ""}
+              {t("pagesInResult", { count: pageCount })} · {t("files", { count: state.sources.length })}
             </p>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => dispatch({ type: "insert-blank", index: state.items.length })}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
               >
-                Add blank page
+                {t("addBlank")}
               </button>
               <button
                 onClick={handleDownload}
                 disabled={busy || !worker.ready || pageCount === 0}
                 className="rounded-lg bg-mantis-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-mantis-700 disabled:opacity-50"
               >
-                {busy ? "Processing…" : "Download PDF"}
+                {busy ? tc("processing") : t("downloadPdf")}
               </button>
               <button
                 onClick={() => {
@@ -83,12 +87,12 @@ export default function OrganizePdfPage() {
                 }}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
               >
-                Start over
+                {tc("startOver")}
               </button>
             </div>
           </div>
           {pageCount === 0 && (
-            <p className="mt-3 text-sm text-red-600 dark:text-red-400">Add at least one page from a document to download.</p>
+            <p className="mt-3 text-sm text-red-600 dark:text-red-400">{t("needOnePage")}</p>
           )}
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6">

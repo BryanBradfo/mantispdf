@@ -1,6 +1,7 @@
 /** Reading and changing field values for the form controls (page overlay and side list). */
-import { unsupportedChars, unsupportedMessage } from "../editor/afm";
+import { unsupportedChars } from "../editor/afm";
 import { NO_VALUE, isDirty, valueOf, type FormField, type FormOption, type FormState, type FormValue } from "./model";
+import type { NsT } from "../../i18n";
 
 /** Engine limits the UI enforces (`MAX_VALUE_CHARS` in crates/mantis-wasm/src/forms/mod.rs). */
 export const FORM_LIMITS = { valueChars: 20000 } as const;
@@ -31,10 +32,10 @@ export function lengthLimit(field: FormField): number {
  * A warning for a value already longer than the field allows (it came that way in the file):
  * the field stays editable and the value is kept until the user shortens it.
  */
-export function lengthWarning(field: FormField, value: FormValue): string | null {
+export function lengthWarning(field: FormField, value: FormValue, t: NsT<"fillForm">): string | null {
   const limit = lengthLimit(field);
   if (Array.from(textOf(value)).length <= limit) return null;
-  return `This value is longer than the field allows (${limit} characters).`;
+  return t("tooLong", { limit });
 }
 
 /**
@@ -76,16 +77,16 @@ export function comboValueFor(field: FormField, typed: string): FormValue {
  * value, or by index for index-named states), "Option N" for engine-generated or index names
  * ("On", "On2", "0"...), else the state name itself.
  */
-export function radioLabel(field: FormField, state: string): string {
+export function radioLabel(field: FormField, state: string, t: NsT<"fillForm">): string {
   const byValue = field.options.find((o) => o.exportValue === state);
   if (byValue) return byValue.display;
   const position = field.onStates.indexOf(state);
   if (/^\d+$/.test(state)) {
     const option = field.options[Number(state)];
     if (option) return option.display;
-    return `Option ${(position >= 0 ? position : Number(state)) + 1}`;
+    return t("option", { n: (position >= 0 ? position : Number(state)) + 1 });
   }
-  if (/^On\d*$/.test(state)) return `Option ${position + 1}`;
+  if (/^On\d*$/.test(state)) return t("option", { n: position + 1 });
   return state;
 }
 
@@ -104,18 +105,20 @@ export function missingRequired(fields: readonly FormField[], state: FormState):
 export function blockingProblem(
   fields: readonly FormField[],
   state: FormState,
+  t: NsT<"fillForm">,
   /** Characters of a value nothing can draw (default: those the standard fonts lack). */
   uncovered: (field: FormField, value: FormValue) => string = unsupportedIn,
-  message: (bad: string) => string = unsupportedMessage,
+  /** The problem those characters make (default: the standard fonts cannot show them). */
+  message: (bad: string) => string = (bad) => t("unsupportedChars", { chars: bad }),
 ): string | null {
   for (const f of fields) {
     if (!isDirty(state, f.id)) continue;
     const value = valueOf(state, f.id);
     const name = f.label || f.name;
     const bad = uncovered(f, value);
-    if (bad !== "") return `${message(bad)} (field "${name}").`;
-    const long = lengthWarning(f, value);
-    if (long) return `${long} (field "${name}")`;
+    if (bad !== "") return t("inFieldSentence", { problem: message(bad), name });
+    const long = lengthWarning(f, value, t);
+    if (long) return t("inField", { problem: long, name });
   }
   return null;
 }

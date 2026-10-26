@@ -5,6 +5,7 @@ import type { TextLayout } from "../../lib/fonts/jobFonts";
 import { ensureFontFace, fontFaceFamily } from "../../lib/fonts/fontFaces";
 import { cssColor } from "./svgStyle";
 import { useUnicodeText } from "./unicodeTextContext";
+import { useT } from "../../i18n";
 
 /** Synthetic bold stroke (em), as the engine draws it (`FAKE_BOLD_EM`). */
 const FAKE_BOLD_EM = 0.03;
@@ -28,6 +29,7 @@ interface Props {
  * the same font file loaded as a FontFace, so the preview breaks lines exactly like the PDF.
  */
 export default function NotoText({ item, family, bold, toPx, scale, box }: Props) {
+  const t = useT("editPdf");
   const env = useUnicodeText();
   const plan = env?.manifest ? planFonts(env.manifest, item.text, family, bold, env.cjk) : null;
   const files = plan?.faces.map((f) => f.file) ?? [];
@@ -94,7 +96,7 @@ export default function NotoText({ item, family, bold, toPx, scale, box }: Props
           strokeWidth={2}
           strokeDasharray="5 3"
         >
-          <title>{failed ? "The fonts for this text could not be loaded" : "Some characters have no font"}</title>
+          <title>{failed ? t("notoFontsFailed") : t("notoMissingChars")}</title>
         </rect>
       )}
       {shown?.layout && (

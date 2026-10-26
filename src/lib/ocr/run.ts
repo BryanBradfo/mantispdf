@@ -3,6 +3,8 @@ import type { RecognizedWord } from "./engine";
 import type { OcrLanguage } from "./languages";
 import type { PipelinePage } from "./pipeline";
 import type { OcrWordWire } from "./textLayerWire";
+import type { NsT } from "../../i18n";
+import { joinList } from "../../i18n/joinList";
 
 /** Pages whose mean word confidence is below this are flagged as low quality scans. */
 export const LOW_QUALITY = 60;
@@ -96,12 +98,12 @@ export function estimateRemainingMs({ done, total, elapsedMs }: { done: number; 
   return Math.max(0, Math.round((elapsedMs / done) * (total - done)));
 }
 
-export function formatEta(ms: number | null): string {
-  if (ms === null) return "estimating time left";
+export function formatEta(ms: number | null, t: NsT<"ocr">): string {
+  if (ms === null) return t("etaEstimating");
   const s = Math.round(ms / 1000);
-  if (s <= 0) return "almost done";
-  if (s < 60) return `about ${s} s left`;
-  return `about ${Math.floor(s / 60)} min ${s % 60} s left`;
+  if (s <= 0) return t("etaAlmostDone");
+  if (s < 60) return t("etaSeconds", { s });
+  return t("etaMinutes", { m: Math.floor(s / 60), s: s % 60 });
 }
 
 /** Add or remove a language; the last one cannot be removed. */
@@ -115,39 +117,41 @@ export const MAX_WORDS_PER_PAGE = 200_000;
 export const MAX_WORDS_TOTAL = 2_000_000;
 
 /** Why the text layer cannot be added (too many words), in plain words; null when it can. */
-export function wordLimitProblem(pages: readonly { page: number; words: readonly unknown[] }[]): string | null {
+export function wordLimitProblem(pages: readonly { page: number; words: readonly unknown[] }[], t: NsT<"ocr">): string | null {
   let total = 0;
   for (const p of pages) {
     if (p.words.length > MAX_WORDS_PER_PAGE) {
-      return `Page ${p.page} has too many recognised words (more than ${MAX_WORDS_PER_PAGE}) to add a text layer. Download the text instead.`;
+      return t("wordsPerPage", { page: p.page, max: MAX_WORDS_PER_PAGE });
     }
     total += p.words.length;
   }
   if (total > MAX_WORDS_TOTAL) {
-    return `Too many recognised words in all (more than ${MAX_WORDS_TOTAL}) to add a text layer. Split the PDF, or download the text instead.`;
+    return t("wordsTotal", { max: MAX_WORDS_TOTAL });
   }
   return null;
 }
 
-/** How to recognise pages the skip option left out. */
-export const SKIP_HINT = "Turn off 'Skip pages that already contain text' to recognise them anyway.";
+/** "page 3" / "pages 2, 5". */
+export function pageList(pages: readonly number[], t: NsT<"ocr">): string {
+  return t("pageList", { count: pages.length, list: joinList(pages, t("listSep"), t("listLast")) });
+}
 
 /** The summary's first line. */
-export function summaryHeadline(s: OcrSummary): string {
-  if (s.processed === 0 && s.skipped.length > 0) return `All pages already contain text. Nothing to recognise. ${SKIP_HINT}`;
+export function summaryHeadline(s: OcrSummary, t: NsT<"ocr">): string {
+  if (s.processed === 0 && s.skipped.length > 0) return t("allHaveText", { hint: t("skipHint") });
   const pages = s.processed - s.noText.length;
-  return `Text recognised on ${pages} ${pages === 1 ? "page" : "pages"} (${s.words} ${s.words === 1 ? "word" : "words"}).`;
+  return t("headline", { pages: t("headlinePages", { count: pages }), words: t("headlineWords", { count: s.words }) });
 }
 
 /** The summary line for skipped pages. */
-export function skippedLine(pages: readonly number[]): string {
-  return `Skipped (already had text): ${pages.length === 1 ? "page" : "pages"} ${pages.join(", ")}. ${SKIP_HINT}`;
+export function skippedLine(pages: readonly number[], t: NsT<"ocr">): string {
+  return t("skippedLine", { pages: pageList(pages, t), hint: t("skipHint") });
 }
 
 /** What the page shows while the engine starts: the language data download as a percentage. */
-export function loadingLabel(p: { status: string; progress: number } | null): string {
-  if (p && /language/i.test(p.status)) return `Loading language data ${Math.round(Math.min(1, Math.max(0, p.progress)) * 100)}%`;
-  return "Starting the OCR engine…";
+export function loadingLabel(p: { status: string; progress: number } | null, t: NsT<"ocr">): string {
+  if (p && /language/i.test(p.status)) return t("loadingData", { percent: Math.round(Math.min(1, Math.max(0, p.progress)) * 100) });
+  return t("starting");
 }
 
 /** pdf.js text content items as plain text: items in order, a line break after each end of line. */
@@ -200,11 +204,8 @@ export function fromPipeline(pages: readonly PipelinePage[]): OcrRunResult {
   return r;
 }
 
-export const failedLine = (pages: readonly number[]): string =>
-  `Could not read: ${pages.length === 1 ? "page" : "pages"} ${pages.join(", ")}.`;
+export const failedLine = (pages: readonly number[], t: NsT<"ocr">): string => t("failedLine", { pages: pageList(pages, t) });
 
 /** Pages a second pass left alone because they already had an OCR text layer. */
-export const alreadyOcrLine = (pages: readonly number[]): string =>
-  pages.length === 1
-    ? `Page ${pages[0]} already had an OCR layer and was left as it was.`
-    : `Pages ${pages.join(", ")} already had an OCR layer and were left as they were.`;
+export const alreadyOcrLine = (pages: readonly number[], t: NsT<"ocr">): string =>
+  t("alreadyOcr", { count: pages.length, list: joinList(pages, t("listSep"), t("listLast")) });

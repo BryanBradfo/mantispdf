@@ -12,6 +12,7 @@ import {
 } from "../imageInput";
 import { LIMITS, type Item, type Paint, type Point, type Rect, type Rgb, type Rotation, type StdFont, type TextAlign, type TextItem } from "./model";
 import { SIMPLIFY_TOLERANCE, simplifyStroke } from "./simplify";
+import { normalizeTypographicSpaces } from "../pdfText";
 
 export type EditImageData =
   | { kind: "jpeg"; bytes: Uint8Array }
@@ -116,8 +117,10 @@ export async function buildEditJob(
   for (const item of items) {
     switch (item.kind) {
       case "text": {
-        const { id: _id, font, ...rest } = item;
-        const spec = fonts?.(item) ?? { family: "standard" as const, font: font as StdFont };
+        // Typographic spaces (French typing) become no-break spaces on both paths, before the
+        // font is chosen: they alone never switch a box to Noto.
+        const { id: _id, font, ...rest } = { ...item, text: normalizeTypographicSpaces(item.text) };
+        const spec = fonts?.({ ...item, text: rest.text }) ?? { family: "standard" as const, font: font as StdFont };
         out.push(spec.family === "standard" ? { ...rest, font: spec.font } : { ...rest, font, ...spec });
         break;
       }

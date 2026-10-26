@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePdfWorker } from "../hooks/usePdfWorker";
-import { downloadBlob, errorMessage } from "../lib/fileHelpers";
+import { downloadBlob } from "../lib/fileHelpers";
+import { useLatestRef } from "../hooks/useLatestRef";
 import {
   BudgetError,
   decodeToRgba,
@@ -36,6 +37,7 @@ import PaperSizeFields, { CUSTOM_PAPER, paperToPt, type PaperChoice } from "../c
 import { mmSizeLabel } from "../lib/geometryLayout";
 import { createUploadQueue } from "./uploadQueue";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import { UserError, useDescribeError, useT, type UiError } from "../i18n";
 
 interface ImageItem {
   id: string;
@@ -79,7 +81,9 @@ const ImageCard = memo(function ImageCard({
   onRemove: (id: string) => void;
   locked: boolean;
 }) {
+  const t = useT("imagesToPdf");
   const url = useObjectUrl(item.file);
+  const name = item.file.name;
   return (
     <div
       data-testid="image-card"
@@ -103,8 +107,8 @@ const ImageCard = memo(function ImageCard({
           disabled={locked}
           onClick={() => onRemove(item.id)}
           className="absolute top-2 right-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-gray-400 shadow-sm hover:bg-red-50 hover:text-red-500 dark:bg-[#1a1a1a]/80 dark:text-[#666] dark:hover:text-red-400"
-          title="Remove image"
-          aria-label={`Remove ${item.file.name}`}
+          title={t("removeImage")}
+          aria-label={t("removeNamed", { name })}
         >
           ×
         </button>
@@ -115,16 +119,16 @@ const ImageCard = memo(function ImageCard({
         </p>
       </div>
       <div className="flex border-t border-gray-100 dark:border-[#222]">
-        <button data-no-dnd type="button" className={iconBtn} onClick={() => onMove(index, index - 1)} disabled={locked || index === 0} aria-label={`Move ${item.file.name} earlier`} title="Move earlier">
+        <button data-no-dnd type="button" className={iconBtn} onClick={() => onMove(index, index - 1)} disabled={locked || index === 0} aria-label={t("moveEarlierNamed", { name })} title={t("moveEarlier")}>
           ←
         </button>
-        <button data-no-dnd type="button" className={iconBtn} disabled={locked} onClick={() => onRotate(item.id, -1)} aria-label={`Rotate ${item.file.name} left`} title="Rotate left">
+        <button data-no-dnd type="button" className={iconBtn} disabled={locked} onClick={() => onRotate(item.id, -1)} aria-label={t("rotateLeftNamed", { name })} title={t("rotateLeft")}>
           ↺
         </button>
-        <button data-no-dnd type="button" className={iconBtn} disabled={locked} onClick={() => onRotate(item.id, 1)} aria-label={`Rotate ${item.file.name} right`} title="Rotate right">
+        <button data-no-dnd type="button" className={iconBtn} disabled={locked} onClick={() => onRotate(item.id, 1)} aria-label={t("rotateRightNamed", { name })} title={t("rotateRight")}>
           ↻
         </button>
-        <button data-no-dnd type="button" className={iconBtn} onClick={() => onMove(index, index + 1)} disabled={locked || index === total - 1} aria-label={`Move ${item.file.name} later`} title="Move later">
+        <button data-no-dnd type="button" className={iconBtn} onClick={() => onMove(index, index + 1)} disabled={locked || index === total - 1} aria-label={t("moveLaterNamed", { name })} title={t("moveLater")}>
           →
         </button>
       </div>
@@ -133,10 +137,16 @@ const ImageCard = memo(function ImageCard({
 });
 
 export default function ImagesToPdfPage() {
+  const t = useT("imagesToPdf");
+  const tg = useT("geometry");
+  const describe = useDescribeError();
+  // Read by the upload queue, which is built once: a language switch must not cancel pending uploads.
+  const tRef = useLatestRef(t);
+  const describeRef = useLatestRef(describe);
   const worker = usePdfWorker();
   const [items, setItems] = useState<ImageItem[]>([]);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<UiError | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
   const [paper, setPaper] = useState<Exclude<PaperChoice, "same">>("A4");
   const [fit, setFit] = useState(false);
   const [customMm, setCustomMm] = useState<[number, number]>([210, 297]);
@@ -159,27 +169,26 @@ export default function ImagesToPdfPage() {
     () =>
       createUploadQueue<{ images: ImageItem[]; skipped: number }>({
         onResult: ({ images, skipped }) => {
-          const skippedNote =
-            skipped > 0 ? `${skipped} file${skipped === 1 ? " is" : "s are"} not an image and ${skipped === 1 ? "was" : "were"} skipped.` : "";
+          const skippedNote = skipped > 0 ? tRef.current("skipped", { count: skipped }) : "";
           // The room is computed from the latest list; the note is derived from the same pure result.
           setItems((prev) => {
             const room = Math.max(0, MAX_IMAGES - prev.length);
-            const over = images.length > room ? `Only the first ${MAX_IMAGES} images were kept.` : "";
+            const over = images.length > room ? tRef.current("onlyFirst", { max: MAX_IMAGES }) : "";
             setUploadError([skippedNote, over].filter(Boolean).join(" ") || null);
             return [...prev, ...images.slice(0, room)];
           });
         },
-        onError: (err) => setUploadError(errorMessage(err)),
+        onError: (err) => setUploadError(describeRef.current(err)),
         onPending: () => undefined,
       }),
-    [],
+    [tRef, describeRef],
   );
   useEffect(() => () => queue.cancel(), [queue]);
 
   const handleFiles = useCallback(
     (files: File[]) => {
       if (busyRef.current) {
-        setUploadError("A PDF is being built. Add more images once it is done.");
+        setUploadError(t("busyAdding"));
         return;
       }
       queue.enqueue(async () => {
@@ -196,7 +205,7 @@ export default function ImagesToPdfPage() {
         return { images, skipped };
       });
     },
-    [queue],
+    [queue, t],
   );
 
   const onRotate = useCallback(
@@ -225,10 +234,11 @@ export default function ImagesToPdfPage() {
 
   const pagePt = fit ? "fit" : paperToPt(paper, customMm);
   const problem =
-    imagesProblem(items.length, marginMm) ??
-    (pagePt === null ? "Enter a custom size between 13 and 5080 mm." : marginProblem(marginMm, pagePt));
-  const paperLabel = fit ? "fit to image" : paper === CUSTOM_PAPER ? mmSizeLabel(customMm) : paper;
-  const summary = layoutSummary(items.length, paperLabel, fit ? "auto" : orientation, marginMm);
+    imagesProblem(items.length, marginMm, t) ??
+    (pagePt === null ? t("customSizeHint") : marginProblem(marginMm, pagePt, t));
+  const paperLabel = fit ? t("fitToImage") : paper === CUSTOM_PAPER ? mmSizeLabel(customMm, tg) : paper;
+  const orientationWord = { auto: tg("wordAuto"), portrait: tg("wordPortrait"), landscape: tg("wordLandscape") };
+  const summary = layoutSummary(items.length, paperLabel, orientationWord[fit ? "auto" : orientation], marginMm, t);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -238,8 +248,8 @@ export default function ImagesToPdfPage() {
     const gen = ++genRef.current;
     try {
       // The files alone must fit the engine's input budget: checked before any is read.
-      const sizeProblem = totalSizeProblem(items.map((it) => ({ name: it.file.name, size: it.file.size })));
-      if (sizeProblem) throw new Error(sizeProblem);
+      const sizeProblem = totalSizeProblem(items.map((it) => ({ name: it.file.name, size: it.file.size })), t);
+      if (sizeProblem) throw new UserError(sizeProblem);
       const specs: ImageInputSpec[] = [];
       // Bytes handed to the engine so far: JPEG files plus 4 per decoded pixel.
       let usedBytes = 0;
@@ -247,21 +257,21 @@ export default function ImagesToPdfPage() {
         const it = items[i];
         const name = it.file.name;
         // 1-based, as numbered on the cards.
-        const label = `Image ${i + 1} (${name})`;
-        setPrep({ progress: (i / items.length) * 0.8, message: `Reading image ${i + 1} of ${items.length}…` });
+        const label = t("imageLabel", { n: i + 1, name });
+        setPrep({ progress: (i / items.length) * 0.8, message: t("reading", { n: i + 1, total: items.length }) });
         let passthrough = false;
         if (isJpeg(new Uint8Array(await it.file.slice(0, 3).arrayBuffer()))) {
-          const tooMuch = inputBytesProblem(name, it.file.size, usedBytes);
-          if (tooMuch) throw new Error(tooMuch);
+          const tooMuch = inputBytesProblem(name, it.file.size, usedBytes, t);
+          if (tooMuch) throw new UserError(tooMuch);
           const bytes = new Uint8Array(await it.file.arrayBuffer());
           const frame = readJpegFrame(bytes);
-          const tooBig = frame && pixelBudgetProblem(label, frame.width, frame.height);
-          if (tooBig) throw new Error(tooBig);
+          const tooBig = frame && pixelBudgetProblem(label, frame.width, frame.height, t);
+          if (tooBig) throw new UserError(tooBig);
           // 12-bit, lossless and arithmetic-coded JPEGs are decoded below instead.
           if (jpegPassthrough(bytes)) {
-            const t = composeTransform(orientationToTransform(readExifOrientation(bytes)), it.rotate);
+            const tf = composeTransform(orientationToTransform(readExifOrientation(bytes)), it.rotate);
             usedBytes += bytes.length;
-            specs.push({ kind: "jpeg", bytes, rotate: t.rotate, flipX: t.flipX });
+            specs.push({ kind: "jpeg", bytes, rotate: tf.rotate, flipX: tf.flipX });
             passthrough = true;
           }
         }
@@ -271,26 +281,27 @@ export default function ImagesToPdfPage() {
             // Refused before the pixel buffer is allocated.
             decoded = await decodeToRgba(
               it.file,
-              (w, h) => pixelBudgetProblem(label, w, h) ?? inputBytesProblem(name, w * h * 4, usedBytes),
+              (w, h) => pixelBudgetProblem(label, w, h, t) ?? inputBytesProblem(name, w * h * 4, usedBytes, t),
             );
           } catch (err) {
-            if (err instanceof BudgetError) throw err;
-            throw new Error(`Could not read ${name}: ${errorMessage(err)}`);
+            // A budget refusal carries our own (translated) message.
+            if (err instanceof BudgetError) throw new UserError(err.message);
+            throw new UserError(t("couldNotRead", { name, error: describeRef.current(err).message }));
           }
           const { width, height, pixels } = decoded;
-          const t = composeTransform({ rotate: 0, flipX: false }, it.rotate);
+          const tf = composeTransform({ rotate: 0, flipX: false }, it.rotate);
           usedBytes += pixels.length;
-          specs.push({ kind: "rgba", width, height, pixels, rotate: t.rotate, flipX: t.flipX });
+          specs.push({ kind: "rgba", width, height, pixels, rotate: tf.rotate, flipX: tf.flipX });
         }
         if (gen !== genRef.current) return;
       }
-      setPrep({ progress: 0.9, message: "Building PDF…" });
+      setPrep({ progress: 0.9, message: t("buildingPdf") });
       const layout: ImageLayoutSpec = { page: pagePt, orientation: fit ? "auto" : orientation, margin: mmToPt(marginMm) };
       const out = await worker.imagesToPdf(specs, layout);
       if (gen !== genRef.current) return;
       downloadBlob(out, imagesPdfName(items.map((it) => it.file.name)));
     } catch (err) {
-      if (gen === genRef.current) setError(errorMessage(err));
+      if (gen === genRef.current) setError(describe(err));
     } finally {
       if (gen === genRef.current) setBusy(false);
     }
@@ -298,27 +309,27 @@ export default function ImagesToPdfPage() {
 
   return (
     <ToolShell
-      title="Images to PDF: JPG, PNG, WebP to PDF | MantisPDF"
-      description="Turn images into a PDF, one per page. Reorder, rotate, pick a page size. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/images-to-pdf"
-      heading="Images to PDF"
-      intro="Put JPG, PNG or WebP images on PDF pages. JPEGs are embedded without re-encoding. Everything stays on your device."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       <div className="mt-8">
-        <DropZone multiple onFiles={handleFiles} error={uploadError} accept="image/*" noun="image" hint="JPG, PNG, WebP, GIF, BMP" />
+        <DropZone multiple onFiles={handleFiles} error={uploadError} accept="image/*" kind="image" hint={t("hint")} />
       </div>
 
       {items.length > 0 && (
         <form className={panelClass} onSubmit={(e) => void submit(e)}>
           <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
-            {items.length} image{items.length === 1 ? "" : "s"}. Grab a card to reorder.
+            {t("count", { count: items.length })}
           </p>
           <div className="mt-4">
             <SortableGrid
               items={items}
-              onReorder={(f, t) => { if (!busy) onMove(f, t); }}
+              onReorder={(from, to) => { if (!busy) onMove(from, to); }}
               label={(it) => it.file.name}
               className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3"
               renderItem={(it, index) => (
@@ -331,16 +342,16 @@ export default function ImagesToPdfPage() {
             <PaperSizeFields paper={paper} onPaper={(p) => { if (p !== "same") setPaper(p); }} customMm={customMm} onCustomMm={setCustomMm} fit={fit} onFit={setFit} />
             {!fit && (
               <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-                Orientation
+                {tg("orientation")}
                 <select value={orientation} onChange={(e) => setOrientation(e.target.value as Orientation)} className={inputClass}>
-                  <option value="auto">Auto (match each image)</option>
-                  <option value="portrait">Portrait</option>
-                  <option value="landscape">Landscape</option>
+                  <option value="auto">{t("orientationAuto")}</option>
+                  <option value="portrait">{tg("portrait")}</option>
+                  <option value="landscape">{tg("landscape")}</option>
                 </select>
               </label>
             )}
             <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-              Margin (mm)
+              {tg("margin")}
               <input type="number" min={0} max={200} value={Number.isFinite(marginMm) ? marginMm : ""}
                 onChange={(e) => setMarginMm(e.target.value === "" ? NaN : Number(e.target.value))} className={inputClass} />
             </label>
@@ -351,9 +362,9 @@ export default function ImagesToPdfPage() {
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
             <button type="submit" disabled={busy || problem !== null || !worker.ready} className={`flex-1 ${primaryButton}`}>
-              {busy ? "Building…" : "Create PDF"}
+              {busy ? t("building") : t("create")}
             </button>
-            <button type="button" disabled={busy} onClick={clear} className={secondaryButton}>Clear all</button>
+            <button type="button" disabled={busy} onClick={clear} className={secondaryButton}>{t("clearAll")}</button>
           </div>
         </form>
       )}

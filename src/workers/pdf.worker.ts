@@ -1,6 +1,6 @@
 import { toWasmJob } from "../lib/stampJob";
 import type { ExtractedImage } from "../lib/imageInput";
-import type { ToWorker, FromWorker, ReqId, SuccessPayload } from "../lib/workerProtocol";
+import type { ToWorker, FromWorker, ProgressStep, ReqId, SuccessPayload } from "../lib/workerProtocol";
 // @ts-ignore — resolved by Vite alias, typed via src/wasm.d.ts
 import init, { get_page_count, extract_pages, WasmPdf, merge_pdfs, compress_pdf, rotate_pdf, apply_page_plan, add_watermark, encrypt_pdf, sanitize_pdf, stamp_pdf, edit_pdf, crop_pdf, resize_pdf, nup_pdf, images_to_pdf, extract_images, visible_page_sizes, remove_metadata, read_metadata, set_metadata, unlock_pdf, list_form, fill_form, redact_plan, redact, redact_search, redact_prepare, add_text_layer, FontStore } from "mantis-wasm";
 import { createFontLoader } from "../lib/fonts/loader";
@@ -13,8 +13,8 @@ const fonts = createFontLoader();
 /** The preview font store (font files in wasm memory, by id): see lib/fonts/fontStore.ts. */
 const previewFonts = createFontStoreCache(() => new FontStore(), (file) => fonts.font(file));
 
-function postProgress(id: ReqId, progress: number, message: string) {
-  self.postMessage({ type: "progress", id, progress, message } satisfies FromWorker);
+function postProgress(id: ReqId, progress: number, step: ProgressStep) {
+  self.postMessage({ type: "progress", id, progress, step } satisfies FromWorker);
 }
 
 function postSuccess(id: ReqId, payload: SuccessPayload, transfer: Transferable[] = []) {
@@ -62,27 +62,27 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         }
         ranges.push([start, totalPages]);
 
-        postProgress(msg.id, 0.05, `Splitting into ${ranges.length} parts…`);
+        postProgress(msg.id, 0.05, { step: "splitting", parts: ranges.length });
 
         const parts: { name: string; bytes: Uint8Array }[] = [];
         for (let i = 0; i < ranges.length; i++) {
           const [rangeStart, rangeEnd] = ranges[i];
           const bytes = pdf.extract_range(rangeStart, rangeEnd);
           parts.push({ name: `pages_${rangeStart}-${rangeEnd}.pdf`, bytes });
-          postProgress(msg.id, 0.05 + (0.85 * (i + 1)) / ranges.length, `Extracting part ${i + 1} of ${ranges.length}…`);
+          postProgress(msg.id, 0.05 + (0.85 * (i + 1)) / ranges.length, { step: "extracting", part: i + 1, of: ranges.length });
         }
         pdf.free();
 
-        postProgress(msg.id, 1, "Preparing download…");
+        postProgress(msg.id, 1, { step: "preparing" });
         const transfer = parts.map((p) => p.bytes.buffer as ArrayBuffer);
         postSuccess(msg.id, { kind: "split", parts }, transfer);
         break;
       }
 
       case "merge": {
-        postProgress(msg.id, 0.2, `Merging ${msg.pdfBuffers.length} documents…`);
+        postProgress(msg.id, 0.2, { step: "merging", count: msg.pdfBuffers.length });
         const merged = merge_pdfs(msg.pdfBuffers);
-        postProgress(msg.id, 1, "Done");
+        postProgress(msg.id, 1, { step: "done" });
         postSuccess(msg.id, { kind: "merge", bytes: new Uint8Array(merged) });
         break;
       }

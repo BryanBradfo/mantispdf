@@ -6,8 +6,11 @@ import ErrorAlert from "../components/common/ErrorAlert";
 import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { imagesCleanedNote, sanitizeWarnings } from "./sanitizeNotes";
+import { useT } from "../i18n";
 
 export default function SanitizePdfPage() {
+  const t = useT("sanitize");
+  const tc = useT("common");
   const worker = usePdfWorker();
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker);
   const [keepComments, setKeepComments] = useState(false);
@@ -31,13 +34,13 @@ export default function SanitizePdfPage() {
 
   return (
     <ToolShell
-      title="Sanitize PDF | MantisPDF"
-      description="Strip hidden data from a PDF: metadata, scripts, attachments, form data and hidden content from removed pages. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/sanitize"
-      heading="Sanitize PDF"
-      intro="Strip hidden data from a PDF: metadata, scripts, attachments, form data and hidden content from removed pages."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!input && (
         <div className="mt-8">
@@ -57,28 +60,29 @@ export default function SanitizePdfPage() {
                 setSummary(null);
               }}
             />
-            Keep comments
+            {t("keepComments")}
           </label>
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
             <button onClick={sanitize} disabled={busy} className={`flex-1 ${primaryButton}`}>
-              {busy ? "Sanitizing…" : "Sanitize and download"}
+              {busy ? t("sanitizing") : t("submit")}
             </button>
             <button onClick={() => { reset(); setSummary(null); }} className={secondaryButton}>
-              Choose another file
+              {tc("chooseAnother")}
             </button>
           </div>
           {summary && (
             <ul className="mt-6 space-y-1 text-sm text-gray-700 dark:text-[#aaa]">
-              <li>Fields flattened: {summary.report.fieldsFlattened}</li>
-              <li>Links kept: {summary.report.linksKept}</li>
-              <li>Links removed: {summary.report.linksDropped}</li>
+              <li>{t("fieldsFlattened", { count: summary.report.fieldsFlattened })}</li>
+              <li>{t("linksKept", { count: summary.report.linksKept })}</li>
+              <li>{t("linksRemoved", { count: summary.report.linksDropped })}</li>
               <li>
-                {summary.keptComments ? "Comments kept" : "Comments removed"}:{" "}
-                {summary.keptComments ? summary.report.commentsKept : summary.report.commentsDropped}
+                {summary.keptComments
+                  ? t("commentsKept", { count: summary.report.commentsKept })
+                  : t("commentsRemoved", { count: summary.report.commentsDropped })}
               </li>
-              {imagesCleanedNote(summary.report) && <li>{imagesCleanedNote(summary.report)}</li>}
-              {sanitizeWarnings(summary.report).map((note) => (
+              {imagesCleanedNote(summary.report, t) && <li>{imagesCleanedNote(summary.report, t)}</li>}
+              {sanitizeWarnings(summary.report, t).map((note) => (
                 <li key={note}>{note}</li>
               ))}
             </ul>

@@ -5,6 +5,8 @@
  * font files it gets, in chain order.
  */
 import { unsupportedChars } from "./afm";
+import { normalizeTypographicSpaces } from "../pdfText";
+import type { NsT } from "../../i18n";
 import type { EditFont, NotoFamily, StdFont } from "./model";
 import type { FontEntry, FontManifest } from "../fonts/manifest";
 import { fontChain, selectFonts, type CjkFlavour } from "../fonts/select";
@@ -44,7 +46,8 @@ export type ResolvedFont =
 
 export function resolveFont(font: EditFont, text: string): ResolvedFont {
   if (isNoto(font)) return { kind: "noto", family: font, bold: false, switched: false };
-  if (unsupportedChars(text) === "") return { kind: "standard", font };
+  // Typographic spaces become no-break spaces for the standard fonts (normalizeTypographicSpaces).
+  if (unsupportedChars(normalizeTypographicSpaces(text)) === "") return { kind: "standard", font };
   return { kind: "noto", ...NOTO_FOR[font], switched: true };
 }
 
@@ -83,6 +86,6 @@ export function startsRightToLeft(text: string): boolean {
 }
 
 /** Message for characters no font covers (they would print as empty boxes). */
-export function missingMessage(missing: string): string {
-  return `No font can show these characters: ${missing}`;
+export function missingMessage(missing: string, t: NsT<"common">): string {
+  return t("noFontChars", { chars: missing });
 }

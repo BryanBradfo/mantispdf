@@ -4,6 +4,7 @@
  * at the bottom-left of the page as displayed (CropBox, /Rotate applied), like the stamp engine.
  */
 import type { StdFont } from "../stampJob";
+import type { NsT } from "../../i18n";
 
 export type { StdFont };
 
@@ -211,11 +212,11 @@ export function imagePayloadBytes(fileBytes: number, width: number, height: numb
  * Why `item` (a new item or a duplicate of an existing one) cannot be added to `items`: the item
  * limit, a box without area, or for an image the image budget. Null when it fits.
  */
-export function addError(items: readonly Item[], item: NewItem | Item): string | null {
-  if (items.length >= LIMITS.items) return `A document can hold at most ${LIMITS.items} edits.`;
+export function addError(items: readonly Item[], item: NewItem | Item, t: NsT<"editPdf">): string | null {
+  if (items.length >= LIMITS.items) return t("tooManyEdits", { max: LIMITS.items });
   // Safety net: the engine rejects the whole job for one box without area.
-  if ("rect" in item && !(item.rect[2] > 0 && item.rect[3] > 0)) return "This item has no area, so it was not added.";
-  return item.kind === "image" ? imageBudgetError(items, item.image) : null;
+  if ("rect" in item && !(item.rect[2] > 0 && item.rect[3] > 0)) return t("noArea");
+  return item.kind === "image" ? imageBudgetError(items, item.image, t) : null;
 }
 
 /**
@@ -223,7 +224,7 @@ export function addError(items: readonly Item[], item: NewItem | Item): string |
  * fits. Every placement counts against the image limit (all pages); the bytes of one picked
  * image (one blob, which `buildEditJob` reads once) count once, like the engine.
  */
-export function imageBudgetError(items: readonly Item[], image: ImageSource): string | null {
+export function imageBudgetError(items: readonly Item[], image: ImageSource, t: NsT<"editPdf">): string | null {
   let count = 1;
   const distinct = new Map<Blob, number>([[image.blob, image.bytes]]);
   for (const it of items) {
@@ -233,8 +234,8 @@ export function imageBudgetError(items: readonly Item[], image: ImageSource): st
   }
   let bytes = 0;
   for (const b of distinct.values()) bytes += b;
-  if (count > LIMITS.maxImages) return `A document can hold at most ${LIMITS.maxImages} images.`;
-  if (bytes > LIMITS.maxImageBytes) return "Images can add up to at most 256 MB of image data per document.";
+  if (count > LIMITS.maxImages) return t("tooManyImages", { max: LIMITS.maxImages });
+  if (bytes > LIMITS.maxImageBytes) return t("imageBytes");
   return null;
 }
 

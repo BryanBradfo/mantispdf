@@ -4,6 +4,7 @@
  */
 import type { StdFont } from "../stampJob";
 import { AFM_VMETRICS, AFM_WIDTHS } from "./afmWidths";
+import { normalizeTypographicSpaces } from "../pdfText";
 
 /** WinAnsi 0x80..0x9F: the characters that differ from Latin-1 (0x81, 0x8D, 0x8F, 0x90, 0x9D are undefined). */
 const CP1252_HIGH: ReadonlyMap<number, number> = new Map([
@@ -16,9 +17,13 @@ const CP1252_HIGH: ReadonlyMap<number, number> = new Map([
   [0x0153, 0x9c], [0x017e, 0x9e], [0x0178, 0x9f],
 ]);
 
-/** WinAnsi byte of one character (a code point), or null when the standard fonts cannot show it. */
+/**
+ * WinAnsi byte of one character (a code point), or null when the standard fonts cannot show it.
+ * U+202F and U+2009 count as U+00A0, which is what reaches the engine (`normalizeTypographicSpaces`),
+ * so the preview measures them as the engine draws them.
+ */
 export function winAnsiByte(ch: string): number | null {
-  const cp = ch.codePointAt(0);
+  const cp = normalizeTypographicSpaces(ch).codePointAt(0);
   if (cp === undefined) return null;
   if ((cp >= 0x20 && cp <= 0x7e) || (cp >= 0xa0 && cp <= 0xff)) return cp;
   return CP1252_HIGH.get(cp) ?? null;
@@ -31,7 +36,8 @@ export function winAnsiByte(ch: string): number | null {
  */
 export function unsupportedChars(text: string): string {
   let bad = "";
-  for (const ch of text) {
+  // Typographic spaces are saved as U+00A0 (`normalizeTypographicSpaces`), so they are fine.
+  for (const ch of normalizeTypographicSpaces(text)) {
     if (ch === "\r" || ch === "\n" || ch === "\t") continue;
     if (winAnsiByte(ch) === null && !bad.includes(ch)) bad += ch;
   }

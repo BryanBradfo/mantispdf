@@ -98,11 +98,20 @@ export type SuccessPayload =
   | { kind: "redact-search"; result: RedactSearchResultWire }
   | { kind: "text-layout"; layout: TextLayout };
 
+/** A progress step the worker reports; the UI translates it (`describeProgress`). */
+export type ProgressStep =
+  | { step: "starting" }
+  | { step: "splitting"; parts: number }
+  | { step: "extracting"; part: number; of: number }
+  | { step: "preparing" }
+  | { step: "merging"; count: number }
+  | { step: "done" };
+
 // Worker → Main messages. `init-done`/`init-error` are the one-time handshake;
 // all operation responses carry the originating `id`.
 export type FromWorker =
   | { type: "init-done" }
   | { type: "init-error"; error: string }
-  | { type: "progress"; id: ReqId; progress: number; message: string }
+  | { type: "progress"; id: ReqId; progress: number; step: ProgressStep }
   | { type: "success"; id: ReqId; payload: SuccessPayload }
   | { type: "failure"; id: ReqId; error: string };

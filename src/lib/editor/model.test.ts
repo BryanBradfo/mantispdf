@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { LIMITS, addError, clampWidth, imageBudgetError, imagePayloadBytes, type ImageItem, type ImageSource, type Item } from "./model";
+import { LIMITS, addError as addErrorT, clampWidth, imageBudgetError as imageBudgetErrorT, imagePayloadBytes, type ImageItem, type ImageSource, type Item } from "./model";
+import { tFor } from "../../i18n/testUtils";
+
+const tEn = tFor("editPdf");
+const addError = (items: Parameters<typeof addErrorT>[0], item: Parameters<typeof addErrorT>[1]) => addErrorT(items, item, tEn);
+const imageBudgetError = (items: Parameters<typeof imageBudgetErrorT>[0], source: Parameters<typeof imageBudgetErrorT>[1]) => imageBudgetErrorT(items, source, tEn);
 
 const source = (bytes: number): ImageSource => ({ blob: new Blob([]), width: 10, height: 10, bytes });
 
@@ -100,5 +105,14 @@ describe("addError", () => {
     const items: Item[] = Array.from({ length: LIMITS.maxImages }, (_, i) => image(`i${i}`, 1));
     expect(addError(items, items[0])).toMatch(/200 images/);
     expect(addError(items.slice(1), items[0])).toBeNull();
+  });
+});
+
+describe("editor limits in French", () => {
+  it("reads in French", () => {
+    const t = tFor("editPdf", "fr");
+    expect(addErrorT([], { kind: "whiteout", page: 1, rect: [0, 0, 0, 5] }, t)).toBe(
+      "Cet élément n’a pas de surface, il n’a donc pas été ajouté.",
+    );
   });
 });
