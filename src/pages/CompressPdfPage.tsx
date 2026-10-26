@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, formatBytes, formatNumber, useDescribeError, useLocale, useT, type UiError } from "../i18n";
 import { PageSEO } from "../components/seo/PageSEO";
 import { usePdfWorker } from "../hooks/usePdfWorker";
-import { validatePdfFile, downloadBlob } from "../lib/fileHelpers";
+import { isPdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 
@@ -13,23 +13,21 @@ interface CompressionResult {
   fileName: string;
 }
 
-function formatBytes(n: number): string {
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024).toFixed(0)} KB`;
-}
-
 export default function CompressPdfPage() {
   const worker = usePdfWorker();
+  const t = useT("compress");
+  const tc = useT("common");
+  const locale = useLocale();
+  const describe = useDescribeError();
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [compressError, setCompressError] = useState<string | null>(null);
+  const [compressError, setCompressError] = useState<UiError | null>(null);
   const [result, setResult] = useState<CompressionResult | null>(null);
   const [downloaded, setDownloaded] = useState(false);
 
   const handleFile = useCallback(
     async (file: File) => {
-      const validationError = validatePdfFile(file);
-      if (validationError) {
-        setUploadError(validationError);
+      if (!isPdfFile(file)) {
+        setUploadError(tc("invalidPdf"));
         return;
       }
       setUploadError(null);
@@ -45,10 +43,10 @@ export default function CompressPdfPage() {
           fileName: file.name.replace(/\.pdf$/i, "") + "_compressed.pdf",
         });
       } catch (err) {
-        setCompressError(String(err));
+        setCompressError(describe(err));
       }
     },
-    [worker],
+    [worker, tc, describe],
   );
 
   const handleDownload = useCallback(() => {
@@ -64,16 +62,16 @@ export default function CompressPdfPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <PageSEO
-        title="Compress PDF: Reduce File Size | MantisPDF"
-        description="Reduce PDF file size by compressing images and streams. No upload, no data sent to any server."
+        title={t("seoTitle")}
+        description={t("seoDescription")}
         path="/compress"
       />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">Compress PDF</h1>
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
       <p className="mt-2 text-gray-600 dark:text-[#555]">
-        Reduce file size by downsampling and re-encoding images, stripping metadata, and compressing streams, no upload required.
+        {t("intro")}
       </p>
 
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!result && !worker.compressing && (
         <div className="mt-8">
@@ -84,7 +82,7 @@ export default function CompressPdfPage() {
       {worker.compressing && (
         <div className="mt-12 flex flex-col items-center justify-center gap-4">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
-          <p className="text-gray-500 dark:text-[#555]">Compressing…</p>
+          <p className="text-gray-500 dark:text-[#555]">{t("compressing")}</p>
         </div>
       )}
 
@@ -94,24 +92,28 @@ export default function CompressPdfPage() {
         <div className="mt-8 rounded-xl border border-mantis-200 bg-mantis-50/50 p-6 dark:border-mantis-900 dark:bg-[#0f1a0f]">
           <div className="flex items-center gap-4">
             <div className="flex-1">
-              <p className="text-sm text-gray-500 dark:text-[#555]">Original</p>
+              <p className="text-sm text-gray-500 dark:text-[#555]">{t("original")}</p>
               <p className="text-xl font-semibold text-gray-800 dark:text-[#ccc]">
-                {formatBytes(result.originalSize)}
+                {formatBytes(result.originalSize, locale)}
               </p>
             </div>
             <div className="text-2xl text-mantis-500">→</div>
             <div className="flex-1">
-              <p className="text-sm text-gray-500 dark:text-[#555]">Compressed</p>
+              <p className="text-sm text-gray-500 dark:text-[#555]">{t("compressed")}</p>
               <p className="text-xl font-semibold text-gray-800 dark:text-[#ccc]">
-                {formatBytes(result.compressedSize)}
+                {formatBytes(result.compressedSize, locale)}
               </p>
             </div>
             <div className="rounded-lg bg-mantis-100 px-3 py-2 text-center dark:bg-mantis-900/40">
               <p className="text-2xl font-bold text-mantis-700 dark:text-mantis-400">
-                {savings > 0 ? `-${savings}%` : savings < 0 ? `+${-savings}%` : "~0%"}
+                {savings > 0
+                  ? t("savedLess", { percent: formatNumber(savings / 100, locale, { style: "percent" }) })
+                  : savings < 0
+                    ? t("savedMore", { percent: formatNumber(-savings / 100, locale, { style: "percent" }) })
+                    : t("savedNone")}
               </p>
               <p className="text-xs text-mantis-600 dark:text-mantis-500">
-                {savings > 0 ? "smaller" : savings < 0 ? "larger" : "no change"}
+                {savings > 0 ? t("smaller") : savings < 0 ? t("larger") : t("noChange")}
               </p>
             </div>
           </div>
@@ -121,21 +123,21 @@ export default function CompressPdfPage() {
               onClick={handleDownload}
               className="flex-1 rounded-lg bg-mantis-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-mantis-700 focus:outline-none focus:ring-2 focus:ring-mantis-500 focus:ring-offset-2"
             >
-              Download compressed PDF
+              {t("download")}
             </button>
             {downloaded && (
               <Link
                 to="/"
                 className="rounded-lg border border-mantis-500 px-4 py-2.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
               >
-                ← All tools
+                {tc("allTools")}
               </Link>
             )}
             <button
               onClick={() => { setResult(null); setDownloaded(false); }}
               className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
             >
-              Compress another
+              {t("another")}
             </button>
           </div>
         </div>

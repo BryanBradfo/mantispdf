@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { PlannerItem, PlannerSource } from "../../hooks/usePagePlanner";
 import { thumbnailTransform } from "../../lib/rotationTransform";
 import PageImage from "../common/PageImage";
+import { useT } from "../../i18n";
 
 interface Props {
   item: PlannerItem;
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export default function PlannerCard({ item, source, label, tone = "normal", children }: Props) {
+  const t = useT("pages");
   const border =
     tone === "removed" ? "border-red-400 dark:border-red-700"
     : tone === "picked" ? "border-mantis-500 ring-2 ring-mantis-400/60"
@@ -30,7 +32,7 @@ export default function PlannerCard({ item, source, label, tone = "normal", chil
           </div>
         ) : (
           <div className="absolute inset-3 flex items-center justify-center rounded border border-dashed border-gray-300 bg-white text-xs text-gray-400 dark:border-[#333] dark:bg-[#141414] dark:text-[#555]">
-            Blank page
+            {t("blankPage")}
           </div>
         )}
         {tone === "removed" && (

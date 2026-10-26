@@ -1,5 +1,6 @@
 import { PAPER_SIZES, mmToPt, ptToMm, type PaperName } from "../../lib/geometryJob";
 import { inputClass } from "../../pages/ToolShell";
+import { useT } from "../../i18n";
 
 export const CUSTOM_PAPER = "custom";
 export type PaperChoice = PaperName | typeof CUSTOM_PAPER | "same";
@@ -18,12 +19,13 @@ interface Props {
 
 /** Paper size select plus custom width/height in mm. */
 export default function PaperSizeFields({ paper, onPaper, customMm, onCustomMm, allowSame = false, fit = false, onFit }: Props) {
+  const t = useT("geometry");
   const num = (v: string) => (v === "" ? NaN : Number(v));
   const show = (v: number) => (Number.isFinite(v) ? v : "");
   return (
     <div>
       <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-        Sheet size
+        {t("sheetSize")}
         <select
           value={fit ? "fit" : paper}
           onChange={(e) => {
@@ -32,25 +34,29 @@ export default function PaperSizeFields({ paper, onPaper, customMm, onCustomMm, 
             if (v !== "fit") onPaper(v as PaperChoice);
           }}
           className={inputClass}>
-          {allowSame && <option value="same">Same as first page</option>}
-          {onFit && <option value="fit">Fit to image</option>}
+          {allowSame && <option value="same">{t("sameAsFirst")}</option>}
+          {onFit && <option value="fit">{t("fitToImage")}</option>}
           {(Object.keys(PAPER_SIZES) as PaperName[]).map((name) => (
             <option key={name} value={name}>
-              {name} ({Math.round(ptToMm(PAPER_SIZES[name][0]))} x {Math.round(ptToMm(PAPER_SIZES[name][1]))} mm)
+              {t("paperOption", {
+                name,
+                width: Math.round(ptToMm(PAPER_SIZES[name][0])),
+                height: Math.round(ptToMm(PAPER_SIZES[name][1])),
+              })}
             </option>
           ))}
-          <option value={CUSTOM_PAPER}>Custom…</option>
+          <option value={CUSTOM_PAPER}>{t("custom")}</option>
         </select>
       </label>
       {!fit && paper === CUSTOM_PAPER && (
         <div className="mt-2 flex gap-3">
           <label className="block flex-1 text-sm text-gray-700 dark:text-[#aaa]">
-            Width (mm)
+            {t("width")}
             <input type="number" min={13} max={5080} value={show(customMm[0])}
               onChange={(e) => onCustomMm([num(e.target.value), customMm[1]])} className={inputClass} />
           </label>
           <label className="block flex-1 text-sm text-gray-700 dark:text-[#aaa]">
-            Height (mm)
+            {t("height")}
             <input type="number" min={13} max={5080} value={show(customMm[1])}
               onChange={(e) => onCustomMm([customMm[0], num(e.target.value)])} className={inputClass} />
           </label>

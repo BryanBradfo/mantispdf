@@ -12,14 +12,15 @@ import { mmSizeLabel, resizeLayout, resizeProblem } from "../lib/geometryLayout"
 import { describePages } from "../lib/stampBuilders";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
+import { useT } from "../i18n";
 
-const ORIENTATIONS: { id: Orientation; label: string }[] = [
-  { id: "auto", label: "Auto (follow each page)" },
-  { id: "portrait", label: "Portrait" },
-  { id: "landscape", label: "Landscape" },
-];
+const ORIENTATIONS: readonly Orientation[] = ["auto", "portrait", "landscape"];
 
 export default function ResizePdfPage() {
+  const t = useT("resize");
+  const tg = useT("geometry");
+  const tp = useT("pages");
+  const tc = useT("common");
   const worker = usePdfWorker();
   const { pageSizes } = worker;
   const prepare = useCallback((bytes: Uint8Array) => pageSizes(bytes), [pageSizes]);
@@ -38,7 +39,7 @@ export default function ResizePdfPage() {
   const size = paperToPt(paper === "same" ? "A4" : paper, customMm);
   const margin = mmToPt(marginMm);
 
-  const problem = resizeProblem({ selected: selected.length, size, marginMm });
+  const problem = resizeProblem({ selected: selected.length, size, marginMm }, tg);
 
   const firstPage = selected[0];
   const firstSize = firstPage ? sizes[firstPage - 1] : undefined;
@@ -48,8 +49,16 @@ export default function ResizePdfPage() {
     return l.rect[2] > 0 && l.rect[3] > 0 ? l : null;
   }, [size, firstSize, problem, orientation, mode, margin]);
 
-  const paperLabel = paper === CUSTOM_PAPER ? mmSizeLabel(customMm) : paper;
-  const summary = `${paperLabel} · ${orientation} · ${mode === "fit" ? "Fit" : "Extend"} · margin ${marginMm || 0} mm · ${describePages(selected, total)}`;
+  const paperLabel = paper === CUSTOM_PAPER ? mmSizeLabel(customMm, tg) : paper;
+  const orientationWord = { auto: tg("wordAuto"), portrait: tg("wordPortrait"), landscape: tg("wordLandscape") }[orientation];
+  const summary = t("summary", {
+    paper: paperLabel,
+    orientation: orientationWord,
+    mode: mode === "fit" ? t("fitWord") : t("extendWord"),
+    margin: marginMm || 0,
+    pages: describePages(selected, total, tp),
+  });
+  const orientationLabel = { auto: t("orientationAuto"), portrait: tg("portrait"), landscape: tg("landscape") };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,13 +80,13 @@ export default function ResizePdfPage() {
 
   return (
     <ToolShell
-      title="Resize PDF Pages | MantisPDF"
-      description="Resize PDF pages to A4, Letter or a custom size, scaling the content to fit. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/resize"
-      heading="Resize pages"
-      intro="Change the page size of a PDF and scale the content to fit. Everything stays on your device."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!input && (
         <div className="mt-8">
@@ -87,52 +96,52 @@ export default function ResizePdfPage() {
 
       {input && (
         <form className={panelClass} onSubmit={submit}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name} ({total} pages)</p>
+          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
 
           <div className="mt-4 flex flex-wrap gap-6">
             <div className="min-w-[14rem] flex-1 space-y-4">
               <PaperSizeFields paper={paper} onPaper={setPaper} customMm={customMm} onCustomMm={setCustomMm} />
               <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-                Orientation
+                {tg("orientation")}
                 <select value={orientation} onChange={(e) => setOrientation(e.target.value as Orientation)} className={inputClass}>
-                  {ORIENTATIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  {ORIENTATIONS.map((o) => <option key={o} value={o}>{orientationLabel[o]}</option>)}
                 </select>
               </label>
               <fieldset>
-                <legend className="text-sm text-gray-700 dark:text-[#aaa]">Mode</legend>
+                <legend className="text-sm text-gray-700 dark:text-[#aaa]">{t("mode")}</legend>
                 <div className="mt-1 flex gap-4 text-sm text-gray-700 dark:text-[#aaa]">
                   <label className="flex items-center gap-2">
-                    <input type="radio" name="mode" checked={mode === "fit"} onChange={() => setMode("fit")} /> Fit (scale up or down)
+                    <input type="radio" name="mode" checked={mode === "fit"} onChange={() => setMode("fit")} /> {t("fitOption")}
                   </label>
                   <label className="flex items-center gap-2">
-                    <input type="radio" name="mode" checked={mode === "extend"} onChange={() => setMode("extend")} /> Extend (never enlarge)
+                    <input type="radio" name="mode" checked={mode === "extend"} onChange={() => setMode("extend")} /> {t("extendOption")}
                   </label>
                 </div>
               </fieldset>
               <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-                Margin (mm)
+                {tg("margin")}
                 <input type="number" min={0} max={200} step={1} value={Number.isFinite(marginMm) ? marginMm : ""}
                   onChange={(e) => setMarginMm(e.target.value === "" ? NaN : Number(e.target.value))}
                   className={`${inputClass} max-w-[8rem]`} />
               </label>
             </div>
             <div className="flex flex-col items-center gap-2">
-              <p className="text-sm text-gray-700 dark:text-[#aaa]">Preview{firstPage ? ` (page ${firstPage})` : ""}</p>
+              <p className="text-sm text-gray-700 dark:text-[#aaa]">{firstPage ? t("previewPage", { page: firstPage }) : t("preview")}</p>
               {layout ? (
                 <SheetPreview
                   sheet={layout.sheet}
                   items={[{ rect: layout.rect, page: firstPage }]}
                   source={input.file}
-                  label="One page placed on the target sheet"
+                  label={t("previewLabel")}
                 />
               ) : (
-                <p className="text-xs text-gray-500 dark:text-[#888]">Fix the settings to see a preview.</p>
+                <p className="text-xs text-gray-500 dark:text-[#888]">{tg("fixSettings")}</p>
               )}
             </div>
           </div>
 
           <div className="mt-4">
-            <RangeInput label="Pages to resize" total={total} selectedPages={selected} onPages={setPages} />
+            <RangeInput label={t("rangeLabel")} total={total} selectedPages={selected} onPages={setPages} />
           </div>
 
           <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
@@ -141,9 +150,9 @@ export default function ResizePdfPage() {
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
             <button type="submit" disabled={busy || problem !== null} className={`flex-1 ${primaryButton}`}>
-              {busy ? "Resizing…" : "Resize and download"}
+              {busy ? t("resizing") : t("submit")}
             </button>
-            <button type="button" onClick={clear} className={secondaryButton}>Choose another file</button>
+            <button type="button" onClick={clear} className={secondaryButton}>{tc("chooseAnother")}</button>
           </div>
         </form>
       )}

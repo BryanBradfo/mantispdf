@@ -1,3 +1,4 @@
+import { normalizeTypographicSpaces } from "./pdfText";
 export type StdFont = "Helvetica" | "Helvetica-Bold" | "Times-Roman" | "Courier";
 export type Anchor =
   | "top-left"
@@ -64,5 +65,9 @@ export function resolveEngineTokens(template: string, n: number, total: number):
 /** Shape sent to the WASM binding: a plain object copy so optional `bates` is simply absent. */
 export function toWasmJob(job: StampJobSpec): StampJobSpec {
   const { bates, ...rest } = job;
-  return bates ? { ...rest, bates } : rest;
+  const texts = rest.texts.map((t) => ({ ...t, template: normalizeTypographicSpaces(t.template) }));
+  const out = { ...rest, texts };
+  return bates
+    ? { ...out, bates: { ...bates, prefix: normalizeTypographicSpaces(bates.prefix), suffix: normalizeTypographicSpaces(bates.suffix) } }
+    : out;
 }

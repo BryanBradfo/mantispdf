@@ -14,25 +14,37 @@ import {
   describePages,
   describeStyle,
   previewHeaderFooter,
-  todayIso,
+  slotLabel,
+  stampDate,
   type HeaderFooterSlots,
   type TextStyle,
 } from "../lib/stampBuilders";
 import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
 import { baseName, usePdfInput } from "./usePdfInput";
+import { useLocale, useT } from "../i18n";
 
-const INITIAL_SLOTS: HeaderFooterSlots = {
+/** Empty slots; the footer center gets "Page {n} of {total}" in the UI language. */
+const EMPTY_SLOTS: HeaderFooterSlots = {
   "top-left": "", "top-center": "", "top-right": "",
-  "bottom-left": "", "bottom-center": "Page {n} of {total}", "bottom-right": "",
+  "bottom-left": "", "bottom-center": "", "bottom-right": "",
 };
 
 export default function HeaderFooterPage() {
+  const t = useT("headerFooter");
+  const ts = useT("stamp");
+  const tp = useT("pages");
+  const tg = useT("geometry");
+  const tc = useT("common");
+  const locale = useLocale();
   const worker = usePdfWorker();
   const { countPages } = worker;
   const prepare = useCallback((bytes: Uint8Array) => countPages(bytes), [countPages]);
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker, prepare);
 
-  const [slots, setSlots] = useState<HeaderFooterSlots>(INITIAL_SLOTS);
+  const [slots, setSlots] = useState<HeaderFooterSlots>(() => ({
+    ...EMPTY_SLOTS,
+    "bottom-center": ts("templatePageOf", { n: "{n}", total: "{total}" }),
+  }));
   const [style, setStyle] = useState<TextStyle>(DEFAULT_STYLE);
   const [margin, setMargin] = useState(DEFAULT_MARGIN);
   const [numberStart, setNumberStart] = useState(1);
@@ -43,17 +55,22 @@ export default function HeaderFooterPage() {
   const filled = HEADER_FOOTER_SLOTS.filter((s) => slots[s.anchor].trim() !== "");
 
   const problem =
-    filled.length === 0 ? "Fill in at least one header or footer field."
-    : selected.length === 0 ? "Select at least one page."
-    : !Number.isInteger(numberStart) || numberStart < 0 ? "First number must be a whole number, 0 or more."
-    : !(style.size >= 6 && style.size <= 72) ? "Size must be between 6 and 72 pt."
-    : !(margin >= 0 && margin <= 300) ? "Margin must be between 0 and 300 pt."
+    filled.length === 0 ? t("needText")
+    : selected.length === 0 ? tg("selectAtLeastOne")
+    : !Number.isInteger(numberStart) || numberStart < 0 ? ts("firstNumberRange")
+    : !(style.size >= 6 && style.size <= 72) ? ts("sizeRange")
+    : !(margin >= 0 && margin <= 300) ? ts("marginRange")
     : null;
 
-  const ctx = { total, pages: selected, filename: input ? baseName(input.file) : "", date: todayIso() };
-  const preview = previewHeaderFooter(slots, Number.isFinite(numberStart) ? numberStart : 1, ctx);
+  const ctx = { total, pages: selected, filename: input ? baseName(input.file) : "", date: stampDate(locale) };
+  const preview = previewHeaderFooter(slots, Number.isFinite(numberStart) ? numberStart : 1, ctx, ts);
   const firstPage = selected.length > 0 ? selected.reduce((a, b) => Math.min(a, b)) : null;
-  const summary = `${filled.length} text${filled.length === 1 ? "" : "s"} (${filled.map((s) => s.label.toLowerCase()).join(", ") || "none"}) · ${describePages(selected, total)} · ${describeStyle(style)}`;
+  const summary = t("summary", {
+    count: filled.length,
+    slots: filled.map((s) => slotLabel(s.anchor, ts).toLocaleLowerCase(locale)).join(", ") || t("none"),
+    pages: describePages(selected, total, tp),
+    style: describeStyle(style, ts),
+  });
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,13 +87,13 @@ export default function HeaderFooterPage() {
 
   return (
     <ToolShell
-      title="Add Header and Footer to PDF | MantisPDF"
-      description="Add a header and footer to every page of a PDF, with page numbers, date and file name. Free, private, nothing is uploaded."
+      title={t("seoTitle")}
+      description={t("seoDescription")}
       path="/header-footer"
-      heading="Header and footer"
-      intro="Add text at the top and bottom of your pages. Everything stays on your device."
+      heading={t("heading")}
+      intro={t("intro")}
     >
-      <ErrorAlert error={worker.initError ? `WASM engine failed to load: ${worker.initError}` : null} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-4" />
 
       {!input && (
         <div className="mt-8">
@@ -86,12 +103,12 @@ export default function HeaderFooterPage() {
 
       {input && (
         <form className={panelClass} onSubmit={submit}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name} ({total} pages)</p>
+          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {HEADER_FOOTER_SLOTS.map((s) => (
               <label key={s.anchor} className="block text-sm text-gray-700 dark:text-[#aaa]">
-                {s.label}
+                {slotLabel(s.anchor, ts)}
                 <input
                   value={slots[s.anchor]}
                   onChange={(e) => setSlots({ ...slots, [s.anchor]: e.target.value })}
@@ -101,16 +118,15 @@ export default function HeaderFooterPage() {
             ))}
           </div>
           <p className="mt-2 text-xs text-gray-500 dark:text-[#555]">
-            Tokens: {"{n}"} number (counts from the first selected page, starting at First number), {"{total}"} number
-            printed on the last selected page, {"{date}"}, {"{filename}"}
+            {t("tokens", { n: "{n}", total: "{total}", date: "{date}", filename: "{filename}" })}
           </p>
 
           <div className="mt-4 flex flex-wrap items-start gap-4">
             <div className="min-w-[12rem] flex-1">
-              <RangeInput label="Pages" total={total} selectedPages={selected} onPages={setPages} />
+              <RangeInput label={t("pages")} total={total} selectedPages={selected} onPages={setPages} />
             </div>
             <label className="block text-sm text-gray-700 dark:text-[#aaa]">
-              First number
+              {ts("firstNumber")}
               <input
                 type="number"
                 min={0}
@@ -124,11 +140,12 @@ export default function HeaderFooterPage() {
 
           {firstPage !== null && preview.length > 0 && (
             <div className="mt-4 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:bg-[#141414] dark:text-[#aaa]" data-testid="hf-preview">
-              <p className="font-medium">On page {firstPage}:</p>
+              <p className="font-medium">{t("onPage", { page: firstPage })}</p>
               <ul className="mt-1 space-y-0.5">
                 {preview.map((p) => (
                   <li key={p.label}>
-                    {p.label}: <span className="font-mono">{p.text === "" ? "(empty)" : p.text}</span>
+                    {t("slotPreview", { label: p.label })}
+                    <span className="font-mono">{p.text === "" ? t("empty") : p.text}</span>
                   </li>
                 ))}
               </ul>
@@ -138,7 +155,7 @@ export default function HeaderFooterPage() {
           <div className="mt-4"><TextStyleFields value={style} onChange={setStyle} /></div>
 
           <label className="mt-4 block text-sm text-gray-700 dark:text-[#aaa]">
-            Margin from the edge (pt)
+            {ts("marginFromEdge")}
             <input
               type="number"
               min={0}
@@ -155,9 +172,9 @@ export default function HeaderFooterPage() {
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6 flex gap-3">
             <button type="submit" disabled={busy || problem !== null} className={`flex-1 ${primaryButton}`}>
-              {busy ? "Stamping…" : "Add and download"}
+              {busy ? t("stamping") : t("submit")}
             </button>
-            <button type="button" onClick={clear} className={secondaryButton}>Choose another file</button>
+            <button type="button" onClick={clear} className={secondaryButton}>{tc("chooseAnother")}</button>
           </div>
         </form>
       )}

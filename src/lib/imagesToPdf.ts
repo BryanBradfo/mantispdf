@@ -1,5 +1,6 @@
 import { mmToPt } from "./geometryJob";
 import type { OrientationTransform } from "./imageInput";
+import type { NsT } from "../i18n";
 
 /**
  * Engine budgets, mirroring crates/mantis-wasm/src/images/to_pdf.rs (a unit
@@ -29,25 +30,26 @@ export function turn(rotate: Quarter, dir: -1 | 1): Quarter {
 }
 
 /** Why the settings cannot be used, or null. */
-export function imagesProblem(count: number, marginMm: number): string | null {
-  if (count > MAX_IMAGES) return `Too many images: the limit is ${MAX_IMAGES} per PDF.`;
+export function imagesProblem(count: number, marginMm: number, t: NsT<"imagesToPdf">): string | null {
+  if (count > MAX_IMAGES) return t("tooMany", { max: MAX_IMAGES });
   if (!Number.isFinite(marginMm) || marginMm < 0 || marginMm > MAX_MARGIN_MM) {
-    return `Margin must be between 0 and ${MAX_MARGIN_MM} mm.`;
+    return t("marginRange", { max: MAX_MARGIN_MM });
   }
   return null;
 }
 
 /** Error text when the margins leave nothing of the paper (the engine needs 2 x margin < the short side), else null. */
-export function marginProblem(marginMm: number, page: "fit" | [number, number] | null): string | null {
+export function marginProblem(marginMm: number, page: "fit" | [number, number] | null, t: NsT<"imagesToPdf">): string | null {
   if (page === "fit" || page === null || !Number.isFinite(marginMm)) return null;
   const short = Math.min(page[0], page[1]);
   if (2 * mmToPt(marginMm) < short) return null;
-  return `Margin is too large for this page size: keep it under ${Math.floor(short / mmToPt(2))} mm.`;
+  return t("marginTooLarge", { max: Math.floor(short / mmToPt(2)) });
 }
 
-export function layoutSummary(count: number, paperLabel: string, orientation: string, marginMm: number): string {
+/** `orientation` is the already translated word ("auto", "portrait", ...). */
+export function layoutSummary(count: number, paperLabel: string, orientation: string, marginMm: number, t: NsT<"imagesToPdf">): string {
   const margin = Number.isFinite(marginMm) ? marginMm : 0;
-  return `${count} image${count === 1 ? "" : "s"} · ${count} page${count === 1 ? "" : "s"} · ${paperLabel} · ${orientation} · margin ${margin} mm`;
+  return t("summary", { count, paper: paperLabel, orientation, margin });
 }
 
 /** Download name: `<name>.pdf` for one image, else `images.pdf`. */
@@ -58,24 +60,24 @@ export function imagesPdfName(names: string[]): string {
 }
 
 /** Error text if one image has more pixels than the per-image limit, else null. */
-export function pixelBudgetProblem(name: string, width: number, height: number): string | null {
+export function pixelBudgetProblem(name: string, width: number, height: number, t: NsT<"imagesToPdf">): string | null {
   if (width * height > MAX_IMAGE_PIXELS) {
-    return `${name} is too large (${width} x ${height}); the limit is ${MAX_IMAGE_PIXELS / 1_000_000} megapixels per image.`;
+    return t("tooLarge", { name, width, height, max: MAX_IMAGE_PIXELS / 1_000_000 });
   }
   return null;
 }
 
 /** Error text if `bytes` more input (file bytes for a JPEG, 4 per pixel otherwise) breaks the job budget, else null. */
-export function inputBytesProblem(name: string, bytes: number, usedSoFar: number): string | null {
+export function inputBytesProblem(name: string, bytes: number, usedSoFar: number, t: NsT<"imagesToPdf">): string | null {
   if (usedSoFar + bytes <= MAX_INPUT_BYTES) return null;
-  return `Adding ${name} brings the images to ${Math.ceil((usedSoFar + bytes) / MIB)} MB; the limit is ${MAX_INPUT_BYTES / MIB} MB per PDF (images other than JPEG count at 4 bytes per pixel). Remove some images or make several PDFs.`;
+  return t("overBudget", { name, total: Math.ceil((usedSoFar + bytes) / MIB), max: MAX_INPUT_BYTES / MIB });
 }
 
 /** Checked before any file is read: the files alone must fit the input budget. */
-export function totalSizeProblem(files: { name: string; size: number }[]): string | null {
+export function totalSizeProblem(files: { name: string; size: number }[], t: NsT<"imagesToPdf">): string | null {
   let used = 0;
   for (const f of files) {
-    const problem = inputBytesProblem(f.name, f.size, used);
+    const problem = inputBytesProblem(f.name, f.size, used, t);
     if (problem) return problem;
     used += f.size;
   }

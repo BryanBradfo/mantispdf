@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createBatesTokens, batesRanges, describeBatesRange, formatBates } from "./bates";
+import { tFor } from "../i18n/testUtils";
+
+const tBates = tFor("bates");
 
 describe("bates", () => {
   it("formats with padding", () => {
@@ -11,17 +14,17 @@ describe("bates", () => {
     const r = batesRanges([10, 20, 7], 1, 6, "ACME-", "");
     expect(r.map((x) => x.start)).toEqual([1, 11, 31]);
     expect(r[2].last).toBe("ACME-000037");
-    expect(describeBatesRange(r)).toBe("ACME-000001 to ACME-000037");
+    expect(describeBatesRange(r, tBates)).toBe("ACME-000001 to ACME-000037");
   });
 
   it("handles empty prefix, custom start and a single page", () => {
     const r = batesRanges([1], 42, 4, "", "");
-    expect(describeBatesRange(r)).toBe("0042");
+    expect(describeBatesRange(r, tBates)).toBe("0042");
   });
 
   it("returns null with no pages", () => {
-    expect(describeBatesRange(batesRanges([], 1, 6, "", ""))).toBeNull();
-    expect(describeBatesRange(batesRanges([0], 1, 6, "", ""))).toBeNull();
+    expect(describeBatesRange(batesRanges([], 1, 6, "", ""), tBates)).toBeNull();
+    expect(describeBatesRange(batesRanges([0], 1, 6, "", ""), tBates)).toBeNull();
   });
 
   it("keeps a running job current when files are added, until invalidateAll", () => {
@@ -34,5 +37,11 @@ describe("bates", () => {
     expect(run()).toBe(true);
     t.invalidateAll();
     expect(run()).toBe(false);
+  });
+});
+
+describe("describeBatesRange in French", () => {
+  it("joins the first and last numbers in French", () => {
+    expect(describeBatesRange(batesRanges([37], 1, 6, "ACME-", ""), tFor("bates", "fr"))).toBe("de ACME-000001 à ACME-000037");
   });
 });

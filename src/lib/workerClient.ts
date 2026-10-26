@@ -1,4 +1,4 @@
-import type { FromWorker, ReqId, SuccessPayload, ToWorker } from "./workerProtocol";
+import type { FromWorker, ReqId, SuccessPayload, ToWorker, ProgressStep } from "./workerProtocol";
 
 type Pending = {
   resolve: (payload: SuccessPayload) => void;
@@ -7,7 +7,7 @@ type Pending = {
 
 export interface RequestOptions {
   transfer?: Transferable[];
-  onProgress?: (progress: number, message: string) => void;
+  onProgress?: (progress: number, step: ProgressStep) => void;
 }
 
 /**
@@ -25,7 +25,7 @@ export interface RequestOptions {
  */
 export class PdfWorkerClient {
   private readonly pending = new Map<ReqId, Pending>();
-  private readonly progressHandlers = new Map<ReqId, (progress: number, message: string) => void>();
+  private readonly progressHandlers = new Map<ReqId, (progress: number, step: ProgressStep) => void>();
   private nextId = 1;
 
   constructor(private readonly post: (msg: ToWorker, transfer?: Transferable[]) => void) {}
@@ -68,7 +68,7 @@ export class PdfWorkerClient {
   handleMessage(msg: FromWorker): void {
     switch (msg.type) {
       case "progress":
-        this.progressHandlers.get(msg.id)?.(msg.progress, msg.message);
+        this.progressHandlers.get(msg.id)?.(msg.progress, msg.step);
         break;
       case "success": {
         const entry = this.pending.get(msg.id);

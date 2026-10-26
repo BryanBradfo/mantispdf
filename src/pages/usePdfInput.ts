@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { errorMessage, readFileAsUint8Array, validatePdfFile } from "../lib/fileHelpers";
+import { isPdfFile, readFileAsUint8Array } from "../lib/fileHelpers";
+import { useDescribeError, useT, type UiError } from "../i18n";
 import { createLatest } from "../lib/latest";
 
 interface EngineState { ready: boolean; initError: string | null }
@@ -22,7 +23,9 @@ export function baseName(file: File): string {
  */
 export function usePdfInput<T = undefined>(worker: EngineState, prepare?: (bytes: Uint8Array) => Promise<T>) {
   const [input, setInput] = useState<PdfInput<T> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const t = useT("common");
+  const describe = useDescribeError();
+  const [error, setError] = useState<UiError | null>(null);
   const [busy, setBusy] = useState(false);
   const latest = useMemo(createLatest, []);
 
@@ -31,10 +34,9 @@ export function usePdfInput<T = undefined>(worker: EngineState, prepare?: (bytes
       const current = latest.begin();
       setBusy(false);
       setInput(null);
-      const invalid = validatePdfFile(file);
-      if (invalid) return setError(invalid);
-      if (worker.initError) return setError("PDF engine failed to load. Please reload the page.");
-      if (!worker.ready) return setError("Engine is still loading, please wait a moment.");
+      if (!isPdfFile(file)) return setError(t("invalidPdf"));
+      if (worker.initError) return setError(t("engineFailedReload"));
+      if (!worker.ready) return setError(t("engineLoading"));
       try {
         const bytes = await readFileAsUint8Array(file);
         const data = (prepare ? await prepare(bytes) : undefined) as T;
@@ -42,10 +44,10 @@ export function usePdfInput<T = undefined>(worker: EngineState, prepare?: (bytes
         setError(null);
         setInput({ file, bytes, data });
       } catch (err) {
-        if (current()) setError(errorMessage(err));
+        if (current()) setError(describe(err));
       }
     },
-    [worker.ready, worker.initError, prepare, latest],
+    [worker.ready, worker.initError, prepare, latest, t, describe],
   );
 
   const reset = useCallback(() => {
@@ -67,12 +69,12 @@ export function usePdfInput<T = undefined>(worker: EngineState, prepare?: (bytes
         const result = await work();
         if (current()) done(result);
       } catch (err) {
-        if (current()) setError(errorMessage(err));
+        if (current()) setError(describe(err));
       } finally {
         if (current()) setBusy(false);
       }
     },
-    [latest],
+    [latest, describe],
   );
 
   return { input, error, setError, busy, pick, reset, update, run };

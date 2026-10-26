@@ -1,22 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { FormField, FormValue } from "./model";
-import {
-  FORM_LIMITS,
-  blockingProblem,
-  choiceOptions,
-  comboValueFor,
-  isEmpty,
-  missingRequired,
-  radioLabel,
-  shownText,
-  lengthLimit,
-  lengthWarning,
-  namesOf,
-  selection,
-  textOf,
-  toggled,
-  unsupportedIn,
-} from "./values";
+import { FORM_LIMITS, blockingProblem as blockingProblemT, choiceOptions, comboValueFor, isEmpty, missingRequired, radioLabel as radioLabelT, shownText, lengthLimit, lengthWarning as lengthWarningT, namesOf, selection, textOf, toggled, unsupportedIn } from "./values";
+import { tFor } from "../../i18n/testUtils";
+
+const tEn = tFor("fillForm");
+const lengthWarning = (f: Parameters<typeof lengthWarningT>[0], v: Parameters<typeof lengthWarningT>[1]) => lengthWarningT(f, v, tEn);
+const radioLabel = (f: Parameters<typeof radioLabelT>[0], s: string) => radioLabelT(f, s, tEn);
+const blockingProblem = (f: Parameters<typeof blockingProblemT>[0], s: Parameters<typeof blockingProblemT>[1]) => blockingProblemT(f, s, tEn);
 
 function field(extra: Partial<FormField> = {}): FormField {
   return {
@@ -223,3 +213,11 @@ describe("download checks", () => {
   });
 });
 
+describe("form messages in French", () => {
+  it("reads in French", () => {
+    const t = tFor("fillForm", "fr");
+    expect(lengthWarningT(field({ kind: { kind: "text", multiline: false, password: false, comb: false, maxLen: 3 } }), text("abcd"), t)).toBe(
+      "Cette valeur dépasse la longueur autorisée par le champ (3\u00a0caractères).",
+    );
+  });
+});

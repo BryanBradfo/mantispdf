@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useT } from "../../i18n";
 
 interface ToolCardProps {
   title: string;
@@ -9,6 +9,7 @@ interface ToolCardProps {
 }
 
 export default function ToolCard({ title, description, href, icon, available }: ToolCardProps) {
+  const t = useT("home");
   const card = (
     <div
       className={`flex h-full flex-col rounded-xl border p-6 transition duration-150 ${
@@ -24,7 +25,7 @@ export default function ToolCard({ title, description, href, icon, available }: 
       <p className="mt-1 flex-grow text-sm text-gray-500 dark:text-[#555]">{description}</p>
       {!available && (
         <span className="mt-3 inline-block rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-[#1a1a1a] dark:text-[#444]">
-          Coming Soon
+          {t("comingSoon")}
         </span>
       )}
     </div>

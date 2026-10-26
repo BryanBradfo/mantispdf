@@ -1,8 +1,6 @@
-export function validatePdfFile(file: File): string | null {
-  if (file.type !== "application/pdf") {
-    return "Please upload a PDF file.";
-  }
-  return null;
+/** True for a file the browser reports as a PDF. */
+export function isPdfFile(file: File): boolean {
+  return file.type === "application/pdf";
 }
 
 export function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
@@ -47,9 +45,4 @@ export function downloadBlob(bytes: Uint8Array, fileName: string) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-/** User-facing text for a caught value: an Error's message (no "Error: " prefix), else its string form. */
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

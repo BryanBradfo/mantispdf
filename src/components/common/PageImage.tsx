@@ -1,5 +1,6 @@
 import { useRef, type CSSProperties } from "react";
 import { useThumbnail, type RenderMode } from "../../lib/thumbnails";
+import { useT } from "../../i18n";
 
 interface PageImageProps {
   source: Blob | Uint8Array;
@@ -13,6 +14,7 @@ interface PageImageProps {
 }
 
 export default function PageImage({ source, page, width, alt, imgStyle, className = "", mode = "full" }: PageImageProps) {
+  const t = useT("common");
   const ref = useRef<HTMLDivElement>(null);
   const thumb = useThumbnail(source, page, width, ref, mode);
 
@@ -34,12 +36,12 @@ export default function PageImage({ source, page, width, alt, imgStyle, classNam
       {thumb.status === "loading" && (
         <div
           role="status"
-          aria-label="Loading preview"
+          aria-label={t("previewLoading")}
           className="h-6 w-6 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent motion-reduce:animate-none"
         />
       )}
       {thumb.status === "error" && (
-        <svg viewBox="0 0 80 100" className="h-20 w-16 drop-shadow-sm" fill="none" role="img" aria-label="Preview unavailable">
+        <svg viewBox="0 0 80 100" className="h-20 w-16 drop-shadow-sm" fill="none" role="img" aria-label={t("previewUnavailable")}>
           <path d="M4 4 H58 L76 22 V96 H4 Z" fill="white" stroke="#e5e7eb" strokeWidth="1.5" className="dark:fill-[#1e1e1e] dark:stroke-[#333]" />
           <path d="M58 4 L58 22 L76 22" fill="#f3f4f6" stroke="#e5e7eb" strokeWidth="1.5" className="dark:fill-[#2a2a2a] dark:stroke-[#333]" />
           <line x1="14" y1="38" x2="66" y2="38" stroke="#d1d5db" strokeWidth="2.5" strokeLinecap="round" className="dark:stroke-[#333]" />

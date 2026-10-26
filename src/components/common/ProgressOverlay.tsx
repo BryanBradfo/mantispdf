@@ -1,13 +1,17 @@
 import { useEffect, useRef } from "react";
+import { formatNumber, useLocale, useT, type UiError } from "../../i18n";
+import ErrorText from "./ErrorText";
 
 interface ProgressOverlayProps {
   progress: number;
   message: string;
-  error: string | null;
+  error: UiError | null;
   onDismissError: () => void;
 }
 
 export default function ProgressOverlay({ progress, message, error, onDismissError }: ProgressOverlayProps) {
+  const t = useT("common");
+  const locale = useLocale();
   const dismissRef = useRef<HTMLButtonElement>(null);
 
   // When an error is shown, move focus to the Dismiss button and let Escape
@@ -26,21 +30,21 @@ export default function ProgressOverlay({ progress, message, error, onDismissErr
     <div
       role={error ? "alertdialog" : "dialog"}
       aria-modal="true"
-      aria-label={error ? "Error" : "Processing"}
+      aria-label={error ? t("progressError") : t("progressProcessing")}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60"
     >
       <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl dark:bg-[#141414] dark:shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
         {error ? (
           <>
-            <p className="mb-4 text-sm font-medium text-red-600 dark:text-red-400" aria-live="assertive">
-              {error}
-            </p>
+            <div className="mb-4 text-sm font-medium text-red-600 dark:text-red-400" aria-live="assertive">
+              <ErrorText error={error} />
+            </div>
             <button
               ref={dismissRef}
               onClick={onDismissError}
               className="w-full rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-[#1a1a1a] dark:text-[#aaa] dark:hover:bg-[#222]"
             >
-              Dismiss
+              {t("dismiss")}
             </button>
           </>
         ) : (
@@ -57,7 +61,7 @@ export default function ProgressOverlay({ progress, message, error, onDismissErr
               )}
             </div>
             <p className="mt-2 text-right text-xs text-gray-400 dark:text-[#555]">
-              {progress < 0.1 ? "Working…" : `${Math.round(progress * 100)}%`}
+              {progress < 0.1 ? t("progressWorking") : formatNumber(Math.round(progress * 100) / 100, locale, { style: "percent" })}
             </p>
           </>
         )}

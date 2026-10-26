@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../i18n";
 import { cssFont } from "../editor/svgStyle";
 import { PADDING, overflows, textFontSize, widgetFrame } from "../../lib/forms/layout";
 import { NO_VALUE, type FormField, type FormValue, type FormWidget } from "../../lib/forms/model";
@@ -17,9 +17,8 @@ import {
   toggled,
   unsupportedIn,
 } from "../../lib/forms/values";
+import { useT } from "../../i18n";
 
-/** Tooltip of a value the engine's appearance would cut off. */
-export const OVERFLOW_NOTE = "Too long for this field: the PDF will cut it off";
 
 /** Courier New's advance width, in em. */
 const MONO_ADVANCE = 0.6;
@@ -51,6 +50,7 @@ const controlClass = `h-full w-full rounded-none ${frameClass} text-gray-900 out
  * with the widget (/MK /R and page rotation), the text in the field's font size.
  */
 export default function FieldControl({ field, widget, index, value, onChange, scale, box }: OverlayProps) {
+  const t = useT("fillForm");
   const { width, height } = widgetFrame(widget);
   const fw = width * scale;
   const fh = height * scale;
@@ -67,7 +67,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
   const label = field.label || field.name;
   const kind = field.kind;
   const bad = unsupportedIn(field, value) !== "";
-  const tooLong = lengthWarning(field, value);
+  const tooLong = lengthWarning(field, value, t);
   // A password's text is not drawn in the file (Acrobat behaviour), so it cannot overflow.
   const over =
     (kind.kind === "combo" || (kind.kind === "text" && !kind.password)) && overflows(kind, widget, shownText(field, value));
@@ -82,13 +82,13 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
         ? " !border-red-500"
         : "";
   const title = bad
-    ? `${label}: characters the PDF fonts cannot save`
+    ? t("labelCannotSave", { label })
     : tooLong
-      ? `${label}: ${tooLong}`
+      ? t("labelProblem", { label, problem: tooLong })
       : over
-        ? `${label}: ${OVERFLOW_NOTE}`
+        ? t("labelProblem", { label, problem: t("overflow") })
         : missing
-          ? `${label} (required)`
+          ? t("labelRequired", { label })
           : label;
   // Lets the page move focus to a field (required-field check, Tab across pages).
   const focusTarget = { "data-field-control": field.id };
@@ -102,8 +102,8 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
       <div
         style={frame}
         role="note"
-        aria-label={`${label} (read-only)${shown ? `: ${shown}` : ""}`}
-        title={`${label} (read-only)`}
+        aria-label={shown ? t("labelReadOnlyValue", { label, value: shown }) : t("labelReadOnly", { label })}
+        title={t("labelReadOnly", { label })}
         className="border border-dashed border-gray-400/80"
       />
     );
@@ -204,7 +204,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
           <input
             {...focusTarget}
             type={kind.kind}
-            aria-label={radio ? `${label}: ${radioLabel(field, state)}` : label}
+            aria-label={radio ? t("labelOption", { label, option: radioLabel(field, state, t) }) : label}
             aria-required={field.required || undefined}
             checked={checked}
             disabled={disabled}
@@ -311,10 +311,10 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
             to="/sign"
             target="_blank"
             rel="noopener"
-            title="Download the filled form, then sign it with Sign PDF."
+            title={t("signTitle")}
             className="px-1 text-[11px] font-medium leading-tight text-sky-800 underline"
           >
-            Sign PDF (new tab)
+            {t("signNewTab")}
           </Link>
         </div>
       );

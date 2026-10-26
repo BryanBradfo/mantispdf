@@ -1,15 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { errorMessage, validatePdfFile, readFileAsArrayBuffer, readFileAsUint8Array } from "./fileHelpers";
+import { isPdfFile, readFileAsArrayBuffer, readFileAsUint8Array } from "./fileHelpers";
 
-describe("validatePdfFile", () => {
+describe("isPdfFile", () => {
   it("accepts a PDF file", () => {
     const file = new File([new Uint8Array([1, 2, 3])], "doc.pdf", { type: "application/pdf" });
-    expect(validatePdfFile(file)).toBeNull();
+    expect(isPdfFile(file)).toBe(true);
   });
 
-  it("rejects a non-PDF file with a message", () => {
+  it("rejects a non-PDF file (the page shows common.invalidPdf)", () => {
     const file = new File([new Uint8Array([1, 2, 3])], "image.png", { type: "image/png" });
-    expect(validatePdfFile(file)).toBe("Please upload a PDF file.");
+    expect(isPdfFile(file)).toBe(false);
   });
 });
 
@@ -40,15 +40,5 @@ describe("readFileAsArrayBuffer / readFileAsUint8Array", () => {
     } finally {
       FileReader.prototype.readAsArrayBuffer = originalReadAsArrayBuffer;
     }
-  });
-});
-
-describe("errorMessage", () => {
-  it("uses an Error's message without the 'Error: ' prefix", () => {
-    expect(errorMessage(new Error("Page 9 does not exist"))).toBe("Page 9 does not exist");
-  });
-  it("stringifies anything else", () => {
-    expect(errorMessage("boom")).toBe("boom");
-    expect(errorMessage(42)).toBe("42");
   });
 });

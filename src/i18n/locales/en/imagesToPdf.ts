@@ -1,0 +1,47 @@
+import type { Namespace } from "../../types";
+
+export default {
+  seoTitle: "Images to PDF: JPG, PNG, WebP to PDF | MantisPDF",
+  seoDescription: "Turn images into a PDF, one per page. Reorder, rotate, pick a page size. Free, private, nothing is uploaded.",
+  heading: "Images to PDF",
+  intro: "Put JPG, PNG or WebP images on PDF pages. JPEGs are embedded without re-encoding. Everything stays on your device.",
+  hint: "JPG, PNG, WebP, GIF, BMP",
+  removeImage: "Remove image",
+  removeNamed: "Remove {name}",
+  moveEarlier: "Move earlier",
+  moveEarlierNamed: "Move {name} earlier",
+  rotateLeft: "Rotate left",
+  rotateLeftNamed: "Rotate {name} left",
+  rotateRight: "Rotate right",
+  rotateRightNamed: "Rotate {name} right",
+  moveLater: "Move later",
+  moveLaterNamed: "Move {name} later",
+  skipped: {
+    one: "{count} file is not an image and was skipped.",
+    other: "{count} files are not an image and were skipped.",
+  },
+  onlyFirst: "Only the first {max} images were kept.",
+  busyAdding: "A PDF is being built. Add more images once it is done.",
+  customSizeHint: "Enter a custom size between 13 and 5080 mm.",
+  fitToImage: "fit to image",
+  imageLabel: "Image {n} ({name})",
+  reading: "Reading image {n} of {total}…",
+  couldNotRead: "Could not read {name}: {error}",
+  buildingPdf: "Building PDF…",
+  count: { one: "{count} image. Grab a card to reorder.", other: "{count} images. Grab a card to reorder." },
+  orientationAuto: "Auto (match each image)",
+  building: "Building…",
+  create: "Create PDF",
+  clearAll: "Clear all",
+  // Limits and summary (lib/imagesToPdf)
+  tooMany: "Too many images: the limit is {max} per PDF.",
+  marginRange: "Margin must be between 0 and {max} mm.",
+  marginTooLarge: "Margin is too large for this page size: keep it under {max} mm.",
+  summary: {
+    one: "{count} image · {count} page · {paper} · {orientation} · margin {margin} mm",
+    other: "{count} images · {count} pages · {paper} · {orientation} · margin {margin} mm",
+  },
+  tooLarge: "{name} is too large ({width} x {height}); the limit is {max} megapixels per image.",
+  overBudget:
+    "Adding {name} brings the images to {total} MB; the limit is {max} MB per PDF (images other than JPEG count at 4 bytes per pixel). Remove some images or make several PDFs.",
+} as const satisfies Namespace;

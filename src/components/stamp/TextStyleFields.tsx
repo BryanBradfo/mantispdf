@@ -2,6 +2,7 @@ import { useId } from "react";
 import type { TextStyle } from "../../lib/stampBuilders";
 import type { StdFont } from "../../lib/stampJob";
 import { inputClass } from "../../pages/ToolShell";
+import { formatNumber, useLocale, useT } from "../../i18n";
 
 const FONTS: { value: StdFont; label: string }[] = [
   { value: "Helvetica", label: "Helvetica" },
@@ -16,12 +17,14 @@ interface Props {
 }
 
 export default function TextStyleFields({ value, onChange }: Props) {
+  const t = useT("stamp");
+  const locale = useLocale();
   const id = useId();
   const labelClass = "block text-sm text-gray-700 dark:text-[#aaa]";
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       <label className={labelClass}>
-        Font
+        {t("font")}
         <select
           value={value.font}
           onChange={(e) => onChange({ ...value, font: e.target.value as StdFont })}
@@ -31,7 +34,7 @@ export default function TextStyleFields({ value, onChange }: Props) {
         </select>
       </label>
       <label className={labelClass}>
-        Size (pt)
+        {t("size")}
         <input
           type="number"
           min={6}
@@ -44,7 +47,7 @@ export default function TextStyleFields({ value, onChange }: Props) {
         />
       </label>
       <label className={labelClass}>
-        Colour
+        {t("colour")}
         <input
           type="color"
           value={value.color}
@@ -53,7 +56,7 @@ export default function TextStyleFields({ value, onChange }: Props) {
         />
       </label>
       <div className={labelClass}>
-        <label htmlFor={`${id}-op`}>Opacity ({Math.round(value.opacity * 100)}%)</label>
+        <label htmlFor={`${id}-op`}>{t("opacity", { percent: formatNumber(Math.round(value.opacity * 100) / 100, locale, { style: "percent" }) })}</label>
         <input
           id={`${id}-op`}
           type="range"

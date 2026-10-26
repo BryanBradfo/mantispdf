@@ -1,0 +1,31 @@
+import type { Namespace } from "../../types";
+
+export default {
+  seoTitle: "Extract images from PDF | MantisPDF",
+  seoDescription: "Pull the embedded images out of a PDF as JPEG or PNG files. Free, private, nothing is uploaded.",
+  heading: "Extract images",
+  intro: "Save the images embedded in a PDF as JPEG or PNG files.",
+  selectNamed: "Select {name}",
+  cardPage: "Page {page}",
+  cardPageSize: "Page {page} · {width}×{height}",
+  preparing: "Preparing {n} of {total}…",
+  found: { one: "{count} image found", other: "{count} images found" },
+  extracting: "Extracting…",
+  extract: "Extract images",
+  skipSmall: "Skip images smaller than 32 px on both sides",
+  noImages: "No images to show in this PDF.",
+  selectedOf: "{chosen} of {total} selected",
+  // Summaries (lib/extractImages)
+  skippedSummary: { one: "{count} image skipped: {list}", other: "{count} images skipped: {list}" },
+  skippedItem: "{count} {reason}",
+  keptSummary: { one: "{count} image kept without transparency", other: "{count} images kept without transparency" },
+  reasonJpeg2000: "JPEG 2000",
+  reasonJbig2: "JBIG2",
+  reasonCcitt: "CCITT fax",
+  reasonColourSpace: "unsupported colour space",
+  reasonCorrupt: "corrupt",
+  reasonTooLarge: "too large",
+  reasonBudget: "over the size budget",
+  reasonAlphaDropped: "kept without transparency",
+  reasonInline: "inline (embedded in page content, not extractable)",
+} as const satisfies Namespace;

@@ -1,6 +1,8 @@
 import { useEffect, useId, useState } from "react";
 import { entryText, selectedMarks, type SearchEntry } from "../../lib/redact/marking";
 import type { MarkInput } from "../../lib/redact/model";
+import { useT } from "../../i18n";
+import { pageListText } from "../../lib/redact/report";
 
 export interface SearchResult {
   query: string;
@@ -35,6 +37,7 @@ const buttonClass =
  * first), then "Mark selected" or the "Mark all" shortcut.
  */
 export default function SearchBar({ searching, result, onFind, onMark, onShow, locked }: Props) {
+  const t = useT("redact");
   const [query, setQuery] = useState("");
   const [wholeWord, setWholeWord] = useState(false);
   const [checked, setChecked] = useState<ReadonlySet<number>>(new Set());
@@ -52,12 +55,17 @@ export default function SearchBar({ searching, result, onFind, onMark, onShow, l
     });
 
   const pagesLabel = (pages: number[]) =>
-    pages.length <= 8 ? pages.join(", ") : `${pages.slice(0, 8).join(", ")} and ${pages.length - 8} more`;
+    pages.length <= 8
+      ? pageListText(pages, t)
+      : t("pageList", {
+          count: pages.length,
+          list: t("listMore", { list: pages.slice(0, 8).join(t("listSep")), count: pages.length - 8 }),
+        });
 
   return (
     <section aria-labelledby={`${id}-title`} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-[#333] dark:bg-[#111]">
       <h2 id={`${id}-title`} className="text-sm font-semibold text-gray-900 dark:text-[#ddd]">
-        Find text
+        {t("findText")}
       </h2>
       <form
         className="mt-2 space-y-2"
@@ -69,14 +77,14 @@ export default function SearchBar({ searching, result, onFind, onMark, onShow, l
         <div className="flex gap-2">
           <input
             type="search"
-            aria-label="Text to find"
+            aria-label={t("textToFind")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Name, number, word..."
+            placeholder={t("searchPlaceholder")}
             className={fieldClass}
           />
           <button type="submit" disabled={searching || locked || query.trim() === ""} className={buttonClass}>
-            {searching ? "Finding…" : "Find"}
+            {searching ? t("finding") : t("find")}
           </button>
         </div>
         <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-[#aaa]">
@@ -86,21 +94,20 @@ export default function SearchBar({ searching, result, onFind, onMark, onShow, l
             onChange={(e) => setWholeWord(e.target.checked)}
             className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
           />
-          Whole words only
+          {t("wholeWords")}
         </label>
-        <p className="text-xs text-gray-500 dark:text-[#777]">Words split across lines with a hyphen are not found.</p>
+        <p className="text-xs text-gray-500 dark:text-[#777]">{t("hyphenNote")}</p>
       </form>
       {result && (
         <div className="mt-3" role="status">
           {result.count === 0 ? (
-            <p className="text-sm text-gray-600 dark:text-[#999]">No match for "{result.query}".</p>
+            <p className="text-sm text-gray-600 dark:text-[#999]">{t("noMatch", { query: result.query })}</p>
           ) : (
             <>
               <p className="text-sm text-gray-800 dark:text-[#ccc]">
-                {result.count} {result.count === 1 ? "match" : "matches"} for "{result.query}" on{" "}
-                {result.pages.length === 1 ? "page" : "pages"} {pagesLabel(result.pages)}.
+                {t("matches", { count: result.count, query: result.query, pages: pagesLabel(result.pages) })}
               </p>
-              <ul aria-label="Search results" className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
+              <ul aria-label={t("results")} className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
                 {result.entries.map((e) => (
                   <li key={e.id} className="flex items-center justify-between gap-2 text-sm">
                     <label className="flex items-center gap-2 text-gray-800 dark:text-[#ccc]">
@@ -112,18 +119,19 @@ export default function SearchBar({ searching, result, onFind, onMark, onShow, l
                         className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
                       />
                       {(() => {
-                        const t = entryText(e);
+                        const entry = entryText(e);
                         return (
                           <span>
-                            Page {t.page}: {t.before}
-                            <strong>{t.text}</strong>
-                            {t.after}
+                            {t("entryPage", { page: entry.page })}
+                            {entry.before}
+                            <strong>{entry.text}</strong>
+                            {entry.after}
                           </span>
                         );
                       })()}
                     </label>
                     <button type="button" onClick={() => onShow(e)} className="text-xs text-gray-500 underline dark:text-[#888]">
-                      Show
+                      {t("show")}
                     </button>
                   </li>
                 ))}
@@ -135,10 +143,10 @@ export default function SearchBar({ searching, result, onFind, onMark, onShow, l
                   disabled={locked || checked.size === 0}
                   className={buttonClass}
                 >
-                  Mark selected ({checked.size})
+                  {t("markSelected", { count: checked.size })}
                 </button>
                 <button type="button" onClick={() => onMark(result.entries.flatMap((e) => e.marks))} disabled={locked} className={buttonClass}>
-                  Mark all
+                  {t("markAll")}
                 </button>
               </div>
             </>
