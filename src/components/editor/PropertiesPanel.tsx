@@ -15,6 +15,8 @@ import { fitTextRect } from "../../lib/editor/textFit";
 import { resolveFont, startsRightToLeft } from "../../lib/editor/unicodeText";
 import { hexToRgb, rgbToHex } from "./svgStyle";
 import { formatNumber, useLocale, useT } from "../../i18n";
+import { Info } from "lucide-react";
+import { checkClass, focusRing, noticeClass, smallButton } from "../../styles/ui";
 
 const FONTS: { value: EditFont; label: string }[] = [
   { value: "Helvetica", label: "Helvetica" },
@@ -27,11 +29,8 @@ const FONTS: { value: EditFont; label: string }[] = [
 ];
 
 
-const labelClass = "block text-xs font-medium text-gray-700 dark:text-[#aaa]";
-const fieldClass =
-  "mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 focus:border-mantis-500 focus:outline-none focus:ring-1 focus:ring-mantis-500 dark:border-[#333] dark:bg-[#111] dark:text-[#ddd]";
-const smallButton =
-  "flex items-center justify-center gap-1 rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 disabled:opacity-40 dark:border-[#333] dark:text-[#bbb] dark:hover:bg-[#1a1a1a]";
+const labelClass = "block text-xs font-medium text-ink-2";
+const fieldClass = `mt-1 w-full rounded-none border border-line-strong bg-paper px-2 py-1.5 text-sm text-ink focus-visible:border-ink ${focusRing}`;
 
 interface Props {
   item: Item;
@@ -153,7 +152,7 @@ function OpacityField({
         onPointerUp={onEndGesture}
         onBlur={onEndGesture}
         onChange={(e) => onValue(Number(e.target.value))}
-        className="mt-2 w-full accent-mantis-600"
+        className={`mt-2 w-full accent-ink ${focusRing}`}
       />
     </div>
   );
@@ -161,12 +160,12 @@ function OpacityField({
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-[#aaa]">
+    <label className="flex items-center gap-2 text-xs font-medium text-ink-2">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+        className={checkClass}
       />
       {label}
     </label>
@@ -240,8 +239,9 @@ export default function PropertiesPanel(props: Props) {
             </select>
           </label>
           {switched && (
-            <p className="col-span-2 text-xs text-gray-600 dark:text-[#999]" data-testid="font-switch-notice">
-              {tc("usesFontFor", { family: switched })}
+            <p className={`col-span-2 flex gap-2 ${noticeClass}`}>
+              <Info aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />
+              <span data-testid="font-switch-notice">{tc("usesFontFor", { family: switched })}</span>
             </p>
           )}
           <NumberField
@@ -272,7 +272,7 @@ export default function PropertiesPanel(props: Props) {
                 aria-pressed={shownAlign === value}
                 title={label}
                 onClick={() => onChange({ align: value })}
-                className={`${smallButton} flex-1 ${shownAlign === value ? "border-mantis-600 bg-mantis-50 dark:bg-[#0f1a0f]" : ""}`}
+                className={`${smallButton} flex-1 focus-visible:ring-inset focus-visible:!ring-offset-0 ${shownAlign === value ? "!border-ink bg-ink !text-paper focus-visible:!ring-paper" : ""}`}
               >
                 <Icon aria-hidden="true" className="h-4 w-4" />
               </button>
@@ -381,7 +381,7 @@ export default function PropertiesPanel(props: Props) {
       break;
     case "whiteout":
       fields = (
-        <p className="col-span-2 text-xs text-gray-600 dark:text-[#888]">
+        <p className="col-span-2 text-xs text-ink-2">
           {t("whiteoutHelp")}
         </p>
       );
@@ -389,10 +389,10 @@ export default function PropertiesPanel(props: Props) {
   }
 
   return (
-    <section aria-label={t("properties", { kind: t(`kind.${item.kind}`) })} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-[#333] dark:bg-[#111]">
-      <h2 className="text-sm font-semibold text-gray-900 dark:text-[#ddd]">{t(`kind.${item.kind}`)}</h2>
+    <section aria-label={t("properties", { kind: t(`kind.${item.kind}`) })} className="border border-line bg-surface p-4">
+      <h2 className="font-display text-sm font-medium uppercase tracking-wider text-ink">{t(`kind.${item.kind}`)}</h2>
       <div className="mt-3 grid grid-cols-2 gap-3">{fields}</div>
-      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-200 pt-3 dark:border-[#333]">
+      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-line pt-3">
         <IconButton icon={ArrowUp} label={t("forward")} onClick={props.onForward} />
         <IconButton icon={ArrowDown} label={t("backward")} onClick={props.onBackward} />
         <IconButton icon={Copy} label={t("duplicate")} onClick={props.onDuplicate} />

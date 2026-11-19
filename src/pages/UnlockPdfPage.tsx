@@ -3,7 +3,8 @@ import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
-import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { fileMeta, inputClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useT } from "../i18n";
 
@@ -28,13 +29,14 @@ export default function UnlockPdfPage() {
 
   return (
     <ToolShell
+      tool="unlock"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/unlock"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">
@@ -44,8 +46,8 @@ export default function UnlockPdfPage() {
 
       {input && (
         <form className={panelClass} onSubmit={submit}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
-          <label className="mt-4 block text-sm text-gray-700 dark:text-[#aaa]">
+          <p className={fileMeta}>{input.file.name}</p>
+          <label className="mt-4 block text-sm text-ink">
             {t("password")}
             <input
               type="password"
@@ -56,7 +58,7 @@ export default function UnlockPdfPage() {
             />
           </label>
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-wrap gap-3">
             <button type="submit" disabled={busy} className={`flex-1 ${primaryButton}`}>
               {busy ? t("unlocking") : t("submit")}
             </button>

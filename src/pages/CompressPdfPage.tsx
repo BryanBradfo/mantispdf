@@ -1,6 +1,9 @@
 import { useCallback, useState } from "react";
 import { Link, formatBytes, formatNumber, useDescribeError, useLocale, useT, type UiError } from "../i18n";
-import { PageSEO } from "../components/seo/PageSEO";
+import { ArrowRight } from "lucide-react";
+import ToolShell from "./ToolShell";
+import LoadingRow from "../components/common/LoadingRow";
+import { monoLabel, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { isPdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
@@ -60,18 +63,15 @@ export default function CompressPdfPage() {
     : 0;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
-      <PageSEO
-        title={t("seoTitle")}
-        description={t("seoDescription")}
-        path="/compress"
-      />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
-      <p className="mt-2 text-gray-600 dark:text-[#555]">
-        {t("intro")}
-      </p>
-
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+    <ToolShell
+      tool="compress"
+      title={t("seoTitle")}
+      description={t("seoDescription")}
+      path="/compress"
+      heading={t("heading")}
+      intro={t("intro")}
+    >
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!result && !worker.compressing && (
         <div className="mt-8">
@@ -79,69 +79,58 @@ export default function CompressPdfPage() {
         </div>
       )}
 
-      {worker.compressing && (
-        <div className="mt-12 flex flex-col items-center justify-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
-          <p className="text-gray-500 dark:text-[#555]">{t("compressing")}</p>
-        </div>
-      )}
+      {worker.compressing && <LoadingRow label={t("compressing")} className="mt-12 justify-center" />}
 
       <ErrorAlert error={compressError} onDismiss={() => setCompressError(null)} className="mt-6" />
 
       {result && (
-        <div className="mt-8 rounded-xl border border-mantis-200 bg-mantis-50/50 p-6 dark:border-mantis-900 dark:bg-[#0f1a0f]">
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <p className="text-sm text-gray-500 dark:text-[#555]">{t("original")}</p>
-              <p className="text-xl font-semibold text-gray-800 dark:text-[#ccc]">
+        <div className={panelClass}>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-4 sm:grid-cols-[1fr_auto_1fr_auto]">
+            <div>
+              <p className={monoLabel}>{t("original")}</p>
+              <p className="mt-2 font-display text-2xl font-light text-ink">
                 {formatBytes(result.originalSize, locale)}
               </p>
             </div>
-            <div className="text-2xl text-mantis-500">→</div>
-            <div className="flex-1">
-              <p className="text-sm text-gray-500 dark:text-[#555]">{t("compressed")}</p>
-              <p className="text-xl font-semibold text-gray-800 dark:text-[#ccc]">
+            <ArrowRight aria-hidden="true" strokeWidth={1.5} className="mb-1.5 h-5 w-5 text-ink-2" />
+            <div>
+              <p className={monoLabel}>{t("compressed")}</p>
+              <p className="mt-2 font-display text-2xl font-light text-ink">
                 {formatBytes(result.compressedSize, locale)}
               </p>
             </div>
-            <div className="rounded-lg bg-mantis-100 px-3 py-2 text-center dark:bg-mantis-900/40">
-              <p className="text-2xl font-bold text-mantis-700 dark:text-mantis-400">
+            <div className="col-span-3 border-t border-line pt-4 sm:col-span-1 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
+              <p className="font-display text-3xl font-normal text-ink">
                 {savings > 0
                   ? t("savedLess", { percent: formatNumber(savings / 100, locale, { style: "percent" }) })
                   : savings < 0
                     ? t("savedMore", { percent: formatNumber(-savings / 100, locale, { style: "percent" }) })
                     : t("savedNone")}
               </p>
-              <p className="text-xs text-mantis-600 dark:text-mantis-500">
+              <p className={`mt-1 ${monoLabel}`}>
                 {savings > 0 ? t("smaller") : savings < 0 ? t("larger") : t("noChange")}
               </p>
             </div>
           </div>
 
-          <div className="mt-6 flex gap-3">
-            <button
-              onClick={handleDownload}
-              className="flex-1 rounded-lg bg-mantis-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-mantis-700 focus:outline-none focus:ring-2 focus:ring-mantis-500 focus:ring-offset-2"
-            >
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button onClick={handleDownload} className={`flex-1 ${primaryButton}`}>
               {t("download")}
             </button>
             {downloaded && (
-              <Link
-                to="/"
-                className="rounded-lg border border-mantis-500 px-4 py-2.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
-              >
+              <Link to="/" className={secondaryButton}>
                 {tc("allTools")}
               </Link>
             )}
             <button
               onClick={() => { setResult(null); setDownloaded(false); }}
-              className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
+              className={secondaryButton}
             >
               {t("another")}
             </button>
           </div>
         </div>
       )}
-    </div>
+    </ToolShell>
   );
 }

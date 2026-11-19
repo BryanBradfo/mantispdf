@@ -10,7 +10,8 @@ import SheetPreview from "../components/geometry/SheetPreview";
 import { mmToPt, type Orientation, type ResizeJobSpec } from "../lib/geometryJob";
 import { mmSizeLabel, resizeLayout, resizeProblem } from "../lib/geometryLayout";
 import { describePages } from "../lib/stampBuilders";
-import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { fileMeta, inputClass, monoLabel, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useT } from "../i18n";
 
@@ -80,13 +81,14 @@ export default function ResizePdfPage() {
 
   return (
     <ToolShell
+      tool="resize"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/resize"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">
@@ -96,20 +98,20 @@ export default function ResizePdfPage() {
 
       {input && (
         <form className={panelClass} onSubmit={submit}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
+          <p className={fileMeta}>{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
 
           <div className="mt-4 flex flex-wrap gap-6">
             <div className="min-w-[14rem] flex-1 space-y-4">
               <PaperSizeFields paper={paper} onPaper={setPaper} customMm={customMm} onCustomMm={setCustomMm} />
-              <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+              <label className="block text-sm text-ink">
                 {tg("orientation")}
                 <select value={orientation} onChange={(e) => setOrientation(e.target.value as Orientation)} className={inputClass}>
                   {ORIENTATIONS.map((o) => <option key={o} value={o}>{orientationLabel[o]}</option>)}
                 </select>
               </label>
               <fieldset>
-                <legend className="text-sm text-gray-700 dark:text-[#aaa]">{t("mode")}</legend>
-                <div className="mt-1 flex gap-4 text-sm text-gray-700 dark:text-[#aaa]">
+                <legend className="text-sm text-ink">{t("mode")}</legend>
+                <div className="mt-1 flex gap-4 text-sm text-ink">
                   <label className="flex items-center gap-2">
                     <input type="radio" name="mode" checked={mode === "fit"} onChange={() => setMode("fit")} /> {t("fitOption")}
                   </label>
@@ -118,15 +120,15 @@ export default function ResizePdfPage() {
                   </label>
                 </div>
               </fieldset>
-              <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+              <label className="block text-sm text-ink">
                 {tg("margin")}
                 <input type="number" min={0} max={200} step={1} value={Number.isFinite(marginMm) ? marginMm : ""}
                   onChange={(e) => setMarginMm(e.target.value === "" ? NaN : Number(e.target.value))}
-                  className={`${inputClass} max-w-[8rem]`} />
+                  className={`${inputClass} block max-w-[8rem]`} />
               </label>
             </div>
             <div className="flex flex-col items-center gap-2">
-              <p className="text-sm text-gray-700 dark:text-[#aaa]">{firstPage ? t("previewPage", { page: firstPage }) : t("preview")}</p>
+              <p className={monoLabel}>{firstPage ? t("previewPage", { page: firstPage }) : t("preview")}</p>
               {layout ? (
                 <SheetPreview
                   sheet={layout.sheet}
@@ -135,7 +137,7 @@ export default function ResizePdfPage() {
                   label={t("previewLabel")}
                 />
               ) : (
-                <p className="text-xs text-gray-500 dark:text-[#888]">{tg("fixSettings")}</p>
+                <p className="text-xs text-ink-2">{tg("fixSettings")}</p>
               )}
             </div>
           </div>
@@ -144,11 +146,11 @@ export default function ResizePdfPage() {
             <RangeInput label={t("rangeLabel")} total={total} selectedPages={selected} onPages={setPages} />
           </div>
 
-          <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
+          <LiveSummary text={summary} className="mt-4 text-sm text-ink-2" />
 
           <ErrorAlert error={problem} className="mt-4" />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-wrap gap-3">
             <button type="submit" disabled={busy || problem !== null} className={`flex-1 ${primaryButton}`}>
               {busy ? t("resizing") : t("submit")}
             </button>

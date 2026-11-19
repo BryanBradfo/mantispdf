@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useDescribeError, useT, type UiError } from "../i18n";
-import { PageSEO } from "../components/seo/PageSEO";
+import ToolShell from "./ToolShell";
+import LoadingRow from "../components/common/LoadingRow";
+import { fileMeta, secondaryButton } from "../styles/ui";
 import { useSplitState } from "../hooks/useSplitState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { isPdfFile, readFileAsArrayBuffer, readFileAsUint8Array } from "../lib/fileHelpers";
@@ -82,18 +84,16 @@ export default function SplitPdfPage() {
   const showOverlay = worker.splitting || isZipping || splitError !== null;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <PageSEO
-        title={t("seoTitle")}
-        description={t("seoDescription")}
-        path="/split"
-      />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
-      <p className="mt-2 text-gray-600 dark:text-[#555]">
-        {t("intro")}
-      </p>
-
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+    <ToolShell
+      tool="split"
+      wide
+      title={t("seoTitle")}
+      description={t("seoDescription")}
+      path="/split"
+      heading={t("heading")}
+      intro={t("intro")}
+    >
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!state.file ? (
         <div className="mt-8">
@@ -101,16 +101,13 @@ export default function SplitPdfPage() {
         </div>
       ) : (
         <>
-          <div className="mt-6 flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-[#555]">
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+            <p className={fileMeta}>
               {tc("fileWithPages", { name: state.file?.name ?? "", count: state.numPages })}
             </p>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {downloaded && (
-                <Link
-                  to="/"
-                  className="rounded-lg border border-mantis-500 px-3 py-1.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
-                >
+                <Link to="/" className={secondaryButton}>
                   {tc("allTools")}
                 </Link>
               )}
@@ -133,10 +130,7 @@ export default function SplitPdfPage() {
               />
             </div>
           ) : (
-            <div className="mt-8 flex items-center justify-center py-12">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
-              <span className="ml-3 text-gray-500 dark:text-[#555]">{tc("loadingPdf")}</span>
-            </div>
+            <LoadingRow label={tc("loadingPdf")} className="mt-8 justify-center py-12" />
           )}
         </>
       )}
@@ -149,6 +143,6 @@ export default function SplitPdfPage() {
           onDismissError={() => setSplitError(null)}
         />
       )}
-    </div>
+    </ToolShell>
   );
 }

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { CircleCheck, TriangleAlert } from "lucide-react";
 import { Link, Trans, useDescribeError, useT, type UiError } from "../i18n";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
@@ -40,15 +41,19 @@ import {
   type RedactResultWire,
   type RedactRun,
 } from "../lib/redact/toJob";
-import ToolShell, { primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { dangerButton, fileMeta, focusRing, inputClass, linkClass, noticeClass, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
+
+/** A warning icon at the start of a notice line. */
+const warnIcon = <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />;
 
 /** How long a shown search match stays highlighted. */
 const FLASH_MS = 1500;
 
 /** A link to OCR in a new tab: leaving this page would lose the marks and any run in progress. */
 const ocrLink = (children: ReactNode) => (
-  <Link to="/ocr" target="_blank" rel="noopener" className="font-medium underline">
+  <Link to="/ocr" target="_blank" rel="noopener" className={linkClass}>
     {children}
   </Link>
 );
@@ -103,7 +108,9 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   // The selected area or search match, which "Repeat on pages" copies.
   const selectedMark = pageMarks.find((m) => m.id === selectedId && m.kind !== "page") ?? null;
   const [repeatText, setRepeatText] = useState("");
-  const [repeatNote, setRepeatNote] = useState<string | null>(null);
+  // The last "Repeat" outcome; `invalid` when the page list could not be read.
+  const [repeatNote, setRepeatNote] = useState<{ text: string; invalid: boolean } | null>(null);
+  const repeatNoteId = useId();
   useEffect(() => setRepeatNote(null), [selectedId]);
 
   // One pdf.js document for the search fallback, opened when first needed, closed with the page.
@@ -234,13 +241,13 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
     if (lockedRef.current) return;
     const parsed = text === "all" ? { ok: true as const, pages: sizes.map((_, i) => i + 1) } : parsePageRanges(text, sizes.length, tp);
     if (!parsed.ok) {
-      setRepeatNote(parsed.error);
+      setRepeatNote({ text: parsed.error, invalid: true });
       return;
     }
     const { marks: copies, skipped } = repeatTargets(rect, page, parsed.pages, sizes);
     change((s) => addMarks(s, copies));
     const added = t("addedTo", { count: copies.length });
-    setRepeatNote(skipped.length > 0 ? t("skippedSmall", { added, pages: formatPageRanges(skipped) }) : added);
+    setRepeatNote({ text: skipped.length > 0 ? t("skippedSmall", { added, pages: formatPageRanges(skipped) }) : added, invalid: false });
   };
 
   /** Mark the reviewed search areas (the checked ones, or all). */
@@ -353,11 +360,11 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
   return (
     <div className="mt-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
+        <p className={fileMeta}>
           {tc("fileWithPagesParen", { name: input.file.name, count: sizes.length })}
         </p>
         <div className="flex gap-3">
-          <button type="button" onClick={start} disabled={busy || marks.length === 0 || confirm !== null} className={primaryButton}>
+          <button type="button" onClick={start} disabled={busy || marks.length === 0 || confirm !== null} className={dangerButton}>
             {busy ? (progress ?? t("checking")) : t("submit")}
           </button>
           <button type="button" onClick={startOver} className={secondaryButton}>
@@ -366,14 +373,17 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
         </div>
       </div>
 
-      <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-[#1f1a0a] dark:text-amber-200">
-        {t("keepOriginal")} {t("alsoRemoved")}
+      <p className={`flex gap-3 ${noticeClass}`}>
+        {warnIcon}
+        <span>
+          {t("keepOriginal")} {t("alsoRemoved")}
+        </span>
       </p>
 
       <ErrorAlert error={error} onDismiss={() => setError(null)} />
 
       {progress && (
-        <p role="status" className="text-sm text-gray-700 dark:text-[#aaa]">
+        <p role="status" className="text-sm text-ink-2">
           {progress}
         </p>
       )}
@@ -393,27 +403,28 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
               (document.activeElement === continueRef.current ? cancelRef.current : continueRef.current)?.focus();
             }
           }}
-          className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-[#1f1a0a]"
+          className={noticeClass}
         >
-          <p id="redact-raster-title" className="text-sm font-medium text-amber-900 dark:text-amber-200">
+          <p id="redact-raster-title" className="flex gap-3 font-medium">
+            {warnIcon}
             {t("cannotInPlace")}
           </p>
-          <ul className="mt-1 list-disc pl-5 text-sm text-amber-900 dark:text-amber-200">
+          <ul className="mt-2 list-disc pl-12">
             {confirm.pages.map((p) => (
               <li key={p.page}>
                 {t("willConvert", { page: p.page, reason: plainReason(p.reason ?? "", t) })}{" "}
                 <details className="inline">
-                  <summary className="inline cursor-pointer text-xs underline">{tc("errorDetails")}</summary>
-                  <span className="ml-1 text-xs">{p.reason}</span>
+                  <summary className={`inline cursor-pointer text-xs underline underline-offset-4 ${focusRing}`}>{tc("errorDetails")}</summary>
+                  <span className="ml-1 font-mono text-xs text-ink-2">{p.reason}</span>
                 </details>
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+          <p className="mt-2 pl-7 text-xs text-ink-2">
             <Trans ns="redact" k="loseText" components={{ link: ocrLink }} />
           </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button ref={continueRef} type="button" onClick={goAhead} className={primaryButton}>
+          <div className="mt-3 flex flex-wrap gap-2 pl-7">
+            <button ref={continueRef} type="button" onClick={goAhead} className={dangerButton}>
               {t("continue")}
             </button>
             <button ref={cancelRef} type="button" onClick={() => setConfirm(null)} className={secondaryButton}>
@@ -424,9 +435,12 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
       )}
 
       {report && (
-        <div role="status" className="rounded-lg border border-mantis-300 bg-mantis-50 p-3 text-sm text-mantis-900 dark:border-mantis-800 dark:bg-[#0f1a0f] dark:text-mantis-200">
-          <p className="font-medium">{t("done", { title: t("reportTitle") })}</p>
-          <ul className="mt-1 list-disc pl-5">
+        <div role="status" className={noticeClass}>
+          <p className="flex gap-3 font-medium">
+            <CircleCheck aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />
+            {t("done", { title: t("reportTitle") })}
+          </p>
+          <ul className="mt-2 list-disc pl-12 text-ink-2">
             {reportLines(report, uncovered, t).map((line) => (
               <li key={line}>{line}</li>
             ))}
@@ -462,30 +476,35 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
           {selectedMark && selectedMark.kind !== "page" && sizes.length > 1 && (
             <form
               aria-label={t("repeatForm")}
-              className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-[#333] dark:bg-[#111]"
+              className="mt-3 flex flex-wrap items-center gap-2 rounded-none border border-line bg-surface p-3 text-sm"
               onSubmit={(e) => {
                 e.preventDefault();
                 repeat(selectedMark.rect, repeatText);
               }}
             >
-              <span className="font-medium text-gray-800 dark:text-[#ccc]">{t("repeatOn")}</span>
+              <span className="font-medium text-ink">{t("repeatOn")}</span>
               <button type="button" disabled={locked} onClick={() => repeat(selectedMark.rect, "all")} className={secondaryButton}>
                 {t("allPages")}
               </button>
-              <span className="text-gray-500 dark:text-[#888]">{t("orPages")}</span>
+              <span className="text-ink-2">{t("orPages")}</span>
               <input
                 aria-label={t("repeatInput")}
                 value={repeatText}
-                onChange={(e) => setRepeatText(e.target.value)}
+                onChange={(e) => {
+                  setRepeatText(e.target.value);
+                  setRepeatNote(null);
+                }}
                 placeholder={t("repeatPlaceholder")}
-                className="w-28 rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-[#333] dark:bg-[#111] dark:text-[#ddd]"
+                aria-invalid={repeatNote?.invalid ?? false}
+                aria-describedby={repeatNote ? repeatNoteId : undefined}
+                className={`${inputClass} !mt-0 h-10 !w-28 ${repeatNote?.invalid ? "!border-danger" : ""}`}
               />
               <button type="submit" disabled={locked || repeatText.trim() === ""} className={secondaryButton}>
                 {t("repeat")}
               </button>
               {repeatNote && (
-                <p role="status" className="basis-full text-xs text-gray-600 dark:text-[#999]">
-                  {repeatNote}
+                <p id={repeatNoteId} role="status" className={`basis-full text-xs ${repeatNote.invalid ? "text-danger" : "text-ink-2"}`}>
+                  {repeatNote.text}
                 </p>
               )}
             </form>
@@ -501,24 +520,36 @@ function Workspace({ input, busy, run, error, setError, worker, onStartOver }: W
             locked={locked}
           />
           {search && search.truncated && (
-            <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              {t("truncated", { count: search.count })}
+            <p role="note" className="flex gap-2 text-xs text-ink">
+              <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="mt-px h-3.5 w-3.5 shrink-0" />
+              <span>
+                {t("truncated", { count: search.count })}
+              </span>
             </p>
           )}
           {coverage && coverage.textless.length > 0 && (
-            <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              <Trans ns="redact" k="textless" values={{ pages: pageLabelText(coverage.textless, t) }} components={{ link: ocrLink }} />
+            <p role="note" className="flex gap-2 text-xs text-ink">
+              <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="mt-px h-3.5 w-3.5 shrink-0" />
+              <span>
+                <Trans ns="redact" k="textless" values={{ pages: pageLabelText(coverage.textless, t) }} components={{ link: ocrLink }} />
+              </span>
             </p>
           )}
           {coverage && coverage.undecodable.length > 0 && (
-            <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              {t("undecodable", { pages: pageListText(coverage.undecodable, t) })}{" "}
-              <Trans ns="redact" k="undecodableHint" components={{ link: ocrLink }} />
+            <p role="note" className="flex gap-2 text-xs text-ink">
+              <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="mt-px h-3.5 w-3.5 shrink-0" />
+              <span>
+                {t("undecodable", { pages: pageListText(coverage.undecodable, t) })}{" "}
+                <Trans ns="redact" k="undecodableHint" components={{ link: ocrLink }} />
+              </span>
             </p>
           )}
           {coverage && coverage.unsearched.length > 0 && (
-            <p role="note" className="text-xs text-amber-800 dark:text-amber-300">
-              {t("unsearched", { pages: pageLabelText(coverage.unsearched, t), note: uncoveredNote([], coverage.unsearched, t) ?? "" })}
+            <p role="note" className="flex gap-2 text-xs text-ink">
+              <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="mt-px h-3.5 w-3.5 shrink-0" />
+              <span>
+                {t("unsearched", { pages: pageLabelText(coverage.unsearched, t), note: uncoveredNote([], coverage.unsearched, t) ?? "" })}
+              </span>
             </p>
           )}
           <MarksPanel
@@ -561,6 +592,7 @@ export default function RedactPage() {
   const { input, error, setError, busy, pick, reset, run } = usePdfInput(worker, prepare);
   return (
     <ToolShell
+      tool="redact"
       wide={input !== null}
       title={t("seoTitle")}
       description={t("seoDescription")}
@@ -573,8 +605,11 @@ export default function RedactPage() {
       {!input && (
         <div className="mx-auto mt-8 max-w-2xl">
           <DropZone onFile={(f) => void pick(f)} error={error} engineReady={worker.ready} />
-          <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">
-            {t("keepOriginal")} {t("alsoRemoved")}
+          <p className={`mt-4 flex gap-3 ${noticeClass}`}>
+            {warnIcon}
+            <span>
+              {t("keepOriginal")} {t("alsoRemoved")}
+            </span>
           </p>
         </div>
       )}

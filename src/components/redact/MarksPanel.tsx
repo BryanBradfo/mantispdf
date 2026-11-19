@@ -1,7 +1,8 @@
-import { Redo2, Trash2, Undo2 } from "lucide-react";
+import { Check, Redo2, Trash2, Undo2 } from "lucide-react";
 import type { Mark } from "../../lib/redact/model";
 import type { Fill } from "../../lib/redact/toJob";
 import { useLocale, useT, type NsT } from "../../i18n";
+import { checkClass, focusRing, monoLabel, panelClass, selectedOutline, smallButton } from "../../styles/ui";
 
 interface Props {
   marks: readonly Mark[];
@@ -27,8 +28,8 @@ interface Props {
   locked: boolean;
 }
 
-const smallButton =
-  "flex items-center justify-center gap-1 rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 disabled:opacity-40 dark:border-[#333] dark:text-[#bbb] dark:hover:bg-[#1a1a1a]";
+/** Controls inside the scrolling marks list: the ring sits flush, an offset one is clipped by the scroller. */
+const inListRing = "focus-visible:!ring-offset-0";
 
 function describe(m: Mark, t: NsT<"redact">): string {
   switch (m.kind) {
@@ -51,9 +52,9 @@ export default function MarksPanel(props: Props) {
 
   return (
     <div className="space-y-4">
-      <section aria-label={t("marks")} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-[#333] dark:bg-[#111]">
+      <section aria-label={t("marks")} className={`${panelClass} !mt-0 !p-4`}>
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-[#ddd]">
+          <h2 className={monoLabel}>
             {t("marksCount", { count: marks.length })}
           </h2>
           <div className="flex gap-1">
@@ -66,28 +67,28 @@ export default function MarksPanel(props: Props) {
           </div>
         </div>
 
-        <label className="mt-3 flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+        <label className="mt-3 flex items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
             checked={props.wholePage}
             disabled={locked}
             onChange={props.onToggleWholePage}
-            className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+            className={checkClass}
           />
           {t("wholePage", { page })}
         </label>
 
         {marks.length === 0 ? (
-          <p className="mt-3 text-sm text-gray-600 dark:text-[#888]">{t("noMarks")}</p>
+          <p className="mt-3 text-sm text-ink-2">{t("noMarks")}</p>
         ) : (
-          <ol className="mt-3 max-h-72 space-y-3 overflow-y-auto pr-1">
+          <ol className="mt-3 max-h-72 space-y-3 overflow-y-auto p-1">
             {pages.map((p) => (
               <li key={p}>
                 <button
                   type="button"
                   onClick={() => props.onPage(p)}
                   aria-current={p === page ? "page" : undefined}
-                  className="text-xs font-semibold text-gray-600 underline-offset-2 hover:underline dark:text-[#999]"
+                  className={`font-mono text-[11px] uppercase tracking-[0.08em] underline-offset-4 hover:underline aria-[current=page]:text-ink aria-[current=page]:underline ${focusRing} ${inListRing} text-ink-2`}
                 >
                   {tc("pageN", { n: p })}
                 </button>
@@ -97,21 +98,24 @@ export default function MarksPanel(props: Props) {
                     .map((m) => (
                       <li
                         key={m.id}
-                        className={`flex items-center justify-between gap-2 rounded-md px-2 py-1 text-sm ${
-                          m.id === props.selectedId ? "bg-mantis-50 dark:bg-[#0f1a0f]" : ""
+                        data-mark-row=""
+                        className={`flex items-center justify-between gap-2 px-2 py-1 text-sm ${
+                          m.id === props.selectedId ? `${selectedOutline} -outline-offset-2` : ""
                         }`}
                       >
                         <button
                           type="button"
+                          aria-pressed={m.id === props.selectedId}
                           onClick={() => {
                             props.onPage(m.page);
                             props.onSelect(m.kind === "page" ? null : m.id);
                           }}
-                          className="min-w-0 truncate text-left text-gray-800 dark:text-[#ccc]"
+                          className={`flex min-w-0 items-center gap-1.5 text-left text-ink hover:underline hover:underline-offset-4 ${focusRing} ${inListRing}`}
                         >
-                          {describe(m, t)}
+                          {m.id === props.selectedId && <Check aria-hidden="true" strokeWidth={2} className="h-3.5 w-3.5 shrink-0" />}
+                          <span className="truncate">{describe(m, t)}</span>
                         </button>
-                        <button type="button" aria-label={t("deleteMark", { mark: describe(m, t).toLocaleLowerCase(locale), page: m.page })} disabled={locked} onClick={() => props.onRemove(m.id)} className={smallButton}>
+                        <button type="button" aria-label={t("deleteMark", { mark: describe(m, t).toLocaleLowerCase(locale), page: m.page })} disabled={locked} onClick={() => props.onRemove(m.id)} className={`${smallButton} ${inListRing}`}>
                           <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
                           {tc("delete")}
                         </button>
@@ -129,32 +133,32 @@ export default function MarksPanel(props: Props) {
         )}
       </section>
 
-      <section aria-label={t("output")} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-[#333] dark:bg-[#111]">
+      <section aria-label={t("output")} className={`${panelClass} !mt-0 !p-4`}>
         <fieldset>
-          <legend className="text-sm font-semibold text-gray-900 dark:text-[#ddd]">{t("boxColour")}</legend>
+          <legend className={monoLabel}>{t("boxColour")}</legend>
           <div className="mt-2 flex gap-4">
             {(["black", "white"] as const).map((f) => (
-              <label key={f} className="flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+              <label key={f} className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="radio"
                   name="redact-fill"
                   checked={props.fill === f}
                   disabled={locked}
                   onChange={() => props.onFill(f)}
-                  className="h-4 w-4 border-gray-300 text-mantis-600 focus:ring-mantis-500"
+                  className={checkClass}
                 />
                 {f === "black" ? t("black") : t("white")}
               </label>
             ))}
           </div>
         </fieldset>
-        <label className="mt-3 flex items-start gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+        <label className="mt-3 flex items-start gap-2 text-sm text-ink">
           <input
             type="checkbox"
             checked={props.removeMetadata}
             disabled={locked}
             onChange={(e) => props.onRemoveMetadata(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+            className={`mt-0.5 ${checkClass}`}
           />
           {t("removeMetadata")}
         </label>

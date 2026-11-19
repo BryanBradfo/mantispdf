@@ -110,7 +110,7 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
     // Same root element as below, so the ResizeObserver keeps watching it.
     return (
       <div ref={wrapRef} className="w-full max-w-[560px]">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
+        <p role="alert" className="text-sm text-danger">{t("noVisibleArea")}</p>
       </div>
     );
   }
@@ -118,7 +118,7 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
   return (
     <div ref={wrapRef} className="w-full max-w-[560px]">
       <div data-crop-frame className="relative select-none" style={{ width: pw, height: ph }}>
-        <div className="absolute inset-0 overflow-hidden rounded-lg border border-gray-300 shadow-sm dark:border-[#333]">
+        <div className="absolute inset-0 overflow-hidden border border-line-strong">
           <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={tc("pageN", { n: page })} className="h-full" />
           {/* Dims everything outside the box; the frame clips the shadow. */}
           <div
@@ -127,7 +127,8 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
             style={{ left: box.left, top: box.top, width: box.width, height: box.height, boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.45)" }}
           />
         </div>
-        {/* Outside the clipping frame, so the handles on the page edge stay whole and grabbable. */}
+        {/* Outside the clipping frame, so the handles on the page edge stay whole and grabbable.
+            Drawn in fixed black and white, not theme ink: it sits on the page render (document colours). */}
         <div className="absolute inset-px">
           <div
             role="group"
@@ -140,7 +141,7 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
             onPointerUp={end}
             onPointerCancel={end}
             onKeyDown={key}
-            className="absolute cursor-move touch-none outline-none ring-2 ring-mantis-500 focus-visible:ring-4 focus-visible:ring-mantis-600"
+            className="absolute cursor-move touch-none outline outline-1 outline-offset-2 outline-white ring-2 ring-black focus-visible:outline-offset-4 focus-visible:ring-4"
             style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
           >
             {HANDLES.map((h) => (
@@ -151,13 +152,13 @@ export default function CropCanvas({ source, page, pageSize, rect, onRect }: Pro
                 onPointerDown={begin(h)}
                 className={`absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center ${HANDLE_STYLE[h]}`}
               >
-                <span className="h-3 w-3 rounded-sm border border-white bg-mantis-600" />
+                <span className="h-3 w-3 border border-white bg-black" />
               </span>
             ))}
           </div>
         </div>
       </div>
-      <p id="crop-area-help" className="mt-2 text-xs text-gray-500 dark:text-[#777]">
+      <p id="crop-area-help" className="mt-2 text-xs text-ink-2">
         {t("boxHelp")}
       </p>
       <p className="sr-only" aria-live="polite">{spoken}</p>

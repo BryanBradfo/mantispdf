@@ -17,6 +17,7 @@ const SCANNED_PROPS = new Set(["aria-label", "aria-roledescription", "title", "p
  */
 const ALLOWLIST: { file: string; text: string; reason: string }[] = [
   { file: "src/components/layout/Header.tsx", text: "MantisPDF", reason: "brand name (logo alt text), the same in every language" },
+  { file: "src/components/layout/Footer.tsx", text: "MantisPDF", reason: "brand name (home link and decorative wordmark), the same in every language" },
   { file: "src/components/desktop/TitleBar.tsx", text: "MantisPDF", reason: "brand name (desktop window title), the same in every language" },
   {
     file: "src/components/license/LicenseDialog.tsx",

@@ -20,6 +20,7 @@ import {
   unsupportedIn,
 } from "../../lib/forms/values";
 import { useT } from "../../i18n";
+import { pageInvalid, pageMissing } from "../../styles/onPage";
 
 
 /** Courier New's advance width, in em. */
@@ -44,8 +45,19 @@ interface OverlayProps {
 
 // See-through: the preview is drawn without the file's field appearances (FormCanvas), so only
 // the page's own printing (labels, comb ticks) is under a control, and it stays readable.
-const frameClass = "border border-sky-400/80 bg-sky-100/40";
-const controlClass = `h-full w-full rounded-none ${frameClass} text-gray-900 outline-none focus:border-mantis-600 focus:ring-2 focus:ring-mantis-500 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-100/40 disabled:text-gray-700`;
+// The controls sit on the page render, which is white in both themes: black on the page, like
+// the other marks over a page (styles/onPage), not the theme ink.
+const frameClass = "border border-black/40 bg-black/[0.04]";
+// Focus is an outline set off from the box, so it shows over the invalid red ring and the dashed
+// warning border (both are drawn with !important border and ring classes).
+const focusOutline = "focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-black";
+const controlClass = `h-full w-full rounded-none ${frameClass} text-black outline-none focus:border-black ${focusOutline} disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/[0.06] disabled:text-black/70`;
+/** An invalid value (aria-invalid): the on-page danger border and ring. */
+const INVALID = ` ${pageInvalid}`;
+/** A value cut off by the box: a warning, monochrome (dashed black). */
+const WARNING = " !border-dashed !border-black !ring-1 !ring-black";
+/** An empty required field. */
+const MISSING = ` ${pageMissing}`;
 
 /**
  * The HTML control drawn over one widget of the page: sized to the widget, its content turned
@@ -79,13 +91,8 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
   const missing = field.required && !disabled && isEmpty(value);
   // Most serious first: unsavable characters, then a value that is too long or cut off, then an
   // empty required field.
-  const invalid = bad
-    ? " !border-red-600 !ring-2 !ring-red-500"
-    : tooLong || over
-      ? " !border-amber-500 !ring-2 !ring-amber-400"
-      : missing
-        ? " !border-red-500"
-        : "";
+  // Exactly the aria-invalid states are drawn in danger.
+  const invalid = bad || tooLong ? INVALID : over ? WARNING : missing ? MISSING : "";
   const title = bad
     ? t("labelNoFont", { label })
     : tooLong
@@ -109,7 +116,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
         role="note"
         aria-label={shown ? t("labelReadOnlyValue", { label, value: shown }) : t("labelReadOnly", { label })}
         title={t("labelReadOnly", { label })}
-        className="border border-dashed border-gray-400/80"
+        className="border border-dashed border-black/40"
       />
     );
   }
@@ -169,11 +176,11 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
             style={frame}
             // `clip`, not `hidden`: a clipping box that is not a scroll container, so revealing
             // the caret cannot shift the cells sideways.
-            className={`overflow-clip ${frameClass} focus-within:border-mantis-600 focus-within:ring-2 focus-within:ring-mantis-500${invalid}`}
+            className={`overflow-clip ${frameClass} focus-within:border-black focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-black${invalid}`}
           >
             <input
               {...common}
-              className="h-full border-0 bg-transparent p-0 text-gray-900 outline-none focus:ring-0 disabled:cursor-not-allowed"
+              className="h-full border-0 bg-transparent p-0 text-black outline-none focus:ring-0 disabled:cursor-not-allowed"
               type={kind.password ? "password" : "text"}
               autoComplete="off"
               onChange={(e) => onChange({ kind: "text", text: e.target.value })}
@@ -203,7 +210,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
       const checked = namesOf(value).includes(state);
       const radio = kind.kind === "radio";
       return (
-        <div style={frame} className={`flex items-center justify-center ${frameClass}${missing ? " !border-red-500" : ""}`} title={title}>
+        <div style={frame} className={`flex items-center justify-center ${frameClass}${missing ? MISSING : ""}`} title={title}>
           {/* No shared `name`: a radio is checked by the value alone, so widgets sharing one
               state (RadiosInUnison) all show checked. */}
           <input
@@ -218,7 +225,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
             onClick={() => {
               if (radio && checked && !field.required) onChange(NO_VALUE);
             }}
-            className="m-0 h-[80%] w-[80%] cursor-pointer accent-mantis-600 disabled:cursor-not-allowed"
+            className="m-0 h-[80%] w-[80%] cursor-pointer accent-black disabled:cursor-not-allowed"
           />
         </div>
       );
@@ -309,7 +316,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
     }
     case "signature":
       return (
-        <div style={frame} className="flex items-center justify-center border border-dashed border-sky-500 bg-sky-50/60 text-center">
+        <div style={frame} className="flex items-center justify-center border border-dashed border-black/60 bg-white/60 text-center">
           {/* A new tab: leaving this page would lose the values typed so far. */}
           <Link
             {...focusTarget}
@@ -317,7 +324,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
             target="_blank"
             rel="noopener"
             title={t("signTitle")}
-            className="px-1 text-[11px] font-medium leading-tight text-sky-800 underline"
+            className="px-1 text-[11px] font-medium leading-tight text-black underline outline-none focus-visible:ring-2 focus-visible:ring-black"
           >
             {t("signNewTab")}
           </Link>

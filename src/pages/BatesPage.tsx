@@ -22,7 +22,8 @@ import MergeFileList from "../components/merge/MergeFileList";
 import PositionPicker from "../components/stamp/PositionPicker";
 import LiveSummary from "../components/stamp/LiveSummary";
 import TextStyleFields from "../components/stamp/TextStyleFields";
-import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { inputClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 
 let nextId = 0;
 const baseOf = (f: File) => f.name.replace(/\.pdf$/i, "");
@@ -149,18 +150,19 @@ export default function BatesPage() {
     setError(null);
   };
 
-  const labelClass = "block text-sm text-gray-700 dark:text-[#aaa]";
+  const labelClass = "block text-sm text-ink";
   const num = (v: number) => (Number.isFinite(v) ? v : "");
 
   return (
     <ToolShell
+      tool="bates"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/bates"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       <div className={`mt-8 ${busy ? "pointer-events-none opacity-50" : ""}`} inert={busy}>
         <DropZone multiple onFiles={(f) => void handleFiles(f)} error={state.uploadError} />
@@ -168,7 +170,7 @@ export default function BatesPage() {
 
       {files.length > 0 && (
         <form className={panelClass} onSubmit={(e) => void submit(e)}>
-          <p className="text-sm text-gray-600 dark:text-[#888]">
+          <p className="text-sm text-ink-2">
             {t("files", { count: files.length })}
           </p>
           <div className="mt-3">
@@ -216,13 +218,13 @@ export default function BatesPage() {
             <input
               type="number" min={0} max={300} value={num(margin)}
               onChange={(e) => setMargin(e.target.value === "" ? NaN : Number(e.target.value))}
-              className={`${inputClass} max-w-[8rem]`}
+              className={`${inputClass} block max-w-[8rem]`}
             />
           </label>
 
           <LiveSummary
             text={`${anchorLabel(anchor, ts)} · ${describeStyle(style, ts)}${rangeText ? ` · ${rangeText}` : ""}`}
-            className="mt-4 text-sm text-gray-600 dark:text-[#888]"
+            className="mt-4 text-sm text-ink-2"
           />
 
           <ErrorAlert error={problem} className="mt-4" />

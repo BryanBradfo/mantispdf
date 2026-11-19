@@ -3,6 +3,12 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { X, Minus, Plus } from "lucide-react";
 import { useT } from "../../i18n";
+import { MantisHead } from "../brand/MantisHead";
+import { focusRing } from "../../styles/ui";
+
+/** A window control: a round (round by nature, like the OS ones) hairline button that fills with ink on hover. */
+const control = `flex h-3 w-3 items-center justify-center rounded-full border border-line-strong text-ink hover:border-ink hover:bg-ink hover:text-paper ${focusRing} focus-visible:!ring-offset-1`;
+const glyph = "h-2 w-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100";
 
 /**
  * Custom window title bar for the Tauri desktop shell.
@@ -11,7 +17,7 @@ import { useT } from "../../i18n";
  * returns null, so browser visitors never see fake desktop window controls.
  * The OS title bar is hidden (`decorations: false` in tauri.conf.json), so this
  * provides the draggable region (`data-tauri-drag-region`) and the macOS-style
- * traffic-light controls, driven by the Tauri v2 window API.
+ * window controls (close, minimize, maximize), driven by the Tauri v2 window API.
  */
 export default function TitleBar() {
   const t = useT("common");
@@ -42,41 +48,32 @@ export default function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="sticky top-0 z-[60] flex h-9 shrink-0 select-none items-center border-b border-zinc-200 bg-zinc-50/90 backdrop-blur dark:border-white/10 dark:bg-[#0a0a0a]/90"
+      className="sticky top-0 z-[60] flex h-9 shrink-0 select-none items-center border-b border-line bg-paper"
     >
-      {/* macOS traffic-light controls (left). The `group` drives hover glyphs. */}
+      {/* Window controls (left, where macOS puts them): hollow rounds, glyphs on hover or focus. */}
       <div className="group flex items-center gap-2 pl-3.5">
-        <button
-          onClick={() => appWindow.close()}
-          aria-label={t("windowClose")}
-          className="flex h-3 w-3 items-center justify-center rounded-full bg-[#ff5f57] ring-1 ring-inset ring-black/10 transition hover:brightness-95"
-        >
-          <X className="h-2 w-2 text-black/60 opacity-0 group-hover:opacity-100" strokeWidth={3.5} />
+        <button onClick={() => appWindow.close()} aria-label={t("windowClose")} className={control}>
+          <X className={glyph} strokeWidth={3} />
         </button>
-        <button
-          onClick={() => appWindow.minimize()}
-          aria-label={t("windowMinimize")}
-          className="flex h-3 w-3 items-center justify-center rounded-full bg-[#febc2e] ring-1 ring-inset ring-black/10 transition hover:brightness-95"
-        >
-          <Minus className="h-2 w-2 text-black/60 opacity-0 group-hover:opacity-100" strokeWidth={3.5} />
+        <button onClick={() => appWindow.minimize()} aria-label={t("windowMinimize")} className={control}>
+          <Minus className={glyph} strokeWidth={3} />
         </button>
         <button
           onClick={() => appWindow.toggleMaximize()}
           aria-label={maximized ? t("windowRestore") : t("windowMaximize")}
-          className="flex h-3 w-3 items-center justify-center rounded-full bg-[#28c840] ring-1 ring-inset ring-black/10 transition hover:brightness-95"
+          className={control}
         >
-          <Plus className="h-2 w-2 text-black/60 opacity-0 group-hover:opacity-100" strokeWidth={3.5} />
+          <Plus className={glyph} strokeWidth={3} />
         </button>
       </div>
 
-      {/* Centered window title (drag passes through — pointer-events-none). */}
+      {/* Centered window title (drag passes through: pointer-events-none). */}
       <div
         data-tauri-drag-region
-        className="pointer-events-none absolute inset-x-0 flex justify-center"
+        className="pointer-events-none absolute inset-x-0 flex items-center justify-center gap-2 text-ink-2"
       >
-        <span className="font-mono text-xs tracking-tight text-zinc-400 dark:text-zinc-600">
-          MantisPDF
-        </span>
+        <MantisHead className="h-4 w-auto" />
+        <span className="font-display text-xs font-medium uppercase tracking-wider">MantisPDF</span>
       </div>
 
       {/* Right drag spacer; mirrors the controls' width so the title stays centered. */}

@@ -55,7 +55,7 @@ export default function FormCanvas({ source, page, pageSize, fields, state, onCh
   if (!(pageSize[0] > 0 && pageSize[1] > 0)) {
     return (
       <div ref={wrapRef} className="w-full">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
+        <p role="alert" className="text-sm text-danger">{t("noVisibleArea")}</p>
       </div>
     );
   }
@@ -74,7 +74,8 @@ export default function FormCanvas({ source, page, pageSize, fields, state, onCh
           if (edge === undefined || e.target !== edge) return;
           if (onTabOut(e.shiftKey ? -1 : 1)) e.preventDefault();
         }}
-        className="relative mx-auto overflow-hidden rounded-lg border border-gray-300 shadow-sm dark:border-[#333]"
+        // The controls sit on the white page: native checkboxes, radios and lists keep their light look in the dark theme.
+        className="relative mx-auto overflow-hidden border border-line [color-scheme:light]"
         style={{ width: pw, height: ph }}
       >
         {/* Without the file's field appearances: the controls below show the values instead. */}

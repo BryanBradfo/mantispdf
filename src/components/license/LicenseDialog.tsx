@@ -1,9 +1,20 @@
-import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check, Loader2, Sparkles, X } from "lucide-react";
 import type { LicenseStatus } from "../../hooks/useLicense";
 import { useDescribeError, useT, type UiError } from "../../i18n";
 import ErrorText from "../common/ErrorText";
+import { focusRing, inputClass, linkClass, primaryButton, secondaryButton } from "../../styles/ui";
+
+/** 150 ms fade and 8 px rise; nothing moves or fades under reduced motion. */
+const FADE = { duration: 0.15, ease: "easeOut" } as const;
+const INSTANT = { duration: 0 } as const;
+
+/** The controls Tab can reach inside the dialog, in order. */
+function focusables(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
+  return [...root.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])')];
+}
 
 interface LicenseDialogProps {
   open: boolean;
@@ -29,6 +40,46 @@ export default function LicenseDialog({
   const [error, setError] = useState<UiError | null>(null);
 
   const isPro = status.tier === "pro";
+  const errorId = useId();
+  const still = useReducedMotion();
+  const rise = still ? {} : { y: 8 };
+  const transition = still ? INSTANT : FADE;
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // A modal: focus moves in on open (the key input, else the first control) and back to the
+  // control that opened it on close.
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const panel = panelRef.current;
+    (panel?.querySelector<HTMLElement>("input:not([disabled])") ?? focusables(panel)[0])?.focus();
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [open]);
+
+  /** Escape closes; Tab and Shift+Tab cycle inside the dialog. */
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const items = focusables(panelRef.current);
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || !items.includes(active as HTMLElement))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !items.includes(active as HTMLElement))) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   const activate = async () => {
     if (!key.trim() || busy) return;
@@ -64,66 +115,69 @@ export default function LicenseDialog({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          transition={transition}
         >
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-paper/80"
             onClick={onClose}
             aria-hidden
           />
 
           <motion.div
+            ref={panelRef}
+            onKeyDown={onKeyDown}
             role="dialog"
             aria-modal="true"
             aria-label={t("licenseDialog")}
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={{ type: "spring", stiffness: 320, damping: 28 }}
-            className="relative w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0f0f0f]"
+            initial={{ opacity: 0, ...rise }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, ...rise }}
+            transition={transition}
+            className="relative w-full max-w-md rounded-none border border-line-strong bg-paper"
           >
             <button
               onClick={onClose}
               aria-label={t("close")}
-              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/5 dark:hover:text-zinc-200"
+              className={`absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-none text-ink-2 hover:text-ink ${focusRing}`}
             >
-              <X className="h-4 w-4" />
+              <X aria-hidden="true" strokeWidth={1.5} className="h-4 w-4" />
             </button>
 
             <div className="p-6">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-accent/30 bg-accent/10 text-accent-deep dark:text-accent">
-                <Sparkles className="h-5 w-5" strokeWidth={1.75} />
+              <div className="flex h-11 w-11 items-center justify-center rounded-none border border-line-strong text-ink">
+                <Sparkles aria-hidden="true" className="h-5 w-5" strokeWidth={1.5} />
               </div>
 
               {isPro ? (
                 <>
-                  <h2 className="mt-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                  <h2 className="mt-5 font-display text-2xl font-light tracking-[-0.01em] text-ink">
                     {t("licenseActiveTitle")}
                   </h2>
-                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                  <p className="mt-2 text-sm text-ink-2">
                     {t("licenseActiveBody")}
                   </p>
                   {status.key_masked && (
-                    <p className="mt-4 inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 font-mono text-xs text-zinc-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
-                      <Check className="h-3.5 w-3.5 text-accent-deep dark:text-accent" />
+                    <p className="mt-4 inline-flex items-center gap-2 rounded-none border border-line bg-surface px-3 py-1.5 font-mono text-xs text-ink">
+                      <Check aria-hidden="true" className="h-3.5 w-3.5" />
                       {status.key_masked}
                     </p>
                   )}
                   <button
                     onClick={deactivate}
                     disabled={busy}
-                    className="mt-5 inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 disabled:opacity-50 dark:border-white/10 dark:text-zinc-300 dark:hover:text-white"
+                    className={`mt-5 gap-2 ${secondaryButton}`}
                   >
-                    {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    {busy && <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />}
                     {t("licenseDeactivate")}
                   </button>
                 </>
               ) : (
                 <>
-                  <h2 className="mt-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                  <h2 className="mt-5 font-display text-2xl font-light tracking-[-0.01em] text-ink">
                     {t("licenseUnlockTitle")}
                   </h2>
-                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                  <p className="mt-2 text-sm text-ink-2">
                     {t("licenseUnlockBody")}
                   </p>
 
@@ -135,19 +189,22 @@ export default function LicenseDialog({
                       placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
                       spellCheck={false}
                       autoComplete="off"
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 font-mono text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-accent/70 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-100 dark:placeholder:text-zinc-600"
+                      aria-label={t("licenseKey")}
+                      aria-invalid={error !== null}
+                      aria-describedby={error ? errorId : undefined}
+                      className={`${inputClass} !mt-0 font-mono ${error ? "!border-danger" : ""}`}
                     />
                     {error && (
-                      <div className="mt-2 text-xs text-red-500 dark:text-red-400">
+                      <div id={errorId} role="alert" className="mt-2 text-xs text-danger">
                         <ErrorText error={error} />
                       </div>
                     )}
                     <button
                       onClick={activate}
                       disabled={busy || !key.trim()}
-                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-black shadow-glow transition-all hover:bg-accent-soft hover:shadow-glow-lg disabled:pointer-events-none disabled:opacity-40"
+                      className={`mt-3 w-full gap-2 ${primaryButton}`}
                     >
-                      {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {busy && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
                       {busy ? t("licenseActivating") : t("licenseActivate")}
                     </button>
                   </div>
@@ -156,7 +213,7 @@ export default function LicenseDialog({
                     href={checkoutUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-4 block text-center text-xs text-zinc-500 transition-colors hover:text-accent-deep dark:text-zinc-400 dark:hover:text-accent"
+                    className={`mt-5 block w-fit text-xs ${linkClass} mx-auto`}
                   >
                     {t("licenseGetKey")}
                   </a>

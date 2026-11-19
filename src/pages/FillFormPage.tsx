@@ -18,7 +18,9 @@ import type { FontManifest } from "../lib/fonts/manifest";
 import { cjkFlavourFromLanguage } from "../lib/fonts/select";
 import { FormFontsContext, type FormFontsEnv } from "../components/forms/formFontsContext";
 import { valueOf } from "../lib/forms/model";
-import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { Info, TriangleAlert } from "lucide-react";
+import { checkClass, fileMeta, linkClass, noticeClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 import type { UiError } from "../i18n";
 
@@ -26,8 +28,6 @@ interface Prepared {
   sizes: [number, number][];
   form: FormInfo;
 }
-
-const linkClass = "font-medium text-mantis-700 underline dark:text-mantis-400";
 
 /** Field names listed in the required-fields dialog before "and N more". */
 const LISTED_MISSING = 5;
@@ -225,7 +225,7 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
     <FormFontsContext.Provider value={fontsEnv}>
     <div className="mt-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
+        <p className={fileMeta}>
           {t("fileSummary", {
             name: input.file.name,
             fields: t("fields", { count: ordered.length }),
@@ -233,19 +233,19 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
           })}
         </p>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+          <label className="flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"
               checked={flatten}
               onChange={(e) => setFlatten(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+              className={checkClass}
             />
             {t("flatten")}
           </label>
           <button type="button" onClick={download} disabled={busy} className={primaryButton}>
             {busy ? tc("saving") : tc("downloadPdf")}
           </button>
-          <button type="button" onClick={() => setState(resetForm)} disabled={!dirty} className={`${secondaryButton} disabled:opacity-50`}>
+          <button type="button" onClick={() => setState(resetForm)} disabled={!dirty} className={secondaryButton}>
             {tc("reset")}
           </button>
           <button type="button" onClick={startOver} className={secondaryButton}>
@@ -257,8 +257,10 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
       <ErrorAlert error={error} onDismiss={() => setError(null)} />
 
       {missing && (
-        <div role="alertdialog" aria-labelledby="missing-required" className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-[#1f1a0a]">
-          <p id="missing-required" className="text-sm text-amber-900 dark:text-amber-200">
+        <div role="alertdialog" aria-labelledby="missing-required" className={noticeClass}>
+          <p id="missing-required" className="flex gap-3 text-sm text-ink">
+            <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
             {t("missing", {
               count: missing.length,
               names: missing
@@ -267,8 +269,9 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
                 .join(", "),
               more: missing.length > LISTED_MISSING ? t("missingMore", { count: missing.length - LISTED_MISSING }) : "",
             })}
+            </span>
           </p>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={save} className={primaryButton}>
               {t("downloadAnyway")}
             </button>
@@ -291,12 +294,13 @@ function Workspace({ input, busy, run, error, setError, fillForm, layoutText, on
       )}
 
       {signed && (
-        <p role="note" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-[#1f1a0a] dark:text-amber-200">
-          {t("signedWarning")}
+        <p role="note" className={`flex gap-3 ${noticeClass}`}>
+          <Info aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{t("signedWarning")}</span>
         </p>
       )}
 
-      <p className="text-xs text-gray-500 dark:text-[#777]">
+      <p className="text-xs text-ink-2">
         {t("scriptsNote")}
         {form.xfa === "hybrid" && ` ${t("xfaHybrid")}`}
       </p>
@@ -349,6 +353,7 @@ export default function FillFormPage() {
 
   return (
     <ToolShell
+      tool="fillForm"
       wide={fillable}
       title={t("seoTitle")}
       description={t("seoDescription")}
@@ -356,7 +361,7 @@ export default function FillFormPage() {
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mx-auto mt-8 max-w-2xl">
@@ -366,8 +371,8 @@ export default function FillFormPage() {
 
       {input && form && !fillable && (
         <div className={panelClass}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
-          <p role="status" className="mt-3 text-sm text-gray-700 dark:text-[#bbb]">
+          <p className={fileMeta}>{input.file.name}</p>
+          <p role="status" className="mt-3 text-sm text-ink">
             {form.xfa === "pure" ? (
               t("xfaPure")
             ) : (

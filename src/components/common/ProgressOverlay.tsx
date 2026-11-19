@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { formatNumber, useLocale, useT, type UiError } from "../../i18n";
 import ErrorText from "./ErrorText";
+import { secondaryButton } from "../../styles/ui";
 
 interface ProgressOverlayProps {
   progress: number;
@@ -31,36 +32,36 @@ export default function ProgressOverlay({ progress, message, error, onDismissErr
       role={error ? "alertdialog" : "dialog"}
       aria-modal="true"
       aria-label={error ? t("progressError") : t("progressProcessing")}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-paper/80 px-4"
     >
-      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl dark:bg-[#141414] dark:shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+      <div className="w-full max-w-sm border border-line bg-surface p-6">
         {error ? (
           <>
-            <div className="mb-4 text-sm font-medium text-red-600 dark:text-red-400" aria-live="assertive">
+            <div className="mb-5 text-sm font-medium text-danger" aria-live="assertive">
               <ErrorText error={error} />
             </div>
             <button
               ref={dismissRef}
               onClick={onDismissError}
-              className="w-full rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-[#1a1a1a] dark:text-[#aaa] dark:hover:bg-[#222]"
+              className={`${secondaryButton} w-full`}
             >
               {t("dismiss")}
             </button>
           </>
         ) : (
           <>
-            <p className={`mb-3 text-sm font-medium text-gray-700 dark:text-[#aaa]${progress < 0.1 ? " animate-pulse" : ""}`}>{message}</p>
-            <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-[#222]">
+            <p className={`mb-4 text-sm text-ink${progress < 0.1 ? " animate-pulse" : ""}`}>{message}</p>
+            <div className="h-0.5 overflow-hidden bg-line">
               {progress < 0.1 ? (
-                <div className="h-full w-1/2 rounded-full bg-mantis-500 animate-shimmer" />
+                <div className="h-full w-1/2 bg-ink-3 animate-shimmer" />
               ) : (
                 <div
-                  className="h-full rounded-full bg-mantis-500 transition-all duration-300"
+                  className="h-full bg-ink"
                   style={{ width: `${Math.round(progress * 100)}%` }}
                 />
               )}
             </div>
-            <p className="mt-2 text-right text-xs text-gray-400 dark:text-[#555]">
+            <p className="mt-3 text-right font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2">
               {progress < 0.1 ? t("progressWorking") : formatNumber(Math.round(progress * 100) / 100, locale, { style: "percent" })}
             </p>
           </>

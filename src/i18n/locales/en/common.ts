@@ -134,7 +134,10 @@ export default {
   pageEdited: "edited",
 
   // Header, language switcher, French banner
-  headerStar: "Star",
+  headerTools: "Tools",
+  headerMenu: "Menu",
+  headerGithub: "GitHub",
+  toolsMenu: "All tools",
   toggleDarkMode: "Toggle dark mode",
   language: "Language",
   languageEnglish: "English",
@@ -145,8 +148,24 @@ export default {
   bannerFrenchDismiss: "Non merci",
 
   // Footer
-  footerPrivacy: "MantisPDF. All processing happens in your browser. No data is uploaded.",
+  footerSlogan: "Every PDF tool. Zero uploads.",
+  "footerEyebrow.organize": "Pages",
+  "footerEyebrow.convert": "Files",
+  "footerEyebrow.edit": "Content",
+  "footerEyebrow.security": "Protection",
+  "footerEyebrow.recognize": "Text",
+  footerPrivacy: "All processing happens in your browser. No data is uploaded.",
+  footerLicense: "MIT license",
   footerGithub: "MantisPDF on GitHub",
+  footerNav: "Site map",
+  footerOpenSource: "Open source",
+  footerProject: "Project",
+  footerGoTo: "Go to",
+  footerReportBug: "Report a bug",
+  footerContribute: "Contribute",
+  footerNewTab: "(opens in a new tab)",
+  footerCopyright: "© {year} MantisPDF",
+  footerInBrowser: "100% in your browser",
 
   // 404
   notFoundTitle: "Page not found",
@@ -170,6 +189,7 @@ export default {
     "Pro adds offline math OCR: convert equations to perfect LaTeX, rendered live. Enter your license key to activate.",
   licenseActivating: "Activating…",
   licenseActivate: "Activate license",
+  licenseKey: "License key",
   licenseGetKey: "Don't have a key? Get MantisPDF Pro →",
   // Unicode fonts (Edit PDF, Fill form)
   noFontChars: "No font can show these characters: {chars}",

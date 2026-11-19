@@ -6,6 +6,7 @@ import { ensureFontFace, fontFaceFamily } from "../../lib/fonts/fontFaces";
 import { cssColor } from "./svgStyle";
 import { useUnicodeText } from "./unicodeTextContext";
 import { useT } from "../../i18n";
+import { PAGE_MARK_DANGER } from "../../styles/onPage";
 
 /** Synthetic bold stroke (em), as the engine draws it (`FAKE_BOLD_EM`). */
 const FAKE_BOLD_EM = 0.03;
@@ -92,7 +93,7 @@ export default function NotoText({ item, family, bold, toPx, scale, box }: Props
           width={box.width}
           height={box.height}
           fill="none"
-          stroke="#dc2626"
+          stroke={PAGE_MARK_DANGER}
           strokeWidth={2}
           strokeDasharray="5 3"
         >

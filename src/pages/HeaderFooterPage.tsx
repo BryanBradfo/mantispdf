@@ -19,7 +19,8 @@ import {
   type HeaderFooterSlots,
   type TextStyle,
 } from "../lib/stampBuilders";
-import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { fileMeta, inputClass, monoLabel, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useLocale, useT } from "../i18n";
 
@@ -87,13 +88,14 @@ export default function HeaderFooterPage() {
 
   return (
     <ToolShell
+      tool="headerFooter"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/header-footer"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">
@@ -103,11 +105,11 @@ export default function HeaderFooterPage() {
 
       {input && (
         <form className={panelClass} onSubmit={submit}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
+          <p className={fileMeta}>{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {HEADER_FOOTER_SLOTS.map((s) => (
-              <label key={s.anchor} className="block text-sm text-gray-700 dark:text-[#aaa]">
+              <label key={s.anchor} className="block text-sm text-ink">
                 {slotLabel(s.anchor, ts)}
                 <input
                   value={slots[s.anchor]}
@@ -117,7 +119,7 @@ export default function HeaderFooterPage() {
               </label>
             ))}
           </div>
-          <p className="mt-2 text-xs text-gray-500 dark:text-[#555]">
+          <p className="mt-2 text-xs text-ink-2">
             {t("tokens", { n: "{n}", total: "{total}", date: "{date}", filename: "{filename}" })}
           </p>
 
@@ -125,7 +127,7 @@ export default function HeaderFooterPage() {
             <div className="min-w-[12rem] flex-1">
               <RangeInput label={t("pages")} total={total} selectedPages={selected} onPages={setPages} />
             </div>
-            <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+            <label className="block text-sm text-ink">
               {ts("firstNumber")}
               <input
                 type="number"
@@ -133,19 +135,19 @@ export default function HeaderFooterPage() {
                 step={1}
                 value={Number.isFinite(numberStart) ? numberStart : ""}
                 onChange={(e) => setNumberStart(e.target.value === "" ? NaN : Number(e.target.value))}
-                className={`${inputClass} max-w-[8rem]`}
+                className={`${inputClass} block max-w-[8rem]`}
               />
             </label>
           </div>
 
           {firstPage !== null && preview.length > 0 && (
-            <div className="mt-4 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:bg-[#141414] dark:text-[#aaa]" data-testid="hf-preview">
-              <p className="font-medium">{t("onPage", { page: firstPage })}</p>
+            <div className="mt-4 border border-line bg-paper px-3 py-2 text-sm text-ink" data-testid="hf-preview">
+              <p className={monoLabel}>{t("onPage", { page: firstPage })}</p>
               <ul className="mt-1 space-y-0.5">
                 {preview.map((p) => (
                   <li key={p.label}>
                     {t("slotPreview", { label: p.label })}
-                    <span className="font-mono">{p.text === "" ? t("empty") : p.text}</span>
+                    <span className="font-mono text-ink">{p.text === "" ? t("empty") : p.text}</span>
                   </li>
                 ))}
               </ul>
@@ -154,7 +156,7 @@ export default function HeaderFooterPage() {
 
           <div className="mt-4"><TextStyleFields value={style} onChange={setStyle} /></div>
 
-          <label className="mt-4 block text-sm text-gray-700 dark:text-[#aaa]">
+          <label className="mt-4 block text-sm text-ink">
             {ts("marginFromEdge")}
             <input
               type="number"
@@ -162,11 +164,11 @@ export default function HeaderFooterPage() {
               max={300}
               value={Number.isFinite(margin) ? margin : ""}
               onChange={(e) => setMargin(e.target.value === "" ? NaN : Number(e.target.value))}
-              className={`${inputClass} max-w-[8rem]`}
+              className={`${inputClass} block max-w-[8rem]`}
             />
           </label>
 
-          <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
+          <LiveSummary text={summary} className="mt-4 text-sm text-ink-2" />
 
           <ErrorAlert error={problem} className="mt-4" />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />

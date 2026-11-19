@@ -4,7 +4,7 @@ test("home page renders the tool grid", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveTitle(/MantisPDF/i);
   await expect(page.getByRole("heading", { name: "PDF Tools" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Split PDF/i })).toBeVisible();
+  await expect(page.locator("#tools").getByRole("link", { name: /Split PDF/i })).toBeVisible();
 });
 
 test("split page loads and the WASM engine initializes without error", async ({ page }) => {

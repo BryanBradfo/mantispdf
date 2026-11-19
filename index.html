@@ -2,10 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/mantis_wo_text.png" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#000000" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Self-hosted Inter (latin), also declared by @fontsource-variable/inter in main.tsx. -->
+    <!-- Self-hosted Inter and Oswald (latin), also declared by @fontsource-variable/*/wght.css in main.tsx. -->
     <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource-variable/oswald/files/oswald-latin-wght-normal.woff2" />
     <meta name="robots" content="index, follow" />
     <meta name="google-site-verification" content="xkhnRyi1X7Cpuq4DIPkfiDSTWxUL3tM5NSf2XY7-tMc" />
     <!-- Title, description, canonical, hreflang and the og:/twitter: page tags are rendered per page and
@@ -13,6 +17,8 @@
          stay next to them as English duplicates, so only the tags PageSEO does not manage remain. -->
     <meta property="og:site_name" content="MantisPDF" />
     <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -27,11 +33,13 @@
     </script>
     <script>
       (function () {
-        var stored = localStorage.getItem("theme");
-        var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        if (stored === "dark" || (!stored && prefersDark)) {
-          document.documentElement.classList.add("dark");
-        }
+        // Dark unless the user stored "light" (same rule as src/hooks/useTheme.ts).
+        var stored = null;
+        try { stored = localStorage.getItem("theme"); } catch (e) {}
+        var dark = stored !== "light";
+        if (dark) document.documentElement.classList.add("dark");
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", dark ? "#000000" : "#ffffff");
       })();
     </script>
   </head>

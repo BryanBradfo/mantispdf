@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useDescribeError, useT, type UiError } from "../i18n";
 import { Document, Page } from "../lib/pdf";
-import { PageSEO } from "../components/seo/PageSEO";
+import ToolShell from "./ToolShell";
+import LoadingRow from "../components/common/LoadingRow";
+import ToggleChip from "../components/common/ToggleChip";
+import { fileMeta, focusRing, inputClass, monoLabel, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { isPdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
@@ -90,18 +93,15 @@ export default function WatermarkPdfPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
-      <PageSEO
-        title={t("seoTitle")}
-        description={t("seoDescription")}
-        path="/watermark"
-      />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
-      <p className="mt-2 text-gray-600 dark:text-[#555]">
-        {t("intro")}
-      </p>
-
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+    <ToolShell
+      tool="watermark"
+      title={t("seoTitle")}
+      description={t("seoDescription")}
+      path="/watermark"
+      heading={t("heading")}
+      intro={t("intro")}
+    >
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!file && (
         <div className="mt-8">
@@ -110,11 +110,11 @@ export default function WatermarkPdfPage() {
       )}
 
       {file && !result && !worker.watermarking && (
-        <div className="mt-8 space-y-6">
-          <p className="text-sm text-gray-500 dark:text-[#555]">{file.name}</p>
+        <div className={`${panelClass} space-y-6`}>
+          <p className={fileMeta}>{file.name}</p>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-[#aaa]">
+            <label className="block text-sm font-medium text-ink">
               {t("text")}
             </label>
             <input
@@ -122,7 +122,7 @@ export default function WatermarkPdfPage() {
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={t("defaultText")}
-              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-mantis-500 focus:outline-none focus:ring-1 focus:ring-mantis-500 dark:border-[#333] dark:bg-[#141414] dark:text-[#ddd]"
+              className={inputClass}
             />
           </div>
 
@@ -133,37 +133,29 @@ export default function WatermarkPdfPage() {
           </div>
 
           <div>
-            <p className="text-sm font-medium text-gray-700 dark:text-[#aaa]">{t("color")}</p>
+            <p className="text-sm font-medium text-ink">{t("color")}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {COLOR_PRESETS.map((preset, idx) => (
-                <button
-                  key={preset.id}
-                  onClick={() => setColorIdx(idx)}
-                  className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                    colorIdx === idx
-                      ? "border-mantis-500 bg-mantis-50 text-mantis-700 dark:border-mantis-600 dark:bg-mantis-950/30 dark:text-mantis-400"
-                      : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
-                  }`}
-                >
+                <ToggleChip key={preset.id} on={colorIdx === idx} onClick={() => setColorIdx(idx)}>
                   {t(preset.id)}
-                </button>
+                </ToggleChip>
               ))}
             </div>
           </div>
 
           <ErrorAlert error={watermarkError} />
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <button
               onClick={handleApply}
               disabled={!worker.ready || !text.trim()}
-              className="flex-1 rounded-lg bg-mantis-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-mantis-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-mantis-500 focus:ring-offset-2"
+              className={`flex-1 ${primaryButton}`}
             >
               {t("apply")}
             </button>
             <button
               onClick={handleReset}
-              className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
+              className={secondaryButton}
             >
               {t("cancel")}
             </button>
@@ -172,24 +164,21 @@ export default function WatermarkPdfPage() {
       )}
 
       {worker.watermarking && (
-        <div className="mt-12 flex flex-col items-center justify-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent" />
-          <p className="text-gray-500 dark:text-[#555]">{t("adding")}</p>
-        </div>
+        <LoadingRow label={t("adding")} className="mt-12 justify-center" />
       )}
 
       {result && previewUrl && (
         <div className="mt-8 space-y-4">
-          <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-[#2a2a2a]">
-            <p className="border-b border-gray-200 px-4 py-2 text-xs text-gray-500 dark:border-[#2a2a2a] dark:text-[#555]">
+          <div className="overflow-hidden border border-line">
+            <p className={`border-b border-line px-4 py-2 ${monoLabel}`}>
               {previewPageCount > 1 ? t("previewOf", { total: previewPageCount }) : t("previewFirst")}
             </p>
-            <div className="flex justify-center bg-gray-100 p-4 dark:bg-[#111]">
+            <div className="flex justify-center bg-surface p-4">
               <Document
                 file={previewUrl}
                 onLoadSuccess={({ numPages }) => setPreviewPageCount(numPages)}
                 loading={
-                  <div className="flex h-40 items-center justify-center text-sm text-gray-400">
+                  <div className={`flex h-40 items-center justify-center ${monoLabel}`}>
                     {t("rendering")}
                   </div>
                 }
@@ -199,26 +188,26 @@ export default function WatermarkPdfPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-mantis-200 bg-mantis-50/50 p-6 dark:border-mantis-900 dark:bg-[#0f1a0f]">
-            <p className="font-medium text-gray-800 dark:text-[#ccc]">{t("done")}</p>
+          <div className={`${panelClass} !mt-0`}>
+            <p className="font-medium text-ink">{t("done")}</p>
             <div className="mt-4 flex flex-wrap gap-3">
               <button
                 onClick={handleDownload}
-                className="flex-1 rounded-lg bg-mantis-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-mantis-700 focus:outline-none focus:ring-2 focus:ring-mantis-500 focus:ring-offset-2"
+                className={`flex-1 ${primaryButton}`}
               >
                 {t("download")}
               </button>
               {downloaded && (
                 <Link
                   to="/"
-                  className="rounded-lg border border-mantis-500 px-4 py-2.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
+                  className={secondaryButton}
                 >
                   {tc("allTools")}
                 </Link>
               )}
               <button
                 onClick={handleReset}
-                className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
+                className={secondaryButton}
               >
                 {t("another")}
               </button>
@@ -226,7 +215,7 @@ export default function WatermarkPdfPage() {
           </div>
         </div>
       )}
-    </div>
+    </ToolShell>
   );
 }
 
@@ -244,8 +233,8 @@ function SliderField({ label, value, min, max, shown, onChange }: SliderFieldPro
   return (
     <div>
       <div className="flex justify-between">
-        <label className="text-sm font-medium text-gray-700 dark:text-[#aaa]">{label}</label>
-        <span className="text-sm text-gray-500 dark:text-[#555]">{shown}</span>
+        <label className="text-sm font-medium text-ink">{label}</label>
+        <span className="font-mono text-xs text-ink-2">{shown}</span>
       </div>
       <input
         type="range"
@@ -253,7 +242,7 @@ function SliderField({ label, value, min, max, shown, onChange }: SliderFieldPro
         max={max}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-1 w-full accent-mantis-600"
+        className={`mt-2 w-full ${focusRing}`}
       />
     </div>
   );

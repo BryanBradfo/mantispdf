@@ -1,7 +1,7 @@
 import { useId } from "react";
 import type { TextStyle } from "../../lib/stampBuilders";
 import type { StdFont } from "../../lib/stampJob";
-import { inputClass } from "../../pages/ToolShell";
+import { focusRing, inputClass } from "../../styles/ui";
 import { formatNumber, useLocale, useT } from "../../i18n";
 
 const FONTS: { value: StdFont; label: string }[] = [
@@ -20,7 +20,7 @@ export default function TextStyleFields({ value, onChange }: Props) {
   const t = useT("stamp");
   const locale = useLocale();
   const id = useId();
-  const labelClass = "block text-sm text-gray-700 dark:text-[#aaa]";
+  const labelClass = "block text-sm text-ink";
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       <label className={labelClass}>
@@ -65,7 +65,7 @@ export default function TextStyleFields({ value, onChange }: Props) {
           step={0.05}
           value={value.opacity}
           onChange={(e) => onChange({ ...value, opacity: Number(e.target.value) })}
-          className="mt-3 w-full accent-mantis-600"
+          className={`mt-3 w-full accent-ink ${focusRing}`}
         />
       </div>
     </div>

@@ -128,6 +128,16 @@ test("redacts an area, a search match and a whole page, rasterizing what it must
   await drawArea(page, NUMBER);
   await drawArea(page, JPEG_LEFT);
 
+  // "Repeat on pages" with a page list it cannot read: the input is marked invalid, with its message.
+  await page.getByRole("button", { name: "Marked area", exact: true }).first().click();
+  const repeatInput = page.getByRole("textbox", { name: "Pages to repeat the area on" });
+  await repeatInput.fill("9");
+  await page.getByRole("button", { name: "Repeat", exact: true }).click();
+  await expect(repeatInput).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator(`[id="${await repeatInput.getAttribute("aria-describedby")}"]`)).not.toBeEmpty();
+  await repeatInput.fill("");
+  await expect(repeatInput).toHaveAttribute("aria-invalid", "false");
+
   // Engine search, then "Mark all".
   await page.getByRole("searchbox", { name: "Text to find" }).fill("SMITH");
   await page.getByRole("button", { name: "Find", exact: true }).click();

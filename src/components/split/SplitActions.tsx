@@ -1,4 +1,5 @@
 import { useT } from "../../i18n";
+import { primaryButton, secondaryButton } from "../../styles/ui";
 
 interface SplitActionsProps {
   splitCount: number;
@@ -13,17 +14,17 @@ export default function SplitActions({ splitCount, onSplit, onReset, disabled }:
   const parts = splitCount + 1;
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <button
         onClick={onSplit}
         disabled={disabled || splitCount === 0}
-        className="rounded-lg bg-mantis-600 px-6 py-2.5 font-medium text-white transition hover:bg-mantis-700 disabled:cursor-not-allowed disabled:opacity-50"
+        className={primaryButton}
       >
         {splitCount === 0 ? t("selectPoints") : t("splitInto", { parts })}
       </button>
       <button
         onClick={onReset}
-        className="rounded-lg border border-gray-300 px-4 py-2.5 font-medium text-gray-700 transition hover:bg-gray-50 dark:border-[#222] dark:text-[#aaa] dark:hover:bg-[#141414]"
+        className={secondaryButton}
       >
         {tc("reset")}
       </button>

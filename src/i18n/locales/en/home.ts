@@ -1,14 +1,22 @@
 import type { Namespace } from "../../types";
 
 export default {
-  badge: "🔒 Zero uploads · WebAssembly powered",
+  heroEyebrow: "Open source · 100% in your browser",
+  heroFigure: "Mantis religiosa",
   heading: "PDF Tools",
   tagline: "100% Private, 100% Fast",
   intro:
     "All processing runs directly in your browser via WebAssembly. Your files never leave your device, not even for a millisecond.",
-  comingSoon: "Coming Soon",
+  chooseTool: "Choose a tool",
+  sectionCount: { one: "{count} tool", other: "{count} tools" },
   pro: "Pro",
   upgradeToPro: "Upgrade to Pro",
+
+  "sections.organize": "Organize",
+  "sections.convert": "Optimize and convert",
+  "sections.edit": "Edit and sign",
+  "sections.security": "Security and privacy",
+  "sections.recognize": "Recognize",
 
   "split.title": "Split PDF",
   "split.desc": "Divide a PDF into multiple files at chosen page boundaries.",

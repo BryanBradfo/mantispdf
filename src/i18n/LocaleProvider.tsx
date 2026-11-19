@@ -113,10 +113,14 @@ function LoadFailedNotice({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       role="status"
-      className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"
+      className="border-b border-line-strong bg-surface px-4 py-2 text-center text-sm text-ink"
     >
       {t("localeLoadFailed")}{" "}
-      <button type="button" onClick={onRetry} className="font-medium underline">
+      <button
+        type="button"
+        onClick={onRetry}
+        className="font-medium underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+      >
         {t("retry")}
       </button>
     </div>

@@ -1,5 +1,8 @@
 import PageImage from "../common/PageImage";
+import { Check } from "lucide-react";
 import { useT } from "../../i18n";
+import { focusRing } from "../../styles/ui";
+import { pageBadge, pageDot, pageSelected } from "../../styles/onPage";
 
 interface Props {
   source: Blob | Uint8Array;
@@ -17,28 +20,39 @@ export default function PageStrip({ source, pageCount, page, edited, onPage, mar
   const t = useT("common");
   const markLabel = markProp ?? t("pageEdited");
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2" role="group" aria-label={t("pagesGroup")}>
+    <div className="flex gap-2 overflow-x-auto p-1 pb-2" role="group" aria-label={t("pagesGroup")}>
       {Array.from({ length: pageCount }, (_, i) => {
         const n = i + 1;
         const isEdited = edited.has(n);
+        const on = page === n;
         return (
           <button
             key={n}
             type="button"
             aria-label={isEdited ? t("pageNMarked", { n, mark: markLabel }) : t("pageN", { n })}
-            aria-pressed={page === n}
+            aria-pressed={on}
             onClick={() => onPage(n)}
-            className={`relative w-16 shrink-0 overflow-hidden rounded-md border-2 bg-white text-xs dark:bg-[#111] ${
-              page === n ? "border-mantis-600" : "border-transparent hover:border-gray-300 dark:hover:border-[#444]"
+            className={`relative w-16 shrink-0 border bg-paper ${focusRing} ${
+              on ? "border-ink" : "border-line hover:border-line-strong"
             }`}
           >
             <PageImage source={source} page={n} width={64} alt="" />
-            <span className="block py-0.5 text-gray-700 dark:text-[#aaa]">{n}</span>
+            <span className="block border-t border-line py-0.5 font-mono text-[11px] text-ink-2">{n}</span>
+            {on && (
+              <>
+                {/* On an inner layer, so the focus ring's outline-none on the button cannot hide the selection; black, it is drawn on the page. */}
+                <span data-selected-frame aria-hidden="true" className={`pointer-events-none absolute inset-0 ${pageSelected} -outline-offset-2`} />
+                <span aria-hidden="true" className={`absolute left-1 top-1 flex h-4 w-4 items-center justify-center ${pageBadge}`}>
+                  <Check strokeWidth={2} className="h-3 w-3" />
+                </span>
+              </>
+            )}
             {isEdited && (
               <span
                 aria-hidden="true"
+                data-edited-mark
                 title={markLabel.charAt(0).toUpperCase() + markLabel.slice(1)}
-                className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-mantis-600 ring-2 ring-white dark:ring-[#111]"
+                className={`absolute right-1 top-1 h-2.5 w-2.5 rounded-full ${pageDot}`}
               />
             )}
           </button>

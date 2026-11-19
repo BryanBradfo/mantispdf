@@ -4,15 +4,17 @@ import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
-import PageImage from "../components/common/PageImage";
 import RangeInput from "../components/planner/RangeInput";
 import LiveSummary from "../components/stamp/LiveSummary";
 import CropCanvas from "../components/geometry/CropCanvas";
+import CropPageStrip from "../components/geometry/CropPageStrip";
 import { detectContentRects } from "../lib/autoMargins";
 import { buildCropJob, cropTargetPages, defaultCropRect, fitCropToPage, missedPagesProblem, pagesMissedBy, type CropScope } from "../lib/cropBox";
 import type { Rect } from "../lib/geometryJob";
 import { describePages } from "../lib/stampBuilders";
-import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { Info } from "lucide-react";
+import { checkClass, fileMeta, linkClass, monoLabel, noticeClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 
 /** The engine accepts at most this many per-page boxes in one job. */
@@ -169,13 +171,14 @@ export default function CropPdfPage() {
 
   return (
     <ToolShell
+      tool="crop"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/crop"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">
@@ -185,32 +188,12 @@ export default function CropPdfPage() {
 
       {input && (
         <form className={panelClass} onSubmit={submit}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
+          <p className={fileMeta}>
             {tc("fileWithPagesParen", { name: input.file.name, count: total })}
           </p>
 
           {total > 1 && (
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-2" role="group" aria-label={tc("pagesGroup")}>
-              {sizes.map((_, i) => {
-                const n = i + 1;
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    aria-label={tc("pageN", { n })}
-                    aria-pressed={page === n}
-                    disabled={detecting}
-                    onClick={() => setPage(n)}
-                    className={`w-20 shrink-0 overflow-hidden rounded-md border-2 bg-white text-xs disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[#111] ${
-                      page === n ? "border-mantis-600" : "border-transparent hover:border-gray-300 dark:hover:border-[#444]"
-                    }`}
-                  >
-                    <PageImage source={input.file} page={n} width={80} alt="" />
-                    <span className="block py-0.5 text-gray-700 dark:text-[#aaa]">{n}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <CropPageStrip source={input.file} count={total} page={page} disabled={detecting} onPage={setPage} />
           )}
 
           <div className="mt-4">
@@ -233,17 +216,17 @@ export default function CropPdfPage() {
                 value={progress.done}
                 max={progress.total}
                 aria-label={t("detecting")}
-                className="h-2 w-full max-w-sm overflow-hidden rounded-full accent-mantis-600"
+                className="h-1 w-full max-w-sm accent-ink"
               />
-              <p className="mt-1 text-xs text-gray-600 dark:text-[#888]">
+              <p className={`mt-2 ${monoLabel}`}>
                 {t("detectingProgress", { done: progress.done, total: progress.total })}
               </p>
             </div>
           )}
-          <p role="status" className="mt-2 text-xs text-gray-600 dark:text-[#888]">{notice}</p>
+          <p role="status" className="mt-2 text-xs text-ink-2">{notice}</p>
 
           {perPage ? (
-            <div className="mt-4 text-sm text-gray-700 dark:text-[#aaa]">
+            <div className="mt-4 text-sm text-ink">
               <p>{t("perPageNote")}</p>
               <button
                 type="button"
@@ -256,8 +239,8 @@ export default function CropPdfPage() {
             </div>
           ) : (
             <fieldset className="mt-4" disabled={detecting}>
-              <legend className="text-sm text-gray-700 dark:text-[#aaa]">{t("applyTo")}</legend>
-              <div className="mt-1 flex flex-wrap gap-4 text-sm text-gray-700 dark:text-[#aaa]">
+              <legend className="text-sm text-ink">{t("applyTo")}</legend>
+              <div className="mt-1 flex flex-wrap gap-4 text-sm text-ink">
                 {SCOPES.map((s) => (
                   <label key={s} className="flex items-center gap-2">
                     <input type="radio" name="scope" checked={scope === s} onChange={() => setScope(s)} />
@@ -273,35 +256,38 @@ export default function CropPdfPage() {
             </fieldset>
           )}
 
-          <label className="mt-4 flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+          <label className="mt-4 flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"
               checked={permanent}
               onChange={(e) => setPermanent(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+              className={checkClass}
             />
             {t("makePermanent")}
           </label>
 
-          <p className="mt-4 rounded-lg bg-white/70 p-3 text-xs text-gray-600 dark:bg-[#111] dark:text-[#888]">
-            <Trans
-              ns="crop"
-              k="hiddenNote"
-              components={{
-                link: (c) => (
-                  <Link to="/sanitize" className="font-medium text-mantis-700 underline dark:text-mantis-400">
-                    {c}
-                  </Link>
-                ),
-              }}
-            />
+          <p className={`mt-4 flex gap-3 ${noticeClass}`}>
+            <Info aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <Trans
+                ns="crop"
+                k="hiddenNote"
+                components={{
+                  link: (c) => (
+                    <Link to="/sanitize" className={linkClass}>
+                      {c}
+                    </Link>
+                  ),
+                }}
+              />
+            </span>
           </p>
 
-          <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
+          <LiveSummary text={summary} className="mt-4 text-sm text-ink-2" />
 
           <ErrorAlert error={problem} className="mt-4" />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-wrap gap-3">
             <button type="submit" disabled={busy || problem !== null || !shown} className={`flex-1 ${primaryButton}`}>
               {busy && !detecting ? t("cropping") : t("submit")}
             </button>

@@ -3,6 +3,7 @@ import type { PlannerAction, PlannerState } from "../../hooks/usePagePlanner";
 import PlannerCard from "./PlannerCard";
 import { captionFor } from "./OrganizeGrid";
 import { useT } from "../../i18n";
+import { focusRing } from "../../styles/ui";
 
 export default function SelectGrid({ state, dispatch, mode }: { state: PlannerState; dispatch: Dispatch<PlannerAction>; mode: "remove" | "extract" }) {
   const t = useT("pages");
@@ -23,7 +24,7 @@ export default function SelectGrid({ state, dispatch, mode }: { state: PlannerSt
                 : t(mode === "remove" ? "removeItem" : "extractItem", { caption })
             }
             onClick={() => dispatch({ type: "toggle-select", id: item.id })}
-            className="rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 focus-visible:ring-offset-2"
+            className={`text-left ${focusRing}`}
           >
             <PlannerCard item={item} source={source} label={caption} tone={on ? (mode === "remove" ? "removed" : "picked") : "normal"} />
           </button>

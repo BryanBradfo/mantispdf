@@ -1,5 +1,9 @@
 import type { ReactNode } from "react";
 import { PageSEO } from "../components/seo/PageSEO";
+import PixelIcon from "../components/brand/PixelIcon";
+import DecodeText from "../components/common/DecodeText";
+import { useT } from "../i18n";
+import { sectionNumber, toolById, type ToolId } from "../lib/tools";
 
 interface Props {
   title: string;
@@ -8,26 +12,36 @@ interface Props {
   heading: string;
   intro: string;
   children: ReactNode;
+  /** The tool this page is: shows its icon and `NN / SECTION` eyebrow above the title (from `lib/tools`). */
+  tool: ToolId;
   /** Wider column for tools with a large workspace (the Edit PDF editor). */
   wide?: boolean;
 }
 
-export default function ToolShell({ title, description, path, heading, intro, children, wide = false }: Props) {
+/** The tool's pixel icon and `NN / SECTION` label, in mono, above the page title. */
+function ToolEyebrow({ tool }: { tool: ToolId }) {
+  const t = useT("home");
+  const { section, pixel } = toolById(tool);
   return (
-    <div className={`mx-auto px-4 py-8 ${wide ? "max-w-6xl" : "max-w-2xl"}`}>
+    <p data-testid="tool-eyebrow" className="eyebrow flex items-center gap-2.5">
+      <PixelIcon icon={pixel} className="h-4 w-4 text-ink" />
+      <span>
+        {sectionNumber(section)} / {t(`sections.${section}`)}
+      </span>
+    </p>
+  );
+}
+
+export default function ToolShell({ title, description, path, heading, intro, children, tool, wide = false }: Props) {
+  return (
+    <div className={`mx-auto px-4 pb-16 pt-8 sm:px-8 sm:pt-12 ${wide ? "max-w-6xl" : "max-w-2xl"}`}>
       <PageSEO title={title} description={description} path={path} />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{heading}</h1>
-      <p className="mt-2 text-gray-600 dark:text-[#555]">{intro}</p>
+      <ToolEyebrow tool={tool} />
+      <h1 className="mt-5 font-display text-[2.75rem] font-light leading-[0.95] tracking-[-0.02em] text-ink sm:text-6xl">
+        <DecodeText text={heading} trigger="mount" />
+      </h1>
+      <p className="mt-4 max-w-xl leading-relaxed text-ink-2">{intro}</p>
       {children}
     </div>
   );
 }
-
-export const primaryButton =
-  "rounded-lg bg-mantis-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-mantis-700 focus:outline-none focus:ring-2 focus:ring-mantis-500 focus:ring-offset-2 disabled:opacity-50";
-export const secondaryButton =
-  "rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]";
-export const inputClass =
-  "mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-mantis-500 focus:outline-none focus:ring-1 focus:ring-mantis-500 dark:border-[#333] dark:bg-[#111] dark:text-[#ddd]";
-export const panelClass =
-  "mt-8 rounded-xl border border-mantis-200 bg-mantis-50/50 p-6 dark:border-mantis-900 dark:bg-[#0f1a0f]";

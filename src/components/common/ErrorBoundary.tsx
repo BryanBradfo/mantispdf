@@ -1,15 +1,16 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { useT } from "../../i18n";
+import { primaryButton } from "../../styles/ui";
 
 function CrashNotice() {
   const t = useT("common");
   return (
     <div role="alert" className="mx-auto flex min-h-[40vh] max-w-xl flex-col items-center justify-center px-4 text-center">
-      <p className="text-lg font-semibold text-gray-900 dark:text-[#e5e5e5]">{t("crashTitle")}</p>
+      <p className="font-display text-2xl font-light text-ink">{t("crashTitle")}</p>
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="mt-4 rounded-lg bg-mantis-500 px-4 py-2 font-medium text-white hover:bg-mantis-600"
+        className={`mt-6 ${primaryButton}`}
       >
         {t("crashReload")}
       </button>

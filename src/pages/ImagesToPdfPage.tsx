@@ -36,8 +36,10 @@ import LiveSummary from "../components/stamp/LiveSummary";
 import PaperSizeFields, { CUSTOM_PAPER, paperToPt, type PaperChoice } from "../components/geometry/PaperSizeFields";
 import { mmSizeLabel } from "../lib/geometryLayout";
 import { createUploadQueue } from "./uploadQueue";
-import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
-import { UserError, useDescribeError, useT, type UiError } from "../i18n";
+import ToolShell from "./ToolShell";
+import { ChevronLeft, ChevronRight, RotateCcw, RotateCw, X } from "lucide-react";
+import { cellButton, focusRing, inputClass, monoLabel, panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import { UserError, formatNumber, useDescribeError, useLocale, useT, type UiError } from "../i18n";
 
 interface ImageItem {
   id: string;
@@ -61,8 +63,8 @@ function useObjectUrl(file: File): string | null {
   return url;
 }
 
-const iconBtn =
-  "flex flex-1 items-center justify-center py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-30 dark:text-[#888] dark:hover:bg-[#1a1a1a] dark:hover:text-[#ccc]";
+const iconBtn = cellButton;
+const icon = { "aria-hidden": true, strokeWidth: 1.5, className: "h-4 w-4" } as const;
 
 const ImageCard = memo(function ImageCard({
   item,
@@ -82,14 +84,15 @@ const ImageCard = memo(function ImageCard({
   locked: boolean;
 }) {
   const t = useT("imagesToPdf");
+  const locale = useLocale();
   const url = useObjectUrl(item.file);
   const name = item.file.name;
   return (
     <div
       data-testid="image-card"
-      className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#222] dark:bg-[#141414]"
+      className="border border-line bg-surface"
     >
-      <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-t-lg bg-gray-50 dark:bg-[#0c0c0c]">
+      <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-paper">
         {url && (
           <img
             src={url}
@@ -106,30 +109,29 @@ const ImageCard = memo(function ImageCard({
           type="button"
           disabled={locked}
           onClick={() => onRemove(item.id)}
-          className="absolute top-2 right-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-gray-400 shadow-sm hover:bg-red-50 hover:text-red-500 dark:bg-[#1a1a1a]/80 dark:text-[#666] dark:hover:text-red-400"
+          className={`absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center border border-line bg-paper text-ink-2 hover:border-danger hover:text-danger disabled:pointer-events-none disabled:opacity-40 ${focusRing}`}
           title={t("removeImage")}
           aria-label={t("removeNamed", { name })}
         >
-          ×
+          <X {...icon} />
         </button>
       </div>
-      <div className="border-t border-gray-100 px-2 py-1.5 dark:border-[#222]">
-        <p className="truncate text-xs font-medium text-gray-900 dark:text-[#e5e5e5]">
-          {index + 1}. {item.file.name}
-        </p>
+      <div className="flex items-baseline gap-2 border-t border-line px-3 py-2.5">
+        <span className="font-mono text-[11px] tracking-[0.08em] text-ink-2">{formatNumber(index + 1, locale, { minimumIntegerDigits: 2 })}</span>
+        <p className="truncate text-xs font-medium text-ink">{item.file.name}</p>
       </div>
-      <div className="flex border-t border-gray-100 dark:border-[#222]">
+      <div className="flex h-9 divide-x divide-line border-t border-line">
         <button data-no-dnd type="button" className={iconBtn} onClick={() => onMove(index, index - 1)} disabled={locked || index === 0} aria-label={t("moveEarlierNamed", { name })} title={t("moveEarlier")}>
-          ←
+          <ChevronLeft {...icon} />
         </button>
         <button data-no-dnd type="button" className={iconBtn} disabled={locked} onClick={() => onRotate(item.id, -1)} aria-label={t("rotateLeftNamed", { name })} title={t("rotateLeft")}>
-          ↺
+          <RotateCcw {...icon} />
         </button>
         <button data-no-dnd type="button" className={iconBtn} disabled={locked} onClick={() => onRotate(item.id, 1)} aria-label={t("rotateRightNamed", { name })} title={t("rotateRight")}>
-          ↻
+          <RotateCw {...icon} />
         </button>
         <button data-no-dnd type="button" className={iconBtn} onClick={() => onMove(index, index + 1)} disabled={locked || index === total - 1} aria-label={t("moveLaterNamed", { name })} title={t("moveLater")}>
-          →
+          <ChevronRight {...icon} />
         </button>
       </div>
     </div>
@@ -309,21 +311,22 @@ export default function ImagesToPdfPage() {
 
   return (
     <ToolShell
+      tool="imagesToPdf"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/images-to-pdf"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       <div className="mt-8">
-        <DropZone multiple onFiles={handleFiles} error={uploadError} accept="image/*" kind="image" hint={t("hint")} />
+        <DropZone compact={items.length > 0} multiple onFiles={handleFiles} error={uploadError} accept="image/*" kind="image" hint={t("hint")} />
       </div>
 
       {items.length > 0 && (
         <form className={panelClass} onSubmit={(e) => void submit(e)}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
+          <p className={monoLabel}>
             {t("count", { count: items.length })}
           </p>
           <div className="mt-4">
@@ -331,7 +334,7 @@ export default function ImagesToPdfPage() {
               items={items}
               onReorder={(from, to) => { if (!busy) onMove(from, to); }}
               label={(it) => it.file.name}
-              className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3"
+              className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))]"
               renderItem={(it, index) => (
                 <ImageCard item={it} index={index} total={items.length} onRotate={onRotate} onMove={onMove} onRemove={onRemove} locked={busy} />
               )}
@@ -341,7 +344,7 @@ export default function ImagesToPdfPage() {
           <div className="mt-6 space-y-4">
             <PaperSizeFields paper={paper} onPaper={(p) => { if (p !== "same") setPaper(p); }} customMm={customMm} onCustomMm={setCustomMm} fit={fit} onFit={setFit} />
             {!fit && (
-              <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+              <label className="block text-sm text-ink">
                 {tg("orientation")}
                 <select value={orientation} onChange={(e) => setOrientation(e.target.value as Orientation)} className={inputClass}>
                   <option value="auto">{t("orientationAuto")}</option>
@@ -350,17 +353,17 @@ export default function ImagesToPdfPage() {
                 </select>
               </label>
             )}
-            <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+            <label className="block text-sm text-ink">
               {tg("margin")}
               <input type="number" min={0} max={200} value={Number.isFinite(marginMm) ? marginMm : ""}
                 onChange={(e) => setMarginMm(e.target.value === "" ? NaN : Number(e.target.value))} className={inputClass} />
             </label>
           </div>
 
-          <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
+          <LiveSummary text={summary} className="mt-4 text-sm text-ink-2" />
           <ErrorAlert error={problem} className="mt-4" />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-wrap gap-3">
             <button type="submit" disabled={busy || problem !== null || !worker.ready} className={`flex-1 ${primaryButton}`}>
               {busy ? t("building") : t("create")}
             </button>

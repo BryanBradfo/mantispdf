@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useT } from "../../i18n";
+import { focusRing } from "../../styles/ui";
 
 export type Tool = "select" | "text" | "image" | "rect" | "ellipse" | "line" | "arrow" | "highlight" | "draw" | "whiteout";
 
@@ -48,8 +49,11 @@ interface Props {
   onRedo: () => void;
 }
 
-const buttonClass =
-  "flex min-w-[3.75rem] flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-mantis-500";
+// The buttons sit edge to edge: the focus ring is drawn inset so the next button cannot cover it,
+// in paper on the ink-filled active tool.
+const buttonClass = `flex min-w-[3.75rem] flex-col items-center gap-0.5 rounded-none px-2 py-1.5 text-xs font-medium transition-opacity ${focusRing} focus-visible:ring-inset focus-visible:!ring-offset-0`;
+// Hover lifts the tool to paper (the bar is surface): only the active tool is ink-filled.
+const idleClass = "text-ink-2 hover:bg-paper hover:text-ink";
 
 export default function Toolbar({ tool, onTool, onPickImage, canUndo, canRedo, onUndo, onRedo }: Props) {
   const t = useT("editPdf");
@@ -58,7 +62,7 @@ export default function Toolbar({ tool, onTool, onPickImage, canUndo, canRedo, o
     <div
       role="toolbar"
       aria-label={t("toolbar")}
-      className="flex flex-wrap items-center gap-1 rounded-xl border border-gray-200 bg-white p-1.5 dark:border-[#333] dark:bg-[#111]"
+      className="flex flex-wrap items-center gap-1 border border-line bg-surface p-1"
     >
       {TOOLS.map(({ tool: id, key, icon: Icon }) => {
         const active = tool === id;
@@ -72,26 +76,24 @@ export default function Toolbar({ tool, onTool, onPickImage, canUndo, canRedo, o
             title={t("toolWithKey", { label, key: key.toUpperCase() })}
             onClick={() => (id === "image" ? onPickImage() : onTool(id))}
             className={`${buttonClass} ${
-              active
-                ? "bg-mantis-600 text-white"
-                : "text-gray-700 hover:bg-gray-100 dark:text-[#bbb] dark:hover:bg-[#1f1f1f]"
+              active ? "bg-ink text-paper focus-visible:!ring-paper" : idleClass
             }`}
           >
-            <Icon aria-hidden="true" className="h-5 w-5" />
+            <Icon aria-hidden="true" strokeWidth={1.5} className="h-5 w-5" />
             {label}
           </button>
         );
       })}
-      <span aria-hidden="true" className="mx-1 h-8 w-px bg-gray-200 dark:bg-[#333]" />
+      <span aria-hidden="true" className="mx-1 h-8 w-px bg-line" />
       <button
         type="button"
         aria-label={t("undoLabel")}
         title={t("undoLabel")}
         disabled={!canUndo}
         onClick={onUndo}
-        className={`${buttonClass} text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent dark:text-[#bbb] dark:hover:bg-[#1f1f1f]`}
+        className={`${buttonClass} ${idleClass} disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-2`}
       >
-        <Undo2 aria-hidden="true" className="h-5 w-5" />
+        <Undo2 aria-hidden="true" strokeWidth={1.5} className="h-5 w-5" />
         {tc("undo")}
       </button>
       <button
@@ -100,9 +102,9 @@ export default function Toolbar({ tool, onTool, onPickImage, canUndo, canRedo, o
         title={t("redoLabel")}
         disabled={!canRedo}
         onClick={onRedo}
-        className={`${buttonClass} text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent dark:text-[#bbb] dark:hover:bg-[#1f1f1f]`}
+        className={`${buttonClass} ${idleClass} disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-2`}
       >
-        <Redo2 aria-hidden="true" className="h-5 w-5" />
+        <Redo2 aria-hidden="true" strokeWidth={1.5} className="h-5 w-5" />
         {tc("redo")}
       </button>
     </div>

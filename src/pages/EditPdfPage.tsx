@@ -27,7 +27,9 @@ import type { FontManifest } from "../lib/fonts/manifest";
 import { cjkFlavourFromLanguage, type CjkFlavour } from "../lib/fonts/select";
 import { UnicodeTextContext, type UnicodeTextEnv } from "../components/editor/unicodeTextContext";
 import { jpegPassthrough, orientationToTransform, readExifOrientation } from "../lib/imageInput";
-import ToolShell, { primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { TriangleAlert } from "lucide-react";
+import { fileMeta, linkClass, noticeClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 import ErrorText from "../components/common/ErrorText";
 
@@ -282,7 +284,7 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
     <UnicodeTextContext.Provider value={unicodeText}>
     <div className="mt-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
+        <p className={fileMeta}>
           {tc("fileWithPagesParen", { name: input.file.name, count: sizes.length })}
         </p>
         <div className="flex gap-3">
@@ -323,12 +325,14 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
       )}
 
       {notice && (
-        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-[#1f1a0a] dark:text-amber-200">
-          <ErrorText error={notice} />
+        <div role="status" className={`flex gap-3 ${noticeClass}`}>
+          {/* Always a refusal (item limit reached, image too large or unreadable): a warning. */}
+          <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="min-w-0"><ErrorText error={notice} /></div>
         </div>
       )}
       {tool === "image" && pendingImage && (
-        <p className="text-sm text-gray-700 dark:text-[#aaa]">{t("placeImage")}</p>
+        <p className="text-sm text-ink">{t("placeImage")}</p>
       )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
@@ -368,17 +372,17 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
               onDelete={() => dispatch({ type: "delete", id: selected.id })}
             />
           ) : (
-            <p className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600 dark:border-[#333] dark:text-[#888]">
+            <p className="border border-dashed border-line-strong p-4 text-sm text-ink-2">
               {t("pickTool")}
             </p>
           )}
-          <p className="text-xs text-gray-500 dark:text-[#777]">
+          <p className="text-xs text-ink-2">
             <Trans
               ns="editPdf"
               k="whiteoutNote"
               components={{
                 link: (c) => (
-                  <Link to="/redact" className="font-medium text-mantis-700 underline dark:text-mantis-400">
+                  <Link to="/redact" className={linkClass}>
                     {c}
                   </Link>
                 ),
@@ -405,6 +409,7 @@ export default function EditPdfPage() {
 
   return (
     <ToolShell
+      tool="editPdf"
       wide
       title={t("seoTitle")}
       description={t("seoDescription")}
@@ -412,7 +417,7 @@ export default function EditPdfPage() {
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mx-auto mt-8 max-w-2xl">

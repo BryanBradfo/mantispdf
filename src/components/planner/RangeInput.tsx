@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { formatPageRanges, parsePageRanges } from "../../lib/pagePlan";
 import { useT } from "../../i18n";
+import { inputClass } from "../../styles/ui";
 
 interface Props {
   label: string;
@@ -37,7 +38,7 @@ export default function RangeInput({ label, total, selectedPages, onPages }: Pro
 
   return (
     <div>
-      <label htmlFor={id} className="block text-sm font-medium text-gray-700 dark:text-[#aaa]">{label}</label>
+      <label htmlFor={id} className="block text-sm font-medium text-ink">{label}</label>
       <input
         id={id}
         value={text}
@@ -47,9 +48,9 @@ export default function RangeInput({ label, total, selectedPages, onPages }: Pro
         placeholder={t("rangePlaceholder")}
         aria-invalid={error !== null}
         aria-describedby={`${id}-help`}
-        className={`mt-1 w-full max-w-sm rounded-lg border px-3 py-1.5 text-sm dark:bg-[#141414] dark:text-[#e5e5e5] ${error ? "border-red-400" : "border-gray-300 dark:border-[#333]"}`}
+        className={`${inputClass} max-w-sm ${error ? "!border-danger" : ""}`}
       />
-      <p id={`${id}-help`} role={error ? "alert" : undefined} className={`mt-1 text-xs ${error ? "text-red-600 dark:text-red-400" : "text-gray-500 dark:text-[#555]"}`}>
+      <p id={`${id}-help`} role={error ? "alert" : undefined} className={`mt-1.5 text-xs ${error ? "text-danger" : "text-ink-2"}`}>
         {error ?? t("rangeHelp")}
       </p>
     </div>

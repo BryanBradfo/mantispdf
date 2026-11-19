@@ -1,6 +1,9 @@
 import { useCallback, useRef, useState } from "react";
 import { Link, useDescribeError, useT, type UiError } from "../i18n";
-import { PageSEO } from "../components/seo/PageSEO";
+import { RotateCcw, RotateCw } from "lucide-react";
+import ToolShell from "./ToolShell";
+import LoadingRow from "../components/common/LoadingRow";
+import { cellButton, fileMeta, primaryButton, secondaryButton } from "../styles/ui";
 import PageImage from "../components/common/PageImage";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { isPdfFile, downloadBlob, readFileAsUint8Array } from "../lib/fileHelpers";
@@ -89,25 +92,20 @@ export default function RotatePdfPage() {
   const allZero = rotations.every((v) => v === 0);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <PageSEO
-        title={t("seoTitle")}
-        description={t("seoDescription")}
-        path="/rotate"
-      />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
-      <p className="mt-2 text-gray-600 dark:text-[#555]">
-        {t("intro")}
-      </p>
-
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+    <ToolShell
+      tool="rotate"
+      wide
+      title={t("seoTitle")}
+      description={t("seoDescription")}
+      path="/rotate"
+      heading={t("heading")}
+      intro={t("intro")}
+    >
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!file ? (
         loading ? (
-          <div className="mt-8 flex items-center justify-center py-12">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent motion-reduce:animate-none" />
-            <span className="ml-3 text-gray-500 dark:text-[#555]">{tc("loadingPdf")}</span>
-          </div>
+          <LoadingRow label={tc("loadingPdf")} className="mt-8 justify-center py-12" />
         ) : (
           <div className="mt-8">
             <DropZone onFile={handleFile} error={uploadError} />
@@ -115,16 +113,16 @@ export default function RotatePdfPage() {
         )
       ) : (
         <>
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-gray-500 dark:text-[#555]">
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+            <p className={fileMeta}>
               {tc("fileWithPages", { name: file.name, count: numPages })}
             </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-3">
               <button
                 onClick={() => rotateAll(-90)}
                 disabled={numPages === 0}
                 aria-label={t("allCcwLabel")}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
+                className={secondaryButton}
               >
                 {t("allCcw")}
               </button>
@@ -132,36 +130,30 @@ export default function RotatePdfPage() {
                 onClick={() => rotateAll(90)}
                 disabled={numPages === 0}
                 aria-label={t("allCwLabel")}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
+                className={secondaryButton}
               >
                 {t("allCw")}
               </button>
               <button
                 onClick={() => setRotations(Array(numPages).fill(0))}
                 disabled={allZero || numPages === 0}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
+                className={secondaryButton}
               >
                 {t("resetAll")}
               </button>
               <button
                 onClick={handleDownload}
                 disabled={worker.rotating || !worker.ready || numPages === 0}
-                className="rounded-lg bg-mantis-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-mantis-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-mantis-500 focus:ring-offset-2"
+                className={primaryButton}
               >
                 {worker.rotating ? tc("processing") : tc("download")}
               </button>
               {downloaded && (
-                <Link
-                  to="/"
-                  className="rounded-lg border border-mantis-500 px-3 py-1.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
-                >
+                <Link to="/" className={secondaryButton}>
                   {tc("allTools")}
                 </Link>
               )}
-              <button
-                onClick={handleReset}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
-              >
+              <button onClick={handleReset} className={secondaryButton}>
                 {tc("newFile")}
               </button>
             </div>
@@ -172,46 +164,42 @@ export default function RotatePdfPage() {
           <div className="mt-6">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {Array.from({ length: numPages }, (_, i) => (
-                <div key={i} className="flex flex-col items-center gap-2">
-                  <div className="relative w-full">
-                    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#222] dark:bg-[#141414]">
-                      <div className="relative aspect-[8.5/11] w-full overflow-hidden bg-gray-100 dark:bg-[#1a1a1a]">
-                        <div
-                          className="absolute inset-0 flex items-center justify-center"
-                          style={{
-                            transform: thumbnailTransform(rotations[i] ?? 0),
-                            transition: "transform 0.3s ease",
-                          }}
-                        >
-                          <PageImage source={file!} page={i + 1} width={160} alt={tc("pageN", { n: i + 1 })} />
-                        </div>
-                      </div>
-                      <div className="border-t border-gray-100 px-2 py-1 text-center text-xs text-gray-500 dark:border-[#222] dark:text-[#555]">
-                        {tc("pageN", { n: i + 1 })}
-                      </div>
+                <div key={i} className="border border-line bg-surface">
+                  <div className="relative aspect-[8.5/11] w-full overflow-hidden bg-surface">
+                    <div
+                      className="absolute inset-0 flex items-center justify-center"
+                      style={{
+                        transform: thumbnailTransform(rotations[i] ?? 0),
+                        transition: "transform 150ms ease",
+                      }}
+                    >
+                      <PageImage source={file!} page={i + 1} width={160} alt={tc("pageN", { n: i + 1 })} />
                     </div>
                     {rotations[i] !== 0 && (
-                      <div className="absolute right-1.5 top-1.5 rounded bg-mantis-600 px-1.5 py-0.5 text-xs font-bold text-white">
+                      <div className="absolute right-1.5 top-1.5 bg-ink px-1.5 py-0.5 font-mono text-[11px] text-paper">
                         {rotations[i]}°
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-1">
+                  <div className="border-t border-line px-2 py-1.5 text-center font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2">
+                    {tc("pageN", { n: i + 1 })}
+                  </div>
+                  <div className="flex h-9 divide-x divide-line border-t border-line">
                     <button
                       onClick={() => rotatePage(i, -90)}
-                      className="rounded border border-gray-200 px-2.5 py-1 text-sm hover:bg-gray-50 dark:border-[#333] dark:hover:bg-[#1a1a1a]"
+                      className={cellButton}
                       title={t("ccw")}
                       aria-label={t("ccwPage", { n: i + 1 })}
                     >
-                      ↺
+                      <RotateCcw aria-hidden="true" strokeWidth={1.5} className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => rotatePage(i, 90)}
-                      className="rounded border border-gray-200 px-2.5 py-1 text-sm hover:bg-gray-50 dark:border-[#333] dark:hover:bg-[#1a1a1a]"
+                      className={cellButton}
                       title={t("cw")}
                       aria-label={t("cwPage", { n: i + 1 })}
                     >
-                      ↻
+                      <RotateCw aria-hidden="true" strokeWidth={1.5} className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
@@ -220,6 +208,6 @@ export default function RotatePdfPage() {
           </div>
         </>
       )}
-    </div>
+    </ToolShell>
   );
 }
