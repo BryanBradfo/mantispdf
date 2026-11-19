@@ -2,6 +2,7 @@ import { Check } from "lucide-react";
 import PageImage from "../common/PageImage";
 import { useT } from "../../i18n";
 import { focusRing, selectedOutline } from "../../styles/ui";
+import { pageBadge } from "../../styles/onPage";
 
 interface Props {
   source: Blob | Uint8Array;
@@ -38,7 +39,7 @@ export default function CropPageStrip({ source, count, page, disabled, onPage }:
               <>
                 {/* On an inner layer, so the focus ring's outline-none on the button cannot hide the selection. */}
                 <span data-selected-frame aria-hidden="true" className={`pointer-events-none absolute inset-0 ${selectedOutline} -outline-offset-2`} />
-                <span aria-hidden="true" className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center bg-ink text-paper">
+                <span aria-hidden="true" className={`absolute right-1 top-1 flex h-5 w-5 items-center justify-center ${pageBadge}`}>
                   <Check strokeWidth={2} className="h-3.5 w-3.5" />
                 </span>
               </>

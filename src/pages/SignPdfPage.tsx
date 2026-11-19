@@ -3,7 +3,6 @@ import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
-import PageImage from "../components/common/PageImage";
 import PlacementCanvas from "../components/sign/PlacementCanvas";
 import SignaturePad, { type Signature } from "../components/sign/SignaturePad";
 import { stampDate } from "../lib/stampBuilders";
@@ -17,15 +16,16 @@ import {
   type VisibleRect,
 } from "../lib/signPlacement";
 import ToolShell from "./ToolShell";
-import { panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import { checkClass, fileMeta, panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import CropPageStrip from "../components/geometry/CropPageStrip";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useLocale, useT } from "../i18n";
 
 
 function StepHeading({ n, children }: { n: number; children: string }) {
   return (
-    <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#ddd]">
-      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-mantis-600 text-xs text-white">{n}</span>
+    <h2 className="flex items-baseline gap-3 font-display text-base font-normal uppercase tracking-wider text-ink">
+      <span className="font-mono text-[11px] tracking-[0.08em] text-ink-2">{String(n).padStart(2, "0")}</span>
       {children}
     </h2>
   );
@@ -82,13 +82,14 @@ export default function SignPdfPage() {
 
   return (
     <ToolShell
+      tool="sign"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/sign"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">
@@ -98,7 +99,7 @@ export default function SignPdfPage() {
 
       {input && (
         <form className={panelClass} onSubmit={submit}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
+          <p className={fileMeta}>
             {tc("fileWithPagesParen", { name: input.file.name, count: total })}
           </p>
 
@@ -111,26 +112,7 @@ export default function SignPdfPage() {
             <>
               <section className="mt-8">
                 <StepHeading n={2}>{t("stepPage")}</StepHeading>
-                <div className="mt-3 flex gap-2 overflow-x-auto pb-2" role="group" aria-label={tc("pagesGroup")}>
-                  {sizes.map((_, i) => {
-                    const n = i + 1;
-                    return (
-                      <button
-                        key={n}
-                        type="button"
-                        aria-label={tc("pageN", { n })}
-                        aria-pressed={page === n}
-                        onClick={() => setPage(n)}
-                        className={`w-20 shrink-0 overflow-hidden rounded-md border-2 bg-white text-xs dark:bg-[#111] ${
-                          page === n ? "border-mantis-600" : "border-transparent hover:border-gray-300 dark:hover:border-[#444]"
-                        }`}
-                      >
-                        <PageImage source={input.file} page={n} width={80} alt="" />
-                        <span className="block py-0.5 text-gray-700 dark:text-[#aaa]">{n}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <CropPageStrip source={input.file} count={sizes.length} page={page} disabled={false} onPage={setPage} />
               </section>
 
               <section className="mt-6">
@@ -148,12 +130,12 @@ export default function SignPdfPage() {
                     />
                   )}
                 </div>
-                <label className="mt-4 flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+                <label className="mt-4 flex items-center gap-2 text-sm text-ink">
                   <input
                     type="checkbox"
                     checked={addDate}
                     onChange={(e) => setAddDate(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+                    className={checkClass}
                   />
                   {t("addDate", { text: substituteJsTokens(signedOnTemplate, { date: stampDate(locale), filename: "" }) })}
                 </label>
@@ -168,7 +150,7 @@ export default function SignPdfPage() {
             </button>
             <button type="button" onClick={clear} className={secondaryButton}>{tc("chooseAnother")}</button>
           </div>
-          <p className="mt-4 text-xs text-gray-500 dark:text-[#777]">{t("visualOnly")}</p>
+          <p className="mt-4 text-xs text-ink-2">{t("visualOnly")}</p>
         </form>
       )}
     </ToolShell>

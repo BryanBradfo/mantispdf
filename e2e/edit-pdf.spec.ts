@@ -409,7 +409,7 @@ test("edit pdf: a text box with characters no font has is outlined in red", asyn
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(warning).toHaveCount(1);
-  await expect(warning).toHaveAttribute("stroke", "#dc2626");
+  await expect(warning).toHaveAttribute("stroke", "#c62828");
   // Fixing the text removes the outline.
   await canvas.tool("Text (T)");
   await canvas.click(110, 108);

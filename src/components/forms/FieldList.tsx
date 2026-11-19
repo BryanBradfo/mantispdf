@@ -18,10 +18,12 @@ import {
   toggled,
   unsupportedIn,
 } from "../../lib/forms/values";
+import { Info } from "lucide-react";
+import { checkClass, focusRing, linkClass, noticeClass } from "../../styles/ui";
 
-
-const fieldClass =
-  "mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 focus:border-mantis-500 focus:outline-none focus:ring-1 focus:ring-mantis-500 disabled:cursor-not-allowed disabled:bg-gray-100 dark:border-[#333] dark:bg-[#111] dark:text-[#ddd] dark:disabled:bg-[#1a1a1a]";
+const fieldClass = `mt-1 w-full rounded-none border border-line-strong bg-paper px-2 py-1.5 text-sm text-ink focus-visible:border-ink disabled:cursor-not-allowed disabled:bg-surface disabled:text-ink-2 ${focusRing}`;
+/** An invalid value (aria-invalid): danger border. */
+const invalidClass = "!border-danger";
 
 /** First page a field is drawn on, or null. */
 export const pageOf = (f: FormField): number | null => f.widgets.find(isDrawn)?.page ?? null;
@@ -30,8 +32,20 @@ export const pageOf = (f: FormField): number | null => f.widgets.find(isDrawn)?.
 export const listedFields = (fields: readonly FormField[]): FormField[] =>
   fields.filter((f) => f.kind.kind !== "button" && pageOf(f) !== null);
 
-function PanelControl({ field, value, onChange, labelId }: { field: FormField; value: FormValue; onChange: (v: FormValue) => void; labelId: string }) {
+interface PanelControlProps {
+  field: FormField;
+  value: FormValue;
+  onChange: (v: FormValue) => void;
+  labelId: string;
+  /** Id of the message saying why the value is invalid, or null when it is valid. */
+  errorId: string | null;
+}
+
+function PanelControl({ field, value, onChange, labelId, errorId }: PanelControlProps) {
   const t = useT("fillForm");
+  // Text inputs only: the values that can be invalid are typed ones.
+  const invalid = errorId ? { "aria-invalid": true, "aria-describedby": errorId } : {};
+  const textClass = errorId ? `${fieldClass} ${invalidClass}` : fieldClass;
   const disabled = field.readOnly;
   const kind = field.kind;
   const label = field.label || field.name;
@@ -47,7 +61,8 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
           maxLength={lengthLimit(field)}
           value={textOf(value)}
           onChange={(e) => onChange({ kind: "text", text: e.target.value })}
-          className={fieldClass}
+          {...invalid}
+          className={textClass}
         />
       ) : (
         <input
@@ -59,7 +74,8 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
           maxLength={lengthLimit(field)}
           value={textOf(value)}
           onChange={(e) => onChange({ kind: "text", text: e.target.value })}
-          className={`${fieldClass} ${kind.comb ? "font-mono tracking-widest" : ""}`}
+          {...invalid}
+          className={`${textClass} ${kind.comb ? "font-mono tracking-widest" : ""}`}
         />
       );
     case "checkbox": {
@@ -67,7 +83,7 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
       return (
         <div className="mt-1 flex flex-wrap gap-3" role="group" aria-labelledby={labelId}>
           {states.map((state) => (
-            <label key={state} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-[#bbb]">
+            <label key={state} className="flex items-center gap-1.5 text-sm text-ink">
               <input
                 type="checkbox"
                 aria-label={states.length === 1 ? label : t("labelOption", { label, option: state })}
@@ -75,7 +91,7 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
                 disabled={disabled}
                 checked={namesOf(value).includes(state)}
                 onChange={() => onChange(toggled(value, state))}
-                className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+                className={checkClass}
               />
               {states.length === 1 ? t("checked") : state}
             </label>
@@ -87,7 +103,7 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
       return (
         <div className="mt-1 flex flex-wrap gap-3" role="radiogroup" aria-labelledby={labelId} aria-required={required}>
           {field.onStates.map((state) => (
-            <label key={state} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-[#bbb]">
+            <label key={state} className="flex items-center gap-1.5 text-sm text-ink">
               <input
                 type="radio"
                 aria-label={t("labelOption", { label, option: radioLabel(field, state, t) })}
@@ -95,13 +111,13 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
                 disabled={disabled}
                 checked={namesOf(value).includes(state)}
                 onChange={() => onChange({ kind: "names", names: [state] })}
-                className="h-4 w-4 border-gray-300 text-mantis-600 focus:ring-mantis-500"
+                className={checkClass}
               />
               {radioLabel(field, state, t)}
             </label>
           ))}
           {!disabled && namesOf(value).length > 0 && (
-            <button type="button" onClick={() => onChange(NO_VALUE)} className="text-xs text-gray-500 underline dark:text-[#888]">
+            <button type="button" onClick={() => onChange(NO_VALUE)} className={`text-xs text-ink-2 underline underline-offset-4 hover:text-ink ${focusRing}`}>
               {t("clear")}
             </button>
           )}
@@ -118,7 +134,8 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
             maxLength={lengthLimit(field)}
             value={shownText(field, value)}
             onChange={(e) => onChange(comboValueFor(field, e.target.value))}
-            className={fieldClass}
+            {...invalid}
+            className={textClass}
           />
           <datalist id={`list-field-${field.id}-options`}>
             {field.options.map((o, i) => (
@@ -160,14 +177,14 @@ function PanelControl({ field, value, onChange, labelId }: { field: FormField; v
       );
     case "signature":
       return (
-        <p className="mt-1 text-sm text-gray-600 dark:text-[#999]">
+        <p className="mt-1 text-sm text-ink-2">
           {/* A new tab: leaving this page would lose the values typed so far. */}
           <Trans
             ns="fillForm"
             k="signHint"
             components={{
               link: (c) => (
-                <Link to="/sign" target="_blank" rel="noopener" className="font-medium text-mantis-700 underline dark:text-mantis-400">
+                <Link to="/sign" target="_blank" rel="noopener" className={linkClass}>
                   {c}
                 </Link>
               ),
@@ -200,6 +217,7 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
     <ol aria-label={t("formFields")} className="space-y-3">
       {fields.map((field) => {
         const labelId = `${base}-${field.id}`;
+        const errorId = `${labelId}-error`;
         const value = valueOf(state, field.id);
         const fieldPage = pageOf(field);
         // With the Noto fonts, only characters no font covers are refused.
@@ -215,16 +233,14 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
         return (
           <li
             key={field.id}
-            className={`rounded-lg border p-3 ${
-              fieldPage === page ? "border-gray-300 dark:border-[#3a3a3a]" : "border-gray-200 dark:border-[#262626]"
-            } bg-white dark:bg-[#111]`}
+            className={`border bg-surface p-3 ${fieldPage === page ? "border-line-strong" : "border-line"}`}
           >
             <div className="flex items-start justify-between gap-2">
-              <span id={labelId} className="text-sm font-medium text-gray-900 dark:text-[#ddd]" title={field.name}>
+              <span id={labelId} className="text-sm font-medium text-ink" title={field.name}>
                 {field.label || field.name}
                 {field.required && (
                   <>
-                    <span className="ml-0.5 text-red-600" aria-hidden="true">
+                    <span className="ml-0.5 text-ink-2" aria-hidden="true">
                       *
                     </span>
                     <span className="sr-only"> {t("required")}</span>
@@ -237,27 +253,32 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
                   type="button"
                   onClick={() => onPage(fieldPage)}
                   aria-label={t("showPage", { page: fieldPage })}
-                  className="shrink-0 text-xs text-gray-500 underline hover:text-gray-800 dark:text-[#888]"
+                  className={`shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2 underline underline-offset-4 hover:text-ink ${focusRing}`}
                 >
                   {t("pageShort", { page: fieldPage })}
                 </button>
               )}
             </div>
-            <p className="text-xs text-gray-500 dark:text-[#777]">
+            <p className="text-xs text-ink-2">
               {t(`kind.${field.kind.kind}`)}
               {field.readOnly && ` ${t("readOnly")}`}
             </p>
-            <PanelControl field={field} value={value} onChange={(v) => onChange(field.id, v)} labelId={labelId} />
+            <PanelControl field={field} value={value} onChange={(v) => onChange(field.id, v)} labelId={labelId} errorId={bad !== "" || tooLong ? errorId : null} />
             {bad !== "" && (
-              <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
+              <p role="alert" id={errorId} className="mt-1 text-xs text-danger">
                 {fonts ? missingMessage(bad, tc) : t("unsupportedChars", { chars: bad })}
               </p>
             )}
-            {notice && bad === "" && <p className="mt-1 text-xs text-gray-600 dark:text-[#999]">{notice}</p>}
-            {tooLong && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{tooLong}</p>}
-            {!tooLong && over && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{t("overflow")}.</p>}
+            {notice && bad === "" && (
+              <p className={`mt-2 flex gap-2 !px-3 !py-2 !text-xs ${noticeClass}`}>
+                <Info aria-hidden="true" strokeWidth={1.5} className="h-3.5 w-3.5 shrink-0" />
+                <span>{notice}</span>
+              </p>
+            )}
+            {tooLong && <p id={bad === "" ? errorId : undefined} className="mt-1 text-xs text-danger">{tooLong}</p>}
+            {!tooLong && over && <p className="mt-1 text-xs text-ink">{t("overflow")}.</p>}
             {kind.kind === "text" && kind.password && (
-              <p className="mt-1 text-xs text-gray-500 dark:text-[#888]">{t("passwordNote")}</p>
+              <p className="mt-1 text-xs text-ink-2">{t("passwordNote")}</p>
             )}
           </li>
         );

@@ -4,9 +4,12 @@ import { useEffect, useId, useRef, useState } from "react";
 import "@fontsource/caveat/latin-400.css";
 import "@fontsource/dancing-script/latin-400.css";
 import "@fontsource/homemade-apple/latin-400.css";
+import { Check } from "lucide-react";
 import { listStep } from "../../lib/gridNav";
 import { fitTypedFontSize, removeWhiteBackground, trimTransparent, type RgbaImage } from "../../lib/signPlacement";
-import { inputClass, secondaryButton } from "../../styles/ui";
+import { checkClass, focusRing, inputClass, secondaryButton, selectedOutline } from "../../styles/ui";
+import { SIGNATURE_INK } from "../../lib/documentColours";
+import { pageBadge } from "../../styles/onPage";
 import { useT } from "../../i18n";
 
 /** A trimmed RGBA signature plus a data URL of it for on-screen previews. */
@@ -22,7 +25,6 @@ const MODES: { id: Mode }[] = [{ id: "draw" }, { id: "type" }, { id: "upload" }]
 export const SIGNATURE_FONTS = ["Caveat", "Dancing Script", "Homemade Apple"] as const;
 type SignatureFont = (typeof SIGNATURE_FONTS)[number];
 
-const INK = "#1f2a44";
 const PAD_W = 560;
 const PAD_H = 180;
 /** Longest side of an uploaded image after downscaling. */
@@ -78,7 +80,7 @@ export default function SignaturePad({ onChange }: Props) {
 
   return (
     <div>
-      <div role="tablist" aria-label={t("source")} className="inline-flex rounded-lg border border-gray-300 p-0.5 dark:border-[#333]">
+      <div role="tablist" aria-label={t("source")} className="inline-flex border border-line-strong">
         {MODES.map((m) => (
           <button
             key={m.id}
@@ -91,10 +93,9 @@ export default function SignaturePad({ onChange }: Props) {
             tabIndex={mode === m.id ? 0 : -1}
             onClick={() => choose(m.id)}
             onKeyDown={onTabKey}
-            className={`rounded-md px-4 py-1.5 text-sm font-medium ${
-              mode === m.id
-                ? "bg-mantis-600 text-white"
-                : "text-gray-700 hover:bg-gray-100 dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
+            // Edge to edge: the focus ring is inset, in paper on the ink-filled tab.
+            className={`h-9 px-4 font-display text-sm font-medium uppercase tracking-wider ${focusRing} focus-visible:ring-inset focus-visible:!ring-offset-0 ${
+              mode === m.id ? "bg-ink text-paper focus-visible:!ring-paper" : "text-ink-2 hover:text-ink"
             }`}
           >
             {t(m.id)}
@@ -129,8 +130,8 @@ function DrawPad({ onChange }: Props) {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.lineWidth = 2.5;
-    ctx.strokeStyle = INK;
-    ctx.fillStyle = INK;
+    ctx.strokeStyle = SIGNATURE_INK;
+    ctx.fillStyle = SIGNATURE_INK;
   }, []);
 
   const pos = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -208,13 +209,13 @@ function DrawPad({ onChange }: Props) {
         onPointerMove={move}
         onPointerUp={up}
         onPointerCancel={up}
-        className="aspect-[56/18] w-full max-w-[560px] cursor-crosshair touch-none rounded-lg border border-dashed border-gray-400 bg-white dark:border-[#444]"
+        className="aspect-[56/18] w-full max-w-[560px] cursor-crosshair touch-none border border-dashed border-line-strong bg-white"
       />
       <div className="mt-2 flex items-center gap-3">
-        <button type="button" onClick={clear} disabled={empty} className={`${secondaryButton} disabled:opacity-50`}>
+        <button type="button" onClick={clear} disabled={empty} className={secondaryButton}>
           {t("clear")}
         </button>
-        <span className="text-xs text-gray-500 dark:text-[#777]">{t("drawHint")}</span>
+        <span className="text-xs text-ink-2">{t("drawHint")}</span>
       </div>
     </div>
   );
@@ -242,7 +243,7 @@ async function renderTyped(name: string, font: SignatureFont): Promise<Signature
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   ctx.font = spec;
-  ctx.fillStyle = INK;
+  ctx.fillStyle = SIGNATURE_INK;
   ctx.textBaseline = "middle";
   ctx.fillText(name, size / 2, canvas.height / 2);
   return canvasToSignature(canvas);
@@ -268,22 +269,30 @@ function TypePad({ onChange }: Props) {
 
   return (
     <div className="space-y-3">
-      <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+      <label className="block text-sm text-ink">
         {tr("yourName")}
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} className={inputClass} placeholder={tr("namePlaceholder")} />
       </label>
       <fieldset>
-        <legend className="text-sm text-gray-700 dark:text-[#aaa]">{tr("style")}</legend>
+        <legend className="text-sm text-ink">{tr("style")}</legend>
         <div className="mt-1 grid gap-2 sm:grid-cols-3">
           {SIGNATURE_FONTS.map((f) => (
             <label
               key={f}
-              className={`flex cursor-pointer items-center justify-center rounded-lg border bg-white px-3 py-2 text-2xl text-[#1f2a44] dark:bg-[#f5f5f5] ${
-                font === f ? "border-mantis-500 ring-2 ring-mantis-500" : "border-gray-300 dark:border-[#333]"
+              // The sample is the signature as it will be printed: its ink on white paper.
+              // Picked: a 2 px ink outline set off from the white sample, and a check.
+              className={`relative flex cursor-pointer items-center justify-center border bg-white px-3 py-2 text-2xl has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ink has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper ${
+                font === f ? `border-ink ${selectedOutline} outline-offset-2` : "border-line-strong hover:border-ink"
               }`}
+              style={{ color: SIGNATURE_INK }}
             >
               <input type="radio" name="signature-font" value={f} checked={font === f} onChange={() => setFont(f)} className="sr-only" />
               <span aria-hidden="true" style={{ fontFamily: `"${f}", cursive` }}>{name.trim() || tr("sample")}</span>
+              {font === f && (
+                <span aria-hidden="true" className={`absolute right-1 top-1 flex h-5 w-5 items-center justify-center ${pageBadge}`}>
+                  <Check strokeWidth={2} className="h-3.5 w-3.5" />
+                </span>
+              )}
               <span className="sr-only">{f}</span>
             </label>
           ))}
@@ -358,26 +367,26 @@ function UploadPad({ onChange }: Props) {
 
   return (
     <div className="space-y-2">
-      <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+      <label className="block text-sm text-ink">
         {t("imageLabel")}
         <input
           type="file"
           accept="image/png,image/jpeg"
           onChange={(e) => pick(e.target.files?.[0])}
-          className="mt-1 block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-mantis-600 file:px-3 file:py-2 file:text-white dark:text-[#aaa]"
+          className={`mt-1 block w-full text-sm text-ink-2 file:mr-3 file:h-9 file:cursor-pointer file:rounded-none file:border file:border-solid file:border-line-strong file:bg-transparent file:px-4 file:font-display file:text-sm file:font-medium file:uppercase file:tracking-wider file:text-ink hover:file:border-ink ${focusRing}`}
         />
       </label>
-      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+      <label className="flex items-center gap-2 text-sm text-ink">
         <input
           type="checkbox"
           checked={dropWhite}
           onChange={(e) => toggleWhite(e.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+          className={checkClass}
         />
         {t("removeWhite")}
       </label>
-      {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      {preview && <img src={preview} alt={t("uploaded")} className="max-h-24 rounded border border-gray-200 bg-white p-2 dark:border-[#333]" />}
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      {preview && <img src={preview} alt={t("uploaded")} className="max-h-24 border border-line bg-white p-2" />}
     </div>
   );
 }

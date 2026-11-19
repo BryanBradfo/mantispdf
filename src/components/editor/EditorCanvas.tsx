@@ -24,6 +24,9 @@ import NotoText from "./NotoText";
 import { resolveFont } from "../../lib/editor/unicodeText";
 import { TOOLS, type Tool } from "./Toolbar";
 import { useT } from "../../i18n";
+import { WHITEOUT } from "../../lib/documentColours";
+import { PAGE_MARK_DARK, PAGE_MARK_LIGHT } from "../../styles/onPage";
+import { focusRing } from "../../styles/ui";
 
 /** Render width of the page preview (also its maximum on-screen width). */
 const PREVIEW_WIDTH = 1000;
@@ -380,7 +383,7 @@ export default function EditorCanvas(props: Props) {
   if (degenerate) {
     return (
       <div ref={wrapRef} className="w-full">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
+        <p role="alert" className="text-sm text-danger">{t("noVisibleArea")}</p>
       </div>
     );
   }
@@ -501,7 +504,7 @@ export default function EditorCanvas(props: Props) {
         );
       case "whiteout": {
         const b = visibleToPreviewRect(it.rect, preview, pageSize);
-        return <rect key={it.id} x={b.left} y={b.top} width={b.width} height={b.height} fill="#fff" />;
+        return <rect key={it.id} x={b.left} y={b.top} width={b.width} height={b.height} fill={WHITEOUT} />;
       }
     }
   };
@@ -529,7 +532,7 @@ export default function EditorCanvas(props: Props) {
       <g pointerEvents="none">
         <g opacity={0.7}>{renderItem(draftItem)}</g>
         {item.kind !== "line" && (
-          <rect x={b.left} y={b.top} width={b.width} height={b.height} fill="none" stroke="#16a34a" strokeWidth={1} strokeDasharray="4 3" />
+          <DashedFrame x={b.left} y={b.top} width={b.width} height={b.height} strokeWidth={1} />
         )}
       </g>
     );
@@ -543,17 +546,7 @@ export default function EditorCanvas(props: Props) {
       selected.kind === "line" ? null : (() => {
         const b = visibleToPreviewRect(itemBounds(selected), preview, pageSize);
         return (
-          <rect
-            x={b.left}
-            y={b.top}
-            width={Math.max(b.width, 1)}
-            height={Math.max(b.height, 1)}
-            fill="none"
-            stroke="#16a34a"
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-            pointerEvents="none"
-          />
+          <DashedFrame x={b.left} y={b.top} width={Math.max(b.width, 1)} height={Math.max(b.height, 1)} strokeWidth={1.5} />
         );
       })();
     return (
@@ -569,9 +562,8 @@ export default function EditorCanvas(props: Props) {
                 y={y - HANDLE_SIZE / 2}
                 width={HANDLE_SIZE}
                 height={HANDLE_SIZE}
-                rx={2}
-                fill="#16a34a"
-                stroke="#fff"
+                fill={PAGE_MARK_DARK}
+                stroke={PAGE_MARK_LIGHT}
                 strokeWidth={1.5}
                 pointerEvents="none"
               />
@@ -594,7 +586,7 @@ export default function EditorCanvas(props: Props) {
         aria-label={selected ? t("editorLabelSelected", { page, tool: toolLabel }) : t("editorLabel", { page, tool: toolLabel })}
         aria-describedby="editor-canvas-help"
         tabIndex={0}
-        className="relative mx-auto select-none overflow-hidden rounded-lg border border-gray-300 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 dark:border-[#333]"
+        className={`relative mx-auto select-none overflow-hidden border border-line ${focusRing}`}
         style={{ width: pw, height: ph }}
       >
         <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={tc("pageN", { n: page })} className="h-full" />
@@ -633,9 +625,19 @@ export default function EditorCanvas(props: Props) {
           />
         )}
       </div>
-      <p id="editor-canvas-help" className="mt-2 text-center text-xs text-gray-500 dark:text-[#777]">
+      <p id="editor-canvas-help" className="mt-2 text-center text-xs text-ink-2">
         {t("canvasHelp")}
       </p>
     </div>
+  );
+}
+
+/** A selection or draft frame over the page: white under black dashes, visible on light and dark content. */
+function DashedFrame({ x, y, width, height, strokeWidth }: { x: number; y: number; width: number; height: number; strokeWidth: number }) {
+  return (
+    <g pointerEvents="none" fill="none" data-frame="">
+      <rect x={x} y={y} width={width} height={height} stroke={PAGE_MARK_LIGHT} strokeWidth={strokeWidth + 1} />
+      <rect x={x} y={y} width={width} height={height} stroke={PAGE_MARK_DARK} strokeWidth={strokeWidth} strokeDasharray="4 3" />
+    </g>
   );
 }

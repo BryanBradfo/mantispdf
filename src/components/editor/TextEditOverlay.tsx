@@ -5,6 +5,7 @@ import { visibleToPreviewRect, type Size } from "../../lib/editor/geometry";
 import { cssColor, cssFont, textareaBaselineShift } from "./svgStyle";
 import { metricFont, missingMessage, planFonts, resolveFont } from "../../lib/editor/unicodeText";
 import { useUnicodeText } from "./unicodeTextContext";
+import { PAGE_MARK_DANGER, pageFrame } from "../../styles/onPage";
 
 interface Props {
   item: TextItem;
@@ -75,7 +76,7 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
     <>
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute z-10 outline outline-2 outline-mantis-500"
+        className={`pointer-events-none absolute z-10 ${pageFrame}`}
         style={{ left: box.left, top: box.top, width: box.width, height: Math.max(box.height, areaHeight + shift) }}
       />
       <textarea
@@ -115,14 +116,14 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
           opacity: Math.max(item.opacity, 0.4),
           textDecorationLine: bad !== "" ? "underline" : undefined,
           textDecorationStyle: bad !== "" ? "wavy" : undefined,
-          textDecorationColor: bad !== "" ? "#dc2626" : undefined,
+          textDecorationColor: bad !== "" ? PAGE_MARK_DANGER : undefined,
         }}
       />
       {bad !== "" && (
         <p
           id={messageId}
           role="alert"
-          className="absolute z-10 max-w-xs rounded-md bg-red-600 px-2 py-1 text-xs text-white shadow"
+          className="absolute z-10 max-w-xs border border-danger bg-paper px-2 py-1 text-xs text-danger"
           style={{ left: box.left, top: box.top + Math.max(box.height, areaHeight + shift) + 4 }}
         >
           {missingMessage(bad, tc)}

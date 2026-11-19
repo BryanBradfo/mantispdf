@@ -22,7 +22,7 @@ import {
 } from "../lib/stampBuilders";
 import type { Anchor } from "../lib/stampJob";
 import ToolShell from "./ToolShell";
-import { inputClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import { fileMeta, inputClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useLocale, useT } from "../i18n";
 
@@ -87,13 +87,14 @@ export default function PageNumbersPage() {
 
   return (
     <ToolShell
+      tool="pageNumbers"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/page-numbers"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">
@@ -103,12 +104,12 @@ export default function PageNumbersPage() {
 
       {input && (
         <form className={panelClass} onSubmit={submit}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
+          <p className={fileMeta}>{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
 
           <div className="mt-4 flex flex-wrap gap-6">
             <PositionPicker value={anchor} onChange={setAnchor} layout="six" />
             <div className="min-w-[12rem] flex-1 space-y-4">
-              <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+              <label className="block text-sm text-ink">
                 {t("format")}
                 <select value={preset} onChange={(e) => setPreset(e.target.value)} className={inputClass}>
                   {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
@@ -116,12 +117,12 @@ export default function PageNumbersPage() {
                 </select>
               </label>
               {preset === CUSTOM && (
-                <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+                <label className="block text-sm text-ink">
                   {t("customText", { n: "{n}", total: "{total}", date: "{date}", filename: "{filename}" })}
                   <input value={custom} onChange={(e) => setCustom(e.target.value)} className={inputClass} />
                 </label>
               )}
-              <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+              <label className="block text-sm text-ink">
                 {ts("firstNumber")}
                 <input
                   type="number"
@@ -141,7 +142,7 @@ export default function PageNumbersPage() {
 
           <div className="mt-4"><TextStyleFields value={style} onChange={setStyle} /></div>
 
-          <label className="mt-4 block text-sm text-gray-700 dark:text-[#aaa]">
+          <label className="mt-4 block text-sm text-ink">
             {ts("marginFromEdge")}
             <input
               type="number"
@@ -149,11 +150,11 @@ export default function PageNumbersPage() {
               max={300}
               value={Number.isFinite(margin) ? margin : ""}
               onChange={(e) => setMargin(e.target.value === "" ? NaN : Number(e.target.value))}
-              className={`${inputClass} max-w-[8rem]`}
+              className={`${inputClass} block max-w-[8rem]`}
             />
           </label>
 
-          <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
+          <LiveSummary text={summary} className="mt-4 text-sm text-ink-2" />
 
           <ErrorAlert error={problem} className="mt-4" />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />

@@ -13,6 +13,8 @@ import {
   type VisibleRect,
 } from "../../lib/signPlacement";
 import { useT } from "../../i18n";
+import { SIGNED_ON_CAPTION } from "../../lib/documentColours";
+import { pageFrame, pageHandle } from "../../styles/onPage";
 
 /** Render width of the page preview (also its maximum on-screen width). */
 const PREVIEW_WIDTH = 560;
@@ -121,7 +123,7 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
     // Same root element as below, so the ResizeObserver keeps watching it.
     return (
       <div ref={wrapRef} className="w-full max-w-[560px]">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
+        <p role="alert" className="text-sm text-danger">{t("noVisibleArea")}</p>
       </div>
     );
   }
@@ -130,19 +132,20 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
   return (
     <div ref={wrapRef} className="w-full max-w-[560px]">
       <div
-        className="relative select-none overflow-hidden rounded-lg border border-gray-300 shadow-sm dark:border-[#333]"
+        className="relative select-none overflow-hidden border border-line"
         style={{ width: pw, height: ph }}
       >
         <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={tc("pageN", { n: page })} className="h-full" />
         {caption && (
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute whitespace-nowrap leading-none text-gray-700"
+            className="pointer-events-none absolute whitespace-nowrap leading-none"
             style={{
               left: caption.at[0] * scale,
               top: ph - (caption.at[1] + caption.size * 0.72) * scale,
               fontSize: caption.size * scale,
               fontFamily: "Helvetica, Arial, sans-serif",
+              color: SIGNED_ON_CAPTION,
             }}
           >
             {caption.text}
@@ -159,18 +162,20 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
           onPointerUp={end}
           onPointerCancel={end}
           onKeyDown={key}
-          className="absolute cursor-move touch-none outline-none ring-1 ring-mantis-500/70 hover:ring-2 focus-visible:ring-2 focus-visible:ring-mantis-600"
+          // Fixed black and white (it sits on the page render): a black ring, a white outline outside it;
+          // both thicken on hover and keyboard focus.
+          className={`absolute cursor-move touch-none ${pageFrame} hover:ring-2 focus-visible:outline-offset-2 focus-visible:ring-2`}
           style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
         >
           <img src={signatureUrl} alt="" draggable={false} className="pointer-events-none h-full w-full" />
           <span
             aria-hidden="true"
             onPointerDown={begin("resize")}
-            className="absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-nwse-resize rounded-sm border border-white bg-mantis-600"
+            className={`absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-nwse-resize ${pageHandle}`}
           />
         </div>
       </div>
-      <p id="signature-position-help" className="mt-2 text-xs text-gray-500 dark:text-[#777]">
+      <p id="signature-position-help" className="mt-2 text-xs text-ink-2">
         {t("placementHelp")}
       </p>
       <p className="sr-only" aria-live="polite">{spoken}</p>
