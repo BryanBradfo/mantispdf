@@ -9,6 +9,8 @@ export const dangerButton = `${button} border border-danger bg-transparent text-
 export const inputClass = `mt-1 w-full rounded-none border border-line-strong bg-paper px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus-visible:border-ink ${focusRing}`;
 export const panelClass = `mt-8 rounded-none border border-line bg-surface p-6 ${focusRing}`;
 export const noticeClass = `rounded-none border border-line-strong bg-surface px-4 py-3 text-sm text-ink ${focusRing}`;
+/** Compact button for dense side panels (properties, marks): same Oswald uppercase voice as the other buttons. */
+export const smallButton = `flex items-center justify-center gap-1 rounded-none border border-line-strong px-2 py-1.5 font-display text-xs font-medium uppercase tracking-wider text-ink hover:border-ink disabled:pointer-events-none disabled:opacity-40 ${focusRing}`;
 /** Mono uppercase micro-label for counts, sizes, steps and file meta. */
 export const monoLabel = "font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2";
 /** A selected thumbnail or card: 2 px ink outline (pair it with a `Check` badge and aria state). */

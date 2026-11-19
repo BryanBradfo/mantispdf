@@ -16,7 +16,7 @@ import { resolveFont, startsRightToLeft } from "../../lib/editor/unicodeText";
 import { hexToRgb, rgbToHex } from "./svgStyle";
 import { formatNumber, useLocale, useT } from "../../i18n";
 import { Info } from "lucide-react";
-import { checkClass, focusRing, noticeClass } from "../../styles/ui";
+import { checkClass, focusRing, noticeClass, smallButton } from "../../styles/ui";
 
 const FONTS: { value: EditFont; label: string }[] = [
   { value: "Helvetica", label: "Helvetica" },
@@ -31,7 +31,6 @@ const FONTS: { value: EditFont; label: string }[] = [
 
 const labelClass = "block text-xs font-medium text-ink-2";
 const fieldClass = `mt-1 w-full rounded-none border border-line-strong bg-paper px-2 py-1.5 text-sm text-ink focus-visible:border-ink ${focusRing}`;
-const smallButton = `flex items-center justify-center gap-1 rounded-none border border-line-strong px-2 py-1.5 text-xs font-medium text-ink hover:border-ink disabled:opacity-40 ${focusRing}`;
 
 interface Props {
   item: Item;

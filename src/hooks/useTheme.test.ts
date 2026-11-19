@@ -18,6 +18,11 @@ function mount() {
 
 beforeEach(() => {
   localStorage.clear();
+  document.head.querySelector('meta[name="theme-color"]')?.remove();
+  const meta = document.createElement("meta");
+  meta.name = "theme-color";
+  meta.content = "#000000";
+  document.head.append(meta);
   document.documentElement.classList.remove("dark");
   vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }));
 });
@@ -40,6 +45,15 @@ describe("useTheme", () => {
     act(() => result[1](false));
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(localStorage.getItem("theme")).toBe("light");
+  });
+  it("keeps the theme-color meta in step with the theme", () => {
+    const content = () => document.querySelector('meta[name="theme-color"]')!.getAttribute("content");
+    mount();
+    expect(content()).toBe("#000000");
+    act(() => result[1](false));
+    expect(content()).toBe("#ffffff");
+    act(() => result[1](true));
+    expect(content()).toBe("#000000");
   });
   it("falls back to dark when storage cannot be read, and ignores a failed write", () => {
     const failing = {

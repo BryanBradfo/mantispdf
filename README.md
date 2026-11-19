@@ -1,4 +1,4 @@
-# 🦗 MantisPDF
+# MantisPDF
 
 <p align="center">
     <img src="docs/brand/readme-hero.png" alt="MantisPDF" width="600">

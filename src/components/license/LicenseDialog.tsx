@@ -168,7 +168,7 @@ export default function LicenseDialog({
                     disabled={busy}
                     className={`mt-5 gap-2 ${secondaryButton}`}
                   >
-                    {busy && <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />}
+                    {busy && <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />}
                     {t("licenseDeactivate")}
                   </button>
                 </>
@@ -204,7 +204,7 @@ export default function LicenseDialog({
                       disabled={busy || !key.trim()}
                       className={`mt-3 w-full gap-2 ${primaryButton}`}
                     >
-                      {busy && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />}
+                      {busy && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
                       {busy ? t("licenseActivating") : t("licenseActivate")}
                     </button>
                   </div>

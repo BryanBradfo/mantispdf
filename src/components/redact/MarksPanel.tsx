@@ -2,7 +2,7 @@ import { Check, Redo2, Trash2, Undo2 } from "lucide-react";
 import type { Mark } from "../../lib/redact/model";
 import type { Fill } from "../../lib/redact/toJob";
 import { useLocale, useT, type NsT } from "../../i18n";
-import { checkClass, focusRing, selectedOutline } from "../../styles/ui";
+import { checkClass, focusRing, monoLabel, panelClass, selectedOutline, smallButton } from "../../styles/ui";
 
 interface Props {
   marks: readonly Mark[];
@@ -28,11 +28,8 @@ interface Props {
   locked: boolean;
 }
 
-const smallButton = `flex items-center justify-center gap-1 rounded-none border border-line-strong px-2 py-1.5 text-xs font-medium text-ink hover:border-ink disabled:pointer-events-none disabled:opacity-40 ${focusRing}`;
 /** Controls inside the scrolling marks list: the ring sits flush, an offset one is clipped by the scroller. */
 const inListRing = "focus-visible:!ring-offset-0";
-const panel = "rounded-none border border-line bg-surface p-4";
-const heading = "font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ink";
 
 function describe(m: Mark, t: NsT<"redact">): string {
   switch (m.kind) {
@@ -55,9 +52,9 @@ export default function MarksPanel(props: Props) {
 
   return (
     <div className="space-y-4">
-      <section aria-label={t("marks")} className={panel}>
+      <section aria-label={t("marks")} className={`${panelClass} !mt-0 !p-4`}>
         <div className="flex items-center justify-between gap-2">
-          <h2 className={heading}>
+          <h2 className={monoLabel}>
             {t("marksCount", { count: marks.length })}
           </h2>
           <div className="flex gap-1">
@@ -136,9 +133,9 @@ export default function MarksPanel(props: Props) {
         )}
       </section>
 
-      <section aria-label={t("output")} className={panel}>
+      <section aria-label={t("output")} className={`${panelClass} !mt-0 !p-4`}>
         <fieldset>
-          <legend className={heading}>{t("boxColour")}</legend>
+          <legend className={monoLabel}>{t("boxColour")}</legend>
           <div className="mt-2 flex gap-4">
             {(["black", "white"] as const).map((f) => (
               <label key={f} className="flex items-center gap-2 text-sm text-ink">

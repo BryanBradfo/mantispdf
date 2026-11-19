@@ -37,7 +37,7 @@ export default function PageImage({ source, page, width, alt, imgStyle, classNam
         <div
           role="status"
           aria-label={t("previewLoading")}
-          className="h-6 w-6 animate-spin rounded-full border-2 border-ink-3 border-t-transparent motion-reduce:animate-none"
+          className="h-6 w-6 animate-spin rounded-full border-2 border-ink-3 border-t-transparent"
         />
       )}
       {thumb.status === "error" && (
