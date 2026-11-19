@@ -1,6 +1,7 @@
 // Regenerates the MantisPDF brand assets from assets/brand/mantis-source.jpeg:
-// MantisMark / MantisHead path data, favicons, Open Graph images, and the Tauri icon source.
+// MantisMark / MantisHead path data, favicons, Open Graph images, the dithered footer banner, and the Tauri icon source.
 // Usage: node scripts/brand-assets.mjs [source.jpeg]   (then `npx tauri icon` runs on the 1024 px head)
+//        node scripts/brand-assets.mjs --footer        (only the footer banner, to iterate on it)
 // The traces, favicons and OG images are deterministic; `tauri icon` output is not byte-stable, so
 // check `git status src-tauri/icons` after a run and `git checkout` it when only noise changed.
 import { execFileSync } from "node:child_process";
@@ -9,7 +10,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { inflateSync } from "node:zlib";
+import { crc32, deflateSync, inflateSync } from "node:zlib";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
@@ -17,7 +18,9 @@ const potrace = require("potrace");
 const Jimp = require("jimp");
 const { Resvg } = require("@resvg/resvg-js");
 
-const source = resolve(process.argv[2] ?? join(root, "assets/brand/mantis-source.jpeg"));
+const args = process.argv.slice(2);
+const footerOnly = args.includes("--footer");
+const source = resolve(args.find((a) => !a.startsWith("--")) ?? join(root, "assets/brand/mantis-source.jpeg"));
 const TRACE = { threshold: 128, turdSize: 8, optTolerance: 0.4, color: "currentColor", background: "transparent" };
 // Bust crop in source pixels: head, antennae and the raised forelegs, so the mantis reads even at 32 px.
 const HEAD = { x: 280, y: 120, w: 1250, h: 1250 };
@@ -137,8 +140,115 @@ const write = (rel, data) => {
   console.log(`wrote ${rel} (${data.length} bytes)`);
 };
 
+// 0. Footer banner: a wide close-up (eyes, head, raised forelegs) as an ordered dither, shown through a CSS mask.
+// The source is line art, so it is softened first: a blur mixed back with the sharp strokes turns the black body
+// masses into greys (capped below solid ink) and the dither then gives them a halftone texture instead of jaggies.
+const FOOTER = {
+  // Source pixels; x starts left of the drawing (blank) so the head sits at the horizontal centre for phones.
+  crop: { x: -334, y: 250, w: 2048, h: 730 },
+  width: 672, // shown at 2 CSS px a dot (1 on phones) so the dots stay whole: 1344 px = the footer content width
+  sigma: 2.5, // blur, in output pixels
+  sharp: 0.45, // share of the sharp strokes in the tone
+  gamma: 0.85,
+  cap: 0.82, // the darkest tone: solid ink still reads as a dot pattern
+  floor: 0.06, // below this the paper stays clean (jpeg noise, the blank margin)
+};
+
+function gaussian(a, w, h, sigma) {
+  const r = Math.ceil(sigma * 3);
+  const k = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-((i - r) ** 2) / (2 * sigma * sigma)));
+  const sum = k.reduce((x, y) => x + y);
+  const at = (v, max) => Math.min(max - 1, Math.max(0, v));
+  const pass = (src, horizontal) => {
+    const out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        let s = 0;
+        for (let i = -r; i <= r; i++) s += k[i + r] * (horizontal ? src[y * w + at(x + i, w)] : src[at(y + i, h) * w + x]);
+        out[y * w + x] = s / sum;
+      }
+    return out;
+  };
+  return pass(pass(a, true), false);
+}
+
+/** 8x8 Bayer threshold matrix, values in (0, 1). */
+function bayer8() {
+  let m = [[0]];
+  while (m.length < 8) {
+    const n = m.length;
+    m = Array.from({ length: 2 * n }, (_, y) =>
+      Array.from({ length: 2 * n }, (_, x) => 4 * m[y % n][x % n] + [[0, 2], [3, 1]][Math.floor(y / n)][Math.floor(x / n)]),
+    );
+  }
+  return m.map((row) => row.map((v) => (v + 0.5) / 64));
+}
+
+/** A 1-bit greyscale PNG: ink (0) opaque, paper (1) transparent through tRNS. */
+function onebitPng(bits, w, h) {
+  const stride = Math.ceil(w / 8);
+  const raw = Buffer.alloc((stride + 1) * h, 0);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) if (bits[y * w + x]) raw[y * (stride + 1) + 1 + (x >> 3)] |= 0x80 >> (x & 7);
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr.set([1, 0, 0, 0, 0], 8);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("tRNS", Buffer.from([0, 1])),
+    chunk("IDAT", deflateSync(raw, { level: 9 })),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function footerBanner(img) {
+  const { crop, width: W } = FOOTER;
+  const H = Math.round((W * crop.h) / crop.w);
+  const S = img.bitmap.width;
+  const inkAt = (x, y) => (x < 0 || y < 0 || x >= S || y >= img.bitmap.height ? 0 : 1 - img.bitmap.data[(y * S + x) * 4] / 255);
+  // Box-average the crop down to the output grid.
+  const small = new Float32Array(W * H);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const [x0, x1] = [crop.x + (x * crop.w) / W, crop.x + ((x + 1) * crop.w) / W].map(Math.floor);
+      const [y0, y1] = [crop.y + (y * crop.h) / H, crop.y + ((y + 1) * crop.h) / H].map(Math.floor);
+      let s = 0;
+      for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) s += inkAt(xx, yy);
+      small[y * W + x] = s / ((x1 - x0) * (y1 - y0));
+    }
+  const soft = gaussian(small, W, H, FOOTER.sigma);
+  const m = bayer8();
+  const bits = new Uint8Array(W * H).fill(1);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      const tone = Math.min(1, FOOTER.sharp * small[i] + (1 - FOOTER.sharp) * soft[i]) ** FOOTER.gamma * FOOTER.cap;
+      if (tone >= FOOTER.floor && tone > m[y % 8][x % 8]) bits[i] = 0;
+    }
+  write("public/brand/footer-mantis.png", onebitPng(bits, W, H));
+  write(
+    "src/components/brand/footerMantis.ts",
+    `// Generated by scripts/brand-assets.mjs from assets/brand/mantis-source.jpeg. Do not edit.
+/** The dithered mantis banner of the footer (public/), a 1-bit mask: one image pixel is one dot. */
+export const FOOTER_MANTIS = { src: "brand/footer-mantis.png", width: ${W}, height: ${H} } as const;
+`,
+  );
+}
+
 // 1. Traces: the whole drawing, and the head cropped from the same pixels.
 const image = await Jimp.read(source);
+footerBanner(image);
+if (footerOnly) process.exit(0);
 const markD = compactPath(await trace(source));
 const cropped = image.clone().crop(HEAD.x, HEAD.y, HEAD.w, HEAD.h);
 const markBox = bbox(markD);

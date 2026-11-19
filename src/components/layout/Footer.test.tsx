@@ -85,4 +85,16 @@ describe("Footer", () => {
     expect(footer().textContent).toContain(`© ${new Date().getFullYear()} MantisPDF`);
     expect(footer().textContent).toContain("All processing happens in your browser. No data is uploaded.");
   });
+
+  it("draws the dithered mantis banner, decorative, as a mask over the wordmark", async () => {
+    await renderAt("/");
+    const banner = footer().querySelector<HTMLElement>('[data-testid="footer-mantis"]');
+    expect(banner).not.toBeNull();
+    expect(banner!.getAttribute("aria-hidden")).toBe("true");
+    expect(banner!.className).toContain("bg-ink/");
+    expect(banner!.style.getPropertyValue("mask-image")).toContain('url("/brand/footer-mantis.png")');
+    expect(banner!.style.getPropertyValue("-webkit-mask-image")).toContain('url("/brand/footer-mantis.png")');
+    // It sits directly above the wordmark.
+    expect(banner!.nextElementSibling?.getAttribute("data-testid")).toBe("footer-wordmark");
+  });
 });

@@ -3,6 +3,7 @@ import { ArrowUpRight } from "lucide-react";
 import { Link, useT } from "../../i18n";
 import { MantisHead } from "../brand/MantisHead";
 import { GithubMark } from "../brand/GithubMark";
+import { FOOTER_MANTIS } from "../brand/footerMantis";
 import { sectionNumber, toolsIn, type SectionId } from "../../lib/tools";
 import { focusRing } from "../../styles/ui";
 
@@ -13,6 +14,26 @@ const COLUMNS: readonly (readonly SectionId[])[] = [["organize"], ["convert"], [
 
 /** Desktop columns (brand, four tool columns, project), shared by the links and the bottom row so both line up. */
 const columnsXl = "xl:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(0,1fr))]";
+
+/** The dithered mantis, drawn in faint ink through its 1-bit PNG as a CSS mask (one image for both themes). One
+ *  image pixel is one dot: 1 CSS px on phones, 2 px from `sm` (the whole 672 px image then spans the 1344 px
+ *  content width), always whole pixels so the Bayer pattern never beats. Centred on the head, the sides crop on
+ *  narrower screens; a vertical gradient, intersected with the image, fades it out into the wordmark. */
+const mantisMask = `url("${import.meta.env.BASE_URL}${FOOTER_MANTIS.src}"), linear-gradient(to bottom, black 30%, transparent 92%)`;
+const mantisStyle = {
+  height: `calc(var(--dot) * ${FOOTER_MANTIS.height})`,
+  maskImage: mantisMask,
+  WebkitMaskImage: mantisMask,
+  maskSize: `calc(var(--dot) * ${FOOTER_MANTIS.width}) calc(var(--dot) * ${FOOTER_MANTIS.height}), 100% 100%`,
+  WebkitMaskSize: `calc(var(--dot) * ${FOOTER_MANTIS.width}) calc(var(--dot) * ${FOOTER_MANTIS.height}), 100% 100%`,
+  maskRepeat: "no-repeat",
+  WebkitMaskRepeat: "no-repeat",
+  maskPosition: "center top",
+  WebkitMaskPosition: "center top",
+  maskComposite: "intersect",
+  WebkitMaskComposite: "source-in",
+  imageRendering: "pixelated",
+} as const;
 
 /** Mono uppercase micro-label (column eyebrows, bottom row). */
 const micro = "font-mono text-[11px] uppercase tracking-[0.08em]";
@@ -59,12 +80,18 @@ export default function Footer() {
     <footer className="bg-paper">
       {/* An inline-size container: `cqw` below is a hundredth of the content width, padding excluded. */}
       <div className="mx-auto max-w-[1440px] px-4 pb-10 pt-20 [container-type:inline-size] sm:px-8 sm:pt-28 lg:px-12">
+        <div
+          aria-hidden="true"
+          data-testid="footer-mantis"
+          style={mantisStyle}
+          className="pointer-events-none -mb-[calc(100cqw/3.62*0.3)] bg-ink/25 [--dot:1px] sm:[--dot:2px] dark:bg-ink/[0.22]"
+        />
         {/* Oswald 300 "MantisPDF" is 3.585 em wide: this size spans the content width at every viewport, with
             no scrollbar maths. The negative margin cancels the M's side bearing so the stem lines up with the columns. */}
         <p
           aria-hidden="true"
           data-testid="footer-wordmark"
-          className="-ml-[0.04em] select-none whitespace-nowrap font-display text-[calc(100cqw/3.62)] font-light leading-[0.78] tracking-[-0.01em] text-line"
+          className="relative -ml-[0.04em] select-none whitespace-nowrap font-display text-[calc(100cqw/3.62)] font-light leading-[0.78] tracking-[-0.01em] text-line"
         >
           MantisPDF
         </p>

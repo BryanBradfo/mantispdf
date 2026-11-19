@@ -1,6 +1,9 @@
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { FOOTER_MANTIS } from "./footerMantis";
 import { MantisHead } from "./MantisHead";
 import { MantisMark } from "./MantisMark";
 
@@ -53,5 +56,20 @@ describe.each(cases)("$name", ({ Component, maxPathBytes }) => {
     const d = mount(<Component />).querySelector("path")!.getAttribute("d")!;
     expect(d.length).toBeGreaterThan(1000);
     expect(d.length).toBeLessThan(maxPathBytes);
+  });
+});
+
+describe("footer mantis banner", () => {
+  const file = join(process.cwd(), "public", FOOTER_MANTIS.src);
+
+  it("is a small 1-bit PNG with transparency, at the size the footer lays out", () => {
+    expect(statSync(file).size).toBeLessThan(60_000);
+    const png = readFileSync(file);
+    expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
+    // IHDR: width, height, bit depth 1, colour type 0 (grey), then a tRNS chunk makes paper transparent.
+    expect([png.readUInt32BE(16), png.readUInt32BE(20), png[24], png[25]]).toEqual([FOOTER_MANTIS.width, FOOTER_MANTIS.height, 1, 0]);
+    expect(png.includes(Buffer.from("tRNS"))).toBe(true);
+    expect(FOOTER_MANTIS.width / FOOTER_MANTIS.height).toBeGreaterThan(2.5);
+    expect(FOOTER_MANTIS.width / FOOTER_MANTIS.height).toBeLessThan(3.1);
   });
 });
