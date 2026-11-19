@@ -145,6 +145,8 @@ const markBox = bbox(markD);
 const small = cropped.clone().resize(SMALL.px, SMALL.px, Jimp.RESIZE_BICUBIC);
 const headD = compactPath(await trace(await small.getBufferAsync(Jimp.MIME_PNG), { turdSize: SMALL.turdSize, optTolerance: SMALL.optTolerance }));
 const headBox = { x: 0, y: 0, w: SMALL.px, h: SMALL.px };
+// Full-detail bust for the large app icons (180 px and up), where the fine strokes survive.
+const bustD = compactPath(await trace(await cropped.getBufferAsync(Jimp.MIME_PNG)));
 
 write("src/components/brand/MantisMark.tsx", component("MantisMark", "The full mantis drawing, traced from the source art.", markBox, markD));
 write("src/components/brand/MantisHead.tsx", component("MantisHead", "The mantis bust (head and forelegs), cropped from the same trace, for small sizes.", headBox, headD));
@@ -158,7 +160,7 @@ function iconSvg(d, [bg, fg] = ["#000", "#fff"]) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}"><rect width="${side}" height="${side}" fill="${bg}"/><g transform="translate(${tx} ${ty})" fill="${fg}"><path d="${d}" fill-rule="evenodd"/></g></svg>`;
 }
 const faviconSvg = iconSvg(headD);
-const headSquare = iconSvg(headD);
+const headSquare = iconSvg(bustD);
 write("public/favicon.svg", faviconSvg + "\n");
 write("public/favicon-32.png", png(faviconSvg, 32));
 write("public/apple-touch-icon.png", png(headSquare, 180));
