@@ -9,16 +9,16 @@ test("French home: French copy, html lang, cards link under /fr, hreflang altern
   await expect(page).toHaveTitle("MantisPDF\u00a0: outils PDF gratuits dans votre navigateur");
   await expect(page.getByRole("link", { name: /Fusionner PDF/ })).toHaveAttribute("href", "/fr/merge");
   await expect(page.locator('main a[href^="/"]:not([href^="/fr"])')).toHaveCount(0);
-  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://mantispdf.vercel.app/fr");
-  await expect(page.locator('link[rel="alternate"][hreflang="en"]')).toHaveAttribute("href", "https://mantispdf.vercel.app/");
-  await expect(page.locator('link[rel="alternate"][hreflang="fr"]')).toHaveAttribute("href", "https://mantispdf.vercel.app/fr");
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://mantispdf.bradfo.me/fr");
+  await expect(page.locator('link[rel="alternate"][hreflang="en"]')).toHaveAttribute("href", "https://mantispdf.bradfo.me/");
+  await expect(page.locator('link[rel="alternate"][hreflang="fr"]')).toHaveAttribute("href", "https://mantispdf.bradfo.me/fr");
   await expect(page.locator('link[rel="alternate"][hreflang="x-default"]')).toHaveCount(1);
 });
 
 test("English home keeps lang=en and its own canonical", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
-  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://mantispdf.vercel.app/");
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://mantispdf.bradfo.me/");
 });
 
 test("switcher round trip keeps the tool page", async ({ page }) => {
@@ -201,7 +201,7 @@ test("French head: one title and one description, both French (no static English
     await expect(page.locator(`head ${selector}`), selector).toHaveCount(1);
   }
   await expect(page.locator('head meta[property="og:title"]')).toHaveAttribute("content", "Fusionner des PDF | MantisPDF");
-  await expect(page.locator('head meta[property="og:url"]')).toHaveAttribute("content", "https://mantispdf.vercel.app/fr/merge");
+  await expect(page.locator('head meta[property="og:url"]')).toHaveAttribute("content", "https://mantispdf.bradfo.me/fr/merge");
 });
 
 test("a /fr first load fetches the page chunk without waiting for the French dictionary", async ({ page }) => {
