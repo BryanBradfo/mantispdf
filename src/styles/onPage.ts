@@ -44,5 +44,5 @@ export const COMPARE_REMOVED = { backgroundColor: "rgba(198,40,40,0.25)" } as co
 export const COMPARE_STRIKE = { backgroundColor: PAGE_MARK_DANGER } as const;
 export const COMPARE_ADDED = { outline: `2px solid ${PAGE_MARK_DARK}`, outlineOffset: "1px", backgroundColor: "rgba(0,0,0,0.07)" } as const;
 export const COMPARE_ACTIVE = { boxShadow: `0 0 0 1px ${PAGE_MARK_LIGHT}, 0 0 0 2.5px ${PAGE_MARK_DARK}` } as const;
-/** The white page behind the legend swatches (the marks are drawn for a white page). */
+/** The white page behind the legend swatches and under a page render still loading (the marks are drawn for a white page). */
 export const COMPARE_SWATCH_PAGE = { backgroundColor: PAGE_MARK_LIGHT } as const;

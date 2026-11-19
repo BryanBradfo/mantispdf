@@ -1,4 +1,5 @@
 import { groupChanges } from "./changes";
+import { cleanupOps } from "./cleanup";
 import { diffTokens } from "./diff";
 import { tokenize } from "./tokens";
 import { DEFAULT_LIMITS, type Change, type CompareLimits, type CompareResult, type Op, type Token, type Word } from "./types";
@@ -17,6 +18,13 @@ function tokenizePages(pages: Word[][]): { tokens: Token[]; ranges: Array<[numbe
   return { tokens, ranges };
 }
 
+/** Page index (in the input structure) of every token. */
+function pageIndex(ranges: Array<[number, number]>, count: number): Int32Array {
+  const out = new Int32Array(count);
+  ranges.forEach(([s, e], p) => out.fill(p, s, e));
+  return out;
+}
+
 function shift(ops: Op[], da: number, db: number): Op[] {
   return ops.map((o) => ({ kind: o.kind, aStart: o.aStart + da, aEnd: o.aEnd + da, bStart: o.bStart + db, bEnd: o.bEnd + db }));
 }
@@ -30,7 +38,9 @@ export function compareDocuments(aWords: Word[][], bWords: Word[][], limits: Com
   let changes: Change[] = [];
   const whole = a.length + b.length > limits.maxTokens ? "over-budget" : diffTokens(a, b, { maxEdits: limits.maxEdits });
   if (whole !== "over-budget") {
-    changes = groupChanges(whole, a, b);
+    const pa = pageIndex(as, a.length);
+    const pb = pageIndex(bs, b.length);
+    changes = groupChanges(cleanupOps(whole, a, b, (i) => pa[i], (j) => pb[j]), a, b);
   } else {
     mode = "per-page";
     const pageCount = Math.max(aWords.length, bWords.length);
@@ -47,7 +57,9 @@ export function compareDocuments(aWords: Word[][], bWords: Word[][], limits: Com
           { kind: "add", aStart: ta.length, aEnd: ta.length, bStart: 0, bEnd: tb.length },
         ].filter((o) => o.aEnd > o.aStart || o.bEnd > o.bStart) as Op[];
       }
-      changes.push(...groupChanges(shift(ops, a0, b0), a, b));
+      // Cleaned per page: nothing is folded across a page boundary.
+      const clean = cleanupOps(ops, ta, tb, () => i, () => i);
+      changes.push(...groupChanges(shift(clean, a0, b0), a, b));
     }
   }
 

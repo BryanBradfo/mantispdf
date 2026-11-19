@@ -42,6 +42,12 @@ test("lists the text changes and highlights them on both columns", async ({ page
   await expect(page.getByRole("button", { name: "Page 1: removed “line will be removed”, added “sentence was added”" })).toBeVisible();
   // The third page exists only in the modified copy: its words are added there.
   await expect(changes(page).filter({ hasText: "modified copy." })).not.toHaveCount(0);
+  // Read like a person would: the moved paragraph removed on page 1 and added on page 2, no word confetti.
+  await expect(page.getByRole("button", { name: "Page 1: removed “Paragraph two moves to the bottom later.”" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Page 2: added “Paragraph two moves to the bottom later.”" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Page 3: added “Third page exists only in the modified copy.”" })).toBeVisible();
+  await expect(changes(page)).toHaveCount(5);
+  await expect(page.getByTestId("compare-headline")).toHaveText("5 changes");
 
   const colA = page.getByTestId("compare-column-a");
   const colB = page.getByTestId("compare-column-b");
