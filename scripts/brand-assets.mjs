@@ -13,18 +13,32 @@ import { inflateSync } from "node:zlib";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const potrace = require("potrace");
-// jimp is potrace's own decoder; reuse the copy it resolves so crops and traces agree.
-const Jimp = createRequire(require.resolve("potrace"))("jimp");
+const Jimp = require("jimp");
 const { Resvg } = require("@resvg/resvg-js");
 
 const source = resolve(process.argv[2] ?? join(root, "assets/brand/mantis-source.jpeg"));
 const TRACE = { threshold: 128, turdSize: 8, optTolerance: 0.4, color: "currentColor", background: "transparent" };
 // Head crop in source pixels: both eyes, face plates and mandibles inside; antennae may be cut.
 const HEAD = { x: 430, y: 320, w: 520, h: 470 };
+// Small-size icon: tight crop on eyes and face plate, ink smoothed so strokes survive 16-32 px, neck blanked.
+const SMALL = { x: 450, y: 340, w: 440, h: 400, blur: 6, level: 150, turdSize: 30, neck: { x: 355, y: 275 } };
 const INK = "#f2f2f2";
 
-const trace = (input) =>
-  new Promise((ok, fail) => potrace.trace(input, TRACE, (e, svg) => (e ? fail(e) : ok(svg))));
+const trace = (input, extra = {}) =>
+  new Promise((ok, fail) => potrace.trace(input, { ...TRACE, ...extra }, (e, svg) => (e ? fail(e) : ok(svg))));
+
+/** Smoothed, thickened copy for tiny sizes: blur merges hairlines, a looser threshold keeps them as solid ink. */
+function simplify(img, { blur, level }) {
+  const { data, width } = img.greyscale().blur(blur).bitmap;
+  for (let i = 0; i < data.length; i += 4) {
+    const px = (i / 4) % width;
+    const py = Math.floor(i / 4 / width);
+    // The neck joins the head at its lower right; blank it so only eyes and face plate remain.
+    const neck = px > SMALL.neck.x && py > SMALL.neck.y;
+    data.fill(!neck && data[i] < level ? 0 : 255, i, i + 3);
+  }
+  return img;
+}
 
 /** Path data out of potrace's svg, rounded to 1 decimal and compacted. */
 function compactPath(svg) {
@@ -146,14 +160,21 @@ const headBox = { x: 0, y: 0, w: HEAD.w, h: HEAD.h };
 write("src/components/brand/MantisMark.tsx", component("MantisMark", "The full mantis drawing, traced from the source art.", markBox, markD));
 write("src/components/brand/MantisHead.tsx", component("MantisHead", "The mantis head, cropped from the same trace, for small sizes.", headBox, headD));
 
-// 2. Favicons: white head centred on a black square.
-const side = Math.round(Math.max(HEAD.w, HEAD.h) * 1.3);
-const k = 1;
-const tx = (side - HEAD.w * k) / 2;
-const ty = (side - HEAD.h * k) / 2;
-const headSquare = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}"><rect width="${side}" height="${side}" fill="#000"/><g transform="translate(${tx} ${ty})" fill="#fff"><path d="${headD}" fill-rule="evenodd"/></g></svg>`;
-write("public/favicon.svg", headSquare + "\n");
-write("public/favicon-32.png", png(headSquare, 32));
+// 2. Favicons and app icons: head centred on its own bounding box, on a black square with even padding.
+const smallCrop = image.clone().crop(SMALL.x, SMALL.y, SMALL.w, SMALL.h);
+const smallD = compactPath(await trace(await simplify(smallCrop, SMALL).getBufferAsync(Jimp.MIME_PNG), { turdSize: SMALL.turdSize }));
+function iconSvg(d, [bg, fg] = ["#000", "#fff"]) {
+  const b = bbox(d);
+  const side = Math.round(Math.max(b.w, b.h) * 1.3);
+  const tx = (side - b.w) / 2 - b.x;
+  const ty = (side - b.h) / 2 - b.y;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}"><rect width="${side}" height="${side}" fill="${bg}"/><g transform="translate(${tx} ${ty})" fill="${fg}"><path d="${d}" fill-rule="evenodd"/></g></svg>`;
+}
+// Tiny sizes keep the drawing's own polarity (black ink on paper): the eyes read as dark discs there.
+const faviconSvg = iconSvg(smallD, ["#fff", "#000"]);
+const headSquare = iconSvg(headD);
+write("public/favicon.svg", faviconSvg + "\n");
+write("public/favicon-32.png", png(faviconSvg, 32));
 write("public/apple-touch-icon.png", png(headSquare, 180));
 
 // 3. Open Graph, one per locale: wordmark and tagline left, mark right, in Oswald.
