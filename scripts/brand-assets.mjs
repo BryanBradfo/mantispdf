@@ -151,8 +151,8 @@ const bustD = compactPath(await trace(await cropped.getBufferAsync(Jimp.MIME_PNG
 write("src/components/brand/MantisMark.tsx", component("MantisMark", "The full mantis drawing, traced from the source art.", markBox, markD));
 write("src/components/brand/MantisHead.tsx", component("MantisHead", "The mantis bust (head and forelegs), cropped from the same trace, for small sizes.", headBox, headD));
 
-// 2. Favicons and app icons: bust centred on its own bounding box, on a black square with even padding.
-function iconSvg(d, [bg, fg] = ["#000", "#fff"]) {
+// 2. Favicons and app icons: bust centred on its own bounding box, black ink on a white square with even padding.
+function iconSvg(d, [bg, fg] = ["#fff", "#000"]) {
   const b = bbox(d);
   const side = Math.round(Math.max(b.w, b.h) * 1.1);
   const tx = (side - b.w) / 2 - b.x;
