@@ -7,7 +7,7 @@ import { MantisHead } from "../brand/MantisHead";
 import { focusRing } from "../../styles/ui";
 
 /** A window control: a round (round by nature, like the OS ones) hairline button that fills with ink on hover. */
-const control = `flex h-3 w-3 items-center justify-center rounded-full border border-line-strong text-ink hover:border-ink hover:bg-ink hover:text-paper ${focusRing} focus-visible:ring-offset-1`;
+const control = `flex h-3 w-3 items-center justify-center rounded-full border border-line-strong text-ink hover:border-ink hover:bg-ink hover:text-paper ${focusRing} focus-visible:!ring-offset-1`;
 const glyph = "h-2 w-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100";
 
 /**

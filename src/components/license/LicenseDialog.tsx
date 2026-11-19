@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check, Loader2, Sparkles, X } from "lucide-react";
 import type { LicenseStatus } from "../../hooks/useLicense";
@@ -6,8 +6,15 @@ import { useDescribeError, useT, type UiError } from "../../i18n";
 import ErrorText from "../common/ErrorText";
 import { focusRing, inputClass, linkClass, primaryButton, secondaryButton } from "../../styles/ui";
 
-/** 150 ms fades; the panel also rises 8 px unless reduced motion is asked for. */
+/** 150 ms fade and 8 px rise; nothing moves or fades under reduced motion. */
 const FADE = { duration: 0.15, ease: "easeOut" } as const;
+const INSTANT = { duration: 0 } as const;
+
+/** The controls Tab can reach inside the dialog, in order. */
+function focusables(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
+  return [...root.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])')];
+}
 
 interface LicenseDialogProps {
   open: boolean;
@@ -36,6 +43,43 @@ export default function LicenseDialog({
   const errorId = useId();
   const still = useReducedMotion();
   const rise = still ? {} : { y: 8 };
+  const transition = still ? INSTANT : FADE;
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // A modal: focus moves in on open (the key input, else the first control) and back to the
+  // control that opened it on close.
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const panel = panelRef.current;
+    (panel?.querySelector<HTMLElement>("input:not([disabled])") ?? focusables(panel)[0])?.focus();
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [open]);
+
+  /** Escape closes; Tab and Shift+Tab cycle inside the dialog. */
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const items = focusables(panelRef.current);
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || !items.includes(active as HTMLElement))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !items.includes(active as HTMLElement))) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   const activate = async () => {
     if (!key.trim() || busy) return;
@@ -71,7 +115,7 @@ export default function LicenseDialog({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={FADE}
+          transition={transition}
         >
           {/* Backdrop */}
           <div
@@ -81,13 +125,15 @@ export default function LicenseDialog({
           />
 
           <motion.div
+            ref={panelRef}
+            onKeyDown={onKeyDown}
             role="dialog"
             aria-modal="true"
             aria-label={t("licenseDialog")}
             initial={{ opacity: 0, ...rise }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, ...rise }}
-            transition={FADE}
+            transition={transition}
             className="relative w-full max-w-md rounded-none border border-line-strong bg-paper"
           >
             <button

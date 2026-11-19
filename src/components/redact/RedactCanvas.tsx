@@ -285,10 +285,18 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
           })}
           {selected && (() => {
             const b = box(rectOf(selected));
+            // 3 px outside the mark, clamped to the page (with room for the stroke) so a mark on
+            // the page edge keeps its whole frame instead of losing a side to the clipped canvas.
+            const pad = 1.25;
+            const x0 = Math.max(b.left - 3, pad);
+            const y0 = Math.max(b.top - 3, pad);
+            const x1 = Math.min(b.left + b.width + 3, pw - pad);
+            const y1 = Math.min(b.top + b.height + 3, ph - pad);
+            const frame = { x: x0, y: y0, width: Math.max(x1 - x0, 1), height: Math.max(y1 - y0, 1) };
             return (
               <g data-selected-frame="" pointerEvents="none" fill="none">
-                <rect x={b.left - 3} y={b.top - 3} width={b.width + 6} height={b.height + 6} stroke={PAGE_MARK_LIGHT} strokeWidth={2.5} />
-                <rect x={b.left - 3} y={b.top - 3} width={b.width + 6} height={b.height + 6} stroke={PAGE_MARK_DARK} strokeWidth={1.5} strokeDasharray="4 3" />
+                <rect {...frame} stroke={PAGE_MARK_LIGHT} strokeWidth={2.5} />
+                <rect {...frame} stroke={PAGE_MARK_DARK} strokeWidth={1.5} strokeDasharray="4 3" />
               </g>
             );
           })()}

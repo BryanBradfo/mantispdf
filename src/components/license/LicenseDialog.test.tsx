@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { act, Suspense } from "react";
+import { describe, it, expect, beforeAll, vi } from "vitest";
+import { act, Suspense, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { LocaleProvider, loadLocale } from "../../i18n";
@@ -91,6 +91,65 @@ describe("LicenseDialog errors", () => {
     const message = host.querySelector(".text-danger")!;
     expect(message.textContent).toBe("Cette clé de licence n’est pas valable pour MantisPDF Pro.");
     expect(input.getAttribute("aria-describedby")).toBe(message.id);
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it("behaves as a modal: focus on the key input, Tab wraps inside, Escape closes and focus returns to the opener", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button data-opener="" onClick={() => setOpen(true)}>open</button>
+          <LicenseDialog
+            open={open}
+            onClose={() => setOpen(false)}
+            status={{ tier: "free" } as never}
+            onActivate={() => Promise.resolve({ tier: "pro" } as never)}
+            onDeactivate={() => Promise.resolve()}
+            checkoutUrl="https://example.test"
+          />
+        </>
+      );
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={["/"]}>
+          <Suspense fallback={null}>
+            <LocaleProvider>
+              <Harness />
+            </LocaleProvider>
+          </Suspense>
+        </MemoryRouter>,
+      );
+    });
+    const opener = host.querySelector<HTMLButtonElement>("[data-opener]")!;
+    opener.focus();
+    await act(async () => opener.click());
+    const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(document.activeElement).toBe(dialog.querySelector("input"));
+
+    const focusables = [...dialog.querySelectorAll<HTMLElement>("button:not([disabled]), a[href], input:not([disabled])")];
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const tab = (shiftKey: boolean) =>
+      act(() => {
+        document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true }));
+      });
+    last.focus();
+    await tab(false);
+    expect(document.activeElement).toBe(first);
+    await tab(true);
+    expect(document.activeElement).toBe(last);
+
+    await act(async () => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    });
+    await vi.waitFor(() => expect(host.querySelector('[role="dialog"]')).toBeNull());
+    expect(document.activeElement).toBe(opener);
     act(() => root.unmount());
     host.remove();
   });

@@ -98,4 +98,19 @@ describe("RedactCanvas", () => {
     expect(host.querySelector('[role="alert"]')!.className).toMatch(/\btext-danger\b/);
     unmount();
   });
+
+  it("keeps the selected frame inside the page for a mark touching its edge", () => {
+    const edge: Mark[] = [{ id: "e", kind: "area", page: 1, rect: [0, 742, 100, 50] }];
+    const { host, unmount } = render({ marks: edge, selectedId: "e", flash: [] });
+    const svg = host.querySelector("svg")!;
+    const [w, h] = [Number(svg.getAttribute("width")), Number(svg.getAttribute("height"))];
+    for (const r of host.querySelectorAll("[data-selected-frame] rect")) {
+      const [x, y, rw, rh] = ["x", "y", "width", "height"].map((a) => Number(r.getAttribute(a)));
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(x + rw).toBeLessThanOrEqual(w);
+      expect(y + rh).toBeLessThanOrEqual(h);
+    }
+    unmount();
+  });
 });
