@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { Analytics } from "@vercel/analytics/react";
 import TitleBar from "./components/desktop/TitleBar";
 import Header from "./components/layout/Header";
 import Footer from "./components/layout/Footer";
@@ -56,7 +55,6 @@ export default function App() {
           </LocaleProvider>
         </Suspense>
       </ErrorBoundary>
-      <Analytics />
     </BrowserRouter>
   );
 }
