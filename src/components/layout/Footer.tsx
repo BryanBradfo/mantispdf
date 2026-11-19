@@ -11,7 +11,7 @@ export default function Footer() {
     <footer className="border-t border-line bg-paper">
       <div className="mx-auto flex max-w-[1440px] flex-col gap-6 px-4 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-12">
         <div className="flex items-start gap-3">
-          <MantisHead className="mt-0.5 h-5 w-auto shrink-0 text-ink-2" />
+          <MantisHead className="mt-0.5 h-6 w-auto shrink-0 text-ink-2" />
           <p className="max-w-md text-sm leading-relaxed text-ink-2">{t("footerPrivacy")}</p>
         </div>
         <div className="flex items-center gap-6 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2">

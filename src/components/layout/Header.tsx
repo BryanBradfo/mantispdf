@@ -120,7 +120,7 @@ export default function Header() {
         </div>
 
         <Link to="/" className={`flex items-center gap-2.5 justify-self-start text-ink sm:justify-self-center ${focusRing}`}>
-          <MantisHead className="h-7 w-auto" />
+          <MantisHead className="h-9 w-auto" />
           <span className="font-display text-[22px] font-light leading-none tracking-[-0.01em]">MantisPDF</span>
         </Link>
 
