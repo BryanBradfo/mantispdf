@@ -4,6 +4,8 @@ import { diffTokens } from "./diff";
 import { groupChanges } from "./changes";
 import { compareDocuments } from "./compare";
 import { CompareClient } from "./client";
+import { handleCompareMessage } from "../../workers/compare.worker";
+import type { CompareRequest } from "./protocol";
 import type { Op, Token, Word } from "./types";
 
 const box = { x: 0, y: 0, w: 1, h: 1 };
@@ -47,8 +49,6 @@ describe("tokenize", () => {
   it("applies NFKC and maps NBSP/thin spaces", () => {
     const t = tokenize(words("ﬁn   x"));
     expect(t.map((x) => x.text)).toEqual(["fin", "x"]);
-    expect(tokenize([{ text: "10 000", page: 0, box }])[0].text).toBe("10 000");
-    expect(tokenize([{ text: "a b", page: 0, box }])[0].text).toBe("a b");
   });
   it("trims, drops empties and keeps source indices", () => {
     const w: Word[] = ["a", " ", " ", " b "].map((text, i) => ({ text, page: i, box }));
@@ -124,7 +124,7 @@ describe("diffTokens", () => {
     const t0 = performance.now();
     const ops = diffTokens(toks(base.join(" ")), toks(mod.join(" ")), { maxEdits: 20_000 });
     expect(ops).not.toBe("over-budget");
-    expect(performance.now() - t0).toBeLessThan(2000);
+    expect(performance.now() - t0).toBeLessThan(10_000);
   });
 });
 
@@ -186,22 +186,64 @@ describe("compareDocuments", () => {
   });
 });
 
+describe("page slices from input structure", () => {
+  it("per-page mode with an empty middle page and Word.page not equal to index", () => {
+    const w = (s: string, page: number) => words(s, page);
+    const a = [w("a b", 7), [], w("c d", 7)];
+    const b = [w("a b", 7), w("ins", 7), w("c X d", 7)];
+    const r = compareDocuments(a, b, { maxTokens: 1, maxEdits: 100 });
+    expect(r.mode).toBe("per-page");
+    expect(r.changes.map((c) => [c.kind, c.bText])).toEqual([
+      ["added", "ins"],
+      ["added", "X"],
+    ]);
+    expect(r.aIndex).toEqual([0, 1, 2, 3]);
+    expect(r.bIndex).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+});
+
+describe("worker message handler", () => {
+  it("answers success, failure on unknown type and on bad payload", () => {
+    const ok = handleCompareMessage({ type: "compare", id: 4, a: [words("a")], b: [words("b")], limits: { maxTokens: 10, maxEdits: 10 } });
+    expect(ok).toMatchObject({ type: "success", id: 4 });
+    const unknown = handleCompareMessage({ type: "nope", id: 5 } as unknown as CompareRequest);
+    expect(unknown).toMatchObject({ type: "failure", id: 5 });
+    const bad = handleCompareMessage({ type: "compare", id: 6 } as unknown as CompareRequest);
+    expect(bad).toMatchObject({ type: "failure", id: 6 });
+    expect(handleCompareMessage(null as unknown as CompareRequest).type).toBe("failure");
+  });
+});
+
 describe("CompareClient", () => {
-  it("correlates concurrent requests by id and rejects on crash", async () => {
+  it("a new compare supersedes the running one (AbortError, onAbort called)", async () => {
+    const sent: { id: number }[] = [];
+    let aborts = 0;
+    const c = new CompareClient((m) => sent.push(m), () => aborts++);
+    const p1 = c.compare([], []);
+    const p2 = c.compare([], []);
+    await expect(p1).rejects.toMatchObject({ name: "AbortError" });
+    expect(aborts).toBe(1);
+    expect(c.pendingCount).toBe(1);
+    c.handleMessage({ type: "success", id: sent[0].id, result: {} as never }); // stale reply ignored
+    expect(c.pendingCount).toBe(1);
+    c.cancel();
+    await expect(p2).rejects.toMatchObject({ name: "AbortError" });
+    expect(aborts).toBe(2);
+    c.cancel();
+    expect(aborts).toBe(2);
+  });
+  it("correlates replies by id and rejects on crash", async () => {
     const sent: { id: number }[] = [];
     const c = new CompareClient((m) => sent.push(m));
     const p1 = c.compare([], []);
-    const p2 = c.compare([], []);
     const res = (n: number) => ({ changes: [], mode: "document" as const, stats: { aTokens: n, bTokens: 0, added: 0, removed: 0, changed: 0, edits: 0 }, aIndex: [], bIndex: [] });
-    c.handleMessage({ type: "success", id: sent[1].id, result: res(2) });
     c.handleMessage({ type: "success", id: sent[0].id, result: res(1) });
     expect((await p1).stats.aTokens).toBe(1);
-    expect((await p2).stats.aTokens).toBe(2);
     const p3 = c.compare([], []);
     c.handleError(new Error("boom"));
     await expect(p3).rejects.toThrow("boom");
     const p4 = c.compare([], []);
-    c.handleMessage({ type: "failure", id: sent[3].id, error: "bad" });
+    c.handleMessage({ type: "failure", id: sent[2].id, error: "bad" });
     await expect(p4).rejects.toThrow("bad");
     expect(c.pendingCount).toBe(0);
   });

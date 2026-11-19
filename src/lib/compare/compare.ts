@@ -3,20 +3,18 @@ import { diffTokens } from "./diff";
 import { tokenize } from "./tokens";
 import { DEFAULT_LIMITS, type Change, type CompareLimits, type CompareResult, type Op, type Token, type Word } from "./types";
 
-function flat(pages: Word[][]): Word[] {
-  return pages.flat();
-}
-
-/** Tokens of one page (inclusive range found by page number; tokens are in page order). */
-function pageSlices(tokens: Token[], pageCount: number): Array<[number, number]> {
-  const out: Array<[number, number]> = [];
-  let p = 0;
-  for (let page = 0; page < pageCount; page++) {
-    const start = p;
-    while (p < tokens.length && tokens[p].page === page) p++;
-    out.push([start, p]);
+/** Tokenize page by page: the per-page token ranges come from the input structure, not from Word.page. */
+function tokenizePages(pages: Word[][]): { tokens: Token[]; ranges: Array<[number, number]> } {
+  const tokens: Token[] = [];
+  const ranges: Array<[number, number]> = [];
+  let base = 0;
+  for (const words of pages) {
+    const start = tokens.length;
+    tokens.push(...tokenize(words, base));
+    ranges.push([start, tokens.length]);
+    base += words.length;
   }
-  return out;
+  return { tokens, ranges };
 }
 
 function shift(ops: Op[], da: number, db: number): Op[] {
@@ -25,10 +23,8 @@ function shift(ops: Op[], da: number, db: number): Op[] {
 
 /** Synchronous comparison (used by tests and by the worker). `aWords[i]` is page i's words. */
 export function compareDocuments(aWords: Word[][], bWords: Word[][], limits: CompareLimits = DEFAULT_LIMITS): CompareResult {
-  const aFlat = flat(aWords);
-  const bFlat = flat(bWords);
-  const a = tokenize(aFlat);
-  const b = tokenize(bFlat);
+  const { tokens: a, ranges: as } = tokenizePages(aWords);
+  const { tokens: b, ranges: bs } = tokenizePages(bWords);
 
   let mode: CompareResult["mode"] = "document";
   let changes: Change[] = [];
@@ -38,11 +34,9 @@ export function compareDocuments(aWords: Word[][], bWords: Word[][], limits: Com
   } else {
     mode = "per-page";
     const pageCount = Math.max(aWords.length, bWords.length);
-    const as = pageSlices(a, pageCount);
-    const bs = pageSlices(b, pageCount);
     for (let i = 0; i < pageCount; i++) {
-      const [a0, a1] = as[i];
-      const [b0, b1] = bs[i];
+      const [a0, a1] = as[i] ?? [a.length, a.length];
+      const [b0, b1] = bs[i] ?? [b.length, b.length];
       const ta = a.slice(a0, a1);
       const tb = b.slice(b0, b1);
       let ops = diffTokens(ta, tb, { maxEdits: limits.maxEdits });

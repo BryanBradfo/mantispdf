@@ -3,14 +3,28 @@ import { DEFAULT_LIMITS, type CompareLimits, type CompareResult, type Word } fro
 
 type Pending = { resolve: (r: CompareResult) => void; reject: (e: Error) => void };
 
-/** Request-ID correlation over a postMessage transport (mirrors PdfWorkerClient; independent of Worker). */
+export function abortError(): Error {
+  const e = new Error("Comparison cancelled");
+  e.name = "AbortError";
+  return e;
+}
+
+/**
+ * Request-ID correlation over a postMessage transport (mirrors PdfWorkerClient; independent of Worker).
+ * A new `compare()` while one is running supersedes it: the old promise rejects with an AbortError and
+ * `onAbort` runs (the worker factory terminates and recreates the worker there, stopping the old diff).
+ */
 export class CompareClient {
   private readonly pending = new Map<number, Pending>();
   private nextId = 1;
 
-  constructor(private readonly post: (msg: CompareRequest) => void) {}
+  constructor(
+    private readonly post: (msg: CompareRequest) => void,
+    private readonly onAbort: () => void = () => {},
+  ) {}
 
   compare(a: Word[][], b: Word[][], limits: CompareLimits = DEFAULT_LIMITS): Promise<CompareResult> {
+    this.cancel();
     const id = this.nextId++;
     return new Promise<CompareResult>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
@@ -21,6 +35,13 @@ export class CompareClient {
         reject(e instanceof Error ? e : new Error(String(e)));
       }
     });
+  }
+
+  /** Reject the running comparison (if any) with an AbortError and stop the worker's work. */
+  cancel(): void {
+    if (this.pending.size === 0) return;
+    this.handleError(abortError());
+    this.onAbort();
   }
 
   handleMessage(msg: CompareResponse): void {
@@ -42,17 +63,29 @@ export class CompareClient {
   }
 }
 
-/** Spawn the compare worker. `dispose` terminates it and rejects in-flight requests. */
+/** Spawn the compare worker. Cancelling or superseding terminates and recreates it; `dispose` ends it. */
 export function createCompareWorker(): { client: CompareClient; dispose: () => void } {
-  const worker = new Worker(new URL("../../workers/compare.worker.ts", import.meta.url), { type: "module" });
-  const client = new CompareClient((msg) => worker.postMessage(msg));
-  worker.onmessage = (e: MessageEvent<CompareResponse>) => client.handleMessage(e.data);
-  worker.onerror = () => client.handleError(new Error("Compare worker crashed"));
-  worker.onmessageerror = () => client.handleError(new Error("Compare worker message error"));
+  let worker: Worker | null = null;
+  const spawn = () => {
+    const w = new Worker(new URL("../../workers/compare.worker.ts", import.meta.url), { type: "module" });
+    w.onmessage = (e: MessageEvent<CompareResponse>) => client.handleMessage(e.data);
+    w.onerror = () => client.handleError(new Error("Compare worker crashed"));
+    w.onmessageerror = () => client.handleError(new Error("Compare worker message error"));
+    worker = w;
+  };
+  const client = new CompareClient(
+    (msg) => worker?.postMessage(msg),
+    () => {
+      worker?.terminate();
+      spawn();
+    },
+  );
+  spawn();
   return {
     client,
     dispose: () => {
-      worker.terminate();
+      worker?.terminate();
+      worker = null;
       client.handleError(new Error("Worker terminated"));
     },
   };
