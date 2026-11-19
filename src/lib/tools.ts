@@ -1,33 +1,4 @@
-import {
-  Combine,
-  Crop,
-  Eraser,
-  EyeOff,
-  FileImage,
-  FileMinus,
-  FileOutput,
-  FoldVertical,
-  Grid2x2,
-  Hash,
-  ImageDown,
-  Images,
-  LayoutGrid,
-  ListOrdered,
-  Lock,
-  LockOpen,
-  PanelsTopBottom,
-  PenLine,
-  RotateCw,
-  Scaling,
-  ScanText,
-  Scissors,
-  ShieldCheck,
-  Signature,
-  Stamp,
-  Tags,
-  TextCursorInput,
-  type LucideIcon,
-} from "lucide-react";
+import { PIXEL_ICONS, type PixelGlyph } from "./pixelIcons";
 
 /** Tool ids name the `home` keys `<id>.title` and `<id>.desc`. */
 export type ToolId =
@@ -45,45 +16,49 @@ export interface Tool {
   /** English (root) path; `Link` from `../i18n` adds the locale prefix. */
   href: string;
   section: SectionId;
-  icon: LucideIcon;
+  /** The tool's hand-drawn 16x16 icon (`PixelIcon`), from `PIXEL_ICONS`. */
+  pixel: PixelGlyph;
 }
 
 export const SECTIONS: readonly SectionId[] = ["organize", "convert", "edit", "security", "recognize"];
 
-/** The single source for the home grid, the header TOOLS menu and the tool-page eyebrow (spec 3.6 order). */
-export const TOOLS: readonly Tool[] = [
-  { id: "merge", href: "/merge", section: "organize", icon: Combine },
-  { id: "split", href: "/split", section: "organize", icon: Scissors },
-  { id: "organize", href: "/organize", section: "organize", icon: LayoutGrid },
-  { id: "rotate", href: "/rotate", section: "organize", icon: RotateCw },
-  { id: "removePages", href: "/remove-pages", section: "organize", icon: FileMinus },
-  { id: "extractPages", href: "/extract-pages", section: "organize", icon: FileOutput },
-  { id: "crop", href: "/crop", section: "organize", icon: Crop },
-  { id: "resize", href: "/resize", section: "organize", icon: Scaling },
-  { id: "nUp", href: "/n-up", section: "organize", icon: Grid2x2 },
+/** Id, path and section of every tool, in spec 3.6 order. */
+const TABLE: readonly Omit<Tool, "pixel">[] = [
+  { id: "merge", href: "/merge", section: "organize" },
+  { id: "split", href: "/split", section: "organize" },
+  { id: "organize", href: "/organize", section: "organize" },
+  { id: "rotate", href: "/rotate", section: "organize" },
+  { id: "removePages", href: "/remove-pages", section: "organize" },
+  { id: "extractPages", href: "/extract-pages", section: "organize" },
+  { id: "crop", href: "/crop", section: "organize" },
+  { id: "resize", href: "/resize", section: "organize" },
+  { id: "nUp", href: "/n-up", section: "organize" },
 
-  { id: "compress", href: "/compress", section: "convert", icon: FoldVertical },
-  { id: "pdfToImage", href: "/pdf-to-image", section: "convert", icon: FileImage },
-  { id: "imagesToPdf", href: "/images-to-pdf", section: "convert", icon: Images },
-  { id: "extractImages", href: "/extract-images", section: "convert", icon: ImageDown },
+  { id: "compress", href: "/compress", section: "convert" },
+  { id: "pdfToImage", href: "/pdf-to-image", section: "convert" },
+  { id: "imagesToPdf", href: "/images-to-pdf", section: "convert" },
+  { id: "extractImages", href: "/extract-images", section: "convert" },
 
-  { id: "editPdf", href: "/edit-pdf", section: "edit", icon: PenLine },
-  { id: "fillForm", href: "/fill-form", section: "edit", icon: TextCursorInput },
-  { id: "sign", href: "/sign", section: "edit", icon: Signature },
-  { id: "watermark", href: "/watermark", section: "edit", icon: Stamp },
-  { id: "pageNumbers", href: "/page-numbers", section: "edit", icon: ListOrdered },
-  { id: "headerFooter", href: "/header-footer", section: "edit", icon: PanelsTopBottom },
-  { id: "bates", href: "/bates", section: "edit", icon: Hash },
+  { id: "editPdf", href: "/edit-pdf", section: "edit" },
+  { id: "fillForm", href: "/fill-form", section: "edit" },
+  { id: "sign", href: "/sign", section: "edit" },
+  { id: "watermark", href: "/watermark", section: "edit" },
+  { id: "pageNumbers", href: "/page-numbers", section: "edit" },
+  { id: "headerFooter", href: "/header-footer", section: "edit" },
+  { id: "bates", href: "/bates", section: "edit" },
 
-  { id: "encrypt", href: "/encrypt", section: "security", icon: Lock },
-  { id: "unlock", href: "/unlock", section: "security", icon: LockOpen },
-  { id: "redact", href: "/redact", section: "security", icon: EyeOff },
-  { id: "sanitize", href: "/sanitize", section: "security", icon: ShieldCheck },
-  { id: "removeMetadata", href: "/remove-metadata", section: "security", icon: Eraser },
-  { id: "editMetadata", href: "/edit-metadata", section: "security", icon: Tags },
+  { id: "encrypt", href: "/encrypt", section: "security" },
+  { id: "unlock", href: "/unlock", section: "security" },
+  { id: "redact", href: "/redact", section: "security" },
+  { id: "sanitize", href: "/sanitize", section: "security" },
+  { id: "removeMetadata", href: "/remove-metadata", section: "security" },
+  { id: "editMetadata", href: "/edit-metadata", section: "security" },
 
-  { id: "ocr", href: "/ocr", section: "recognize", icon: ScanText },
+  { id: "ocr", href: "/ocr", section: "recognize" },
 ];
+
+/** The single source for the home grid, the header TOOLS menu and the tool-page eyebrow (spec 3.6 order). */
+export const TOOLS: readonly Tool[] = TABLE.map((t) => ({ ...t, pixel: PIXEL_ICONS[t.id] }));
 
 const BY_ID = new Map(TOOLS.map((t) => [t.id, t]));
 

@@ -4,6 +4,7 @@ import ToolGrid from "../components/home/ToolGrid";
 import { PageSEO } from "../components/seo/PageSEO";
 import LicenseDialog from "../components/license/LicenseDialog";
 import { MantisMark } from "../components/brand/MantisMark";
+import DecodeText from "../components/common/DecodeText";
 import { useLicense, CHECKOUT_URL } from "../hooks/useLicense";
 import { useT } from "../i18n";
 import { primaryButton, secondaryButton } from "../styles/ui";
@@ -31,7 +32,9 @@ export default function HomePage() {
 
         <section className="grid items-center gap-12 pb-16 pt-12 sm:pt-16 lg:grid-cols-12 lg:gap-8 lg:pb-24 lg:pt-20">
           <div className="lg:col-span-7">
-            <p className="eyebrow">{t("heroEyebrow")}</p>
+            <p className="eyebrow">
+              <DecodeText text={t("heroEyebrow")} trigger="mount" />
+            </p>
             <h1 className="mt-6 font-display w-min text-[clamp(4.5rem,24vw,8rem)] font-light leading-[0.9] tracking-[-0.02em] text-ink lg:text-[clamp(7rem,10vw,10rem)]">
               {t("heading")}
             </h1>

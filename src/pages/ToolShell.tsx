@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { PageSEO } from "../components/seo/PageSEO";
+import PixelIcon from "../components/brand/PixelIcon";
+import DecodeText from "../components/common/DecodeText";
 import { useT } from "../i18n";
 import { sectionNumber, toolById, type ToolId } from "../lib/tools";
 
@@ -16,13 +18,13 @@ interface Props {
   wide?: boolean;
 }
 
-/** The tool's icon and `NN / SECTION` label, in mono, above the page title. */
+/** The tool's pixel icon and `NN / SECTION` label, in mono, above the page title. */
 function ToolEyebrow({ tool }: { tool: ToolId }) {
   const t = useT("home");
-  const { section, icon: Icon } = toolById(tool);
+  const { section, pixel } = toolById(tool);
   return (
     <p data-testid="tool-eyebrow" className="eyebrow flex items-center gap-2.5">
-      <Icon aria-hidden="true" strokeWidth={1.5} className="h-4 w-4 text-ink" />
+      <PixelIcon icon={pixel} className="h-4 w-4 text-ink" />
       <span>
         {sectionNumber(section)} / {t(`sections.${section}`)}
       </span>
@@ -36,7 +38,7 @@ export default function ToolShell({ title, description, path, heading, intro, ch
       <PageSEO title={title} description={description} path={path} />
       <ToolEyebrow tool={tool} />
       <h1 className="mt-5 font-display text-[2.75rem] font-light leading-[0.95] tracking-[-0.02em] text-ink sm:text-6xl">
-        {heading}
+        <DecodeText text={heading} trigger="mount" />
       </h1>
       <p className="mt-4 max-w-xl leading-relaxed text-ink-2">{intro}</p>
       {children}

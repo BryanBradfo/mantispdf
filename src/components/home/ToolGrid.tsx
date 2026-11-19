@@ -13,7 +13,7 @@ export default function ToolGrid() {
           <section
             key={section}
             aria-labelledby={`section-${section}`}
-            className="border-t border-line py-10 lg:grid lg:grid-cols-12 lg:gap-8 lg:py-16"
+            className="py-10 lg:grid lg:grid-cols-12 lg:gap-8 lg:py-16"
           >
             <div className="mb-6 flex items-baseline justify-between lg:col-span-3 lg:mb-0 lg:block lg:self-start lg:sticky lg:top-8">
               <h2 id={`section-${section}`} className="font-mono text-xs uppercase tracking-[0.08em] text-ink">
@@ -27,11 +27,11 @@ export default function ToolGrid() {
               </p>
             </div>
             <ul className="grid grid-cols-1 pl-px pt-px sm:grid-cols-2 lg:col-span-9 xl:grid-cols-3">
-              {tools.map(({ id, href, icon }, i) => (
+              {tools.map(({ id, href, pixel }, i) => (
                 <ToolCell
                   key={id}
                   href={href}
-                  icon={icon}
+                  icon={pixel}
                   index={String(i + 1).padStart(2, "0")}
                   title={t(`${id}.title`)}
                   description={t(`${id}.desc`)}

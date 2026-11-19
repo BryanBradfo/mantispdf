@@ -2,6 +2,8 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Link, useT } from "../../i18n";
 import { SECTIONS, sectionNumber, toolsIn } from "../../lib/tools";
 import { focusRing } from "../../styles/ui";
+import PixelIcon from "../brand/PixelIcon";
+import DecodeText from "../common/DecodeText";
 
 interface Props {
   id: string;
@@ -42,15 +44,15 @@ export default function ToolsMenu({ id, onNavigate, mobileExtras }: Props) {
                 {th(`sections.${section}`)}
               </h2>
               <ul className="mt-2">
-                {toolsIn(section).map(({ id: tool, href, icon: Icon }) => (
+                {toolsIn(section).map(({ id: tool, href, pixel }) => (
                   <li key={tool}>
                     <Link
                       to={href}
                       onClick={onNavigate}
                       className={`group -mx-2 flex items-center gap-3 px-2 py-1.5 text-sm text-ink-2 hover:bg-ink hover:text-paper ${focusRing}`}
                     >
-                      <Icon aria-hidden="true" strokeWidth={1.5} className="h-4 w-4 shrink-0" />
-                      {th(`${tool}.title`)}
+                      <PixelIcon icon={pixel} className="h-4 w-4 shrink-0" />
+                      <DecodeText text={th(`${tool}.title`)} trigger="hover" />
                     </Link>
                   </li>
                 ))}
