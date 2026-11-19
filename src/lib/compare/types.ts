@@ -1,4 +1,4 @@
-/** A word with its page box. Page index is 0-based; box is in PDF user-space points, origin bottom-left. */
+/** A word with its page box. Page index is 0-based; box is in the visible page space (rotation applied, CropBox origin removed), points, origin bottom-left. */
 export interface Word {
   text: string;
   page: number;
