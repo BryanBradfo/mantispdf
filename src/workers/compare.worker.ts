@@ -14,6 +14,9 @@ export function handleCompareMessage(msg: CompareRequest): CompareResponse {
   }
 }
 
-self.onmessage = (e: MessageEvent<CompareRequest>) => {
-  self.postMessage(handleCompareMessage(e.data));
-};
+// Only inside a real worker: importing this module in tests must not touch `self`.
+if (typeof self !== "undefined" && typeof document === "undefined") {
+  self.onmessage = (e: MessageEvent<CompareRequest>) => {
+    self.postMessage(handleCompareMessage(e.data));
+  };
+}

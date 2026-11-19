@@ -17,6 +17,7 @@ export function abortError(): Error {
 export class CompareClient {
   private readonly pending = new Map<number, Pending>();
   private nextId = 1;
+  private closed = false;
 
   constructor(
     private readonly post: (msg: CompareRequest) => void,
@@ -24,6 +25,7 @@ export class CompareClient {
   ) {}
 
   compare(a: Word[][], b: Word[][], limits: CompareLimits = DEFAULT_LIMITS): Promise<CompareResult> {
+    if (this.closed) return Promise.reject(new Error("Compare client disposed"));
     this.cancel();
     const id = this.nextId++;
     return new Promise<CompareResult>((resolve, reject) => {
@@ -39,9 +41,15 @@ export class CompareClient {
 
   /** Reject the running comparison (if any) with an AbortError and stop the worker's work. */
   cancel(): void {
-    if (this.pending.size === 0) return;
+    if (this.closed || this.pending.size === 0) return;
     this.handleError(abortError());
     this.onAbort();
+  }
+
+  /** Reject everything in flight and refuse further work (the worker is gone). */
+  close(): void {
+    this.handleError(new Error("Worker terminated"));
+    this.closed = true;
   }
 
   handleMessage(msg: CompareResponse): void {
@@ -63,19 +71,45 @@ export class CompareClient {
   }
 }
 
-/** Spawn the compare worker. Cancelling or superseding terminates and recreates it; `dispose` ends it. */
-export function createCompareWorker(): { client: CompareClient; dispose: () => void } {
-  let worker: Worker | null = null;
+/** The parts of a Worker the factory below uses (lets tests inject a fake). */
+export interface WorkerLike {
+  postMessage(msg: CompareRequest): void;
+  terminate(): void;
+  onmessage: ((e: MessageEvent<CompareResponse>) => void) | null;
+  onerror: ((e: unknown) => void) | null;
+  onmessageerror: ((e: unknown) => void) | null;
+}
+
+const defaultSpawn = (): WorkerLike =>
+  new Worker(new URL("../../workers/compare.worker.ts", import.meta.url), { type: "module" }) as unknown as WorkerLike;
+
+/**
+ * Spawn the compare worker. Cancelling or superseding terminates and recreates it, as does a crash
+ * (the next `compare()` gets a fresh worker); `dispose` ends it for good (later calls reject).
+ */
+export function createCompareWorker(spawnWorker: () => WorkerLike = defaultSpawn): { client: CompareClient; dispose: () => void } {
+  let worker: WorkerLike | null = null;
+  let disposed = false;
   const spawn = () => {
-    const w = new Worker(new URL("../../workers/compare.worker.ts", import.meta.url), { type: "module" });
-    w.onmessage = (e: MessageEvent<CompareResponse>) => client.handleMessage(e.data);
-    w.onerror = () => client.handleError(new Error("Compare worker crashed"));
-    w.onmessageerror = () => client.handleError(new Error("Compare worker message error"));
+    const w = spawnWorker();
+    w.onmessage = (e) => {
+      if (w === worker) client.handleMessage(e.data);
+    };
+    w.onerror = () => {
+      if (w !== worker) return;
+      client.handleError(new Error("Compare worker crashed"));
+      w.terminate();
+      if (!disposed) spawn();
+    };
+    w.onmessageerror = () => {
+      if (w === worker) client.handleError(new Error("Compare worker message error"));
+    };
     worker = w;
   };
   const client = new CompareClient(
     (msg) => worker?.postMessage(msg),
     () => {
+      if (disposed) return;
       worker?.terminate();
       spawn();
     },
@@ -84,9 +118,11 @@ export function createCompareWorker(): { client: CompareClient; dispose: () => v
   return {
     client,
     dispose: () => {
-      worker?.terminate();
+      disposed = true;
+      const w = worker;
       worker = null;
-      client.handleError(new Error("Worker terminated"));
+      w?.terminate();
+      client.close();
     },
   };
 }

@@ -3,7 +3,7 @@ import { tokenize } from "./tokens";
 import { diffTokens } from "./diff";
 import { groupChanges } from "./changes";
 import { compareDocuments } from "./compare";
-import { CompareClient } from "./client";
+import { CompareClient, createCompareWorker, type WorkerLike } from "./client";
 import { handleCompareMessage } from "../../workers/compare.worker";
 import type { CompareRequest } from "./protocol";
 import type { Op, Token, Word } from "./types";
@@ -56,6 +56,19 @@ describe("tokenize", () => {
       { text: "a", index: 0, page: 0 },
       { text: "b", index: 3, page: 3 },
     ]);
+  });
+  it("splits a word holding NBSP or U+202F into tokens sharing its index", () => {
+    const t = tokenize([{ text: "a\u00a0b\u202fc", page: 2, box }, { text: "d", page: 2, box }]);
+    expect(t).toEqual([
+      { text: "a", index: 0, page: 2 },
+      { text: "b", index: 0, page: 2 },
+      { text: "c", index: 0, page: 2 },
+      { text: "d", index: 1, page: 2 },
+    ]);
+  });
+  it("strips soft hyphens and zero-width spaces", () => {
+    expect(tokenize([{ text: "co\u00adoper\u200bate", page: 0, box }]).map((x) => x.text)).toEqual(["cooperate"]);
+    expect(tokenize([{ text: "\u00ad\u200b", page: 0, box }])).toEqual([]);
   });
   it("keeps punctuation and French apostrophes inside tokens, case-sensitive", () => {
     expect(toks("l’homme, Bonjour !").map((t) => t.text)).toEqual(["l’homme,", "Bonjour", "!"]);
@@ -246,5 +259,70 @@ describe("CompareClient", () => {
     c.handleMessage({ type: "failure", id: sent[2].id, error: "bad" });
     await expect(p4).rejects.toThrow("bad");
     expect(c.pendingCount).toBe(0);
+  });
+});
+
+class FakeWorker implements WorkerLike {
+  sent: CompareRequest[] = [];
+  terminated = false;
+  onmessage: WorkerLike["onmessage"] = null;
+  onerror: WorkerLike["onerror"] = null;
+  onmessageerror: WorkerLike["onmessageerror"] = null;
+  postMessage(m: CompareRequest) {
+    this.sent.push(m);
+  }
+  terminate() {
+    this.terminated = true;
+  }
+}
+
+describe("createCompareWorker", () => {
+  const setup = () => {
+    const workers: FakeWorker[] = [];
+    const h = createCompareWorker(() => {
+      const w = new FakeWorker();
+      workers.push(w);
+      return w;
+    });
+    return { workers, ...h };
+  };
+  it("rejects compare after dispose and never spawns", async () => {
+    const { workers, client, dispose } = setup();
+    dispose();
+    expect(workers[0].terminated).toBe(true);
+    await expect(client.compare([], [])).rejects.toThrow(/disposed/);
+    client.cancel();
+    expect(workers).toHaveLength(1);
+    expect(workers[0].sent).toEqual([]);
+  });
+  it("dispose rejects the running comparison", async () => {
+    const { client, dispose } = setup();
+    const p = client.compare([], []);
+    dispose();
+    await expect(p).rejects.toThrow("Worker terminated");
+  });
+  it("respawns after a crash and works again", async () => {
+    const { workers, client } = setup();
+    const p = client.compare([], []);
+    workers[0].onerror?.(new Event("error"));
+    await expect(p).rejects.toThrow("crashed");
+    expect(workers[0].terminated).toBe(true);
+    expect(workers).toHaveLength(2);
+    const p2 = client.compare([], []);
+    expect(workers[1].sent).toHaveLength(1);
+    workers[1].onmessage?.({ data: { type: "failure", id: workers[1].sent[0].id, error: "x" } } as MessageEvent);
+    await expect(p2).rejects.toThrow("x");
+  });
+  it("ignores late messages from a replaced worker; cancel recreates the worker", async () => {
+    const { workers, client } = setup();
+    const p = client.compare([], []);
+    client.cancel();
+    await expect(p).rejects.toMatchObject({ name: "AbortError" });
+    expect(workers).toHaveLength(2);
+    const p2 = client.compare([], []);
+    workers[0].onmessage?.({ data: { type: "failure", id: workers[0].sent[0].id, error: "stale" } } as MessageEvent);
+    expect(client.pendingCount).toBe(1);
+    client.cancel();
+    await expect(p2).rejects.toMatchObject({ name: "AbortError" });
   });
 });
