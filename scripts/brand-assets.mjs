@@ -1,9 +1,10 @@
 // Regenerates the MantisPDF brand assets from assets/brand/mantis-source.jpeg:
 // MantisMark / MantisHead path data, favicons, Open Graph images, and the Tauri icon source.
 // Usage: node scripts/brand-assets.mjs [source.jpeg]   (then `npx tauri icon` runs on the 1024 px head)
-// Deterministic: running it twice leaves git clean.
+// The traces, favicons and OG images are deterministic; `tauri icon` output is not byte-stable, so
+// check `git status src-tauri/icons` after a run and `git checkout` it when only noise changed.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -21,6 +22,8 @@ const TRACE = { threshold: 128, turdSize: 8, optTolerance: 0.4, color: "currentC
 // Bust crop in source pixels: head, antennae and the raised forelegs, so the mantis reads even at 32 px.
 const HEAD = { x: 280, y: 120, w: 1250, h: 1250 };
 const INK = "#f2f2f2";
+// Small uses (header, footer, title bar at 16-36 px, favicons): trace a downscaled crop, coarser, so the path stays light.
+const SMALL = { px: 320, turdSize: 24, optTolerance: 3 };
 
 const trace = (input, extra = {}) =>
   new Promise((ok, fail) => potrace.trace(input, { ...TRACE, ...extra }, (e, svg) => (e ? fail(e) : ok(svg))));
@@ -138,9 +141,10 @@ const write = (rel, data) => {
 const image = await Jimp.read(source);
 const markD = compactPath(await trace(source));
 const cropped = image.clone().crop(HEAD.x, HEAD.y, HEAD.w, HEAD.h);
-const headD = compactPath(await trace(await cropped.getBufferAsync(Jimp.MIME_PNG)));
 const markBox = bbox(markD);
-const headBox = { x: 0, y: 0, w: HEAD.w, h: HEAD.h };
+const small = cropped.clone().resize(SMALL.px, SMALL.px, Jimp.RESIZE_BICUBIC);
+const headD = compactPath(await trace(await small.getBufferAsync(Jimp.MIME_PNG), { turdSize: SMALL.turdSize, optTolerance: SMALL.optTolerance }));
+const headBox = { x: 0, y: 0, w: SMALL.px, h: SMALL.px };
 
 write("src/components/brand/MantisMark.tsx", component("MantisMark", "The full mantis drawing, traced from the source art.", markBox, markD));
 write("src/components/brand/MantisHead.tsx", component("MantisHead", "The mantis bust (head and forelegs), cropped from the same trace, for small sizes.", headBox, headD));
@@ -162,6 +166,7 @@ write("public/apple-touch-icon.png", png(headSquare, 180));
 // 3. Open Graph, one per locale: wordmark and tagline left, mark right, in Oswald.
 const oswald = join(root, "node_modules/@fontsource/oswald/files");
 const fontDir = mkdtempSync(join(tmpdir(), "mantis-oswald-"));
+const iconDir = mkdtempSync(join(tmpdir(), "mantis-icon-"));
 const fonts = [300, 500].map((wt) => {
   const out = join(fontDir, `oswald-${wt}.ttf`);
   writeFileSync(out, woffToSfnt(join(oswald, `oswald-latin-${wt}-normal.woff`)));
@@ -196,6 +201,8 @@ for (const locale of ["en", "fr"]) {
 }
 
 // 4. Tauri icons from a 1024 px head (white on black).
-const iconSource = join(mkdtempSync(join(tmpdir(), "mantis-icon-")), "head-1024.png");
+const iconSource = join(iconDir, "head-1024.png");
 writeFileSync(iconSource, png(headSquare, 1024));
 execFileSync("npx", ["tauri", "icon", iconSource], { cwd: root, stdio: "inherit" });
+rmSync(fontDir, { recursive: true, force: true });
+rmSync(iconDir, { recursive: true, force: true });

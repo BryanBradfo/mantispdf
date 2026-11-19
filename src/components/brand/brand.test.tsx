@@ -25,7 +25,7 @@ function mount(ui: ReactElement): HTMLElement {
 }
 
 const cases = [
-  { name: "MantisHead", Component: MantisHead, maxPathBytes: 40_000 },
+  { name: "MantisHead", Component: MantisHead, maxPathBytes: 15_000 },
   { name: "MantisMark", Component: MantisMark, maxPathBytes: 90_000 },
 ];
 
