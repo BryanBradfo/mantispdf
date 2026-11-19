@@ -148,9 +148,18 @@ export default {
   bannerFrenchDismiss: "Non merci",
 
   // Footer
-  footerPrivacy: "MantisPDF. All processing happens in your browser. No data is uploaded.",
+  footerPrivacy: "All processing happens in your browser. No data is uploaded.",
   footerLicense: "MIT license",
   footerGithub: "MantisPDF on GitHub",
+  footerNav: "Site map",
+  footerOpenSource: "Open source",
+  footerProject: "Project",
+  footerGoTo: "Go to",
+  footerReportBug: "Report a bug",
+  footerContribute: "Contribute",
+  footerNewTab: "(opens in a new tab)",
+  footerCopyright: "© {year} MantisPDF",
+  footerInBrowser: "100% in your browser",
 
   // 404
   notFoundTitle: "Page not found",

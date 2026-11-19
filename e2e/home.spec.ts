@@ -83,6 +83,18 @@ test.describe("on a 390 px phone", () => {
     });
   }
 
+  test("the footer of a tool page fits the phone and links every tool under /fr", async ({ page }) => {
+    await page.goto("/fr/merge");
+    const footer = page.getByRole("contentinfo");
+    await footer.scrollIntoViewIfNeeded();
+    await expect(footer.getByRole("heading", { name: "Projet" })).toBeVisible();
+    const nav = footer.getByRole("navigation", { name: "Plan du site" });
+    await expect(nav.getByRole("link", { name: "Fusionner PDF" })).toHaveAttribute("href", "/fr/merge");
+    expect((await nav.locator('a[href^="/fr/"]').count())).toBe(27);
+    expect(await overflow(page)).toBe(0);
+    expect(await footer.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+  });
+
   test("/fr/merge does not scroll sideways with two files loaded", async ({ page }) => {
     await page.goto("/fr/merge");
     await expect(async () => {

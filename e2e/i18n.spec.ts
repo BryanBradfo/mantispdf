@@ -7,7 +7,7 @@ test("French home: French copy, html lang, cards link under /fr, hreflang altern
   await expect(page.getByRole("heading", { name: "Outils PDF" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "fr");
   await expect(page).toHaveTitle("MantisPDF\u00a0: outils PDF gratuits dans votre navigateur");
-  await expect(page.getByRole("link", { name: /Fusionner PDF/ })).toHaveAttribute("href", "/fr/merge");
+  await expect(page.locator("#tools").getByRole("link", { name: /Fusionner PDF/ })).toHaveAttribute("href", "/fr/merge");
   await expect(page.locator('main a[href^="/"]:not([href^="/fr"])')).toHaveCount(0);
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://mantispdf.bradfo.me/fr");
   await expect(page.locator('link[rel="alternate"][hreflang="en"]')).toHaveAttribute("href", "https://mantispdf.bradfo.me/");

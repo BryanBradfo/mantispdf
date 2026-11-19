@@ -500,7 +500,7 @@ test("edit pdf: /edit still redirects to /organize and the home page lists the t
   await page.goto("/edit");
   await expect(page).toHaveURL(/\/organize$/);
   await page.goto("/");
-  await page.getByRole("link", { name: /Edit PDF/ }).click();
+  await page.locator("#tools").getByRole("link", { name: /Edit PDF/ }).click();
   await expect(page).toHaveURL(/\/edit-pdf$/);
   await expect(page.getByRole("heading", { name: "Edit PDF", level: 1 })).toBeVisible();
 });
