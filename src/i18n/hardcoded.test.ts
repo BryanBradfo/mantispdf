@@ -131,6 +131,51 @@ const LIB_ALLOWLIST: { file: string; text: string; reason: string }[] = [
     reason: "engine-identical error text (crates/mantis-wasm stamp fonts) thrown by encodeWinAnsi; describeError translates it",
   },
   {
+    file: "src/lib/editor/model.ts",
+    text: "Noto Sans Mono",
+    reason: "font family name (fonts.json, FontFace), the same in every language",
+  },
+  {
+    file: "src/lib/editor/unicodeText.ts",
+    text: "Noto Sans Mono",
+    reason: "font family name (fonts.json, FontFace), the same in every language",
+  },
+  {
+    file: "src/lib/fonts/select.ts",
+    text: "Noto Sans Arabic",
+    reason: "font family name (fonts.json, FontFace), the same in every language",
+  },
+  {
+    file: "src/lib/fonts/select.ts",
+    text: "Noto Sans Hebrew",
+    reason: "font family name (fonts.json, FontFace), the same in every language",
+  },
+  {
+    file: "src/lib/fonts/select.ts",
+    text: "Noto Sans Devanagari",
+    reason: "font family name (fonts.json, FontFace), the same in every language",
+  },
+  {
+    file: "src/lib/fonts/select.ts",
+    text: "Noto Sans Thai",
+    reason: "font family name (fonts.json, FontFace), the same in every language",
+  },
+  {
+    file: "src/lib/fonts/select.ts",
+    text: "Noto Sans {x}",
+    reason: "font family name (fonts.json, FontFace), the same in every language",
+  },
+  {
+    file: "src/lib/editor/unicodeText.ts",
+    text: "No font can show these characters: {x} (text box on page {x}).",
+    reason: "engine-style error thrown into Edit PDF's download path (noFontError); describeError translates it",
+  },
+  {
+    file: "src/lib/fonts/fontStore.ts",
+    text: "Invalid edit settings: font",
+    reason: "the wasm FontStore's own error text, matched to tell a full store from a failed fetch; never shown",
+  },
+  {
     file: "src/lib/ocr/pipeline.ts",
     text: "The OCR engine stopped",
     reason: "internal failure reason of a pipeline page; the OCR page shows failedLine() instead, never this text",

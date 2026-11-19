@@ -538,7 +538,7 @@ impl Run<'_> {
     }
 
     /// Show `bytes` (string `elem_index` of op `op_index`), moving Tm.
-    fn show(&mut self, op_index: usize, elem_index: usize, bytes: &[u8]) -> Result<(), Unsupported> {
+    fn show(&mut self, doc: &Document, op_index: usize, elem_index: usize, bytes: &[u8]) -> Result<(), Unsupported> {
         if bytes.is_empty() {
             return Ok(());
         }
@@ -549,8 +549,9 @@ impl Run<'_> {
             let width = font.width(code)?;
             let word_spacing = if font.word_space_applies(code, byte_range.len()) { self.gs.word_spacing } else { 0.0 };
             let trm = concat(&size, &concat(&self.text.tm, &self.gs.ctm));
-            let mut box_user = Quad::of_box(&trm, font.glyph_box(width));
-            let mut ink_user = Quad::of_box(&trm, font.ink_box(width));
+            let ink = font.ink_for(code, width, doc, self.budget);
+            let mut box_user = Quad::of_box(&trm, font.glyph_box(width, ink));
+            let mut ink_user = Quad::of_box(&trm, font.ink_box(width, ink));
             if matches!(self.gs.render_mode, 1 | 2 | 5 | 6) {
                 // Stroked outlines reach past the glyph box like a path's.
                 let reach = self.gs.stroke_reach();
@@ -911,7 +912,7 @@ impl<'d> Interp<'d> {
                 if o == "'" {
                     run.next_line();
                 }
-                run.show(i, 0, bytes)?;
+                run.show(self.doc, i, 0, bytes)?;
             }
             "\"" => {
                 let [aw, ac, Object::String(bytes, _)] = args else {
@@ -920,7 +921,7 @@ impl<'d> Interp<'d> {
                 run.gs.word_spacing = number(aw).ok_or_else(|| malformed(o))?;
                 run.gs.char_spacing = number(ac).ok_or_else(|| malformed(o))?;
                 run.next_line();
-                run.show(i, 0, bytes)?;
+                run.show(self.doc, i, 0, bytes)?;
             }
             "TJ" => {
                 let [Object::Array(items)] = args else {
@@ -928,7 +929,7 @@ impl<'d> Interp<'d> {
                 };
                 for (k, item) in items.iter().enumerate() {
                     match item {
-                        Object::String(bytes, _) => run.show(i, k, bytes)?,
+                        Object::String(bytes, _) => run.show(self.doc, i, k, bytes)?,
                         other => {
                             let n = number(other).ok_or_else(|| malformed(o))?;
                             let tx = -n / 1000.0 * run.gs.font_size * run.gs.h_scale;

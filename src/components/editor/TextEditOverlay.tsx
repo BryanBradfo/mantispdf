@@ -1,9 +1,10 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import { unsupportedChars } from "../../lib/editor/afm";
 import { useT } from "../../i18n";
 import { LIMITS, type TextItem } from "../../lib/editor/model";
 import { visibleToPreviewRect, type Size } from "../../lib/editor/geometry";
 import { cssColor, cssFont, textareaBaselineShift } from "./svgStyle";
+import { metricFont, missingMessage, planFonts, resolveFont } from "../../lib/editor/unicodeText";
+import { useUnicodeText } from "./unicodeTextContext";
 
 interface Props {
   item: TextItem;
@@ -24,6 +25,7 @@ interface Props {
  */
 export default function TextEditOverlay({ item, previewSize, pageSize, onCommit }: Props) {
   const t = useT("editPdf");
+  const tc = useT("common");
   const ref = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState(item.text);
   const [areaHeight, setAreaHeight] = useState(0);
@@ -47,10 +49,16 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
 
   const box = visibleToPreviewRect(item.rect, previewSize, pageSize);
   const scale = previewSize[0] / pageSize[0];
-  const bad = unsupportedChars(text);
+  const env = useUnicodeText();
+  // Characters no font can show (text the standard fonts cannot encode switches to Noto; until
+  // the font list is known, nothing is flagged).
+  const resolved = resolveFont(item.font, text);
+  const bad =
+    resolved.kind === "noto" && env?.manifest ? planFonts(env.manifest, text, resolved.family, resolved.bold, env.cjk).missing : "";
+  const metric = metricFont(item.font);
   const fontPx = item.size * scale;
   // Usually negative: the textarea starts a little above the box, the outline stays on the box.
-  const shift = textareaBaselineShift(item.font, item.lineHeight) * fontPx;
+  const shift = textareaBaselineShift(metric, item.lineHeight) * fontPx;
   const minHeight = box.height - shift;
 
   // Grow with the content (never shorter than the box) so no typed line is hidden.
@@ -78,6 +86,7 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
         aria-invalid={bad !== ""}
         aria-describedby={bad !== "" ? messageId : undefined}
         spellCheck
+        dir="auto"
         onChange={(e) => setText(e.target.value)}
         onBlur={(e) => {
           // Switching to another window blurs too: keep editing, focus comes back with the window.
@@ -97,11 +106,11 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
           left: box.left,
           top: box.top + shift,
           width: box.width,
-          fontFamily: cssFont(item.font).family,
-          fontWeight: cssFont(item.font).weight,
+          fontFamily: cssFont(metric).family,
+          fontWeight: cssFont(metric).weight,
           fontSize: fontPx,
           lineHeight: item.lineHeight,
-          textAlign: item.align,
+          textAlign: item.align === "auto" ? "start" : item.align,
           color: cssColor(item.color),
           opacity: Math.max(item.opacity, 0.4),
           textDecorationLine: bad !== "" ? "underline" : undefined,
@@ -116,7 +125,7 @@ export default function TextEditOverlay({ item, previewSize, pageSize, onCommit 
           className="absolute z-10 max-w-xs rounded-md bg-red-600 px-2 py-1 text-xs text-white shadow"
           style={{ left: box.left, top: box.top + Math.max(box.height, areaHeight + shift) + 4 }}
         >
-          {t("overlayUnsupported", { problem: t("unsupportedChars", { chars: bad }) })}
+          {missingMessage(bad, tc)}
         </p>
       )}
     </>

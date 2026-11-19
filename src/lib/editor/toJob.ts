@@ -10,7 +10,7 @@ import {
   orientationToTransform,
   readExifOrientation,
 } from "../imageInput";
-import { LIMITS, type Align, type Item, type Paint, type Point, type Rect, type Rgb, type Rotation, type StdFont } from "./model";
+import { LIMITS, type Item, type Paint, type Point, type Rect, type Rgb, type Rotation, type StdFont, type TextAlign, type TextItem } from "./model";
 import { SIMPLIFY_TOLERANCE, simplifyStroke } from "./simplify";
 import { normalizeTypographicSpaces } from "../pdfText";
 
@@ -19,18 +19,24 @@ export type EditImageData =
   | { kind: "rgba"; width: number; height: number; pixels: Uint8Array };
 
 export type EditItemSpec =
-  | {
+  | ({
       kind: "text";
       page: number;
       rect: Rect;
       text: string;
-      font: StdFont;
       size: number;
       color: Rgb;
       opacity: number;
-      align: Align;
+      align: TextAlign;
       lineHeight: number;
-    }
+    } & (
+      | { family?: "standard"; font: StdFont }
+      /**
+       * Embedded fonts: `faces` are font file names in chain order (family first), `fakeBold` the
+       * faces drawn with synthetic bold. The worker attaches the files as the job's `fonts`.
+       */
+      | { family: "noto"; font: string; faces: string[]; fakeBold: string[] }
+    ))
   | { kind: "image"; page: number; rect: Rect; image: EditImageData; opacity: number; rotation: Rotation }
   | { kind: "rect" | "ellipse"; page: number; rect: Rect; stroke: Paint; width: number; fill: Paint; opacity: number }
   | {
@@ -50,7 +56,15 @@ export type EditItemSpec =
 
 export interface EditJobSpec {
   items: EditItemSpec[];
+  /** Font files of the job (`faces` of the text items), filled in by the worker. */
+  fonts?: { id: string; bytes: Uint8Array }[];
 }
+
+/** How a text box is drawn: a standard font, or embedded fonts by file name. */
+export type TextFontSpec = { family: "standard"; font: StdFont } | { family: "noto"; faces: string[]; fakeBold: string[] };
+
+/** Chooses each text box's fonts (see `unicodeText.ts`); without one every box must use a standard font. */
+export type TextFontResolver = (item: TextItem) => TextFontSpec;
 
 /** Image reading, injectable for tests. */
 export interface ImageReader {
@@ -91,16 +105,25 @@ export function composeRotation(a: Rotation, b: Rotation): Rotation {
 }
 
 /** Build the job for every item of the document (all pages), in paint order. */
-export async function buildEditJob(items: readonly Item[], reader: ImageReader = browserImageReader): Promise<EditJobSpec> {
+export async function buildEditJob(
+  items: readonly Item[],
+  reader: ImageReader = browserImageReader,
+  fonts?: TextFontResolver,
+): Promise<EditJobSpec> {
   // The same picked file placed several times is read once and shares its buffer.
   const cache = new Map<Blob, Promise<ReadImage>>();
   const out: EditItemSpec[] = [];
   const raw = new Map<EditItemSpec, Point[]>();
   for (const item of items) {
     switch (item.kind) {
-      case "text":
-        out.push({ ...withoutId(item), text: normalizeTypographicSpaces(item.text) });
+      case "text": {
+        // Typographic spaces (French typing) become no-break spaces on both paths, before the
+        // font is chosen: they alone never switch a box to Noto.
+        const { id: _id, font, ...rest } = { ...item, text: normalizeTypographicSpaces(item.text) };
+        const spec = fonts?.({ ...item, text: rest.text }) ?? { family: "standard" as const, font: font as StdFont };
+        out.push(spec.family === "standard" ? { ...rest, font: spec.font } : { ...rest, font, ...spec });
         break;
+      }
       case "highlight":
       case "whiteout":
       case "line":

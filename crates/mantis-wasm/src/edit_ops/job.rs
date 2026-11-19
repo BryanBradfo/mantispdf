@@ -3,7 +3,7 @@
 //! numbers are checked here; numeric ranges and limits are checked by
 //! `edit_pdf` itself, so they hold for every caller.
 
-use super::{Align, EditItem, EditJob, MAX_IMAGES, Paint, invalid};
+use super::{Align, EditItem, EditJob, MAX_IMAGES, Paint, TextFont, invalid};
 use crate::stamp::engine::ImageData;
 use crate::stamp::fonts::StdFont;
 use std::sync::Arc;
@@ -34,6 +34,8 @@ pub(crate) enum RawItem {
         opacity: f64,
         align: String,
         line_height: f64,
+        /// Embedded fonts (family "noto"); None: a standard font.
+        unicode: Option<RawUnicode>,
     },
     Image { page: f64, rect: [f64; 4], image: RawImageData, opacity: f64, rotation: f64 },
     Rect { page: f64, rect: [f64; 4], stroke: RawPaint, width: f64, fill: RawPaint, opacity: f64 },
@@ -53,9 +55,19 @@ pub(crate) enum RawItem {
     Whiteout { page: f64, rect: [f64; 4] },
 }
 
+/// The embedded fonts of a text item, by id: the chain (family first) and
+/// the faces drawn with synthetic bold.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RawUnicode {
+    pub faces: Vec<String>,
+    pub fake_bold: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct RawJob {
     pub items: Vec<RawItem>,
+    /// Font files by id.
+    pub fonts: Vec<(String, Vec<u8>)>,
 }
 
 /// A whole number in `0..=max`.
@@ -77,11 +89,13 @@ fn font(s: &str, i: usize) -> Result<StdFont, String> {
     }
 }
 
-fn align(s: &str, i: usize) -> Result<Align, String> {
+/// None for "auto": by paragraph direction.
+fn align(s: &str, i: usize) -> Result<Option<Align>, String> {
     match s {
-        "left" => Ok(Align::Left),
-        "center" => Ok(Align::Center),
-        "right" => Ok(Align::Right),
+        "left" => Ok(Some(Align::Left)),
+        "center" => Ok(Some(Align::Center)),
+        "right" => Ok(Some(Align::Right)),
+        "auto" => Ok(None),
         _ => Err(invalid(&format!("items[{i}].align"))),
     }
 }
@@ -111,7 +125,18 @@ fn image(data: RawImageData, i: usize, shared: &[Option<Arc<ImageData>>]) -> Res
     })
 }
 
+/// Indices of the font `ids` among the job's fonts.
+fn font_indices(ids: &[String], index: &std::collections::HashMap<&str, usize>, i: usize) -> Result<Vec<usize>, String> {
+    ids.iter().map(|id| index.get(id.as_str()).copied().ok_or_else(|| invalid(&format!("items[{i}].faces")))).collect()
+}
+
 pub(crate) fn validate_job(raw: RawJob) -> Result<EditJob, String> {
+    let mut font_index = std::collections::HashMap::new();
+    for (k, (id, _)) in raw.fonts.iter().enumerate() {
+        if font_index.insert(id.as_str(), k).is_some() {
+            return Err(invalid("fonts"));
+        }
+    }
     let images = raw.items.iter().filter(|it| matches!(it, RawItem::Image { .. })).count();
     if images > MAX_IMAGES {
         return Err(invalid("images"));
@@ -120,11 +145,17 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<EditJob, String> {
     let mut shared: Vec<Option<Arc<ImageData>>> = Vec::with_capacity(raw.items.len());
     for (i, it) in raw.items.into_iter().enumerate() {
         let item = match it {
-            RawItem::Text { page: p, rect, text, font: f, size, color, opacity, align: a, line_height } => EditItem::Text {
+            RawItem::Text { page: p, rect, text, font: f, size, color, opacity, align: a, line_height, unicode } => EditItem::Text {
                 page: page(p, i)?,
                 rect,
                 text,
-                font: font(&f, i)?,
+                font: match &unicode {
+                    None => TextFont::Standard(font(&f, i)?),
+                    Some(u) => TextFont::Unicode {
+                        faces: font_indices(&u.faces, &font_index, i)?,
+                        fake_bold: font_indices(&u.fake_bold, &font_index, i)?,
+                    },
+                },
                 size,
                 color,
                 opacity,
@@ -162,7 +193,8 @@ pub(crate) fn validate_job(raw: RawJob) -> Result<EditJob, String> {
         });
         items.push(item);
     }
-    Ok(EditJob { items })
+    drop(font_index);
+    Ok(EditJob { items, fonts: raw.fonts.into_iter().map(|(_, bytes)| bytes).collect() })
 }
 
 #[cfg(test)]
@@ -180,11 +212,12 @@ mod tests {
             opacity: 1.0,
             align: align.into(),
             line_height: 1.2,
+            unicode: None,
         }
     }
 
     fn err(items: Vec<RawItem>) -> String {
-        validate_job(RawJob { items }).unwrap_err()
+        validate_job(RawJob { items, fonts: Vec::new() }).unwrap_err()
     }
 
     fn image(rotation: f64) -> RawItem {
@@ -205,8 +238,8 @@ mod tests {
             RawItem::Rect { page: 1.0, rect: [0.0; 4], stroke: RawPaint::Rgb([1.0, 0.0, 0.0]), width: 1.0, fill: RawPaint::None, opacity: 1.0 },
             RawItem::Whiteout { page: 1.0, rect: [0.0; 4] },
         ];
-        let job = validate_job(RawJob { items }).unwrap();
-        assert!(matches!(&job.items[0], EditItem::Text { page: 2, font: StdFont::Courier, align: Align::Center, .. }));
+        let job = validate_job(RawJob { items, fonts: Vec::new() }).unwrap();
+        assert!(matches!(&job.items[0], EditItem::Text { page: 2, font: TextFont::Standard(StdFont::Courier), align: Some(Align::Center), .. }));
         let EditItem::Image { rotation: 90, image, .. } = &job.items[1] else { panic!("{:?}", job.items[1]) };
         assert!(matches!(&**image, ImageData::Rgba { width: 1, height: 1, .. }));
         assert!(matches!(&job.items[2], EditItem::Rect { stroke: Paint::Rgb(_), fill: Paint::None, .. }));
@@ -237,13 +270,13 @@ mod tests {
         let mut items = vec![image(0.0); MAX_IMAGES + 1];
         assert_eq!(err(items.clone()), "Invalid edit settings: images");
         items.pop();
-        assert!(validate_job(RawJob { items }).is_ok());
+        assert!(validate_job(RawJob { items, fonts: Vec::new() }).is_ok());
     }
 
     #[test]
     fn same_image_shares_the_earlier_data() {
         let same = |j: usize| RawItem::Image { page: 1.0, rect: [0.0, 0.0, 1.0, 1.0], image: RawImageData::Same(j), opacity: 1.0, rotation: 0.0 };
-        let job = validate_job(RawJob { items: vec![image(0.0), text(1.0, "Helvetica", "left"), same(0)] }).unwrap();
+        let job = validate_job(RawJob { fonts: Vec::new(), items: vec![image(0.0), text(1.0, "Helvetica", "left"), same(0)] }).unwrap();
         let (EditItem::Image { image: a, .. }, EditItem::Image { image: b, .. }) = (&job.items[0], &job.items[2]) else { panic!() };
         assert!(Arc::ptr_eq(a, b));
         // Only an earlier image item can be referenced.

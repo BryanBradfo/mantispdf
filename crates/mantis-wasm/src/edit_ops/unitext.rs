@@ -1,0 +1,309 @@
+//! Text boxes with embedded (Noto) fonts: the `unifont` layout placed in a
+//! box, clipped to its height like the standard-font boxes, and the same
+//! layout handed to the editor preview (`preview_layout`), so the preview's
+//! lines are the PDF's lines.
+
+use super::{Align, MAX_FONT_SIZE, MAX_LINE_HEIGHT, MIN_FONT_SIZE, MIN_LINE_HEIGHT, invalid};
+use crate::stamp::engine::MAX_COORD;
+use crate::unifont::{Face, LayoutParams, Line, MAX_FONT_BYTES, MAX_FONTS, ShapeBudget, layout_text, load_faces};
+
+/// One line of a box, with the PDF origin of its pen (visible space).
+#[derive(Debug, Clone)]
+pub(crate) struct PlacedLine {
+    pub origin: (f64, f64),
+    pub line: Line,
+}
+
+/// Lines of `text` laid out in `rect` (`[x, y, w, h]`, visible space) with
+/// `chain` (family first). The first line is always kept; a later one whose
+/// descender would go below the box bottom is dropped, with every line after
+/// it (as for the standard fonts). Empty lines are not returned.
+pub(crate) fn place_lines(
+    chain: &[&Face],
+    rect: [f64; 4],
+    text: &str,
+    size: f64,
+    align: Option<Align>,
+    line_height: f64,
+    budget: &mut ShapeBudget,
+) -> Result<Vec<PlacedLine>, String> {
+    let [x, y, w, h] = rect;
+    let (lines, _, _) = visible_lines(chain, text, size, w, h, align, line_height, budget)?;
+    let top = y + h;
+    Ok(lines
+        .into_iter()
+        .filter(|l| !l.runs.is_empty())
+        .map(|line| PlacedLine { origin: (x + line.x, top - line.baseline_y), line })
+        .collect())
+}
+
+/// The layout's lines that fit a box `height` tall (see `place_lines`), the
+/// characters no font covers, and the height that shows every line.
+#[allow(clippy::too_many_arguments)]
+fn visible_lines(
+    chain: &[&Face],
+    text: &str,
+    size: f64,
+    width: f64,
+    height: f64,
+    align: Option<Align>,
+    line_height: f64,
+    budget: &mut ShapeBudget,
+) -> Result<(Vec<Line>, Vec<char>, f64), String> {
+    let family = chain.first().ok_or_else(|| invalid("font"))?;
+    let params = LayoutParams { size, width, align, line_height };
+    let layout = layout_text(chain, text, &params, budget).map_err(|e| invalid(e.field()))?;
+    let descent = f64::from(family.hb.descender()) * size / family.units_per_em();
+    let needed = layout.lines.last().map_or(0.0, |l| l.baseline_y) - descent;
+    let mut out = Vec::new();
+    for (i, line) in layout.lines.into_iter().enumerate() {
+        if i > 0 && line.baseline_y - descent > height {
+            break;
+        }
+        out.push(line);
+    }
+    Ok((out, layout.missing, needed))
+}
+
+/// One run of a preview line: drawn with font `face` (index into the fonts
+/// given), `text` in reading order, starting `x` points from the box's left
+/// edge and `width` wide.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PreviewRun {
+    pub face: usize,
+    pub rtl: bool,
+    pub x: f64,
+    pub width: f64,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PreviewLine {
+    /// From the box's top down to the baseline.
+    pub baseline_y: f64,
+    pub runs: Vec<PreviewRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct PreviewLayout {
+    pub lines: Vec<PreviewLine>,
+    /// Characters no font covers, once each.
+    pub missing: String,
+    /// Box height (points) that shows every line: the last baseline plus the
+    /// family's descender (the clipping rule of `place_lines`).
+    pub height: f64,
+}
+
+/// Font files kept in wasm memory across preview layouts (the worker's font
+/// cache): each file is copied in once, not on every keystroke. Faces are
+/// parsed per layout (about 20 us for a 10 MB CJK file, against about 1 ms to
+/// copy it). Holds at most `MAX_FONTS` files and `MAX_FONT_BYTES` together.
+#[derive(Debug, Default)]
+pub(crate) struct FontStore {
+    files: Vec<(String, Vec<u8>)>,
+}
+
+impl FontStore {
+    pub(crate) fn has(&self, id: &str) -> bool {
+        self.files.iter().any(|(f, _)| f == id)
+    }
+
+    /// Whether a file of `len` bytes still fits (checked before copying it).
+    pub(crate) fn fits(&self, len: usize) -> bool {
+        let total: usize = self.files.iter().map(|(_, b)| b.len()).sum();
+        self.files.len() < MAX_FONTS && total.saturating_add(len) <= MAX_FONT_BYTES
+    }
+
+    /// Keeps `bytes` as `id` (once: an id already held is not replaced).
+    pub(crate) fn add(&mut self, id: &str, bytes: Vec<u8>) -> Result<(), String> {
+        if self.has(id) {
+            return Ok(());
+        }
+        if !self.fits(bytes.len()) {
+            return Err(invalid("font"));
+        }
+        self.files.push((id.to_string(), bytes));
+        Ok(())
+    }
+
+    /// `preview_layout` with the held fonts `ids` (chain order).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn layout(
+        &self,
+        ids: &[String],
+        text: &str,
+        size: f64,
+        width: f64,
+        height: f64,
+        align: Option<Align>,
+        line_height: f64,
+    ) -> Result<PreviewLayout, String> {
+        let fonts: Vec<&[u8]> = ids
+            .iter()
+            .map(|id| self.files.iter().find(|(f, _)| f == id).map(|(_, b)| b.as_slice()).ok_or_else(|| invalid("font")))
+            .collect::<Result<_, _>>()?;
+        preview_layout(&fonts, text, size, width, height, align, line_height)
+    }
+}
+
+/// The lines the PDF will hold for a box `width` x `height` (points), for the
+/// editor preview: `fonts` in chain order (family first). Same checks and
+/// limits as an edit job's text item, except the text: up to `MAX_LAYOUT_CHARS`
+/// (a form value).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn preview_layout(
+    fonts: &[&[u8]],
+    text: &str,
+    size: f64,
+    width: f64,
+    height: f64,
+    align: Option<Align>,
+    line_height: f64,
+) -> Result<PreviewLayout, String> {
+    let dimension = |v: f64| v.is_finite() && v > 0.0 && v <= MAX_COORD;
+    if !dimension(width) || !dimension(height) {
+        return Err(invalid("rect"));
+    }
+    if !(MIN_FONT_SIZE..=MAX_FONT_SIZE).contains(&size) {
+        return Err(invalid("size"));
+    }
+    if !(MIN_LINE_HEIGHT..=MAX_LINE_HEIGHT).contains(&line_height) {
+        return Err(invalid("line_height"));
+    }
+    // The layout's own cap (20,000): form values are laid out here too (overflow checks).
+    if text.chars().nth(crate::unifont::MAX_LAYOUT_CHARS).is_some() {
+        return Err(invalid("text"));
+    }
+    let faces = load_faces(fonts).map_err(|e| invalid(e.field()))?;
+    let chain: Vec<&Face> = faces.iter().collect();
+    let mut budget = ShapeBudget::per_job();
+    let (lines, missing, needed) = visible_lines(&chain, text, size, width, height, align, line_height, &mut budget)?;
+    let missing: String = missing.into_iter().collect();
+    let lines = lines
+        .into_iter()
+        .filter(|l| !l.runs.is_empty())
+        .map(|line| {
+            let mut x = line.x;
+            let runs = line
+                .runs
+                .iter()
+                .map(|run| {
+                    let width: f64 = run.glyphs.iter().map(|g| g.x_advance).sum();
+                    let texts = run.glyphs.iter().map(|g| g.cluster_text.as_str());
+                    let text: String = if run.rtl { texts.rev().collect() } else { texts.collect() };
+                    let out = PreviewRun { face: run.face, rtl: run.rtl, x, width, text };
+                    x += width;
+                    out
+                })
+                .collect();
+            PreviewLine { baseline_y: line.baseline_y, runs }
+        })
+        .collect();
+    Ok(PreviewLayout { lines, missing, height: needed })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SANS: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSans-subset.ttf"));
+    const HEBREW: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSansHebrew-subset.ttf"));
+    const SC: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSansSC-subset.ttf"));
+
+    #[test]
+    fn preview_is_the_placed_layout() {
+        let fonts = [SANS, HEBREW, SC];
+        let text = "Hi שלום 你好\nПривет мир Привет мир Привет мир";
+        let preview = preview_layout(&fonts, text, 12.0, 120.0, 200.0, None, 1.2).unwrap();
+        let faces = load_faces(&fonts).unwrap();
+        let chain: Vec<&Face> = faces.iter().collect();
+        let placed = place_lines(&chain, [10.0, 20.0, 120.0, 200.0], text, 12.0, None, 1.2, &mut ShapeBudget::per_job()).unwrap();
+        assert_eq!(preview.lines.len(), placed.len());
+        for (p, l) in preview.lines.iter().zip(&placed) {
+            assert!((220.0 - p.baseline_y - l.origin.1).abs() < 1e-9);
+            assert!((10.0 + p.runs[0].x - l.origin.0).abs() < 1e-9);
+            assert_eq!(p.runs.len(), l.line.runs.len());
+        }
+        // Runs in visual order with their text in reading order and their face.
+        let first = &preview.lines[0].runs;
+        let texts: Vec<(&str, usize, bool)> = first.iter().map(|r| (r.text.as_str(), r.face, r.rtl)).collect();
+        // The space between Hebrew and CJK resolves left-to-right: a run of its own.
+        assert_eq!(texts, [("Hi ", 0, false), ("שלום", 1, true), (" ", 1, false), ("你好", 2, false)]);
+        // Each run starts where the one before it ends.
+        assert!((first[1].x - (first[0].x + first[0].width)).abs() < 1e-9);
+        assert!(preview.missing.is_empty());
+    }
+
+    #[test]
+    fn preview_reports_missing_and_checks_its_input() {
+        let preview = preview_layout(&[SANS], "a😀", 12.0, 100.0, 100.0, Some(Align::Left), 1.2).unwrap();
+        assert_eq!(preview.missing, "😀");
+        assert_eq!(preview_layout(&[SANS], "a", 3.0, 100.0, 100.0, None, 1.2).unwrap_err(), "Invalid edit settings: size");
+        assert_eq!(preview_layout(&[SANS], "a", 12.0, 0.0, 100.0, None, 1.2).unwrap_err(), "Invalid edit settings: rect");
+        assert_eq!(preview_layout(&[SANS], "a", 12.0, 10.0, 10.0, None, 9.0).unwrap_err(), "Invalid edit settings: line_height");
+        assert_eq!(preview_layout(&[b"junk"], "a", 12.0, 10.0, 10.0, None, 1.2).unwrap_err(), "Invalid edit settings: font");
+        assert_eq!(preview_layout(&[], "a", 12.0, 10.0, 10.0, None, 1.2).unwrap_err(), "Invalid edit settings: font");
+        // Form values go up to 20,000 characters (the overflow check lays them out): the cap is
+        // the layout's, not the 5,000 of a text box.
+        let form_value = "a".repeat(crate::forms::MAX_VALUE_CHARS);
+        assert!(preview_layout(&[SANS], &form_value, 12.0, 100.0, 100.0, None, 1.2).is_ok());
+        let long = "a".repeat(crate::unifont::MAX_LAYOUT_CHARS + 1);
+        assert_eq!(preview_layout(&[SANS], &long, 12.0, 10.0, 10.0, None, 1.2).unwrap_err(), "Invalid edit settings: text");
+    }
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
+
+    const SANS: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSans-subset.ttf"));
+    const ARABIC: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSansArabic-subset.ttf"));
+
+    #[test]
+    fn the_reported_height_shows_every_line() {
+        let faces = load_faces(&[SANS, ARABIC]).unwrap();
+        let chain: Vec<&Face> = faces.iter().collect();
+        for (text, count) in [("مرحبا\nبالعالم", 2), ("مرحبا\nبالعالم\nالسلام", 3)] {
+            let preview = preview_layout(&[SANS, ARABIC], text, 14.0, 200.0, 5.0, None, 1.2).unwrap();
+            assert_eq!(preview.lines.len(), 1, "a short box shows the first line only");
+            let placed = place_lines(&chain, [0.0, 0.0, 200.0, preview.height], text, 14.0, None, 1.2, &mut ShapeBudget::per_job()).unwrap();
+            assert_eq!(placed.len(), count, "{text}");
+            // Not a point taller than needed: the last line goes with a hair less.
+            let short = place_lines(&chain, [0.0, 0.0, 200.0, preview.height - 0.01], text, 14.0, None, 1.2, &mut ShapeBudget::per_job()).unwrap();
+            assert_eq!(short.len(), count - 1, "{text}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    const SANS: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSans-subset.ttf"));
+    const SC: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSansSC-subset.ttf"));
+
+    #[test]
+    fn the_store_lays_out_with_held_fonts() {
+        let mut store = FontStore::default();
+        store.add("sans", SANS.to_vec()).unwrap();
+        store.add("sc", SC.to_vec()).unwrap();
+        // An id held already is not copied again.
+        store.add("sans", Vec::new()).unwrap();
+        let ids = ["sans".to_string(), "sc".to_string()];
+        let held = store.layout(&ids, "Hi 你好", 12.0, 200.0, 100.0, None, 1.2).unwrap();
+        assert_eq!(held, preview_layout(&[SANS, SC], "Hi 你好", 12.0, 200.0, 100.0, None, 1.2).unwrap());
+        assert_eq!(store.layout(&["nope".to_string()], "x", 12.0, 10.0, 10.0, None, 1.2).unwrap_err(), "Invalid edit settings: font");
+    }
+
+    #[test]
+    fn the_store_is_bounded() {
+        let mut store = FontStore::default();
+        for i in 0..MAX_FONTS {
+            store.add(&format!("f{i}"), vec![0; 1]).unwrap();
+        }
+        assert_eq!(store.add("one more", vec![0; 1]).unwrap_err(), "Invalid edit settings: font");
+        let mut store = FontStore::default();
+        assert!(!store.fits(MAX_FONT_BYTES + 1));
+        assert!(store.add("big", vec![0; 16]).is_ok() && store.fits(MAX_FONT_BYTES - 16) && !store.fits(MAX_FONT_BYTES - 15));
+    }
+}

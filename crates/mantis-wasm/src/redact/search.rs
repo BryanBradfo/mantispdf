@@ -86,16 +86,23 @@ const MAX_PAGE_CHARS: usize = 2_000_000;
 
 /// One character of a page's text: the glyph it comes from (None for an
 /// assumed space) and its line.
+#[derive(Clone)]
 struct Char {
     ch: char,
     glyph: Option<usize>,
+    line: usize,
     /// The drawn character this one starts (None for the rest of a fold).
     shown: Option<char>,
 }
 
-/// The characters `c` reads as: ligatures (U+FB00..=U+FB06) as their
-/// letters, any whitespace as a space, lower case unless `case_sensitive`.
+/// The characters `c` reads as: Arabic presentation forms and ligatures
+/// (U+FB00..=U+FB06) as their letters, any whitespace as a space, lower case
+/// unless `case_sensitive`.
 fn fold(c: char, case_sensitive: bool) -> Vec<char> {
+    // Arabic presentation forms (Chrome writes them in its ToUnicode) read as their letters.
+    if let Some(letters) = super::arabic_forms::arabic_letters(c) {
+        return letters.chars().collect();
+    }
     let letters: &str = match c {
         '\u{FB00}' => "ff",
         '\u{FB01}' => "fi",
@@ -124,11 +131,11 @@ fn needle(query: &str, case_sensitive: bool) -> Vec<char> {
 
 /// Add `ch` (from `glyph`) to the page text; a space after a space is
 /// dropped (whitespace runs read as one space).
-fn push(chars: &mut Vec<Char>, ch: char, glyph: Option<usize>, shown: Option<char>) {
+fn push(chars: &mut Vec<Char>, ch: char, glyph: Option<usize>, shown: Option<char>, line: usize) {
     if ch == ' ' && chars.last().is_some_and(|c| c.ch == ' ') {
         return;
     }
-    chars.push(Char { ch, glyph, shown });
+    chars.push(Char { ch, glyph, line, shown });
 }
 
 /// The page text with assumed spaces and the line of each glyph; None past
@@ -149,9 +156,9 @@ fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> Option<(Vec<Char>, Vec<u
             let em = g.em.max(p.em).max(f64::MIN_POSITIVE);
             if across > 0.5 * em || along < -0.5 * em {
                 line += 1;
-                push(&mut chars, ' ', None, Some(' '));
+                push(&mut chars, ' ', None, Some(' '), line);
             } else if along > 0.25 * em {
-                push(&mut chars, ' ', None, Some(' '));
+                push(&mut chars, ' ', None, Some(' '), line);
             }
         }
         match &g.text {
@@ -159,12 +166,12 @@ fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> Option<(Vec<Char>, Vec<u
                 for original in text.chars() {
                     let shown = if original.is_whitespace() { ' ' } else { original };
                     for (k, c) in fold(original, case_sensitive).into_iter().enumerate() {
-                        push(&mut chars, c, Some(i), (k == 0).then_some(shown));
+                        push(&mut chars, c, Some(i), (k == 0).then_some(shown), line);
                     }
                 }
             }
             // Unknown text: breaks any match across it.
-            None => chars.push(Char { ch: '\u{FFFD}', glyph: Some(i), shown: Some('\u{FFFD}') }),
+            None => chars.push(Char { ch: '\u{FFFD}', glyph: Some(i), line, shown: Some('\u{FFFD}') }),
         }
         lines.push(line);
         previous = Some(g);
@@ -173,6 +180,54 @@ fn page_text(glyphs: &[Glyph], case_sensitive: bool) -> Option<(Vec<Char>, Vec<u
         }
     }
     Some((chars, lines))
+}
+
+fn is_rtl_strong(c: char) -> bool {
+    matches!(unicode_bidi::bidi_class(c), unicode_bidi::BidiClass::R | unicode_bidi::BidiClass::AL)
+}
+
+/// The page text in reading order, when some line holds right-to-left text
+/// (None otherwise). Glyphs are read in drawing order, and right-to-left
+/// text is drawn in visual order (left to right) by most producers and by
+/// our own engine, so a Hebrew or Arabic word reads backwards. Each such line
+/// is reordered with the bidi algorithm (UAX 9) as if its drawn text were
+/// logical: reordering visual text gives back its reading order. The
+/// paragraph direction is right-to-left when the line has more right-to-left
+/// than left-to-right strong characters.
+fn reading_order(chars: &[Char]) -> Option<Vec<Char>> {
+    if !chars.iter().any(|c| is_rtl_strong(c.ch)) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(chars.len());
+    let mut start = 0;
+    while start < chars.len() {
+        let line = chars[start].line;
+        let end = start + chars[start..].iter().take_while(|c| c.line == line).count();
+        let group = &chars[start..end];
+        let rtl = group.iter().filter(|c| is_rtl_strong(c.ch)).count();
+        if rtl == 0 {
+            out.extend_from_slice(group);
+        } else {
+            let ltr = group.iter().filter(|c| unicode_bidi::bidi_class(c.ch) == unicode_bidi::BidiClass::L).count();
+            let level = if rtl > ltr { unicode_bidi::Level::rtl() } else { unicode_bidi::Level::ltr() };
+            let text: String = group.iter().map(|c| c.ch).collect();
+            // Byte offset of each character, to map runs back to `group`.
+            let starts: Vec<usize> = text.char_indices().map(|(b, _)| b).collect();
+            let info = unicode_bidi::ParagraphBidiInfo::new(&text, Some(level));
+            let (levels, runs) = info.visual_runs(0..text.len());
+            for run in runs {
+                let first = starts.partition_point(|&b| b < run.start);
+                let last = starts.partition_point(|&b| b < run.end);
+                if levels[run.start].is_rtl() {
+                    out.extend(group[first..last].iter().rev().cloned());
+                } else {
+                    out.extend_from_slice(&group[first..last]);
+                }
+            }
+        }
+        start = end;
+    }
+    Some(out)
 }
 
 fn is_word(c: char) -> bool {
@@ -306,6 +361,68 @@ fn find_starts(text: &[Char], needle: &[char], whole_word: bool) -> Vec<usize> {
     starts
 }
 
+/// The matches of `needle` in `texts` (the page text in drawing order, then
+/// in reading order), as (text index, start, sorted glyphs), each glyph set
+/// once, at most `room` of them; true when more were left (the page is then
+/// truncated). Nothing is kept past `room`: a page of millions of one-letter
+/// matches allocates no more than that.
+fn collect_matches(texts: &[&Vec<Char>], needle: &[char], whole_word: bool, room: usize) -> (Vec<(usize, usize, Vec<usize>)>, bool) {
+    let mut kept: Vec<(usize, usize, Vec<usize>)> = Vec::new();
+    let mut seen: std::collections::HashSet<Vec<usize>> = std::collections::HashSet::new();
+    for (t, text) in texts.iter().enumerate() {
+        for at in find_starts(text, needle, whole_word) {
+            let mut matched: Vec<usize> = text[at..at + needle.len()].iter().filter_map(|c| c.glyph).collect();
+            matched.sort_unstable();
+            matched.dedup();
+            if seen.contains(&matched) {
+                continue;
+            }
+            if kept.len() >= room {
+                return (kept, true);
+            }
+            seen.insert(matched.clone());
+            kept.push((t, at, matched));
+        }
+    }
+    (kept, false)
+}
+
+/// `matched` (sorted glyph indices) with the glyphs drawn next to them that
+/// carry no text of their own (marks and dots a font draws as separate
+/// glyphs of a cluster) and sit inside the match's box: the redaction
+/// removes them with their base, so the match must cover them (else the area
+/// grows over them, and their own rise or offset can stick out of it).
+fn with_textless_neighbours(mut matched: Vec<usize>, glyphs: &[Glyph]) -> Vec<usize> {
+    // Glyphs one cluster draws at most: a longer textless run is not marks.
+    const MAX_RUN: usize = 32;
+    let Some(area) = union(matched.iter().map(|&g| glyphs[g].box_user)) else {
+        return matched;
+    };
+    let joins = |i: usize| {
+        let g = &glyphs[i];
+        let b = g.box_user.bbox();
+        let (cx, cy) = ((b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0);
+        g.text.as_deref() == Some("") && (area.x0..=area.x1).contains(&cx) && (area.y0..=area.y1).contains(&cy)
+    };
+    let mut extra = Vec::new();
+    for &g in &matched {
+        let mut i = g;
+        while i > 0 && g - i < MAX_RUN && joins(i - 1) {
+            i -= 1;
+            extra.push(i);
+        }
+        let mut i = g;
+        while i + 1 < glyphs.len() && i - g < MAX_RUN && joins(i + 1) {
+            i += 1;
+            extra.push(i);
+        }
+    }
+    matched.extend(extra);
+    matched.sort_unstable();
+    matched.dedup();
+    matched
+}
+
 /// `redact_search` reading at most `max_chars` characters of page text.
 pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOptions, max_chars: usize) -> Result<SearchResult, String> {
     if query.chars().count() > MAX_QUERY_CHARS || query.contains('\u{FFFD}') {
@@ -321,6 +438,8 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
     let mut decoded = JOB_DECODED;
     // Fonts' text maps, shared by every page of the job.
     let cache = Rc::new(RefCell::new(TextCache::new(decoded)));
+    // Shares the decoded font programs between the pages.
+    let job = Budget::page(decoded);
     for (number, page) in doc.get_pages() {
         // Past the limit (or once it is reached): not searched at all.
         if result.truncated || (total >= MAX_RECTS && !needle.is_empty()) {
@@ -330,7 +449,7 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
         }
         cache.borrow_mut().set_limit(decoded);
         let before = cache.borrow().charged();
-        let mut budget = Budget::page(decoded);
+        let mut budget = job.next_page(decoded);
         let scanned = page_text_scan(&doc, page, &mut budget, &cache);
         decoded = budget.decoded.saturating_sub(cache.borrow().charged() - before);
         let Ok((glyphs, images)) = scanned else {
@@ -370,10 +489,16 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
             result.unsearched_pages.push(number);
             continue;
         }
+        // Matches in drawing order, then those only the reading order of
+        // right-to-left lines shows (the same glyphs are marked once). Each
+        // kept match takes at least one rect: collecting stops at the rects left.
+        let logical = reading_order(&chars);
+        let texts: Vec<&Vec<Char>> = std::iter::once(&chars).chain(logical.as_ref()).collect();
+        let (mut kept, capped) = collect_matches(&texts, &needle, options.whole_word, MAX_RECTS.saturating_sub(total));
+        kept.sort_by_key(|(_, _, glyphs)| glyphs.first().copied());
         let mut rects = Vec::new();
-        for at in find_starts(&chars, &needle, options.whole_word) {
-            let mut matched: Vec<usize> = chars[at..at + needle.len()].iter().filter_map(|c| c.glyph).collect();
-            matched.dedup();
+        for (t, at, matched) in kept {
+            let matched = with_textless_neighbours(matched, &glyphs);
             let mut by_line: Vec<(usize, Vec<usize>)> = Vec::new();
             for g in matched {
                 match by_line.iter_mut().find(|(l, _)| *l == lines[g]) {
@@ -396,7 +521,13 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
                 break;
             }
             rects.extend(found.iter().copied());
-            result.matches.push(Match { page: number, rects: found, context: context(&chars, at, at + needle.len()) });
+            result.matches.push(Match { page: number, rects: found, context: context(texts[t], at, at + needle.len()) });
+        }
+        if capped {
+            result.truncated = true;
+            if !result.unsearched_pages.contains(&number) {
+                result.unsearched_pages.push(number);
+            }
         }
         if !rects.is_empty() {
             total += rects.len();
@@ -410,4 +541,30 @@ pub(crate) fn redact_search_within(pdf: &[u8], query: &str, options: &SearchOpti
     let unsearched = &result.unsearched_pages;
     result.unknown_complete.retain(|p| !unsearched.contains(p));
     Ok(result)
+}
+
+#[cfg(test)]
+mod collect_tests {
+    use super::*;
+
+    fn text(s: &str) -> Vec<Char> {
+        s.chars().enumerate().map(|(i, ch)| Char { ch, glyph: Some(i), line: 0, shown: Some(ch) }).collect()
+    }
+
+    #[test]
+    fn collecting_stops_at_the_room_left() {
+        let page = text(&"a".repeat(1_000_000));
+        let reversed: Vec<Char> = page.iter().rev().cloned().collect();
+        let (kept, capped) = collect_matches(&[&page, &reversed], &['a'], false, 10);
+        assert_eq!(kept.len(), 10);
+        assert!(capped);
+        // Room for all: each glyph once, the second order adding nothing.
+        let small = text("aaaa");
+        let back: Vec<Char> = small.iter().rev().cloned().collect();
+        let (kept, capped) = collect_matches(&[&small, &back], &['a'], false, 10);
+        assert_eq!(kept.len(), 4);
+        assert!(!capped);
+        // Exactly full is not truncated.
+        assert!(!collect_matches(&[&small, &back], &['a'], false, 4).1);
+    }
 }

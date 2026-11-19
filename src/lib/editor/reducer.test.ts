@@ -334,4 +334,21 @@ describe("editorReducer", () => {
       expect(editorReducer(s, { type: "delete", id: s.editingId ?? "" }).editingId).toBeNull();
     });
   });
+
+  it("fits a text box to its engine layout without an undo step of its own", () => {
+    let s = editorReducer(initialEditorState(), {
+      type: "add",
+      item: { kind: "text", page: 1, rect: [10, 700, 100, 20], text: "مرحبا", font: "Helvetica", size: 12, color: [0, 0, 0], opacity: 1, align: "auto", lineHeight: 1.2 },
+    });
+    const id = s.items[0].id;
+    const past = s.past.length;
+    s = editorReducer(s, { type: "fit", id, height: 50 });
+    const rect = (s.items[0] as { rect: number[] }).rect;
+    expect(rect[3]).toBeCloseTo(50.001);
+    // Top edge kept.
+    expect(rect[1] + rect[3]).toBeCloseTo(720);
+    expect(s.past.length).toBe(past);
+    // Never shrinks.
+    expect(editorReducer(s, { type: "fit", id, height: 10 })).toBe(s);
+  });
 });

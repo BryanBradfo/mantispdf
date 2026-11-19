@@ -49,7 +49,6 @@ export default {
   // FieldControl, FormCanvas
   labelOption: "{label}: {option}",
   labelProblem: "{label}: {problem}",
-  labelCannotSave: "{label}: characters the PDF fonts cannot save",
   labelRequired: "{label} (required)",
   labelReadOnly: "{label} (read-only)",
   labelReadOnlyValue: "{label} (read-only): {value}",
@@ -63,4 +62,5 @@ export default {
   option: "Option {n}",
   inFieldSentence: "{problem} (field \"{name}\").",
   inField: "{problem} (field \"{name}\")",
+  labelNoFont: "{label}: characters no font can show",
 } as const satisfies Namespace;

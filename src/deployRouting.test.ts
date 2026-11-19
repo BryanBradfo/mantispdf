@@ -60,3 +60,30 @@ describe("vercel.json SPA rewrites", () => {
     expect(catchAllIndex).toBe(all.length - 1);
   });
 });
+
+type Header = { source: string; headers: { key: string; value: string }[] };
+
+const cacheControlFor = (path: string): string | undefined => {
+  const cfg = JSON.parse(readFileSync(resolve(root, "vercel.json"), "utf8"));
+  const rules: Header[] = cfg.headers ?? [];
+  return rules
+    .filter((r) => new RegExp(`^${r.source}$`).test(path))
+    .flatMap((r) => r.headers)
+    .find((h) => h.key.toLowerCase() === "cache-control")?.value;
+};
+
+describe("vercel.json cache headers", () => {
+  // Fonts (up to 10 MB for CJK) and the OCR runtime are fetched on demand and never change for a
+  // file name: the browser keeps them a week and revalidates in the background after that.
+  it.each(["/fonts-runtime/NotoSansSC_400Regular.ttf", "/fonts-runtime/fonts.json", "/ocr-runtime/tesseract-core.wasm"])(
+    "caches %s for a week",
+    (path) => {
+      expect(cacheControlFor(path)).toBe("public, max-age=604800, stale-while-revalidate=86400");
+    },
+  );
+
+  it("leaves the app shell to the host's default (it must update on deploy)", () => {
+    expect(cacheControlFor("/index.html")).toBeUndefined();
+    expect(cacheControlFor("/edit-pdf")).toBeUndefined();
+  });
+});

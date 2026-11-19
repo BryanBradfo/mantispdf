@@ -48,6 +48,7 @@ export default {
   errorTooManyStamps: "Too many stamps.",
   errorFontSize: "Font size must be a positive number.",
   errorUnsupportedChars: "Characters not supported by the standard PDF fonts: {chars}",
+  errorNoFontCharsPage: "No font can show these characters: {chars} (text box on page {page}).",
   errorEngineCrashed: "PDF engine crashed",
   errorEngineUnreadable: "PDF engine sent an unreadable message",
   errorNoCanvas: "Canvas is not available",
@@ -170,4 +171,7 @@ export default {
   licenseActivating: "Activating…",
   licenseActivate: "Activate license",
   licenseGetKey: "Don't have a key? Get MantisPDF Pro →",
+  // Unicode fonts (Edit PDF, Fill form)
+  noFontChars: "No font can show these characters: {chars}",
+  usesFontFor: "Uses {family} for these characters",
 } as const satisfies Namespace;

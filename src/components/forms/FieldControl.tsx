@@ -1,4 +1,6 @@
 import type { CSSProperties } from "react";
+import { useFormFonts } from "./formFontsContext";
+import { notoFamily } from "../../lib/forms/unicode";
 import { Link } from "../../i18n";
 import { cssFont } from "../editor/svgStyle";
 import { PADDING, overflows, textFontSize, widgetFrame } from "../../lib/forms/layout";
@@ -66,11 +68,14 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
   const disabled = field.readOnly;
   const label = field.label || field.name;
   const kind = field.kind;
-  const bad = unsupportedIn(field, value) !== "";
+  const fonts = useFormFonts();
+  // With the Noto fonts, only characters no font covers are refused.
+  const bad = (fonts ? fonts.uncovered(field, value) : unsupportedIn(field, value)) !== "";
   const tooLong = lengthWarning(field, value, t);
   // A password's text is not drawn in the file (Acrobat behaviour), so it cannot overflow.
-  const over =
-    (kind.kind === "combo" || (kind.kind === "text" && !kind.password)) && overflows(kind, widget, shownText(field, value));
+  const textLike = kind.kind === "combo" || (kind.kind === "text" && !kind.password);
+  // A Noto value is measured with the engine's layout (FillFormPage), a standard one here.
+  const over = textLike && (notoFamily(field, value) ? (fonts?.overflow(field.id) ?? false) : overflows(kind, widget, shownText(field, value)));
   const missing = field.required && !disabled && isEmpty(value);
   // Most serious first: unsavable characters, then a value that is too long or cut off, then an
   // empty required field.
@@ -82,7 +87,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
         ? " !border-red-500"
         : "";
   const title = bad
-    ? t("labelCannotSave", { label })
+    ? t("labelNoFont", { label })
     : tooLong
       ? t("labelProblem", { label, problem: tooLong })
       : over

@@ -102,13 +102,21 @@ export function missingRequired(fields: readonly FormField[], state: FormState):
  * Values left as the file has them are not checked: a non-flattened fill keeps them untouched
  * (flattening refuses them itself, and the engine's error names the field).
  */
-export function blockingProblem(fields: readonly FormField[], state: FormState, t: NsT<"fillForm">): string | null {
+export function blockingProblem(
+  fields: readonly FormField[],
+  state: FormState,
+  t: NsT<"fillForm">,
+  /** Characters of a value nothing can draw (default: those the standard fonts lack). */
+  uncovered: (field: FormField, value: FormValue) => string = unsupportedIn,
+  /** The problem those characters make (default: the standard fonts cannot show them). */
+  message: (bad: string) => string = (bad) => t("unsupportedChars", { chars: bad }),
+): string | null {
   for (const f of fields) {
     if (!isDirty(state, f.id)) continue;
     const value = valueOf(state, f.id);
     const name = f.label || f.name;
-    const bad = unsupportedIn(f, value);
-    if (bad !== "") return t("inFieldSentence", { problem: t("unsupportedChars", { chars: bad }), name });
+    const bad = uncovered(f, value);
+    if (bad !== "") return t("inFieldSentence", { problem: message(bad), name });
     const long = lengthWarning(f, value, t);
     if (long) return t("inField", { problem: long, name });
   }

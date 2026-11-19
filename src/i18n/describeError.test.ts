@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { noFontError } from "../lib/editor/unicodeText";
 import { describeError, describeInitError, UserError } from "./describeError";
 import { createT } from "./translate";
 import { en } from "./locales/en";
@@ -58,6 +59,16 @@ describe("describeError", () => {
     expect(describeError(new Error(raw), tEn, "en")).toEqual({ message: raw, details: null });
     expect(describeError(new Error(raw), tFr, "fr")).toEqual({
       message: "Caractères non pris en charge par les polices PDF standard\u00a0: 日✓",
+      details: null,
+    });
+  });
+
+  it("names the characters no font covers and their text box in both languages", () => {
+    const raw = noFontError("😀ক", 3);
+    expect(raw).toBe("No font can show these characters: 😀ক (text box on page 3).");
+    expect(describeError(new Error(raw), tEn, "en")).toEqual({ message: raw, details: null });
+    expect(describeError(new Error(raw), tFr, "fr")).toEqual({
+      message: "Aucune police ne peut afficher ces caractères\u00a0: 😀ক (zone de texte de la page\u00a03).",
       details: null,
     });
   });

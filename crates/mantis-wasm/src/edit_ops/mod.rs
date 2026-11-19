@@ -7,6 +7,7 @@ pub(crate) mod binding;
 pub(crate) mod draw;
 pub(crate) mod job;
 pub(crate) mod text;
+pub(crate) mod unitext;
 
 use crate::page_content::fmt_num;
 use crate::pdf_util::{load_pdf, save_pdf};
@@ -15,6 +16,7 @@ use crate::stamp::fonts::StdFont;
 use crate::stamp::geometry::VisibleBox;
 use crate::stamp::image::{BuiltImage, build_image};
 use crate::stamp::page_writer::{Blend, DocWriter, escape_literal, lossy};
+use crate::unifont::{Embedder, Face, MAX_FONTS, ShapeBudget, load_faces};
 use lopdf::ObjectId;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -42,6 +44,17 @@ pub enum Paint {
     Rgb([f64; 3]),
 }
 
+/// The font of a text box.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextFont {
+    /// A standard 14 font (WinAnsi text only).
+    Standard(StdFont),
+    /// Embedded fonts (indices into `EditJob::fonts`): the family first,
+    /// then the fallbacks in order. `fake_bold` faces (no Bold file, CJK)
+    /// are stroked.
+    Unicode { faces: Vec<usize>, fake_bold: Vec<usize> },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Align {
     Left,
@@ -56,11 +69,13 @@ pub enum EditItem {
         page: u32,
         rect: [f64; 4],
         text: String,
-        font: StdFont,
+        font: TextFont,
         size: f64,
         color: [f64; 3],
         opacity: f64,
-        align: Align,
+        /// None: left for left-to-right paragraphs, right for right-to-left
+        /// ones (embedded fonts; the standard fonts are left-to-right only).
+        align: Option<Align>,
         line_height: f64,
     },
     /// Items sharing one `Arc` (the same picked image placed several times) share one XObject.
@@ -100,6 +115,8 @@ impl EditItem {
 #[derive(Debug, Clone)]
 pub struct EditJob {
     pub items: Vec<EditItem>,
+    /// Font files the text boxes with embedded fonts use.
+    pub fonts: Vec<Vec<u8>>,
 }
 
 /// What one item draws, resolved before the document is touched.
@@ -109,6 +126,8 @@ enum Planned {
     /// Path operators painted without a graphics state (whiteout).
     Opaque { body: String },
     Text { font: StdFont, size: f64, color: [f64; 3], opacity: f64, lines: Vec<text::PlacedLine> },
+    /// Lines laid out with embedded fonts, each with its pen origin.
+    Unicode { size: f64, color: [f64; 3], opacity: f64, fake_bold: Vec<usize>, lines: Vec<unitext::PlacedLine> },
     /// `image` indexes the built images.
     Image { image: usize, matrix: [f64; 6], opacity: f64 },
 }
@@ -135,8 +154,13 @@ pub fn edit_pdf(pdf: &[u8], job: &EditJob) -> Result<Vec<u8>, String> {
     let mut plans: Vec<PagePlan> = Vec::new();
     let mut plan_of: HashMap<ObjectId, usize> = HashMap::new();
     let mut images = Images::default();
+    // Embedded fonts: parsed once (limits checked), shaped within one budget.
+    let unicode = job.items.iter().any(|it| matches!(it, EditItem::Text { font: TextFont::Unicode { .. }, .. }));
+    let font_bytes: Vec<&[u8]> = job.fonts.iter().map(Vec::as_slice).collect();
+    let faces = if unicode { load_faces(&font_bytes).map_err(|e| invalid(e.field()))? } else { Vec::new() };
+    let mut shaping = ShapeBudget::per_job();
     for item in &job.items {
-        let Some(planned) = plan_item(item, &mut images)? else {
+        let Some(planned) = plan_item(item, &mut images, &faces, &mut shaping)? else {
             continue;
         };
         let page_id = pages[item.page() as usize - 1];
@@ -148,8 +172,11 @@ pub fn edit_pdf(pdf: &[u8], job: &EditJob) -> Result<Vec<u8>, String> {
     }
 
     let mut writer = DocWriter::new();
+    let mut embedder = Embedder::new(&faces);
     for plan in &plans {
         let mut pw = writer.page(&doc, plan.page_id)?;
+        // Page-local names of the embedded fonts drawn on this page.
+        let mut font_names: HashMap<ObjectId, String> = HashMap::new();
         let matrix = plan.matrix.map(fmt_num).join(" ");
         for item in &plan.items {
             let ops = match item {
@@ -177,6 +204,22 @@ pub fn edit_pdf(pdf: &[u8], job: &EditJob) -> Result<Vec<u8>, String> {
                     ops.extend_from_slice(b" ET Q\n");
                     ops
                 }
+                Planned::Unicode { size, color, opacity, fake_bold, lines } => {
+                    let gs = pw.gs(&mut doc, &mut writer, *opacity, Blend::Normal);
+                    let rgb = color.map(fmt_num).join(" ");
+                    let mut ops = format!("q {matrix} cm /{} gs {rgb} rg {rgb} RG\n", lossy(&gs));
+                    for line in lines {
+                        let mut name = |_: usize, id: ObjectId| {
+                            font_names.entry(id).or_insert_with(|| lossy(&pw.font_object(id, "MUnF")).into_owned()).clone()
+                        };
+                        let shown = embedder
+                            .show_line(&mut doc, &line.line, line.origin, *size, &|f| fake_bold.contains(&f), &mut name)
+                            .map_err(|e| invalid(e.field()))?;
+                        ops.push_str(&shown);
+                    }
+                    ops.push_str("Q\n");
+                    ops.into_bytes()
+                }
                 Planned::Image { image, matrix: placement, opacity } => {
                     let id = images.object(&mut doc, *image);
                     let gs = pw.gs(&mut doc, &mut writer, *opacity, Blend::Normal);
@@ -189,6 +232,7 @@ pub fn edit_pdf(pdf: &[u8], job: &EditJob) -> Result<Vec<u8>, String> {
         }
         pw.finish(&mut doc, &mut writer)?;
     }
+    embedder.finish(&mut doc).map_err(|e| invalid(e.field()))?;
     save_pdf(&mut doc)
 }
 
@@ -227,11 +271,32 @@ impl Images {
 /// What `item` draws, or None when it is invisible (a shape with neither
 /// stroke nor fill, a text box with only blank lines). Images are built
 /// into `images`.
-fn plan_item(item: &EditItem, images: &mut Images) -> Result<Option<Planned>, String> {
+fn plan_item(item: &EditItem, images: &mut Images, faces: &[Face], shaping: &mut ShapeBudget) -> Result<Option<Planned>, String> {
     let path = |body: Option<String>, opacity: f64, blend: Blend| body.map(|body| Planned::Path { body, opacity, blend });
     Ok(match item {
-        EditItem::Text { rect, text, font, size, color, opacity, align, line_height, .. } => {
-            let lines = text::layout_text(*rect, text, *font, *size, *align, *line_height)?;
+        EditItem::Text { rect, text, font: TextFont::Unicode { faces: chain, fake_bold }, size, color, opacity, align, line_height, .. } => {
+            let chain: Vec<&Face> = chain.iter().map(|&i| &faces[i]).collect();
+            let lines = unitext::place_lines(&chain, *rect, text, *size, *align, *line_height, shaping)?;
+            // Runs index the job's fonts, not the chain.
+            let lines: Vec<unitext::PlacedLine> = lines
+                .into_iter()
+                .map(|mut l| {
+                    for run in &mut l.line.runs {
+                        run.face = item_face(item, run.face);
+                    }
+                    l
+                })
+                .collect();
+            (!lines.is_empty()).then(|| Planned::Unicode {
+                size: *size,
+                color: *color,
+                opacity: *opacity,
+                fake_bold: fake_bold.clone(),
+                lines,
+            })
+        }
+        EditItem::Text { rect, text, font: TextFont::Standard(font), size, color, opacity, align, line_height, .. } => {
+            let lines = text::layout_text(*rect, text, *font, *size, align.unwrap_or(Align::Left), *line_height)?;
             (!lines.is_empty()).then_some(Planned::Text {
                 font: *font,
                 size: *size,
@@ -265,6 +330,14 @@ fn plan_item(item: &EditItem, images: &mut Images) -> Result<Option<Planned>, St
         }
         EditItem::Whiteout { rect, .. } => Some(Planned::Opaque { body: draw::fill_rect_ops(*rect, [1.0, 1.0, 1.0]) }),
     })
+}
+
+/// The job font index of face `k` of a text item's chain.
+fn item_face(item: &EditItem, k: usize) -> usize {
+    match item {
+        EditItem::Text { font: TextFont::Unicode { faces, .. }, .. } => faces[k],
+        _ => k,
+    }
 }
 
 /// Per-job image budget: item count and total image bytes.
@@ -321,7 +394,12 @@ fn validate(job: &EditJob, total: usize) -> Result<(), String> {
     for item in &job.items {
         check((1..=total).contains(&(item.page() as usize)), "page")?;
         match item {
-            EditItem::Text { rect, text, size, color, opacity, line_height, .. } => {
+            EditItem::Text { rect, text, size, color, opacity, line_height, font, .. } => {
+                if let TextFont::Unicode { faces, fake_bold } = font {
+                    let known = |i: &usize| *i < job.fonts.len();
+                    check(!faces.is_empty() && faces.len() <= MAX_FONTS && faces.iter().all(known), "font")?;
+                    check(fake_bold.iter().all(|f| faces.contains(f)), "font")?;
+                }
                 check(rect_ok(rect), "rect")?;
                 check(text.chars().count() <= MAX_TEXT_CHARS, "text")?;
                 check((MIN_FONT_SIZE..=MAX_FONT_SIZE).contains(size), "size")?;
@@ -496,17 +574,17 @@ mod tests {
             page,
             rect: [100.0, 500.0, 200.0, 50.0],
             text: text.into(),
-            font: StdFont::Helvetica,
+            font: TextFont::Standard(StdFont::Helvetica),
             size: 10.0,
             color: [0.0, 0.0, 0.0],
             opacity: 1.0,
-            align: Align::Left,
+            align: Some(Align::Left),
             line_height: 1.2,
         }
     }
 
     fn run(pdf: &[u8], items: Vec<EditItem>) -> Result<Document, String> {
-        edit_pdf(pdf, &EditJob { items }).map(|b| load(&b))
+        edit_pdf(pdf, &EditJob { items, fonts: Vec::new() }).map(|b| load(&b))
     }
 
     #[test]
@@ -563,8 +641,8 @@ mod tests {
     fn text_align_center_offsets() {
         let mut item = text_item(1, "ab\nabcd");
         if let EditItem::Text { font, align, rect, .. } = &mut item {
-            *font = StdFont::Courier;
-            *align = Align::Center;
+            *font = TextFont::Standard(StdFont::Courier);
+            *align = Some(Align::Center);
             *rect = [50.0, 0.0, 100.0, 100.0];
         }
         let doc = run(&simple_pdf(1), vec![item]).unwrap();
@@ -862,5 +940,170 @@ mod tests {
         let img = |d: &Arc<ImageData>| EditItem::Image { page: 1, rect: [0.0, 0.0, 1.0, 1.0], image: Arc::clone(d), opacity: 1.0, rotation: 0 };
         let budget = image_budget(&[img(&shared), img(&shared), img(&other), img(&shared)]);
         assert_eq!(budget, ImageBudget { placements: 4, bytes: 116, pixels: 4 });
+    }
+
+    // ---- embedded (Noto) fonts ----
+
+    const SANS: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSans-subset.ttf"));
+    const HEBREW: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSansHebrew-subset.ttf"));
+    const SC: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/NotoSansSC-subset.ttf"));
+
+    fn noto_item(text: &str, faces: Vec<usize>, fake_bold: Vec<usize>) -> EditItem {
+        EditItem::Text {
+            page: 1,
+            rect: [100.0, 500.0, 300.0, 100.0],
+            text: text.into(),
+            font: TextFont::Unicode { faces, fake_bold },
+            size: 12.0,
+            color: [0.2, 0.4, 0.6],
+            opacity: 1.0,
+            align: None,
+            line_height: 1.2,
+        }
+    }
+
+    /// One page whose content ends with a newline (`simple_pdf` ends in a
+    /// comment, which the redact reader's strict parse of the joined streams
+    /// refuses, so search could not read it).
+    fn searchable_pdf() -> Vec<u8> {
+        let mut f = Fixture::new();
+        f.page(Dictionary::new(), "0 0 1 rg 0 0 10 10 re f\n");
+        f.finish()
+    }
+
+    fn run_fonts(items: Vec<EditItem>) -> Result<Vec<u8>, String> {
+        edit_pdf(&searchable_pdf(), &EditJob { items, fonts: vec![SANS.to_vec(), HEBREW.to_vec(), SC.to_vec()] })
+    }
+
+    fn search(pdf: &[u8], query: &str) -> usize {
+        let options = crate::redact::search::SearchOptions { whole_word: false, case_sensitive: true };
+        crate::redact::search::redact_search(pdf, query, &options).unwrap().matches.len()
+    }
+
+    #[test]
+    fn noto_text_is_embedded_and_searchable() {
+        let pdf = run_fonts(vec![noto_item("Привет мир\n你好世界", vec![0, 1, 2], vec![]), text_item(1, "Hi")]).unwrap();
+        let doc = load(&pdf);
+        let p = page_ids(&doc)[0];
+        let fonts = category(&doc, p, b"Font");
+        let subtypes: Vec<Vec<u8>> =
+            fonts.iter().map(|(_, f)| resolve(&doc, f).as_dict().unwrap().get(b"Subtype").unwrap().as_name().unwrap().to_vec()).collect();
+        // Noto Sans and Noto Sans SC (Hebrew unused), plus Helvetica.
+        assert_eq!(subtypes.iter().filter(|s| s.as_slice() == b"Type0").count(), 2, "{subtypes:?}");
+        assert_eq!(subtypes.iter().filter(|s| s.as_slice() == b"Type1").count(), 1);
+        for query in ["Привет мир", "你好世界", "Hi"] {
+            assert_eq!(search(&pdf, query), 1, "{query}");
+        }
+        // Colour for fill and stroke, in the item's graphics state.
+        assert!(tail(&doc, p).contains("0.2 0.4 0.6 rg 0.2 0.4 0.6 RG"), "{}", tail(&doc, p));
+    }
+
+    #[test]
+    fn one_font_per_face_across_the_document() {
+        let mut f = Fixture::new();
+        for _ in 0..2 {
+            f.page(Dictionary::new(), "0 0 1 rg 0 0 10 10 re f\n");
+        }
+        let pdf = f.finish();
+        let mut second = noto_item("Привет 你好", vec![0, 2], vec![]);
+        if let EditItem::Text { page, .. } = &mut second {
+            *page = 2;
+        }
+        let items = vec![noto_item("мир 世界", vec![0, 2], vec![]), second];
+        let out = edit_pdf(&pdf, &EditJob { items, fonts: vec![SANS.to_vec(), HEBREW.to_vec(), SC.to_vec()] }).unwrap();
+        let doc = load(&out);
+        let type0: Vec<ObjectId> = doc
+            .objects
+            .iter()
+            .filter(|(_, o)| o.as_dict().is_ok_and(|d| d.get(b"Subtype").ok().and_then(|s| s.as_name().ok()) == Some(b"Type0")))
+            .map(|(id, _)| *id)
+            .collect();
+        // Noto Sans and Noto Sans SC, once each; both pages point at the same objects.
+        assert_eq!(type0.len(), 2);
+        for p in page_ids(&doc) {
+            let fonts = category(&doc, p, b"Font");
+            let used: Vec<ObjectId> = fonts.iter().map(|(_, f)| f.as_reference().unwrap()).collect();
+            assert_eq!(used.len(), 2);
+            assert!(used.iter().all(|id| type0.contains(id)));
+        }
+        assert_eq!(search(&out, "Привет"), 1);
+        assert_eq!(search(&out, "世界"), 1);
+    }
+
+    #[test]
+    fn noto_lines_are_clipped_like_standard_ones() {
+        let mut item = noto_item("a\nb\nc\nd\ne\nf", vec![0], vec![]);
+        if let EditItem::Text { rect, .. } = &mut item {
+            *rect = [100.0, 500.0, 200.0, 50.0];
+        }
+        let pdf = run_fonts(vec![item]).unwrap();
+        let doc = load(&pdf);
+        let tms = tail_ops(&doc, page_ids(&doc)[0]).iter().filter(|o| o.operator == "Tm").count();
+        // Noto Sans 12 pt, pitch 14.4: baselines 12.8, 27.2, 41.6 below the top; the
+        // descender (-0.293 em, 3.5 pt) of a fourth line would leave the 50 pt box.
+        assert_eq!(tms, 3);
+        // A box too short for one line still shows it.
+        let mut item = noto_item("a\nb", vec![0], vec![]);
+        if let EditItem::Text { rect, .. } = &mut item {
+            *rect = [100.0, 500.0, 200.0, 2.0];
+        }
+        let doc = load(&run_fonts(vec![item]).unwrap());
+        assert_eq!(tail_ops(&doc, page_ids(&doc)[0]).iter().filter(|o| o.operator == "Tm").count(), 1);
+    }
+
+    #[test]
+    fn right_to_left_text_is_right_aligned_by_default() {
+        let pdf = run_fonts(vec![noto_item("שלום", vec![0, 1], vec![])]).unwrap();
+        let doc = load(&pdf);
+        let tm = tail_ops(&doc, page_ids(&doc)[0]).into_iter().find(|o| o.operator == "Tm").unwrap();
+        let faces = crate::unifont::load_faces(&[SANS, HEBREW]).unwrap();
+        let p = crate::unifont::LayoutParams { size: 12.0, width: 300.0, align: None, line_height: 1.2 };
+        let layout = crate::unifont::layout_text(&faces, "שלום", &p, &mut ShapeBudget::per_job()).unwrap();
+        let width = layout.lines[0].width;
+        assert!((nums(&tm)[4] - (100.0 + 300.0 - width)).abs() < 1e-3, "{:?} width {width}", nums(&tm));
+        assert_eq!(search(&pdf, "שלום"), 1);
+    }
+
+    #[test]
+    fn synthetic_bold_strokes_only_its_faces() {
+        let pdf = run_fonts(vec![noto_item("Hi 你好", vec![0, 2], vec![2])]).unwrap();
+        let doc = load(&pdf);
+        let t = tail(&doc, page_ids(&doc)[0]);
+        let cjk = t.find("2 Tr").expect("CJK run stroked");
+        assert!(t[..cjk].contains("Tf"), "{t}");
+        assert!(t.matches("2 Tr").count() == 1, "{t}");
+    }
+
+    #[test]
+    fn redacting_a_word_in_synthetic_bold_spares_its_neighbour() {
+        // A stroked (fake bold) glyph's redact box grows by its stroke reach; with mitre joins
+        // that reach is 10 half widths (0.15 em) and swallowed the word after the space.
+        let pdf = run_fonts(vec![noto_item("测试 中文", vec![0, 2], vec![2])]).unwrap();
+        let options = crate::redact::search::SearchOptions { whole_word: false, case_sensitive: true };
+        let found = crate::redact::search::redact_search(&pdf, "测试", &options).unwrap();
+        assert_eq!(found.matches.len(), 1);
+        let rects = found.pages.iter().flat_map(|p| p.rects.iter().map(|r| crate::redact::RedactRect { page: p.page, rect: *r })).collect();
+        let job = crate::redact::RedactJob { rects, fill: crate::redact::Fill::Black, remove_metadata: true, rasters: Vec::new() };
+        let (out, _) = crate::redact::redact(&pdf, job).unwrap();
+        assert_eq!(search(&out, "测试"), 0);
+        assert_eq!(search(&out, "中文"), 1);
+    }
+
+    #[test]
+    fn noto_font_errors() {
+        // A chain naming a font the job does not carry.
+        let e = run_fonts(vec![noto_item("x", vec![0, 7], vec![])]).unwrap_err();
+        assert_eq!(e, "Invalid edit settings: font");
+        let e = run_fonts(vec![noto_item("x", vec![], vec![])]).unwrap_err();
+        assert_eq!(e, "Invalid edit settings: font");
+        // Bold for a face outside the chain.
+        let e = run_fonts(vec![noto_item("x", vec![0], vec![1])]).unwrap_err();
+        assert_eq!(e, "Invalid edit settings: font");
+        // Bytes that are not a font.
+        let job = EditJob { items: vec![noto_item("x", vec![0], vec![])], fonts: vec![b"junk".to_vec()] };
+        assert_eq!(edit_pdf(&simple_pdf(1), &job).unwrap_err(), "Invalid edit settings: font");
+        // Standard text never parses the job's fonts.
+        let job = EditJob { items: vec![text_item(1, "ok")], fonts: vec![b"junk".to_vec()] };
+        assert!(edit_pdf(&simple_pdf(1), &job).is_ok());
     }
 }

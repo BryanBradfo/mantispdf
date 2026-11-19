@@ -15,7 +15,7 @@ const built = existsSync(`${PKG}mantis_wasm_bg.wasm`);
 
 type Wasm = {
   list_form: (pdf: Uint8Array) => FormInfo;
-  fill_form: (pdf: Uint8Array, values: unknown, flatten: boolean) => Uint8Array;
+  fill_form: (pdf: Uint8Array, values: unknown, flatten: boolean, fonts?: unknown) => Uint8Array;
   initSync: (m: { module: BufferSource }) => unknown;
 };
 let wasm: Wasm;
@@ -132,5 +132,25 @@ describe.skipIf(!built)("list_form / fill_form bindings", () => {
     expect(() => wasm.fill_form(FORM, [{ id: 0, value: { kind: "text", text: "日本" } }], false)).toThrow(
       "Characters not supported by the standard PDF fonts: 日本",
     );
+  });
+
+  it("fills a value in Noto fonts with the job's fonts, and checks them", () => {
+    const font = (name: string) => new Uint8Array(readFileSync(new URL(`../../../crates/mantis-wasm/tests/fonts/${name}`, import.meta.url)));
+    const fonts = {
+      files: [{ id: "sans", bytes: font("NotoSans-subset.ttf") }, { id: "sc", bytes: font("NotoSansSC-subset.ttf") }],
+      fields: [{ field: 0, faces: ["sans", "sc"], fakeBold: [] }],
+    };
+    const values = [{ id: 0, value: { kind: "text", text: "Привет 你好" } }];
+    const out = wasm.fill_form(FORM, values, false, fonts);
+    expect(wasm.list_form(out).fields[0].value).toEqual({ kind: "text", text: "Привет 你好" });
+    expect(new TextDecoder("latin1").decode(out)).toContain("/Type0");
+    // Flattened: the field is gone, the value stays.
+    const flat = wasm.fill_form(FORM, values, true, fonts);
+    expect(wasm.list_form(flat).fields.filter((f) => f.name === "name")).toHaveLength(0);
+    // Checks: an unknown face, a field without fonts, more than 64 MiB before copying.
+    expect(() => wasm.fill_form(FORM, values, false, { ...fonts, fields: [{ field: 0, faces: ["x"] }] })).toThrow("Invalid form settings: fonts.fields[0].faces");
+    expect(() => wasm.fill_form(FORM, values, false, undefined)).toThrow("Characters not supported by the standard PDF fonts");
+    const big = new Uint8Array(40 << 20);
+    expect(() => wasm.fill_form(FORM, values, false, { files: [{ id: "a", bytes: big }, { id: "b", bytes: big }], fields: [] })).toThrow("Invalid form settings: font");
   });
 });
