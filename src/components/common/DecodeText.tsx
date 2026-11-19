@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DECODE_FRAME_MS, decodeDuration, scrambleFrame } from "../../lib/decode";
 
 interface Props {
@@ -53,7 +53,9 @@ export default function DecodeText({ text, trigger, className = "" }: Props) {
     }, DECODE_FRAME_MS);
   }, [text, stop]);
 
-  useEffect(() => {
+  // Layout effect: a "mount" run sets its first frame before the browser paints, so the final text
+  // never flashes first. Its cleanup also stops a run when the text changes or on unmount.
+  useLayoutEffect(() => {
     if (trigger === "mount") play();
     return () => {
       stop();

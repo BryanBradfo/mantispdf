@@ -89,4 +89,34 @@ describe("DecodeText", () => {
     act(() => link.dispatchEvent(new FocusEvent("focus")));
     expect(overlay(el)).not.toBeNull();
   });
+
+  it("leaves no timer and no warning when unmounted mid-run", () => {
+    reducedMotion(false);
+    vi.useFakeTimers();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const el = mount(<DecodeText text={TEXT} trigger="mount" />);
+    act(() => vi.advanceTimersByTime(120));
+    expect(overlay(el)).not.toBeNull();
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => root.unmount());
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+    root = createRoot(host); // afterEach unmounts again
+  });
+
+  it("restarts on a text change mid-run with a single live interval, ending on the new text", () => {
+    reducedMotion(false);
+    vi.useFakeTimers();
+    const el = mount(<DecodeText text="Merge PDF" trigger="mount" />);
+    act(() => vi.advanceTimersByTime(120));
+    act(() => root.render(<DecodeText text="Fusionner PDF" trigger="mount" />));
+    expect(vi.getTimerCount()).toBe(1);
+    expect(Array.from(frameOf(overlay(el)!))).toHaveLength("Fusionner PDF".length);
+    act(() => vi.advanceTimersByTime(650));
+    expect(overlay(el)).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(el.textContent).toBe("Fusionner PDF");
+  });
 });
