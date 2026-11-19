@@ -3,6 +3,7 @@ import { entryText, selectedMarks, type SearchEntry } from "../../lib/redact/mar
 import type { MarkInput } from "../../lib/redact/model";
 import { useT } from "../../i18n";
 import { pageListText } from "../../lib/redact/report";
+import { checkClass, inputClass, linkClass, secondaryButton } from "../../styles/ui";
 
 export interface SearchResult {
   query: string;
@@ -27,10 +28,8 @@ interface Props {
   locked: boolean;
 }
 
-const fieldClass =
-  "w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 focus:border-mantis-500 focus:outline-none focus:ring-1 focus:ring-mantis-500 dark:border-[#333] dark:bg-[#111] dark:text-[#ddd]";
-const buttonClass =
-  "rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 disabled:opacity-50 dark:border-[#333] dark:text-[#bbb] dark:hover:bg-[#1a1a1a]";
+const fieldClass = `${inputClass} !mt-0 h-9 !py-1.5`;
+const buttonClass = `${secondaryButton} h-9 shrink-0 px-3 text-xs`;
 
 /**
  * "Find text": every case-insensitive match on every page, reviewed in a list (all checked at
@@ -63,8 +62,8 @@ export default function SearchBar({ searching, result, onFind, onMark, onShow, l
         });
 
   return (
-    <section aria-labelledby={`${id}-title`} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-[#333] dark:bg-[#111]">
-      <h2 id={`${id}-title`} className="text-sm font-semibold text-gray-900 dark:text-[#ddd]">
+    <section aria-labelledby={`${id}-title`} className="rounded-none border border-line bg-surface p-4">
+      <h2 id={`${id}-title`} className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ink">
         {t("findText")}
       </h2>
       <form
@@ -87,36 +86,36 @@ export default function SearchBar({ searching, result, onFind, onMark, onShow, l
             {searching ? t("finding") : t("find")}
           </button>
         </div>
-        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-[#aaa]">
+        <label className="flex items-center gap-2 text-xs text-ink">
           <input
             type="checkbox"
             checked={wholeWord}
             onChange={(e) => setWholeWord(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+            className={checkClass}
           />
           {t("wholeWords")}
         </label>
-        <p className="text-xs text-gray-500 dark:text-[#777]">{t("hyphenNote")}</p>
+        <p className="text-xs text-ink-2">{t("hyphenNote")}</p>
       </form>
       {result && (
         <div className="mt-3" role="status">
           {result.count === 0 ? (
-            <p className="text-sm text-gray-600 dark:text-[#999]">{t("noMatch", { query: result.query })}</p>
+            <p className="text-sm text-ink-2">{t("noMatch", { query: result.query })}</p>
           ) : (
             <>
-              <p className="text-sm text-gray-800 dark:text-[#ccc]">
+              <p className="text-sm text-ink">
                 {t("matches", { count: result.count, query: result.query, pages: pagesLabel(result.pages) })}
               </p>
-              <ul aria-label={t("results")} className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
+              <ul aria-label={t("results")} className="mt-2 max-h-48 space-y-1 overflow-y-auto p-1">
                 {result.entries.map((e) => (
                   <li key={e.id} className="flex items-center justify-between gap-2 text-sm">
-                    <label className="flex items-center gap-2 text-gray-800 dark:text-[#ccc]">
+                    <label className="flex items-center gap-2 text-ink">
                       <input
                         type="checkbox"
                         checked={checked.has(e.id)}
                         disabled={locked}
                         onChange={() => toggle(e.id)}
-                        className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+                        className={`${checkClass} focus-visible:!ring-offset-0`}
                       />
                       {(() => {
                         const entry = entryText(e);
@@ -130,7 +129,7 @@ export default function SearchBar({ searching, result, onFind, onMark, onShow, l
                         );
                       })()}
                     </label>
-                    <button type="button" onClick={() => onShow(e)} className="text-xs text-gray-500 underline dark:text-[#888]">
+                    <button type="button" onClick={() => onShow(e)} className={`shrink-0 text-xs ${linkClass} focus-visible:!ring-offset-0`}>
                       {t("show")}
                     </button>
                   </li>

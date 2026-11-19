@@ -122,13 +122,9 @@ describe("ToolShell eyebrow", () => {
     expect(eyebrow?.compareDocumentPosition(host.querySelector("h1")!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it("has no eyebrow when the page does not name its tool", async () => {
-    await renderAt(
-      "/x",
-      <ToolShell title="t" description="d" path="/x" heading="X" intro="i">
-        {null}
-      </ToolShell>,
-    );
-    expect(host.querySelector('[data-testid="tool-eyebrow"]')).toBeNull();
+  it("requires every page to name its tool (checked by tsc)", () => {
+    // @ts-expect-error `tool` is required: a tool page without its eyebrow does not compile.
+    const page = <ToolShell title="t" description="d" path="/x" heading="X" intro="i">{null}</ToolShell>;
+    expect(page.props.tool).toBeUndefined();
   });
 });

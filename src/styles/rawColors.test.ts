@@ -33,3 +33,14 @@ describe("raw colour guard", () => {
     expect(Object.keys(RAW_COLOR_ALLOWLIST).filter((f) => !dirty.includes(f))).toEqual([]);
   });
 });
+
+describe("migration closed", () => {
+  it("the allowlist only keeps document colours", () => {
+    expect(Object.entries(RAW_COLOR_ALLOWLIST).filter(([, reason]) => reason !== "document colour")).toEqual([]);
+  });
+  it("the Tailwind theme has only the token colours and no glow shadows", async () => {
+    const { default: config } = await import("../../tailwind.config");
+    expect(Object.keys(config.theme.extend.colors).sort()).toEqual(["danger", "ink", "ink-2", "ink-3", "line", "line-strong", "paper", "surface"]);
+    expect("boxShadow" in config.theme.extend).toBe(false);
+  });
+});

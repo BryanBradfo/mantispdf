@@ -12,6 +12,8 @@ import type { Mark, Rect } from "../../lib/redact/model";
 import type { Fill } from "../../lib/redact/toJob";
 import { placementPreviewSize } from "../../lib/signPlacement";
 import { useT } from "../../i18n";
+import { focusRing } from "../../styles/ui";
+import { PAGE_MARK_DARK, PAGE_MARK_LIGHT, REDACT_PREVIEW } from "../../styles/onPage";
 
 /** Same preview size as the Edit PDF canvas. */
 const PREVIEW_WIDTH = 1000;
@@ -102,7 +104,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
   if (!(pageSize[0] > 0 && pageSize[1] > 0)) {
     return (
       <div ref={wrapRef} className="w-full">
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t("noVisibleArea")}</p>
+        <p role="alert" className="text-sm text-danger">{t("noVisibleArea")}</p>
       </div>
     );
   }
@@ -186,8 +188,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
     setDraft(null);
   };
 
-  const stroke = fill === "white" ? "#4b5563" : "#111827";
-  const hatch = fill === "white" ? "#9ca3af" : "#111827";
+  const { tint, hatch, edge: stroke } = REDACT_PREVIEW[fill];
   const selected = areaMarks.find((m) => m.id === selectedId) ?? null;
 
   return (
@@ -218,7 +219,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
             onDelete(selected.id);
           }
         }}
-        className="relative mx-auto select-none overflow-hidden rounded-lg border border-gray-300 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 dark:border-[#333]"
+        className={`relative mx-auto select-none overflow-hidden border border-line ${focusRing}`}
         style={{ width: pw, height: ph }}
       >
         <PageImage source={source} page={page} width={PREVIEW_WIDTH} alt={tc("pageN", { n: page })} className="h-full" />
@@ -236,7 +237,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
         >
           <defs>
             <pattern id={hatchId} width={8} height={8} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <rect width={8} height={8} fill={fill === "white" ? "rgba(255,255,255,0.55)" : "rgba(17,24,39,0.18)"} />
+              <rect width={8} height={8} fill={tint} />
               <line x1={0} y1={0} x2={0} y2={8} stroke={hatch} strokeWidth={2} />
             </pattern>
           </defs>
@@ -276,22 +277,21 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
           {flash.map((r, i) => {
             const b = box(r);
             return (
-              <rect
-                key={`flash-${i}`}
-                data-flash="true"
-                x={b.left - 3}
-                y={b.top - 3}
-                width={b.width + 6}
-                height={b.height + 6}
-                fill="rgba(250, 204, 21, 0.35)"
-                stroke="#ca8a04"
-                strokeWidth={2}
-                rx={2}
-                pointerEvents="none"
-                className="motion-safe:animate-pulse"
-              />
+              <g key={`flash-${i}`} data-flash="true" pointerEvents="none" fill="none">
+                <rect x={b.left - 3} y={b.top - 3} width={b.width + 6} height={b.height + 6} stroke={PAGE_MARK_LIGHT} strokeWidth={4} />
+                <rect x={b.left - 3} y={b.top - 3} width={b.width + 6} height={b.height + 6} stroke={PAGE_MARK_DARK} strokeWidth={2} />
+              </g>
             );
           })}
+          {selected && (() => {
+            const b = box(rectOf(selected));
+            return (
+              <g data-selected-frame="" pointerEvents="none" fill="none">
+                <rect x={b.left - 3} y={b.top - 3} width={b.width + 6} height={b.height + 6} stroke={PAGE_MARK_LIGHT} strokeWidth={2.5} />
+                <rect x={b.left - 3} y={b.top - 3} width={b.width + 6} height={b.height + 6} stroke={PAGE_MARK_DARK} strokeWidth={1.5} strokeDasharray="4 3" />
+              </g>
+            );
+          })()}
           {draft && draft.id === null && (() => {
             const b = box(draft.rect);
             return <rect x={b.left} y={b.top} width={b.width} height={b.height} fill={`url(#${hatchId})`} stroke={stroke} strokeDasharray="4 3" pointerEvents="none" />;
@@ -309,9 +309,8 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
                     y={b.top - HANDLE_SIZE / 2}
                     width={HANDLE_SIZE}
                     height={HANDLE_SIZE}
-                    rx={2}
-                    fill="#16a34a"
-                    stroke="#fff"
+                    fill={PAGE_MARK_DARK}
+                    stroke={PAGE_MARK_LIGHT}
                     strokeWidth={1.5}
                     pointerEvents="none"
                   />
@@ -320,7 +319,7 @@ export default function RedactCanvas({ source, page, pageSize, marks, fill, lock
             })}
         </svg>
       </div>
-      <p id="redact-canvas-help" className="mt-2 text-center text-xs text-gray-500 dark:text-[#777]">
+      <p id="redact-canvas-help" className="mt-2 text-center text-xs text-ink-2">
         {t("canvasHelp")}
       </p>
     </div>

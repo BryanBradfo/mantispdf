@@ -174,6 +174,7 @@ export default {
     "Pro adds offline math OCR: convert equations to perfect LaTeX, rendered live. Enter your license key to activate.",
   licenseActivating: "Activating…",
   licenseActivate: "Activate license",
+  licenseKey: "License key",
   licenseGetKey: "Don't have a key? Get MantisPDF Pro →",
   // Unicode fonts (Edit PDF, Fill form)
   noFontChars: "No font can show these characters: {chars}",

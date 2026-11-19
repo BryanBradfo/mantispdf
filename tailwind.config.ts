@@ -35,30 +35,6 @@ export default {
         line: token("line"),
         "line-strong": token("line-strong"),
         danger: token("danger"),
-        // TRANSITIONAL (Tasks 4-6 migrate the ~70 files still using these, Task 6 deletes the keys):
-        // every shade is mapped onto the monochrome tokens so un-migrated screens stay legible.
-        mantis: {
-          50: token("surface"),
-          100: token("surface"),
-          200: token("line"),
-          300: token("line"),
-          400: token("line-strong"),
-          500: token("ink-2"),
-          600: token("ink"),
-          700: token("ink"),
-          800: token("ink"),
-          900: token("ink"),
-        },
-        accent: {
-          DEFAULT: token("ink"),
-          soft: token("ink"),
-          deep: token("ink"),
-        },
-      },
-      boxShadow: {
-        // TRANSITIONAL: no glows any more; kept as no-ops while LicenseDialog still names them.
-        glow: "none",
-        "glow-lg": "none",
       },
     },
   },

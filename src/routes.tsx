@@ -1,6 +1,7 @@
 import { lazy, type ReactElement } from "react";
 import { Link, Navigate, useT } from "./i18n";
 import { PAGE_LOADERS } from "./firstLoad";
+import { primaryButton } from "./styles/ui";
 
 const HomePage = lazy(PAGE_LOADERS["/"]);
 const SplitPdfPage = lazy(PAGE_LOADERS["/split"]);
@@ -35,15 +36,10 @@ function NotFound() {
   const t = useT("common");
   return (
     <div className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-4 text-center">
-      <p className="text-5xl font-black text-mantis-500">404</p>
-      <h1 className="mt-4 text-2xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("notFoundTitle")}</h1>
-      <p className="mt-2 text-gray-600 dark:text-[#555]">
-        {t("notFoundBody")}
-      </p>
-      <Link
-        to="/"
-        className="mt-6 rounded-lg bg-mantis-500 px-4 py-2 font-medium text-white hover:bg-mantis-600"
-      >
+      <p className="font-display text-8xl font-light leading-none tracking-[-0.02em] text-ink">404</p>
+      <h1 className="mt-6 font-display text-2xl font-medium uppercase tracking-wider text-ink">{t("notFoundTitle")}</h1>
+      <p className="mt-3 text-ink-2">{t("notFoundBody")}</p>
+      <Link to="/" className={`mt-8 ${primaryButton}`}>
         {t("notFoundBack")}
       </Link>
     </div>

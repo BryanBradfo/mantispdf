@@ -25,3 +25,12 @@ export const pageMissing = "!border-[#c62828]";
 export const pageSelected = "outline outline-2 outline-black";
 /** Square resize handle over a page render. */
 export const pageHandle = "border border-white bg-black";
+/**
+ * The pending redaction boxes over the page, previewing the chosen box colour (black boxes are the
+ * redaction result itself). A hatch over a light tint, so the content under a mark stays readable
+ * while it is placed: black lines for black boxes, grey lines and a grey edge for white boxes.
+ */
+export const REDACT_PREVIEW = {
+  black: { tint: "rgba(0,0,0,0.18)", hatch: "#000000", edge: "#000000" },
+  white: { tint: "rgba(255,255,255,0.55)", hatch: "#8a8a8a", edge: "#525252" },
+} as const;

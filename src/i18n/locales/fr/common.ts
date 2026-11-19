@@ -159,6 +159,7 @@ const common: Messages<typeof en> = {
     "Pro ajoute l’OCR mathématique hors ligne\u00a0: convertissez vos équations en LaTeX impeccable, affiché en direct. Saisissez votre clé de licence pour l’activer.",
   licenseActivating: "Activation…",
   licenseActivate: "Activer la licence",
+  licenseKey: "Clé de licence",
   licenseGetKey: "Vous n’avez pas de clé\u00a0? Obtenir MantisPDF Pro →",
   // Polices Unicode (Modifier un PDF, Remplir un formulaire)
   noFontChars: "Aucune police ne peut afficher ces caractères\u00a0: {chars}",

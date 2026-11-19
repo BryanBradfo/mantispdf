@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { Link, useDescribeError, useT, type UiError } from "../i18n";
 import ToolShell from "./ToolShell";
 import LoadingRow from "../components/common/LoadingRow";
@@ -24,6 +24,8 @@ export default function EncryptPdfPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [ownerPassword, setOwnerPassword] = useState("");
   const [passwordMismatch, setPasswordMismatch] = useState(false);
+  const id = useId();
+  const mismatchId = `${id}-mismatch`;
 
   const handleFile = useCallback((f: File) => {
     if (!isPdfFile(f)) { setUploadError(tc("invalidPdf")); return; }
@@ -97,10 +99,11 @@ export default function EncryptPdfPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-ink">
+              <label htmlFor={`${id}-password`} className="block text-sm font-medium text-ink">
                 {t("password")} <span className="text-ink-2">*</span>
               </label>
               <input
+                id={`${id}-password`}
                 type="password"
                 value={userPassword}
                 onChange={(e) => { setUserPassword(e.target.value); setPasswordMismatch(false); }}
@@ -110,28 +113,31 @@ export default function EncryptPdfPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-ink">
+              <label htmlFor={`${id}-confirm`} className="block text-sm font-medium text-ink">
                 {t("confirm")} <span className="text-ink-2">*</span>
               </label>
               <input
+                id={`${id}-confirm`}
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => { setConfirmPassword(e.target.value); setPasswordMismatch(false); }}
                 placeholder={t("confirmPlaceholder")}
                 aria-invalid={passwordMismatch}
+                aria-describedby={passwordMismatch ? mismatchId : undefined}
                 className={`${inputClass} ${passwordMismatch ? "!border-danger" : ""}`}
               />
               {passwordMismatch && (
-                <p className="mt-1.5 text-xs text-danger">{t("mismatch")}</p>
+                <p id={mismatchId} className="mt-1.5 text-xs text-danger">{t("mismatch")}</p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-ink">
+              <label htmlFor={`${id}-owner`} className="block text-sm font-medium text-ink">
                 {t("owner")}{" "}
                 <span className="font-normal text-ink-3">{t("ownerHint")}</span>
               </label>
               <input
+                id={`${id}-owner`}
                 type="password"
                 value={ownerPassword}
                 onChange={(e) => setOwnerPassword(e.target.value)}

@@ -11,7 +11,7 @@ interface Props {
   intro: string;
   children: ReactNode;
   /** The tool this page is: shows its icon and `NN / SECTION` eyebrow above the title (from `lib/tools`). */
-  tool?: ToolId;
+  tool: ToolId;
   /** Wider column for tools with a large workspace (the Edit PDF editor). */
   wide?: boolean;
 }
@@ -34,8 +34,8 @@ export default function ToolShell({ title, description, path, heading, intro, ch
   return (
     <div className={`mx-auto px-4 pb-16 pt-8 sm:px-8 sm:pt-12 ${wide ? "max-w-6xl" : "max-w-2xl"}`}>
       <PageSEO title={title} description={description} path={path} />
-      {tool && <ToolEyebrow tool={tool} />}
-      <h1 className={`font-display text-[2.75rem] font-light leading-[0.95] tracking-[-0.02em] text-ink sm:text-6xl ${tool ? "mt-5" : ""}`}>
+      <ToolEyebrow tool={tool} />
+      <h1 className="mt-5 font-display text-[2.75rem] font-light leading-[0.95] tracking-[-0.02em] text-ink sm:text-6xl">
         {heading}
       </h1>
       <p className="mt-4 max-w-xl leading-relaxed text-ink-2">{intro}</p>
