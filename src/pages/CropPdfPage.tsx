@@ -12,7 +12,8 @@ import { detectContentRects } from "../lib/autoMargins";
 import { buildCropJob, cropTargetPages, defaultCropRect, fitCropToPage, missedPagesProblem, pagesMissedBy, type CropScope } from "../lib/cropBox";
 import type { Rect } from "../lib/geometryJob";
 import { describePages } from "../lib/stampBuilders";
-import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 
 /** The engine accepts at most this many per-page boxes in one job. */

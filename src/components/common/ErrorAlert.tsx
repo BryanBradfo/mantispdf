@@ -1,7 +1,7 @@
 import { useT, type UiError } from "../../i18n";
 import { CircleAlert } from "lucide-react";
 import ErrorText from "./ErrorText";
-import { focusRing } from "../../pages/ToolShell";
+import { focusRing } from "../../styles/ui";
 
 interface ErrorAlertProps {
   error: UiError | null;

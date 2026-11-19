@@ -1,7 +1,8 @@
 import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
-import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName } from "./usePdfInput";
 import { METADATA_FIELDS, useMetadataInput } from "./useMetadataInput";
 import { useT } from "../i18n";

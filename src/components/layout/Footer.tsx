@@ -1,7 +1,7 @@
 import { useT } from "../../i18n";
 import { MantisHead } from "../brand/MantisHead";
 import { GithubMark } from "../brand/GithubMark";
-import { focusRing } from "../../pages/ToolShell";
+import { focusRing } from "../../styles/ui";
 
 const GITHUB_URL = "https://github.com/BryanBradfo/mantispdf";
 

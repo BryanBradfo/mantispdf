@@ -6,7 +6,7 @@ import "@fontsource/dancing-script/latin-400.css";
 import "@fontsource/homemade-apple/latin-400.css";
 import { listStep } from "../../lib/gridNav";
 import { fitTypedFontSize, removeWhiteBackground, trimTransparent, type RgbaImage } from "../../lib/signPlacement";
-import { inputClass, secondaryButton } from "../../pages/ToolShell";
+import { inputClass, secondaryButton } from "../../styles/ui";
 import { useT } from "../../i18n";
 
 /** A trimmed RGBA signature plus a data URL of it for on-screen previews. */

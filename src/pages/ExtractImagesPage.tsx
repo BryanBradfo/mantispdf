@@ -14,7 +14,8 @@ import type { ExtractResultSpec, ExtractedImage } from "../lib/imageInput";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import LiveSummary from "../components/stamp/LiveSummary";
-import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useDescribeError, useT } from "../i18n";
 

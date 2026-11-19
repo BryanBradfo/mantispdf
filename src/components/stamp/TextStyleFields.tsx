@@ -1,7 +1,7 @@
 import { useId } from "react";
 import type { TextStyle } from "../../lib/stampBuilders";
 import type { StdFont } from "../../lib/stampJob";
-import { inputClass } from "../../pages/ToolShell";
+import { inputClass } from "../../styles/ui";
 import { formatNumber, useLocale, useT } from "../../i18n";
 
 const FONTS: { value: StdFont; label: string }[] = [

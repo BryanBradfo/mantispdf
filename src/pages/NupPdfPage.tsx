@@ -8,7 +8,8 @@ import PaperSizeFields, { CUSTOM_PAPER, paperToPt, type PaperChoice } from "../c
 import SheetPreview from "../components/geometry/SheetPreview";
 import { mmToPt, type NupJobSpec, type Orientation } from "../lib/geometryJob";
 import { fitInCell, mmSizeLabel, nupCells, nupGrid, nupProblem, nupSheetSize } from "../lib/geometryLayout";
-import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { inputClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useT } from "../i18n";
 

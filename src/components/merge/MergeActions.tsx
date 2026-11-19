@@ -1,6 +1,6 @@
 import React from "react";
 import { useT } from "../../i18n";
-import { primaryButton, secondaryButton } from "../../pages/ToolShell";
+import { primaryButton, secondaryButton } from "../../styles/ui";
 
 interface MergeActionsProps {
   fileCount: number;

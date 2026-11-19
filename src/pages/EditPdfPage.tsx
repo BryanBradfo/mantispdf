@@ -27,7 +27,8 @@ import type { FontManifest } from "../lib/fonts/manifest";
 import { cjkFlavourFromLanguage, type CjkFlavour } from "../lib/fonts/select";
 import { UnicodeTextContext, type UnicodeTextEnv } from "../components/editor/unicodeTextContext";
 import { jpegPassthrough, orientationToTransform, readExifOrientation } from "../lib/imageInput";
-import ToolShell, { primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 import ErrorText from "../components/common/ErrorText";
 

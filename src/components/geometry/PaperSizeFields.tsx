@@ -1,5 +1,5 @@
 import { PAPER_SIZES, mmToPt, ptToMm, type PaperName } from "../../lib/geometryJob";
-import { inputClass } from "../../pages/ToolShell";
+import { inputClass } from "../../styles/ui";
 import { useT } from "../../i18n";
 
 export const CUSTOM_PAPER = "custom";

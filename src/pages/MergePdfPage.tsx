@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Link, useDescribeError, useT, type UiError } from "../i18n";
-import ToolShell, { secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { secondaryButton } from "../styles/ui";
 import { useMergeState } from "../hooks/useMergeState";
 import type { MergeFile } from "../hooks/useMergeState";
 import { usePdfWorker } from "../hooks/usePdfWorker";

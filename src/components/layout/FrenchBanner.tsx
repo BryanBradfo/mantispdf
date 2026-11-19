@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link as RouterLink, useLocation } from "react-router-dom";
-import { focusRing } from "../../pages/ToolShell";
+import { focusRing } from "../../styles/ui";
 import { loadLocale, localePath, readStoredLocale, shouldOfferFrench, storeLocale, useLocale, useT } from "../../i18n";
 
 function browserLanguages(): readonly string[] {

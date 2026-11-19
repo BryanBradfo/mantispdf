@@ -1,4 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
+import { fileURLToPath } from "node:url";
+
+const fx = (n: string) => fileURLToPath(new URL(`./fixtures/${n}`, import.meta.url));
 
 const SECTIONS = {
   en: ["Organize", "Optimize and convert", "Edit and sign", "Security and privacy", "Recognize"],
@@ -79,6 +82,16 @@ test.describe("on a 390 px phone", () => {
       expect(await overflow(page)).toBe(0);
     });
   }
+
+  test("/fr/merge does not scroll sideways with two files loaded", async ({ page }) => {
+    await page.goto("/fr/merge");
+    await expect(async () => {
+      await page.locator('input[type="file"]').setInputFiles([fx("alpha.pdf"), fx("bravo.pdf")]);
+      await expect(page.getByTestId("merge-card")).toHaveCount(2, { timeout: 3000 });
+    }).toPass({ timeout: 20000 });
+    await expect(page.getByRole("button", { name: "Fusionner 2\u00a0fichiers" })).toBeVisible();
+    expect(await overflow(page)).toBe(0);
+  });
 
   test("the menu button opens the tools, the language switch and GitHub", async ({ page }) => {
     await page.goto("/fr");

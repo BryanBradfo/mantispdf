@@ -10,7 +10,8 @@ import SheetPreview from "../components/geometry/SheetPreview";
 import { mmToPt, type Orientation, type ResizeJobSpec } from "../lib/geometryJob";
 import { mmSizeLabel, resizeLayout, resizeProblem } from "../lib/geometryLayout";
 import { describePages } from "../lib/stampBuilders";
-import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { inputClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useT } from "../i18n";
 

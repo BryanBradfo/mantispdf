@@ -4,7 +4,7 @@ import PageImage from "../common/PageImage";
 import SortableGrid from "../common/SortableGrid";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { formatNumber, useLocale, useT } from "../../i18n";
-import { focusRing } from "../../pages/ToolShell";
+import { focusRing } from "../../styles/ui";
 
 interface MergeFileListProps {
   files: MergeFile[];

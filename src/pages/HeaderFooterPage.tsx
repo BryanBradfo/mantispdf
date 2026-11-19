@@ -19,7 +19,8 @@ import {
   type HeaderFooterSlots,
   type TextStyle,
 } from "../lib/stampBuilders";
-import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { inputClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useLocale, useT } from "../i18n";
 

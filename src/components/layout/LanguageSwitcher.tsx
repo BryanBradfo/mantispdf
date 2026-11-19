@@ -1,6 +1,6 @@
 import { Link as RouterLink, useLocation } from "react-router-dom";
 import { LOCALES, loadLocale, localePath, storeLocale, useLocale, useT, type Locale } from "../../i18n";
-import { focusRing } from "../../pages/ToolShell";
+import { focusRing } from "../../styles/ui";
 
 /**
  * EN / FR switch: the same page under the other prefix (query and hash kept). Remembers the

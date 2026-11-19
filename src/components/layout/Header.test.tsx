@@ -60,6 +60,26 @@ describe("Header TOOLS menu", () => {
     expect(menu()?.querySelectorAll("a")).toHaveLength(27);
   });
 
+  it("moves focus to the first tool when opened", async () => {
+    await renderAt("/merge");
+    await act(async () => toolsButton().click());
+    expect(document.activeElement?.textContent).toBe("Merge PDF");
+    expect(menu()?.contains(document.activeElement)).toBe(true);
+  });
+
+  it("closes when focus leaves the header and its panel, not when it moves inside", async () => {
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    await renderAt("/merge");
+    await act(async () => toolsButton().click());
+    const links = menu()!.querySelectorAll("a");
+    await act(async () => links[5].focus());
+    expect(menu()).not.toBeNull();
+    await act(async () => outside.focus());
+    expect(menu()).toBeNull();
+    outside.remove();
+  });
+
   it("closes on Escape and gives focus back to the button", async () => {
     await renderAt("/merge");
     await act(async () => toolsButton().click());

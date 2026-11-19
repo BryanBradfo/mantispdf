@@ -7,7 +7,7 @@ import { GithubMark } from "../brand/GithubMark";
 import LanguageSwitcher from "./LanguageSwitcher";
 import ToolsMenu from "./ToolsMenu";
 import { useTheme } from "../../hooks/useTheme";
-import { focusRing } from "../../pages/ToolShell";
+import { focusRing } from "../../styles/ui";
 
 const GITHUB_URL = "https://github.com/BryanBradfo/mantispdf";
 
@@ -91,7 +91,16 @@ export default function Header() {
   );
 
   return (
-    <header ref={headerRef} className="relative z-40 border-b border-line bg-paper">
+    <header
+      ref={headerRef}
+      // Focus leaving the header and its panel (Tab past the last tool) closes the menu. A null
+      // relatedTarget (a click on plain text inside the panel) is ignored; outside clicks close via pointerdown.
+      onBlur={(e) => {
+        const next = e.relatedTarget;
+        if (menuOpen && next instanceof Node && !e.currentTarget.contains(next)) setMenuOpen(false);
+      }}
+      className="relative z-40 border-b border-line bg-paper"
+    >
       <div className="mx-auto grid h-16 max-w-[1440px] grid-cols-[1fr_auto] items-center gap-4 px-4 sm:grid-cols-[1fr_auto_1fr] sm:px-8 lg:px-12">
         <div className="hidden sm:block">
           <button
@@ -124,6 +133,7 @@ export default function Header() {
             type="button"
             onClick={() => setDark(!dark)}
             aria-label={t("toggleDarkMode")}
+            aria-pressed={dark}
             className={`flex h-9 w-9 items-center justify-center text-ink-2 hover:text-ink ${focusRing}`}
           >
             {dark ? (

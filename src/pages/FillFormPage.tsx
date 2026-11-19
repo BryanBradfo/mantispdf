@@ -18,7 +18,8 @@ import type { FontManifest } from "../lib/fonts/manifest";
 import { cjkFlavourFromLanguage } from "../lib/fonts/select";
 import { FormFontsContext, type FormFontsEnv } from "../components/forms/formFontsContext";
 import { valueOf } from "../lib/forms/model";
-import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 import type { UiError } from "../i18n";
 

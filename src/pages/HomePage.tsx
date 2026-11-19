@@ -6,7 +6,7 @@ import LicenseDialog from "../components/license/LicenseDialog";
 import { MantisMark } from "../components/brand/MantisMark";
 import { useLicense, CHECKOUT_URL } from "../hooks/useLicense";
 import { useT } from "../i18n";
-import { primaryButton, secondaryButton } from "./ToolShell";
+import { primaryButton, secondaryButton } from "../styles/ui";
 
 export default function HomePage() {
   const t = useT("home");

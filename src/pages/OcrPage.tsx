@@ -27,7 +27,8 @@ import {
   type OcrRunResult,
 } from "../lib/ocr/run";
 import { exportText } from "../lib/ocr/text";
-import ToolShell, { panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 import type { UiError } from "../i18n";
 

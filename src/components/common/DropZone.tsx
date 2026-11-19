@@ -66,7 +66,7 @@ export default function DropZone({ onFile, onFiles, multiple, error, accept = ".
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         data-dragging={dragging ? "true" : undefined}
-        className={`group flex cursor-pointer items-center justify-center border border-dashed px-6 text-center focus-within:outline-none focus-within:ring-2 focus-within:ring-ink focus-within:ring-offset-2 focus-within:ring-offset-paper ${
+        className={`group flex cursor-pointer items-center justify-center border border-dashed px-6 text-center has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ink has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper ${
           compact ? "flex-wrap gap-x-4 gap-y-1 py-5" : "flex-col py-12 sm:py-16"
         } ${
           dragging ? "border-ink bg-ink text-paper" : "border-line-strong bg-paper text-ink hover:border-ink"

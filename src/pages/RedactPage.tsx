@@ -40,7 +40,8 @@ import {
   type RedactResultWire,
   type RedactRun,
 } from "../lib/redact/toJob";
-import ToolShell, { primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 
 /** How long a shown search match stays highlighted. */

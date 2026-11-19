@@ -51,7 +51,7 @@ test("remove: typed ranges", async ({ page }) => {
   await upload(page, [fx("four-pages.pdf")], 4);
   await page.getByLabel("Pages to remove").fill("2-3");
   await expect(page.getByText("2 of 4 pages in the result")).toBeVisible();
-  await expect(page.locator('[aria-pressed="true"]')).toHaveCount(2);
+  await expect(page.locator('main [aria-pressed="true"]')).toHaveCount(2);
   const { texts } = await pdfInfo(await download(page, "Download"));
   expect(texts).toEqual(["Page 1", "Page 4"]);
 });
@@ -62,7 +62,7 @@ test("remove: invalid range keeps the selection and shows the error", async ({ p
   await page.getByLabel("Pages to remove").fill("2");
   await page.getByLabel("Pages to remove").fill("2, 9");
   await expect(page.getByText(/Page 9 does not exist/)).toBeVisible();
-  await expect(page.locator('[aria-pressed="true"]')).toHaveCount(1);
+  await expect(page.locator('main [aria-pressed="true"]')).toHaveCount(1);
 });
 
 test("extract: clicks update the range text; ZIP has one file per page", async ({ page }) => {

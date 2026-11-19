@@ -22,7 +22,8 @@ import MergeFileList from "../components/merge/MergeFileList";
 import PositionPicker from "../components/stamp/PositionPicker";
 import LiveSummary from "../components/stamp/LiveSummary";
 import TextStyleFields from "../components/stamp/TextStyleFields";
-import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { inputClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 
 let nextId = 0;
 const baseOf = (f: File) => f.name.replace(/\.pdf$/i, "");

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { formatNumber, useLocale, useT, type UiError } from "../../i18n";
 import ErrorText from "./ErrorText";
-import { secondaryButton } from "../../pages/ToolShell";
+import { secondaryButton } from "../../styles/ui";
 
 interface ProgressOverlayProps {
   progress: number;

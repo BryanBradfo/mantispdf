@@ -36,7 +36,8 @@ import LiveSummary from "../components/stamp/LiveSummary";
 import PaperSizeFields, { CUSTOM_PAPER, paperToPt, type PaperChoice } from "../components/geometry/PaperSizeFields";
 import { mmSizeLabel } from "../lib/geometryLayout";
 import { createUploadQueue } from "./uploadQueue";
-import ToolShell, { inputClass, panelClass, primaryButton, secondaryButton } from "./ToolShell";
+import ToolShell from "./ToolShell";
+import { inputClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { UserError, useDescribeError, useT, type UiError } from "../i18n";
 
 interface ImageItem {

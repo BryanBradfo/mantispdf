@@ -1,7 +1,7 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Link, useT } from "../../i18n";
 import { SECTIONS, sectionNumber, toolsIn } from "../../lib/tools";
-import { focusRing } from "../../pages/ToolShell";
+import { focusRing } from "../../styles/ui";
 
 interface Props {
   id: string;
@@ -18,6 +18,13 @@ interface Props {
 export default function ToolsMenu({ id, onNavigate, mobileExtras }: Props) {
   const t = useT("common");
   const th = useT("home");
+  const navRef = useRef<HTMLElement>(null);
+
+  // Opening moves focus to the first tool, so Tab walks the menu next (keyboard or click alike).
+  useEffect(() => {
+    navRef.current?.querySelector<HTMLAnchorElement>("a")?.focus();
+  }, []);
+
   return (
     <div
       id={id}
@@ -26,7 +33,7 @@ export default function ToolsMenu({ id, onNavigate, mobileExtras }: Props) {
       {mobileExtras && (
         <div className="mx-4 flex items-center justify-between border-b border-line py-4 sm:hidden">{mobileExtras}</div>
       )}
-      <nav aria-label={t("toolsMenu")} className="mx-auto max-w-[1440px] px-4 pb-10 pt-6 sm:px-8 lg:px-12">
+      <nav ref={navRef} aria-label={t("toolsMenu")} className="mx-auto max-w-[1440px] px-4 pb-10 pt-6 sm:px-8 lg:px-12">
         <div className="grid gap-x-8 gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
           {SECTIONS.map((section) => (
             <section key={section} aria-labelledby={`${id}-${section}`}>
