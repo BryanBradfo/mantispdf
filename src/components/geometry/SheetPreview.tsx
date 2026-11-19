@@ -37,7 +37,7 @@ export default function SheetPreview({ sheet, items, cells = [], bordered = fals
       role="img"
       aria-label={label}
       data-testid="sheet-preview"
-      className="relative shrink-0 bg-white shadow ring-1 ring-gray-300 dark:bg-[#1e1e1e] dark:ring-[#444]"
+      className="relative shrink-0 bg-paper ring-1 ring-line-strong"
       style={{ width: sw * scale, height: sh * scale }}
     >
       <svg viewBox={`0 0 ${sw} ${sh}`} className="absolute inset-0 h-full w-full" aria-hidden="true">
@@ -49,7 +49,8 @@ export default function SheetPreview({ sheet, items, cells = [], bordered = fals
             width={w}
             height={h}
             fill="none"
-            stroke={bordered ? "#374151" : "#9ca3af"}
+            stroke="currentColor"
+            className={bordered ? "text-ink-2" : "text-ink-3"}
             strokeWidth={bordered ? 1 : 0.75}
             strokeDasharray={bordered ? undefined : "4 3"}
             vectorEffect="non-scaling-stroke"
@@ -57,7 +58,7 @@ export default function SheetPreview({ sheet, items, cells = [], bordered = fals
         ))}
       </svg>
       {items.map((item, i) => (
-        <div key={i} className="absolute overflow-hidden ring-1 ring-mantis-400/70" style={pct(item.rect)}>
+        <div key={i} className="absolute overflow-hidden ring-1 ring-line-strong" style={pct(item.rect)}>
           {item.page !== undefined && (
             <PageImage source={source} page={item.page} width={120} alt="" className="!aspect-auto h-full" />
           )}

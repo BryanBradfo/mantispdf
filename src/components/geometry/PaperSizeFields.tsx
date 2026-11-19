@@ -24,7 +24,7 @@ export default function PaperSizeFields({ paper, onPaper, customMm, onCustomMm, 
   const show = (v: number) => (Number.isFinite(v) ? v : "");
   return (
     <div>
-      <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+      <label className="block text-sm text-ink">
         {t("sheetSize")}
         <select
           value={fit ? "fit" : paper}
@@ -50,12 +50,12 @@ export default function PaperSizeFields({ paper, onPaper, customMm, onCustomMm, 
       </label>
       {!fit && paper === CUSTOM_PAPER && (
         <div className="mt-2 flex gap-3">
-          <label className="block flex-1 text-sm text-gray-700 dark:text-[#aaa]">
+          <label className="block flex-1 text-sm text-ink">
             {t("width")}
             <input type="number" min={13} max={5080} value={show(customMm[0])}
               onChange={(e) => onCustomMm([num(e.target.value), customMm[1]])} className={inputClass} />
           </label>
-          <label className="block flex-1 text-sm text-gray-700 dark:text-[#aaa]">
+          <label className="block flex-1 text-sm text-ink">
             {t("height")}
             <input type="number" min={13} max={5080} value={show(customMm[1])}
               onChange={(e) => onCustomMm([customMm[0], num(e.target.value)])} className={inputClass} />

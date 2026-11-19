@@ -9,3 +9,20 @@ export const dangerButton = `${button} border border-danger bg-transparent text-
 export const inputClass = `mt-1 w-full rounded-none border border-line-strong bg-paper px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus-visible:border-ink ${focusRing}`;
 export const panelClass = `mt-8 rounded-none border border-line bg-surface p-6 ${focusRing}`;
 export const noticeClass = `rounded-none border border-line-strong bg-surface px-4 py-3 text-sm text-ink ${focusRing}`;
+/** Mono uppercase micro-label for counts, sizes, steps and file meta. */
+export const monoLabel = "font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2";
+/** A selected thumbnail or card: 2 px ink outline (pair it with a `Check` badge and aria state). */
+export const selectedOutline = "outline outline-2 outline-ink";
+/** Toggle chip (format, scale, language, layout): hairline when off, filled ink when on. Pair with aria-pressed. */
+export const chipClass = (on: boolean) =>
+  `inline-flex h-9 items-center justify-center rounded-none border px-4 text-sm transition-opacity disabled:pointer-events-none disabled:opacity-40 ${focusRing} ${
+    on ? "border-ink bg-ink text-paper" : "border-line-strong bg-transparent text-ink hover:border-ink"
+  }`;
+/** An icon button filling a cell of a card's bottom action bar (merge, organize, images to PDF). */
+export const cellButton = `flex flex-1 items-center justify-center text-ink-2 hover:bg-ink hover:text-paper disabled:pointer-events-none disabled:opacity-30 ${focusRing}`;
+/** Square checkbox / radio drawn in ink. */
+export const checkClass = `h-4 w-4 shrink-0 rounded-none accent-ink ${focusRing}`;
+/** Text link inside copy. */
+export const linkClass = `font-medium text-ink underline decoration-1 underline-offset-4 hover:opacity-70 ${focusRing}`;
+/** File name and page count line ("report.pdf · 4 pages"): mono like the labels, but keeps the name's case. */
+export const fileMeta = "font-mono text-xs tracking-[0.02em] text-ink-2";

@@ -1,6 +1,8 @@
 // src/pages/SelectPagesTool.tsx
 import { useCallback, useMemo, useState } from "react";
-import { PageSEO } from "../components/seo/PageSEO";
+import ToolShell from "./ToolShell";
+import LoadingRow from "../components/common/LoadingRow";
+import { checkClass, fileMeta, primaryButton, secondaryButton } from "../styles/ui";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import RangeInput from "../components/planner/RangeInput";
@@ -17,6 +19,7 @@ import { useDescribeError, useT, type UiError } from "../i18n";
 const SUFFIX = { remove: "_removed", extract: "_extracted" } as const;
 /** English paths; PageSEO derives the localized URL. */
 const PATH = { remove: "/remove-pages", extract: "/extract-pages" } as const;
+const TOOL = { remove: "removePages", extract: "extractPages" } as const;
 
 export default function SelectPagesTool({ mode }: { mode: "remove" | "extract" }) {
   // Both namespaces have the same keys; picking one by mode keeps the typed `t`.
@@ -75,38 +78,40 @@ export default function SelectPagesTool({ mode }: { mode: "remove" | "extract" }
   const disabled = busy || !worker.ready || resultCount === 0 || (mode === "remove" && nothingChosen);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <PageSEO title={t("seoTitle")} description={t("seoDescription")} path={PATH[mode]} />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
-      <p className="mt-2 text-gray-600 dark:text-[#555]">{t("intro")} {tp("everythingLocal")}</p>
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+    <ToolShell
+      tool={TOOL[mode]}
+      wide
+      title={t("seoTitle")}
+      description={t("seoDescription")}
+      path={PATH[mode]}
+      heading={t("heading")}
+      intro={`${t("intro")} ${tp("everythingLocal")}`}
+    >
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!source ? (
         <div className="mt-8">
           {loading ? (
-            <div className="flex items-center gap-3 py-12 text-gray-500 dark:text-[#555]">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-mantis-300 border-t-transparent motion-reduce:animate-none" />
-              {tc("loadingPdf")}
-            </div>
+            <LoadingRow label={tc("loadingPdf")} className="py-12" />
           ) : (
             <DropZone onFile={(f) => addFiles([f])} error={state.uploadError} />
           )}
         </div>
       ) : (
         <>
-          <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
+          <div className="mt-8 flex flex-wrap items-end justify-between gap-4 border-b border-line pb-4">
             <RangeInput label={t("rangeLabel")} total={total} selectedPages={selectedPages} onPages={setPages} />
             <div className="flex flex-wrap items-center gap-3">
               {mode === "extract" && (
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
-                  <input type="checkbox" checked={perPage} onChange={(e) => setPerPage(e.target.checked)} />
+                <label className="flex items-center gap-2 text-sm text-ink">
+                  <input type="checkbox" checked={perPage} onChange={(e) => setPerPage(e.target.checked)} className={checkClass} />
                   {tp("perPageZip")}
                 </label>
               )}
               <button
                 onClick={handleDownload}
                 disabled={disabled}
-                className="rounded-lg bg-mantis-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-mantis-700 disabled:opacity-50"
+                className={primaryButton}
               >
                 {busy ? tc("processing") : tc("download")}
               </button>
@@ -115,15 +120,15 @@ export default function SelectPagesTool({ mode }: { mode: "remove" | "extract" }
                   cancel();
                   dispatch({ type: "reset" });
                 }}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
+                className={secondaryButton}
               >
                 {tc("newFile")}
               </button>
             </div>
           </div>
-          <p className="mt-3 text-sm text-gray-500 dark:text-[#555]">
+          <p className={`mt-4 ${fileMeta}`}>
             {tp("resultOf", { name: source.file.name, result: resultCount, count: total })}
-            {mode === "remove" && resultCount === 0 && <span className="ml-2 text-red-600 dark:text-red-400">{tp("mustRemain")}</span>}
+            {mode === "remove" && resultCount === 0 && <span className="ml-2 font-sans text-sm text-danger">{tp("mustRemain")}</span>}
           </p>
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
           <div className="mt-6">
@@ -131,6 +136,6 @@ export default function SelectPagesTool({ mode }: { mode: "remove" | "extract" }
           </div>
         </>
       )}
-    </div>
+    </ToolShell>
   );
 }

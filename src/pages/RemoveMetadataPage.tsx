@@ -2,7 +2,7 @@ import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import ToolShell from "./ToolShell";
-import { panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import { fileMeta, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName } from "./usePdfInput";
 import { METADATA_FIELDS, useMetadataInput } from "./useMetadataInput";
 import { useT } from "../i18n";
@@ -15,13 +15,14 @@ export default function RemoveMetadataPage() {
 
   return (
     <ToolShell
+      tool="removeMetadata"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/remove-metadata"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">
@@ -31,17 +32,17 @@ export default function RemoveMetadataPage() {
 
       {input && (
         <div className={panelClass}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
+          <p className={fileMeta}>{input.file.name}</p>
           <dl className="mt-4 space-y-2 text-sm">
             {METADATA_FIELDS.map((key) => (
-              <div key={key} className="flex gap-3">
-                <dt className="w-24 shrink-0 text-gray-500 dark:text-[#555]">{tm(key)}</dt>
-                <dd className="min-w-0 break-words text-gray-800 dark:text-[#ccc]">{input.data[key] || tm("empty")}</dd>
+              <div key={key} className="flex flex-wrap gap-3">
+                <dt className="w-24 shrink-0 text-ink-2">{tm(key)}</dt>
+                <dd className="min-w-0 break-words text-ink">{input.data[key] || tm("empty")}</dd>
               </div>
             ))}
           </dl>
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-wrap gap-3">
             <button
               onClick={() =>
                 void run(

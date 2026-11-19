@@ -15,7 +15,8 @@ import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import LiveSummary from "../components/stamp/LiveSummary";
 import ToolShell from "./ToolShell";
-import { panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import { Check } from "lucide-react";
+import { checkClass, fileMeta, linkClass, monoLabel, panelClass, primaryButton, secondaryButton, selectedOutline } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useDescribeError, useT } from "../i18n";
 
@@ -89,18 +90,26 @@ function ImageCard({
   return (
     <label
       ref={ref}
-      className="flex cursor-pointer flex-col overflow-hidden rounded-lg border border-gray-200 bg-white text-xs dark:border-[#333] dark:bg-[#111]"
+      data-testid="extracted-image"
+      className={`flex cursor-pointer flex-col border bg-surface text-xs has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ink has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper ${
+        checked ? `border-ink ${selectedOutline} -outline-offset-2` : "border-line hover:border-line-strong"
+      }`}
     >
-      <div className="flex h-32 items-center justify-center bg-gray-100 dark:bg-[#1a1a1a]">
+      <div className="relative flex h-32 items-center justify-center bg-paper">
         {url ? (
           <img src={url} alt={imageFileName(img)} className="max-h-full max-w-full object-contain" />
         ) : (
-          <span className="text-gray-500 dark:text-[#777]">{failed ? tc("previewUnavailable") : tc("previewLoadingText")}</span>
+          <span className={monoLabel}>{failed ? tc("previewUnavailable") : tc("previewLoadingText")}</span>
+        )}
+        {checked && (
+          <span aria-hidden="true" className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center bg-ink text-paper">
+            <Check strokeWidth={2} className="h-4 w-4" />
+          </span>
         )}
       </div>
-      <div className="flex items-center gap-2 p-2 text-gray-700 dark:text-[#aaa]">
-        <input type="checkbox" checked={checked} onChange={onToggle} aria-label={t("selectNamed", { name: imageFileName(img) })} />
-        <span>
+      <div className="flex items-center gap-2 border-t border-line p-2 text-ink">
+        <input type="checkbox" checked={checked} onChange={onToggle} aria-label={t("selectNamed", { name: imageFileName(img) })} className="h-4 w-4 shrink-0 focus:outline-none" />
+        <span className="font-mono text-[11px] tracking-[0.04em] text-ink-2">
           {size ? t("cardPageSize", { page: img.page, width: size.width, height: size.height }) : t("cardPage", { page: img.page })}
         </span>
       </div>
@@ -231,13 +240,14 @@ export default function ExtractImagesPage() {
 
   return (
     <ToolShell
+      tool="extractImages"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/extract-images"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">
@@ -249,10 +259,10 @@ export default function ExtractImagesPage() {
 
       {input && (
         <div className={panelClass}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
+          <p className={fileMeta}>{input.file.name}</p>
 
           {!extracted && (
-            <div className="mt-4 flex gap-3">
+            <div className="mt-4 flex flex-wrap gap-3">
               <button type="button" onClick={extract} disabled={busy} className={`flex-1 ${primaryButton}`}>
                 {busy ? t("extracting") : t("extract")}
               </button>
@@ -264,22 +274,22 @@ export default function ExtractImagesPage() {
 
           {extracted && (
             <>
-              <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-700 dark:text-[#aaa]">
+              <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-ink">
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={skipSmall} onChange={(e) => setSkipSmall(e.target.checked)} />
+                  <input type="checkbox" checked={skipSmall} onChange={(e) => setSkipSmall(e.target.checked)} className={checkClass} />
                   {t("skipSmall")}
                 </label>
                 <div role="group" aria-label={tc("selection")} className="flex gap-4">
                   <button
                     type="button"
-                    className="underline"
+                    className={`text-sm ${linkClass}`}
                     onClick={() => setSelected((cur) => new Set([...cur, ...visible.map(imageKey)]))}
                   >
                     {tc("selectAll")}
                   </button>
                   <button
                     type="button"
-                    className="underline"
+                    className={`text-sm ${linkClass}`}
                     onClick={() => {
                       const hide = new Set(visible.map(imageKey));
                       setSelected((cur) => new Set([...cur].filter((k) => !hide.has(k))));
@@ -291,7 +301,7 @@ export default function ExtractImagesPage() {
               </div>
 
               {visible.length === 0 ? (
-                <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">{t("noImages")}</p>
+                <p className="mt-4 text-sm text-ink-2">{t("noImages")}</p>
               ) : (
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {cache && visible.map((img) => (
@@ -306,14 +316,14 @@ export default function ExtractImagesPage() {
                 </div>
               )}
 
-              {keptText && <p className="mt-4 text-sm text-gray-600 dark:text-[#888]">{keptText}</p>}
-              {skippedText && <p className={`${keptText ? "mt-1" : "mt-4"} text-sm text-gray-600 dark:text-[#888]`}>{skippedText}</p>}
+              {keptText && <p className="mt-4 text-sm text-ink-2">{keptText}</p>}
+              {skippedText && <p className={`${keptText ? "mt-1" : "mt-4"} text-sm text-ink-2`}>{skippedText}</p>}
               <LiveSummary
                 text={t("selectedOf", { chosen: chosen.length, total: visible.length })}
-                className="mt-2 text-sm text-gray-600 dark:text-[#888]"
+                className="mt-2 text-sm text-ink-2"
               />
               <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
-              <div className="mt-6 flex gap-3">
+              <div className="mt-6 flex flex-wrap gap-3">
                 <button
                   type="button"
                   onClick={() => void download()}

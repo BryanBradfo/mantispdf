@@ -4,7 +4,7 @@ import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
 import ToolShell from "./ToolShell";
-import { panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import { fileMeta, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { imagesCleanedNote, sanitizeWarnings } from "./sanitizeNotes";
 import { useT } from "../i18n";
@@ -35,13 +35,14 @@ export default function SanitizePdfPage() {
 
   return (
     <ToolShell
+      tool="sanitize"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/sanitize"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">
@@ -51,8 +52,8 @@ export default function SanitizePdfPage() {
 
       {input && (
         <div className={panelClass}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{input.file.name}</p>
-          <label className="mt-4 flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+          <p className={fileMeta}>{input.file.name}</p>
+          <label className="mt-4 flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"
               checked={keepComments}
@@ -64,7 +65,7 @@ export default function SanitizePdfPage() {
             {t("keepComments")}
           </label>
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-wrap gap-3">
             <button onClick={sanitize} disabled={busy} className={`flex-1 ${primaryButton}`}>
               {busy ? t("sanitizing") : t("submit")}
             </button>
@@ -73,7 +74,7 @@ export default function SanitizePdfPage() {
             </button>
           </div>
           {summary && (
-            <ul className="mt-6 space-y-1 text-sm text-gray-700 dark:text-[#aaa]">
+            <ul className="mt-6 space-y-1 text-sm text-ink">
               <li>{t("fieldsFlattened", { count: summary.report.fieldsFlattened })}</li>
               <li>{t("linksKept", { count: summary.report.linksKept })}</li>
               <li>{t("linksRemoved", { count: summary.report.linksDropped })}</li>

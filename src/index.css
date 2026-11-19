@@ -17,6 +17,8 @@
 }
 
 .dark {
+  /* Native controls (select menus, number spinners, checkboxes) follow the dark theme too. */
+  color-scheme: dark;
   --paper: 0 0 0;
   --surface: 11 11 11;
   --ink: 242 242 242;
@@ -30,6 +32,13 @@
 @layer base {
   body {
     @apply bg-paper font-sans text-ink antialiased;
+  }
+  /* Native checkboxes, radios, sliders and progress bars are drawn in ink, never the browser's blue. */
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"],
+  progress {
+    accent-color: rgb(var(--ink));
   }
 }
 

@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 import { Link, useT } from "../i18n";
 import { downloadBlobsAsZip } from "../lib/downloadZip";
-import { PageSEO } from "../components/seo/PageSEO";
+import ToolShell from "./ToolShell";
+import { chipClass, monoLabel, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { isPdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ProgressOverlay from "../components/common/ProgressOverlay";
@@ -66,17 +67,14 @@ export default function PdfToImagePage() {
   }));
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
-      <PageSEO
-        title={t("seoTitle")}
-        description={t("seoDescription")}
-        path="/pdf-to-image"
-      />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
-      <p className="mt-2 text-gray-600 dark:text-[#555]">
-        {t("intro")}
-      </p>
-
+    <ToolShell
+      tool="pdfToImage"
+      title={t("seoTitle")}
+      description={t("seoDescription")}
+      path="/pdf-to-image"
+      heading={t("heading")}
+      intro={t("intro")}
+    >
       {!file && (
         <div className="mt-8">
           <DropZone onFile={handleFile} error={uploadError} />
@@ -84,25 +82,17 @@ export default function PdfToImagePage() {
       )}
 
       {file && !converting && (
-        <div className="mt-8 space-y-6">
-          <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-[#222] dark:bg-[#0c0c0c]">
-            <p className="mb-1 text-sm font-medium text-gray-700 dark:text-[#aaa]">{t("selectedFile")}</p>
-            <p className="truncate text-sm text-gray-500 dark:text-[#555]">{file.name}</p>
+        <div className={`${panelClass} space-y-6`}>
+          <div>
+            <p className={monoLabel}>{t("selectedFile")}</p>
+            <p className="mt-1.5 truncate text-sm text-ink">{file.name}</p>
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-medium text-gray-700 dark:text-[#aaa]">{t("format")}</p>
+            <p className={`mb-2 ${monoLabel}`}>{t("format")}</p>
             <div className="flex flex-wrap gap-2">
               {(["png", "jpeg"] as ImageFormat[]).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFormat(f)}
-                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                    format === f
-                      ? "bg-mantis-600 text-white"
-                      : "border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
-                  }`}
-                >
+                <button key={f} onClick={() => setFormat(f)} aria-pressed={format === f} className={chipClass(format === f)}>
                   {f.toUpperCase()}
                 </button>
               ))}
@@ -110,43 +100,26 @@ export default function PdfToImagePage() {
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-medium text-gray-700 dark:text-[#aaa]">{t("resolution")}</p>
+            <p className={`mb-2 ${monoLabel}`}>{t("resolution")}</p>
             <div className="flex flex-wrap gap-2">
               {scaleOptions.map(({ value, label }) => (
-                <button
-                  key={value}
-                  onClick={() => setScale(value)}
-                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                    scale === value
-                      ? "bg-mantis-600 text-white"
-                      : "border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
-                  }`}
-                >
+                <button key={value} onClick={() => setScale(value)} aria-pressed={scale === value} className={chipClass(scale === value)}>
                   {label}
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="flex gap-3">
-            <button
-              onClick={handleConvert}
-              className="flex-1 rounded-lg bg-mantis-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-mantis-700 focus:outline-none focus:ring-2 focus:ring-mantis-500 focus:ring-offset-2"
-            >
+          <div className="flex flex-wrap gap-3 border-t border-line pt-6">
+            <button onClick={handleConvert} className={`flex-1 ${primaryButton}`}>
               {t("convert")}
             </button>
             {downloaded && (
-              <Link
-                to="/"
-                className="rounded-lg border border-mantis-500 px-4 py-2.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
-              >
+              <Link to="/" className={secondaryButton}>
                 {tc("allTools")}
               </Link>
             )}
-            <button
-              onClick={handleReset}
-              className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
-            >
+            <button onClick={handleReset} className={secondaryButton}>
               {tc("reset")}
             </button>
           </div>
@@ -161,6 +134,6 @@ export default function PdfToImagePage() {
           onDismissError={() => { setError(null); }}
         />
       )}
-    </div>
+    </ToolShell>
   );
 }

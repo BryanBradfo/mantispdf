@@ -9,7 +9,8 @@ import SheetPreview from "../components/geometry/SheetPreview";
 import { mmToPt, type NupJobSpec, type Orientation } from "../lib/geometryJob";
 import { fitInCell, mmSizeLabel, nupCells, nupGrid, nupProblem, nupSheetSize } from "../lib/geometryLayout";
 import ToolShell from "./ToolShell";
-import { inputClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import { TriangleAlert } from "lucide-react";
+import { chipClass, fileMeta, inputClass, monoLabel, noticeClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useT } from "../i18n";
 
@@ -120,13 +121,14 @@ export default function NupPdfPage() {
 
   return (
     <ToolShell
+      tool="nUp"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/n-up"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">
@@ -136,10 +138,10 @@ export default function NupPdfPage() {
 
       {input && (
         <form className={panelClass} onSubmit={submit}>
-          <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
+          <p className={fileMeta}>{tc("fileWithPagesParen", { name: input.file.name, count: total })}</p>
 
           <fieldset className="mt-4">
-            <legend className="text-sm text-gray-700 dark:text-[#aaa]">{t("perSheet")}</legend>
+            <legend className="text-sm text-ink">{t("perSheet")}</legend>
             <div className="mt-1 flex flex-wrap gap-2">
               {PER_SHEET.map((n) => (
                 <button
@@ -147,11 +149,7 @@ export default function NupPdfPage() {
                   type="button"
                   aria-pressed={perSheet === n}
                   onClick={() => setPerSheet(n)}
-                  className={`flex w-14 flex-col items-center gap-1 rounded-lg border px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-mantis-500 ${
-                    perSheet === n
-                      ? "border-mantis-600 bg-mantis-100 text-mantis-800 dark:bg-[#1a2a1a] dark:text-mantis-300"
-                      : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]"
-                  }`}
+                  className={`${chipClass(perSheet === n)} !h-auto w-14 flex-col gap-1 !px-2 py-2 font-mono`}
                 >
                   <LayoutIcon n={n} />
                   {n}
@@ -163,38 +161,38 @@ export default function NupPdfPage() {
           <div className="mt-4 flex flex-wrap gap-6">
             <div className="min-w-[14rem] flex-1 space-y-4">
               <PaperSizeFields paper={paper} onPaper={setPaper} customMm={customMm} onCustomMm={setCustomMm} allowSame />
-              <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+              <label className="block text-sm text-ink">
                 {tg("orientation")}
                 <select value={orientation} onChange={(e) => setOrientation(e.target.value as Orientation)} className={inputClass}>
                   {ORIENTATIONS.map((o) => <option key={o} value={o}>{orientationLabel[o]}</option>)}
                 </select>
               </label>
-              <label className="block text-sm text-gray-700 dark:text-[#aaa]">
+              <label className="block text-sm text-ink">
                 {t("order")}
                 <select value={order} onChange={(e) => setOrder(e.target.value as NupJobSpec["order"])} className={inputClass}>
                   <option value="rows">{t("rows")}</option>
                   <option value="columns">{t("columns")}</option>
                 </select>
               </label>
-              <div className="flex gap-3">
-                <label className="block flex-1 text-sm text-gray-700 dark:text-[#aaa]">
+              <div className="flex flex-wrap gap-3">
+                <label className="block flex-1 text-sm text-ink">
                   {tg("margin")}
                   <input type="number" min={0} max={200} value={Number.isFinite(marginMm) ? marginMm : ""}
                     onChange={(e) => setMarginMm(e.target.value === "" ? NaN : Number(e.target.value))} className={inputClass} />
                 </label>
-                <label className="block flex-1 text-sm text-gray-700 dark:text-[#aaa]">
+                <label className="block flex-1 text-sm text-ink">
                   {t("gap")}
                   <input type="number" min={0} max={200} value={Number.isFinite(gapMm) ? gapMm : ""}
                     onChange={(e) => setGapMm(e.target.value === "" ? NaN : Number(e.target.value))} className={inputClass} />
                 </label>
               </div>
-              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+              <label className="flex items-center gap-2 text-sm text-ink">
                 <input type="checkbox" checked={border} onChange={(e) => setBorder(e.target.checked)} />
                 {t("border")}
               </label>
             </div>
             <div className="flex flex-col items-center gap-2">
-              <p className="text-sm text-gray-700 dark:text-[#aaa]">{t("previewFirst")}</p>
+              <p className={monoLabel}>{t("previewFirst")}</p>
               {preview && !problem ? (
                 <SheetPreview
                   sheet={preview.sheet}
@@ -206,26 +204,27 @@ export default function NupPdfPage() {
                   maxSide={280}
                 />
               ) : (
-                <p className="text-xs text-gray-500 dark:text-[#888]">{tg("fixSettings")}</p>
+                <p className="text-xs text-ink-2">{tg("fixSettings")}</p>
               )}
             </div>
           </div>
 
-          <p className="mt-4 text-xs text-gray-500 dark:text-[#888]">
+          <p className="mt-4 text-xs text-ink-2">
             {t("note")}
           </p>
 
-          <LiveSummary text={summary} className="mt-4 text-sm text-gray-600 dark:text-[#888]" />
+          <LiveSummary text={summary} className="mt-4 text-sm text-ink-2" />
 
           {made && blankPages.length > 0 && (
-            <div role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-[#2a2210] dark:text-amber-200">
-              {t("blankPages", { count: blankPages.length, list: blankPages.join(", ") })}
+            <div role="alert" className={`mt-4 flex gap-3 ${noticeClass}`}>
+              <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{t("blankPages", { count: blankPages.length, list: blankPages.join(", ") })}</span>
             </div>
           )}
 
           <ErrorAlert error={problem} className="mt-4" />
           <ErrorAlert error={error} onDismiss={() => setError(null)} className="mt-4" />
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-wrap gap-3">
             <button type="submit" disabled={busy || problem !== null} className={`flex-1 ${primaryButton}`}>
               {busy ? t("arranging") : t("submit")}
             </button>

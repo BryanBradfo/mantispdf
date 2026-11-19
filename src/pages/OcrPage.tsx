@@ -28,13 +28,12 @@ import {
 } from "../lib/ocr/run";
 import { exportText } from "../lib/ocr/text";
 import ToolShell from "./ToolShell";
-import { panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import { checkClass, chipClass, fileMeta, linkClass, monoLabel, noticeClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 import type { UiError } from "../i18n";
 
 /** The engine's page limit (`add_text_layer`). */
 const MAX_PAGES = 2000;
-const linkClass = "font-medium text-mantis-700 underline dark:text-mantis-400";
 
 interface Progress {
   done: number;
@@ -256,7 +255,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
 
   return (
     <div className={panelClass}>
-      <p className="text-sm font-medium text-gray-800 dark:text-[#ccc]">
+      <p className={fileMeta}>
         {tc("fileWithPagesParen", { name: input.file.name, count: sizes.length })}
       </p>
 
@@ -274,7 +273,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
       )}
 
       <fieldset className="mt-6" disabled={running}>
-        <legend className="text-sm font-semibold text-gray-900 dark:text-[#ddd]">{t("languages")}</legend>
+        <legend className={monoLabel}>{t("languages")}</legend>
         <div className="mt-2 flex flex-wrap gap-2">
           {OCR_LANGUAGES.map((l) => {
             const on = languages.includes(l.code);
@@ -284,24 +283,20 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
                 type="button"
                 aria-pressed={on}
                 onClick={() => setLanguages((s) => toggleLanguage(s, l.code))}
-                className={`rounded-full border px-3 py-1 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 disabled:opacity-50 ${
-                  on
-                    ? "border-mantis-600 bg-mantis-600 text-white"
-                    : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#bbb] dark:hover:bg-[#1a1a1a]"
-                }`}
+                className={`${chipClass(on)} !h-8 !px-3`}
               >
                 {languageLabel(l.code, locale)}
               </button>
             );
           })}
         </div>
-        <p className="mt-1 text-xs text-gray-500 dark:text-[#777]">{t("languageNote")}</p>
-        <label className="mt-4 flex items-center gap-2 text-sm text-gray-700 dark:text-[#aaa]">
+        <p className="mt-2 text-xs text-ink-2">{t("languageNote")}</p>
+        <label className="mt-4 flex items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
             checked={skipText}
             onChange={(e) => setSkipText(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-mantis-600 focus:ring-mantis-500"
+            className={checkClass}
           />
           {t("skipText")}
         </label>
@@ -313,7 +308,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
           <p className="sr-only" role="status" aria-live="polite">
             {t("pagesDone", { done: progress.done, total: progress.total })}
           </p>
-          <div className="flex items-center justify-between text-sm text-gray-700 dark:text-[#aaa]" aria-hidden="true">
+          <div className={`flex items-center justify-between ${monoLabel}`} aria-hidden="true">
             <span>
               {t("status", { status: progress.status, done: progress.done, total: progress.total })}
             </span>
@@ -325,15 +320,15 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
             aria-valuemin={0}
             aria-valuemax={progress.total}
             aria-valuenow={progress.done}
-            className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-[#222]"
+            className="mt-2 h-0.5 overflow-hidden bg-line"
           >
-            <div className="h-full bg-mantis-600 transition-[width] motion-reduce:transition-none" style={{ width: `${percent}%` }} />
+            <div className="h-full bg-ink transition-[width] motion-reduce:transition-none" style={{ width: `${percent}%` }} />
           </div>
         </div>
       )}
 
       {summary && result && (
-        <div role="status" className="mt-6 rounded-lg border border-mantis-300 bg-mantis-50 p-3 text-sm text-mantis-900 dark:border-mantis-800 dark:bg-[#0f1a0f] dark:text-mantis-200">
+        <div role="status" className={`mt-6 ${noticeClass}`}>
           <p className="font-medium">{summaryHeadline(summary, t)}</p>
           <ul className="mt-1 list-disc pl-5">
             {summary.averageConfidence !== null && (
@@ -401,7 +396,7 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
         </button>
       </div>
 
-      <p className="mt-4 text-xs text-gray-500 dark:text-[#777]">
+      <p className="mt-4 text-xs text-ink-2">
         {/* A new tab: leaving this page would lose the recognised text and any run in progress. */}
         <Trans
           ns="ocr"
@@ -428,13 +423,14 @@ export default function OcrPage() {
 
   return (
     <ToolShell
+      tool="ocr"
       title={t("seoTitle")}
       description={t("seoDescription")}
       path="/ocr"
       heading={t("heading")}
       intro={t("intro")}
     >
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       {!input && (
         <div className="mt-8">

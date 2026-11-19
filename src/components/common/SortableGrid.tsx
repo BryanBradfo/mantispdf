@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { useT } from "../../i18n";
+import { focusRing } from "../../styles/ui";
 
 const EASE = "cubic-bezier(0.2, 0, 0, 1)";
 
@@ -86,14 +87,14 @@ function SortableCell({ id, label, reduced, children }: { id: string; label: str
       {...attributes}
       {...listeners}
       aria-label={label}
-      className={`relative touch-manipulation rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-mantis-500 focus-visible:ring-offset-2 ${
+      className={`relative touch-manipulation outline-none ${focusRing} ${
         isDragging ? "cursor-grabbing" : "cursor-grab"
       }`}
     >
       {/* The source slot stays in the layout as a dashed drop target while the overlay flies. */}
       <div className={isDragging ? "invisible" : undefined}>{children}</div>
       {isDragging && (
-        <div className="absolute inset-0 rounded-lg border-2 border-dashed border-mantis-300 bg-mantis-50/40 dark:border-mantis-700 dark:bg-mantis-950/20" />
+        <div className="absolute inset-0 border border-dashed border-line-strong bg-surface" />
       )}
     </div>
   );
@@ -174,7 +175,7 @@ export default function SortableGrid<T extends { id: string }>({
       <DragOverlay dropAnimation={reduced ? null : { duration: 200, easing: EASE }}>
         {activeIndex !== -1 ? (
           <div
-            className="cursor-grabbing rounded-lg shadow-2xl"
+            className="cursor-grabbing outline outline-1 outline-ink"
             style={reduced ? undefined : { transform: "scale(1.04) rotate(-1.5deg)" }}
           >
             {renderItem(items[activeIndex], activeIndex)}

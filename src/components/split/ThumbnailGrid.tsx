@@ -1,6 +1,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import PageThumbnail from "./PageThumbnail";
+import { Scissors } from "lucide-react";
 import { useT } from "../../i18n";
+import { focusRing } from "../../styles/ui";
 
 interface ThumbnailGridProps {
   source: Blob;
@@ -22,30 +24,25 @@ function VerticalDivider({
   return (
     <button
       onClick={() => onToggle(pageNumber)}
-      className={`group flex w-6 shrink-0 cursor-pointer flex-col items-center justify-center self-stretch transition ${
-        isActive ? "text-mantis-600" : "text-gray-300 hover:text-gray-500 dark:text-[#333] dark:hover:text-[#666]"
+      aria-pressed={isActive}
+      className={`group flex w-6 shrink-0 cursor-pointer flex-col items-center justify-center self-stretch ${focusRing} ${
+        isActive ? "text-ink" : "text-ink-3 hover:text-ink-2"
       }`}
       title={isActive ? t("removePoint") : t("splitAfter")}
     >
       <div
-        className={`w-px flex-1 transition ${
+        className={`w-px flex-1 ${
           isActive
-            ? "border-l-2 border-dashed border-mantis-400"
-            : "border-l border-dashed border-gray-200 group-hover:border-gray-400 dark:border-[#222] dark:group-hover:border-[#444]"
+            ? "border-l-2 border-ink"
+            : "border-l border-dashed border-line-strong group-hover:border-ink-2"
         }`}
       />
-      <svg
-        className="h-5 w-5 shrink-0 rotate-90"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-      >
-        <path d="M9.64 7.64c.23-.5.36-1.05.36-1.64a4 4 0 1 0-8 0 4 4 0 0 0 4 4c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36A4.2 4.2 0 0 0 6 14a4 4 0 1 0 4 4c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64M6 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4m0 12a2 2 0 1 1 0-4 2 2 0 0 1 0 4M19 3l-3 3 1.5 1.5L22 3h-3Z" />
-      </svg>
+      <Scissors aria-hidden="true" strokeWidth={1.5} className="h-5 w-5 shrink-0 -rotate-90" />
       <div
-        className={`w-px flex-1 transition ${
+        className={`w-px flex-1 ${
           isActive
-            ? "border-l-2 border-dashed border-mantis-400"
-            : "border-l border-dashed border-gray-200 group-hover:border-gray-400 dark:border-[#222] dark:group-hover:border-[#444]"
+            ? "border-l-2 border-ink"
+            : "border-l border-dashed border-line-strong group-hover:border-ink-2"
         }`}
       />
     </button>
@@ -70,16 +67,13 @@ function RowEndCut({
   return (
     <button
       onClick={onCut}
-      className={`ml-2 flex shrink-0 cursor-pointer items-center self-stretch px-1 transition ${
-        allActive
-          ? "text-mantis-600"
-          : "text-gray-300 hover:text-gray-500 dark:text-[#333] dark:hover:text-[#666]"
+      aria-pressed={allActive}
+      className={`ml-2 flex shrink-0 cursor-pointer items-center self-stretch px-1 ${focusRing} ${
+        allActive ? "text-ink" : "text-ink-3 hover:text-ink-2"
       }`}
       title={allActive ? t("removeRow") : t("splitRow")}
     >
-      <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M9.64 7.64c.23-.5.36-1.05.36-1.64a4 4 0 1 0-8 0 4 4 0 0 0 4 4c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36A4.2 4.2 0 0 0 6 14a4 4 0 1 0 4 4c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64M6 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4m0 12a2 2 0 1 1 0-4 2 2 0 0 1 0 4M19 3l-3 3 1.5 1.5L22 3h-3Z" />
-      </svg>
+      <Scissors aria-hidden="true" strokeWidth={1.5} className="h-5 w-5 shrink-0" />
     </button>
   );
 }

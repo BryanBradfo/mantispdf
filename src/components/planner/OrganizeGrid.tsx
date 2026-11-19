@@ -2,7 +2,9 @@ import type { Dispatch } from "react";
 import type { PlannerAction, PlannerItem, PlannerState } from "../../hooks/usePagePlanner";
 import SortableGrid from "../common/SortableGrid";
 import PlannerCard from "./PlannerCard";
+import { Copy, Plus, RotateCcw, RotateCw, X } from "lucide-react";
 import { useT, type NsT } from "../../i18n";
+import { cellButton } from "../../styles/ui";
 
 export function captionFor(item: PlannerItem, state: PlannerState, t: NsT<"pages">): string {
   if (item.kind === "blank") return t("blankPage");
@@ -12,8 +14,8 @@ export function captionFor(item: PlannerItem, state: PlannerState, t: NsT<"pages
     : t("captionPage", { page: item.page });
 }
 
-const btn =
-  "flex flex-1 items-center justify-center py-1.5 text-sm text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-700 cursor-pointer dark:hover:bg-[#1a1a1a] dark:hover:text-[#ccc]";
+const btn = `${cellButton} h-8 cursor-pointer`;
+const icon = { "aria-hidden": true, strokeWidth: 1.5, className: "h-4 w-4" } as const;
 
 export default function OrganizeGrid({ state, dispatch }: { state: PlannerState; dispatch: Dispatch<PlannerAction> }) {
   const t = useT("pages");
@@ -28,16 +30,16 @@ export default function OrganizeGrid({ state, dispatch }: { state: PlannerState;
         const source = item.kind === "page" ? state.sources.find((s) => s.id === item.srcId) : undefined;
         return (
           <PlannerCard item={item} source={source} label={caption}>
-            <div className="flex border-t border-gray-100 dark:border-[#222]">
+            <div className="flex divide-x divide-line border-t border-line">
               {item.kind === "page" && (
                 <>
-                  <button data-no-dnd className={btn} title={t("rotateLeft")} aria-label={t("rotateLeftItem", { caption })} onClick={() => dispatch({ type: "rotate-item", id: item.id, delta: -90 })}>↺</button>
-                  <button data-no-dnd className={btn} title={t("rotateRight")} aria-label={t("rotateRightItem", { caption })} onClick={() => dispatch({ type: "rotate-item", id: item.id, delta: 90 })}>↻</button>
-                  <button data-no-dnd className={btn} title={t("duplicate")} aria-label={t("duplicateItem", { caption })} onClick={() => dispatch({ type: "duplicate-item", id: item.id })}>⧉</button>
+                  <button data-no-dnd className={btn} title={t("rotateLeft")} aria-label={t("rotateLeftItem", { caption })} onClick={() => dispatch({ type: "rotate-item", id: item.id, delta: -90 })}><RotateCcw {...icon} /></button>
+                  <button data-no-dnd className={btn} title={t("rotateRight")} aria-label={t("rotateRightItem", { caption })} onClick={() => dispatch({ type: "rotate-item", id: item.id, delta: 90 })}><RotateCw {...icon} /></button>
+                  <button data-no-dnd className={btn} title={t("duplicate")} aria-label={t("duplicateItem", { caption })} onClick={() => dispatch({ type: "duplicate-item", id: item.id })}><Copy {...icon} /></button>
                 </>
               )}
-              <button data-no-dnd className={btn} title={t("insertBlank")} aria-label={t("insertBlankItem", { caption })} onClick={() => dispatch({ type: "insert-blank", index: index + 1 })}>＋</button>
-              <button data-no-dnd className={`${btn} hover:!text-red-500`} title={t("delete")} aria-label={t("deleteItem", { caption })} onClick={() => dispatch({ type: "remove-item", id: item.id })}>✕</button>
+              <button data-no-dnd className={btn} title={t("insertBlank")} aria-label={t("insertBlankItem", { caption })} onClick={() => dispatch({ type: "insert-blank", index: index + 1 })}><Plus {...icon} /></button>
+              <button data-no-dnd className={`${btn} hover:!bg-danger hover:!text-paper`} title={t("delete")} aria-label={t("deleteItem", { caption })} onClick={() => dispatch({ type: "remove-item", id: item.id })}><X {...icon} /></button>
             </div>
           </PlannerCard>
         );
