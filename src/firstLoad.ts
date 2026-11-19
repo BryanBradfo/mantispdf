@@ -14,6 +14,7 @@ export const PAGE_LOADERS: Record<string, () => Promise<PageModule>> = {
   "/fill-form": () => import("./pages/FillFormPage"),
   "/redact": () => import("./pages/RedactPage"),
   "/ocr": () => import("./pages/OcrPage"),
+  "/compare": () => import("./pages/ComparePage"),
   "/organize": () => import("./pages/OrganizePdfPage"),
   "/remove-pages": () => import("./pages/RemovePagesPage"),
   "/extract-pages": () => import("./pages/ExtractPagesPage"),

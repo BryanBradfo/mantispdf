@@ -51,13 +51,13 @@ const menu = () => host.querySelector('nav[aria-label="All tools"]');
 const where = () => host.querySelector('[data-testid="where"]')?.textContent;
 
 describe("Header TOOLS menu", () => {
-  it("opens a menu with the five sections and the 27 tools", async () => {
+  it("opens a menu with the five sections and the 28 tools", async () => {
     await renderAt("/merge");
     expect(menu()).toBeNull();
     await act(async () => toolsButton().click());
     expect(toolsButton().getAttribute("aria-expanded")).toBe("true");
     expect(menu()?.querySelectorAll("h2")).toHaveLength(5);
-    expect(menu()?.querySelectorAll("a")).toHaveLength(27);
+    expect(menu()?.querySelectorAll("a")).toHaveLength(28);
   });
 
   it("moves focus to the first tool when opened", async () => {

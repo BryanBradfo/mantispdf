@@ -5,14 +5,14 @@ import { APP_ROUTES, isRedirect } from "../routes";
 import { SECTIONS, TOOLS, sectionNumber, toolById } from "./tools";
 
 describe("the tool table", () => {
-  it("lists 27 tools with unique ids and hrefs", () => {
-    expect(TOOLS).toHaveLength(27);
-    expect(new Set(TOOLS.map((t) => t.id)).size).toBe(27);
-    expect(new Set(TOOLS.map((t) => t.href)).size).toBe(27);
+  it("lists 28 tools with unique ids and hrefs", () => {
+    expect(TOOLS).toHaveLength(28);
+    expect(new Set(TOOLS.map((t) => t.id)).size).toBe(28);
+    expect(new Set(TOOLS.map((t) => t.href)).size).toBe(28);
   });
 
   it("has five sections, each non-empty, and every tool in one of them", () => {
-    expect(SECTIONS).toEqual(["organize", "convert", "edit", "security", "recognize"]);
+    expect(SECTIONS).toEqual(["organize", "convert", "edit", "security", "analyze"]);
     for (const s of SECTIONS) expect(TOOLS.filter((t) => t.section === s).length, s).toBeGreaterThan(0);
     expect(TOOLS.every((t) => SECTIONS.includes(t.section))).toBe(true);
   });
@@ -23,7 +23,7 @@ describe("the tool table", () => {
     expect(TOOLS.filter((t) => t.section === "organize").map((t) => t.id)).toEqual([
       "merge", "split", "organize", "rotate", "removePages", "extractPages", "crop", "resize", "nUp",
     ]);
-    expect(TOOLS.filter((t) => t.section === "recognize").map((t) => t.id)).toEqual(["ocr"]);
+    expect(TOOLS.filter((t) => t.section === "analyze").map((t) => t.id)).toEqual(["ocr", "compare"]);
   });
 
   it("gives every tool a distinct 16x16 pixel glyph of # and . only, none empty", () => {
@@ -32,7 +32,7 @@ describe("the tool table", () => {
       for (const row of t.pixel) expect(row, t.id).toMatch(/^[#.]{16}$/);
       expect(t.pixel.join("").includes("#"), t.id).toBe(true);
     }
-    expect(new Set(TOOLS.map((t) => t.pixel.join(""))).size).toBe(27);
+    expect(new Set(TOOLS.map((t) => t.pixel.join(""))).size).toBe(28);
   });
 
   it("covers every page route of the app once (home, 404 and redirects aside)", () => {
@@ -42,9 +42,9 @@ describe("the tool table", () => {
 
   it("finds a tool by id and numbers sections from 01", () => {
     expect(toolById("merge").href).toBe("/merge");
-    expect(toolById("ocr").section).toBe("recognize");
+    expect(toolById("ocr").section).toBe("analyze");
     expect(sectionNumber("organize")).toBe("01");
-    expect(sectionNumber("recognize")).toBe("05");
+    expect(sectionNumber("analyze")).toBe("05");
   });
 });
 

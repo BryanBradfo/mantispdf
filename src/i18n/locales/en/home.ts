@@ -16,7 +16,7 @@ export default {
   "sections.convert": "Optimize and convert",
   "sections.edit": "Edit and sign",
   "sections.security": "Security and privacy",
-  "sections.recognize": "Recognize",
+  "sections.analyze": "Analyze",
 
   "split.title": "Split PDF",
   "split.desc": "Divide a PDF into multiple files at chosen page boundaries.",
@@ -68,6 +68,8 @@ export default {
   "redact.desc": "Permanently remove sensitive text and images.",
   "ocr.title": "OCR PDF",
   "ocr.desc": "Make scanned PDFs searchable and copyable.",
+  "compare.title": "Compare PDF",
+  "compare.desc": "See what changed between two PDFs, word by word.",
   "imagesToPdf.title": "Images to PDF",
   "imagesToPdf.desc": "Turn JPG, PNG or WebP images into a PDF, one per page.",
   "extractImages.title": "Extract Images",

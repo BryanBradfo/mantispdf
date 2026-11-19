@@ -22,6 +22,7 @@ import editPdf from "./editPdf";
 import fillForm from "./fillForm";
 import redact from "./redact";
 import ocr from "./ocr";
+import compare from "./compare";
 import stamp from "./stamp";
 import watermark from "./watermark";
 import pageNumbers from "./pageNumbers";
@@ -71,6 +72,7 @@ const fr: Dictionary<EnDictionary> = {
   fillForm,
   redact,
   ocr,
+  compare,
 };
 
 export default fr;

@@ -34,3 +34,15 @@ export const REDACT_PREVIEW = {
   black: { tint: "rgba(0,0,0,0.18)", hatch: "#000000", edge: "#000000" },
   white: { tint: "rgba(255,255,255,0.55)", hatch: "#8a8a8a", edge: "#525252" },
 } as const;
+/**
+ * Compare highlights over the page renders. Removed words (on the original): the fixed danger red
+ * at about 25 % with a strike line through the middle of the line. Added words (on the modified
+ * copy): a 2 px black outline over a light grey fill, readable without colour. The change picked in
+ * the list also gets a white then black ring outside its marks.
+ */
+export const COMPARE_REMOVED = { backgroundColor: "rgba(198,40,40,0.25)" } as const;
+export const COMPARE_STRIKE = { backgroundColor: PAGE_MARK_DANGER } as const;
+export const COMPARE_ADDED = { outline: `2px solid ${PAGE_MARK_DARK}`, outlineOffset: "1px", backgroundColor: "rgba(0,0,0,0.07)" } as const;
+export const COMPARE_ACTIVE = { boxShadow: `0 0 0 1px ${PAGE_MARK_LIGHT}, 0 0 0 2.5px ${PAGE_MARK_DARK}` } as const;
+/** The white page behind the legend swatches (the marks are drawn for a white page). */
+export const COMPARE_SWATCH_PAGE = { backgroundColor: PAGE_MARK_LIGHT } as const;
