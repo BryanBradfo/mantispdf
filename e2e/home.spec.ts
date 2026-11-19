@@ -62,14 +62,14 @@ test("the TOOLS menu lists every tool, closes on Escape and returns focus", asyn
   await expect(menu).toHaveCount(0);
 });
 
-test("only api.github.com is contacted besides this site on the home page", async ({ page, baseURL }) => {
+test("no other origin is contacted on the home page", async ({ page, baseURL }) => {
   const origins = new Set<string>();
   page.on("request", (r) => origins.add(new URL(r.url()).origin));
   await page.goto("/");
   await expect(page.locator("#tools").getByRole("link")).toHaveCount(27);
   await page.waitForLoadState("networkidle");
   const self = new URL(baseURL!).origin;
-  expect([...origins].filter((o) => o !== self && o !== "https://api.github.com" && o !== "null")).toEqual([]);
+  expect([...origins].filter((o) => o !== self && o !== "null")).toEqual([]);
 });
 
 test.describe("on a 390 px phone", () => {

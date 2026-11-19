@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { ChevronDown, Menu, Moon, Sun, X } from "lucide-react";
-import { Link, stripLocale, useT } from "../../i18n";
+import { Link, useT } from "../../i18n";
 import { MantisHead } from "../brand/MantisHead";
 import { GithubMark } from "../brand/GithubMark";
 import LanguageSwitcher from "./LanguageSwitcher";
@@ -14,38 +14,15 @@ const GITHUB_URL = "https://github.com/BryanBradfo/mantispdf";
 /** Small uppercase, widely tracked header text (Oswald). */
 const navText = "font-display text-[13px] font-normal uppercase tracking-[0.14em]";
 
-function formatStars(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k+`;
-  return String(n);
-}
-
 export default function Header() {
   const t = useT("common");
   const [dark, setDark] = useTheme();
-  const [stars, setStars] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
-  const onHome = stripLocale(pathname) === "/";
   const menuId = useId();
   const headerRef = useRef<HTMLElement>(null);
   /** The button that opened the menu (TOOLS on desktop, MENU on phones): focus goes back to it on Escape. */
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-
-  // The star count is a third-party request (api.github.com): only the home page makes it, so a
-  // tool page, where documents are open, never contacts another host.
-  useEffect(() => {
-    if (!onHome || stars !== null) return;
-    fetch("https://api.github.com/repos/BryanBradfo/mantispdf")
-      .then((r) => r.json())
-      .then((data) => {
-        // On rate-limit (HTTP 403) the body has no stargazers_count; guard it so
-        // we never render the literal string "undefined".
-        if (typeof data?.stargazers_count === "number") {
-          setStars(formatStars(data.stargazers_count));
-        }
-      })
-      .catch(() => {});
-  }, [onHome, stars]);
 
   // A followed link closes the menu.
   useEffect(() => setMenuOpen(false), [pathname]);
@@ -86,7 +63,6 @@ export default function Header() {
     >
       <GithubMark className="h-3.5 w-3.5" />
       {t("headerGithub")}
-      {stars !== null && <span className="font-mono text-[11px] tracking-[0.08em] text-ink">★ {stars}</span>}
     </a>
   );
 

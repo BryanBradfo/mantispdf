@@ -14,7 +14,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ stargazers_count: 1234 }) })));
+  vi.stubGlobal("fetch", vi.fn());
 });
 
 afterEach(() => {
@@ -97,14 +97,10 @@ describe("Header TOOLS menu", () => {
     expect(menu()).toBeNull();
   });
 
-  it("asks GitHub for the star count on the home page only", async () => {
-    await renderAt("/merge");
-    expect(fetch).not.toHaveBeenCalled();
-    act(() => root.unmount());
-    host.remove();
+  it("makes no network request, not even for a GitHub star count", async () => {
     await renderAt("/");
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(host.textContent).toContain("1.2k+");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(host.textContent).not.toContain("★");
   });
 });
 
