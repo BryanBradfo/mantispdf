@@ -180,6 +180,21 @@ for (const locale of ["en", "fr"]) {
   write(`public/og-${locale}.png`, png(svg, 1200, fonts));
 }
 
+// 3b. README hero: the full mark and the wordmark, white on black, no tagline.
+{
+  const h = 460;
+  const w = Math.round((markBox.w / markBox.h) * h);
+  const gap = 56;
+  const wordW = 410; // Oswald 500 at 112 px: "MantisPDF" is about 410 px wide
+  const x0 = Math.round((1200 - (w + gap + wordW)) / 2);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
+<rect width="1200" height="600" fill="#000"/>
+<svg x="${x0}" y="70" width="${w}" height="${h}" viewBox="${markBox.x} ${markBox.y} ${markBox.w} ${markBox.h}" fill="#fff"><path d="${markD}" fill-rule="evenodd"/></svg>
+<text x="${x0 + w + gap}" y="338" font-family="Oswald" font-weight="500" font-size="112" fill="${INK}" letter-spacing="-2">MantisPDF</text>
+</svg>`;
+  write("docs/brand/readme-hero.png", png(svg, 1200, fonts));
+}
+
 // 4. Tauri icons from a 1024 px head (white on black).
 const iconSource = join(mkdtempSync(join(tmpdir(), "mantis-icon-")), "head-1024.png");
 writeFileSync(iconSource, png(headSquare, 1024));

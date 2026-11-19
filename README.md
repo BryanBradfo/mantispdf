@@ -1,16 +1,13 @@
 # 🦗 MantisPDF
 
 <p align="center">
-    <picture>
-        <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/5b2ae020-557c-41e9-88ee-26b04e85c175">
-        <img src="https://github.com/user-attachments/assets/5b2ae020-557c-41e9-88ee-26b04e85c175" alt="MantisPDF" width="350">
-    </picture>
+    <img src="docs/brand/readme-hero.png" alt="MantisPDF" width="600">
 </p>
 
 <p align="center">
   <a href="https://github.com/BryanBradfo/mantispdf/actions/workflows/ci.yml"><img src="https://github.com/BryanBradfo/mantispdf/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="https://mantispdf.bradfo.me/"><img src="https://img.shields.io/github/deployments/BryanBradfo/mantispdf/Production?label=deploy&logo=vercel" alt="Deployment"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black.svg" alt="MIT License"></a>
 </p>
 
 <p align="center"><b><a href="https://mantispdf.bradfo.me/">mantispdf.bradfo.me</a></b></p>
