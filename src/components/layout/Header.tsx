@@ -75,7 +75,7 @@ export default function Header() {
         const next = e.relatedTarget;
         if (menuOpen && next instanceof Node && !e.currentTarget.contains(next)) setMenuOpen(false);
       }}
-      className="relative z-40 border-b border-line bg-paper"
+      className="relative z-40 bg-paper"
     >
       <div className="mx-auto grid h-16 max-w-[1440px] grid-cols-[1fr_auto] items-center gap-4 px-4 sm:grid-cols-[1fr_auto_1fr] sm:px-8 lg:px-12">
         <div className="hidden sm:block">

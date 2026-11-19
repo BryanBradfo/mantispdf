@@ -3,7 +3,7 @@ import type en from "../en/home";
 
 const home: Messages<typeof en> = {
   heroEyebrow: "Open source · 100\u00a0% dans votre navigateur",
-  heroFigure: "Fig. 01 · Mantis religiosa",
+  heroFigure: "Mantis religiosa",
   heading: "Outils PDF",
   tagline: "100\u00a0% privé, 100\u00a0% rapide",
   intro:

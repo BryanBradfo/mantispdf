@@ -2,7 +2,7 @@ import type { Namespace } from "../../types";
 
 export default {
   heroEyebrow: "Open source · 100% in your browser",
-  heroFigure: "Fig. 01 · Mantis religiosa",
+  heroFigure: "Mantis religiosa",
   heading: "PDF Tools",
   tagline: "100% Private, 100% Fast",
   intro:
