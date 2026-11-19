@@ -46,7 +46,7 @@ function Group({ eyebrow, heading, id, children }: { eyebrow: string; heading: s
       {/* Two lines tall, text at the bottom: one-word and two-line headings share a baseline and the lists start level. */}
       <h2
         id={id}
-        className="mt-3 flex min-h-[2.1em] items-end text-balance font-display text-[26px] font-light leading-[1.05] tracking-[-0.005em] text-ink xl:text-[26px]"
+        className="mt-3 flex min-h-[2.1em] items-end text-balance font-display text-[26px] font-light leading-[1.05] tracking-[-0.005em] text-ink"
       >
         {heading}
       </h2>
