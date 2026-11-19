@@ -17,7 +17,7 @@ test.describe("French pages on a 375 px phone", () => {
   test.use({ viewport: { width: 375, height: 800 } });
 
   test("no page scrolls sideways", async ({ page }) => {
-    expect(FR_ROUTES.length).toBe(28);
+    expect(FR_ROUTES.length).toBe(29);
     const wide: string[] = [];
     for (const path of FR_ROUTES) {
       await page.goto(path);
