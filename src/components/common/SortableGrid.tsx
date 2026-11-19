@@ -17,6 +17,8 @@ import { useT } from "../../i18n";
 import { focusRing } from "../../styles/ui";
 
 const EASE = "cubic-bezier(0.2, 0, 0, 1)";
+/** Spec 3.5: transitions are 150 ms. */
+const DURATION = 150;
 
 /** True when the event started on a control that must keep its click/keys. */
 const fromControl = (target: EventTarget | null) =>
@@ -74,7 +76,7 @@ function SortableCell({ id, label, reduced, children }: { id: string; label: str
     attributes: { role: "group" },
     // Animate every index change, so arrow-button moves and removals glide too.
     animateLayoutChanges: (args) => !reduced && !(args.wasDragging && args.index === args.newIndex),
-    transition: reduced ? null : { duration: 200, easing: EASE },
+    transition: reduced ? null : { duration: DURATION, easing: EASE },
   });
   const style: CSSProperties = {
     transform: transform ? `translate3d(${Math.round(transform.x)}px, ${Math.round(transform.y)}px, 0)` : undefined,
@@ -172,11 +174,11 @@ export default function SortableGrid<T extends { id: string }>({
           ))}
         </div>
       </SortableContext>
-      <DragOverlay dropAnimation={reduced ? null : { duration: 200, easing: EASE }}>
+      <DragOverlay dropAnimation={reduced ? null : { duration: DURATION, easing: EASE }}>
         {activeIndex !== -1 ? (
           <div
             className="cursor-grabbing outline outline-1 outline-ink"
-            style={reduced ? undefined : { transform: "scale(1.04) rotate(-1.5deg)" }}
+            style={reduced ? undefined : { transform: "scale(1.02)" }}
           >
             {renderItem(items[activeIndex], activeIndex)}
           </div>

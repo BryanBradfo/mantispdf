@@ -30,7 +30,7 @@ export default function PlannerCard({ item, source, label, tone = "normal", chil
         {item.kind === "page" && source ? (
           <div
             className={`absolute inset-0 flex items-center justify-center ${tone === "removed" ? "opacity-30" : ""}`}
-            style={{ transform: thumbnailTransform(item.rotate), transition: "transform 0.3s ease" }}
+            style={{ transform: thumbnailTransform(item.rotate), transition: "transform 150ms ease" }}
           >
             <PageImage source={source.bytes} page={item.page} width={160} alt={label} />
           </div>

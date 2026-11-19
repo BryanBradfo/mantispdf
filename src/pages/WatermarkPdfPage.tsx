@@ -3,7 +3,8 @@ import { Link, useDescribeError, useT, type UiError } from "../i18n";
 import { Document, Page } from "../lib/pdf";
 import ToolShell from "./ToolShell";
 import LoadingRow from "../components/common/LoadingRow";
-import { chipClass, fileMeta, focusRing, inputClass, monoLabel, panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import ToggleChip from "../components/common/ToggleChip";
+import { fileMeta, focusRing, inputClass, monoLabel, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { usePdfWorker } from "../hooks/usePdfWorker";
 import { isPdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
@@ -135,14 +136,9 @@ export default function WatermarkPdfPage() {
             <p className="text-sm font-medium text-ink">{t("color")}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {COLOR_PRESETS.map((preset, idx) => (
-                <button
-                  key={preset.id}
-                  onClick={() => setColorIdx(idx)}
-                  aria-pressed={colorIdx === idx}
-                  className={chipClass(colorIdx === idx)}
-                >
+                <ToggleChip key={preset.id} on={colorIdx === idx} onClick={() => setColorIdx(idx)}>
                   {t(preset.id)}
-                </button>
+                </ToggleChip>
               ))}
             </div>
           </div>

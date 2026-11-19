@@ -4,17 +4,17 @@ import { usePdfWorker } from "../hooks/usePdfWorker";
 import { downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ErrorAlert from "../components/common/ErrorAlert";
-import PageImage from "../components/common/PageImage";
 import RangeInput from "../components/planner/RangeInput";
 import LiveSummary from "../components/stamp/LiveSummary";
 import CropCanvas from "../components/geometry/CropCanvas";
+import CropPageStrip from "../components/geometry/CropPageStrip";
 import { detectContentRects } from "../lib/autoMargins";
 import { buildCropJob, cropTargetPages, defaultCropRect, fitCropToPage, missedPagesProblem, pagesMissedBy, type CropScope } from "../lib/cropBox";
 import type { Rect } from "../lib/geometryJob";
 import { describePages } from "../lib/stampBuilders";
 import ToolShell from "./ToolShell";
-import { Check, Info } from "lucide-react";
-import { checkClass, fileMeta, focusRing, linkClass, monoLabel, noticeClass, panelClass, primaryButton, secondaryButton, selectedOutline } from "../styles/ui";
+import { Info } from "lucide-react";
+import { checkClass, fileMeta, linkClass, monoLabel, noticeClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 
 /** The engine accepts at most this many per-page boxes in one job. */
@@ -193,32 +193,7 @@ export default function CropPdfPage() {
           </p>
 
           {total > 1 && (
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-2" role="group" aria-label={tc("pagesGroup")}>
-              {sizes.map((_, i) => {
-                const n = i + 1;
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    aria-label={tc("pageN", { n })}
-                    aria-pressed={page === n}
-                    disabled={detecting}
-                    onClick={() => setPage(n)}
-                    className={`relative w-20 shrink-0 border bg-paper disabled:cursor-not-allowed disabled:opacity-60 ${focusRing} ${
-                      page === n ? `border-ink ${selectedOutline} -outline-offset-2` : "border-line hover:border-line-strong"
-                    }`}
-                  >
-                    <PageImage source={input.file} page={n} width={80} alt="" />
-                    {page === n && (
-                      <span aria-hidden="true" className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center bg-ink text-paper">
-                        <Check strokeWidth={2} className="h-3.5 w-3.5" />
-                      </span>
-                    )}
-                    <span className="block border-t border-line py-0.5 font-mono text-[11px] text-ink-2">{n}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <CropPageStrip source={input.file} count={total} page={page} disabled={detecting} onPage={setPage} />
           )}
 
           <div className="mt-4">

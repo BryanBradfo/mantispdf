@@ -2,7 +2,8 @@ import { useCallback, useState } from "react";
 import { Link, useT } from "../i18n";
 import { downloadBlobsAsZip } from "../lib/downloadZip";
 import ToolShell from "./ToolShell";
-import { chipClass, monoLabel, panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import ToggleChip from "../components/common/ToggleChip";
+import { monoLabel, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { isPdfFile, downloadBlob } from "../lib/fileHelpers";
 import DropZone from "../components/common/DropZone";
 import ProgressOverlay from "../components/common/ProgressOverlay";
@@ -92,9 +93,9 @@ export default function PdfToImagePage() {
             <p className={`mb-2 ${monoLabel}`}>{t("format")}</p>
             <div className="flex flex-wrap gap-2">
               {(["png", "jpeg"] as ImageFormat[]).map((f) => (
-                <button key={f} onClick={() => setFormat(f)} aria-pressed={format === f} className={chipClass(format === f)}>
+                <ToggleChip key={f} on={format === f} onClick={() => setFormat(f)}>
                   {f.toUpperCase()}
-                </button>
+                </ToggleChip>
               ))}
             </div>
           </div>
@@ -103,9 +104,9 @@ export default function PdfToImagePage() {
             <p className={`mb-2 ${monoLabel}`}>{t("resolution")}</p>
             <div className="flex flex-wrap gap-2">
               {scaleOptions.map(({ value, label }) => (
-                <button key={value} onClick={() => setScale(value)} aria-pressed={scale === value} className={chipClass(scale === value)}>
+                <ToggleChip key={value} on={scale === value} onClick={() => setScale(value)}>
                   {label}
-                </button>
+                </ToggleChip>
               ))}
             </div>
           </div>

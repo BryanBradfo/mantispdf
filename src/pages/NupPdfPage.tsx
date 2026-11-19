@@ -10,7 +10,8 @@ import { mmToPt, type NupJobSpec, type Orientation } from "../lib/geometryJob";
 import { fitInCell, mmSizeLabel, nupCells, nupGrid, nupProblem, nupSheetSize } from "../lib/geometryLayout";
 import ToolShell from "./ToolShell";
 import { TriangleAlert } from "lucide-react";
-import { chipClass, fileMeta, inputClass, monoLabel, noticeClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import ToggleChip from "../components/common/ToggleChip";
+import { fileMeta, inputClass, monoLabel, noticeClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput } from "./usePdfInput";
 import { useT } from "../i18n";
 
@@ -144,16 +145,15 @@ export default function NupPdfPage() {
             <legend className="text-sm text-ink">{t("perSheet")}</legend>
             <div className="mt-1 flex flex-wrap gap-2">
               {PER_SHEET.map((n) => (
-                <button
+                <ToggleChip
                   key={n}
-                  type="button"
-                  aria-pressed={perSheet === n}
+                  on={perSheet === n}
                   onClick={() => setPerSheet(n)}
-                  className={`${chipClass(perSheet === n)} !h-auto w-14 flex-col gap-1 !px-2 py-2 font-mono`}
+                  className="!h-auto w-14 flex-col gap-1 !px-2 py-2 font-mono"
                 >
                   <LayoutIcon n={n} />
                   {n}
-                </button>
+                </ToggleChip>
               ))}
             </div>
           </fieldset>

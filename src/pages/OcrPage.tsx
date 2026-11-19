@@ -28,7 +28,8 @@ import {
 } from "../lib/ocr/run";
 import { exportText } from "../lib/ocr/text";
 import ToolShell from "./ToolShell";
-import { checkClass, chipClass, fileMeta, linkClass, monoLabel, noticeClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
+import ToggleChip from "../components/common/ToggleChip";
+import { checkClass, fileMeta, linkClass, monoLabel, noticeClass, panelClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 import type { UiError } from "../i18n";
 
@@ -278,15 +279,14 @@ function Workspace({ input, busy, run, error, setError, addTextLayer, onStartOve
           {OCR_LANGUAGES.map((l) => {
             const on = languages.includes(l.code);
             return (
-              <button
+              <ToggleChip
                 key={l.code}
-                type="button"
-                aria-pressed={on}
+                on={on}
                 onClick={() => setLanguages((s) => toggleLanguage(s, l.code))}
-                className={`${chipClass(on)} !h-8 !px-3`}
+                className="!h-8 !px-3"
               >
                 {languageLabel(l.code, locale)}
-              </button>
+              </ToggleChip>
             );
           })}
         </div>

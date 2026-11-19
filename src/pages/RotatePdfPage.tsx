@@ -170,7 +170,7 @@ export default function RotatePdfPage() {
                       className="absolute inset-0 flex items-center justify-center"
                       style={{
                         transform: thumbnailTransform(rotations[i] ?? 0),
-                        transition: "transform 0.3s ease",
+                        transition: "transform 150ms ease",
                       }}
                     >
                       <PageImage source={file!} page={i + 1} width={160} alt={tc("pageN", { n: i + 1 })} />

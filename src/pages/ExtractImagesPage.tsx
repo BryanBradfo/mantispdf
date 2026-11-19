@@ -90,7 +90,6 @@ function ImageCard({
   return (
     <label
       ref={ref}
-      data-testid="extracted-image"
       className={`flex cursor-pointer flex-col border bg-surface text-xs has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ink has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper ${
         checked ? `border-ink ${selectedOutline} -outline-offset-2` : "border-line hover:border-line-strong"
       }`}

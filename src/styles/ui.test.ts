@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dangerButton, focusRing, inputClass, noticeClass, panelClass, primaryButton, secondaryButton } from "./ui";
+import { cellButton, dangerButton, focusRing, inputClass, noticeClass, panelClass, primaryButton, secondaryButton } from "./ui";
 
 describe("shared UI class constants", () => {
   const all = { primaryButton, secondaryButton, dangerButton, inputClass, panelClass, noticeClass, focusRing };
@@ -9,4 +9,11 @@ describe("shared UI class constants", () => {
       expect(value).toContain("ring-offset");
     });
   }
+});
+
+describe("card action bar cells", () => {
+  it("draw their focus ring inset, so neighbours and overflow-hidden cards cannot cover it", () => {
+    expect(cellButton).toContain("focus-visible:ring-inset");
+    expect(cellButton).toContain("focus-visible:ring-offset-0");
+  });
 });
