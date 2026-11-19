@@ -20,7 +20,7 @@ export const chipClass = (on: boolean) =>
   }`;
 /** An icon button filling a cell of a card's bottom action bar (merge, organize, images to PDF). */
 // The ring is drawn inset: an outset ring is covered by the next cell and clipped by overflow-hidden cards.
-export const cellButton = `flex flex-1 items-center justify-center text-ink-2 hover:bg-ink hover:text-paper disabled:pointer-events-none disabled:opacity-30 ${focusRing} focus-visible:ring-inset focus-visible:ring-offset-0`;
+export const cellButton = `flex flex-1 items-center justify-center text-ink-2 hover:bg-ink hover:text-paper disabled:pointer-events-none disabled:opacity-30 ${focusRing} focus-visible:ring-inset focus-visible:!ring-offset-0`;
 /** Square checkbox / radio drawn in ink. */
 export const checkClass = `h-4 w-4 shrink-0 rounded-none accent-ink ${focusRing}`;
 /** Text link inside copy. */

@@ -14,6 +14,6 @@ describe("shared UI class constants", () => {
 describe("card action bar cells", () => {
   it("draw their focus ring inset, so neighbours and overflow-hidden cards cannot cover it", () => {
     expect(cellButton).toContain("focus-visible:ring-inset");
-    expect(cellButton).toContain("focus-visible:ring-offset-0");
+    expect(cellButton).toContain("focus-visible:!ring-offset-0");
   });
 });
