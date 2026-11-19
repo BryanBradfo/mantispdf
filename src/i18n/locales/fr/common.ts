@@ -136,6 +136,12 @@ const common: Messages<typeof en> = {
   bannerFrenchLink: "Afficher en français",
   bannerFrenchDismiss: "Non merci",
 
+  footerSlogan: "Tous les outils PDF. Zéro envoi.",
+  "footerEyebrow.organize": "Pages",
+  "footerEyebrow.convert": "Fichiers",
+  "footerEyebrow.edit": "Contenu",
+  "footerEyebrow.security": "Protection",
+  "footerEyebrow.recognize": "Texte",
   footerPrivacy: "Tout le traitement a lieu dans votre navigateur. Aucune donnée n’est envoyée.",
   footerLicense: "Licence MIT",
   footerGithub: "MantisPDF sur GitHub",

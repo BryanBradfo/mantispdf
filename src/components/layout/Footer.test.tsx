@@ -97,4 +97,25 @@ describe("Footer", () => {
     // It sits directly above the wordmark.
     expect(banner!.nextElementSibling?.getAttribute("data-testid")).toBe("footer-wordmark");
   });
+
+  it("puts each section in its own column, under a one-word eyebrow, with the slogan in the brand block", async () => {
+    await renderAt("/");
+    const headings = [...footer().querySelectorAll("h2")].map((h) => h.textContent);
+    expect(headings).toEqual(["Organize", "Optimize and convert", "Edit and sign", "Security and privacy", "Recognize", "Project"]);
+    const eyebrows = [...footer().querySelectorAll("nav section")].map((sec) => sec.querySelector("p")?.textContent);
+    expect(eyebrows).toEqual(["Pages", "Files", "Content", "Protection", "Text", "Open source"]);
+    // Six columns side by side: no column holds two sections any more.
+    const nav = footer().querySelector("nav")!;
+    expect([...nav.children].filter((c) => c.querySelectorAll("section").length > 1)).toEqual([]);
+    expect(footer().textContent).toContain("Every PDF tool. Zero uploads.");
+    expect(footer().textContent).not.toContain("100% Private");
+    expect(footer().textContent).not.toMatch(/\b0[1-5]\b/);
+  });
+
+  it("translates the eyebrows and the slogan under /fr", async () => {
+    await renderAt("/fr");
+    const eyebrows = [...footer().querySelectorAll("nav section")].map((sec) => sec.querySelector("p")?.textContent);
+    expect(eyebrows).toEqual(["Pages", "Fichiers", "Contenu", "Protection", "Texte", "Open source"]);
+    expect(footer().textContent).toContain("Tous les outils PDF. Zéro envoi.");
+  });
 });

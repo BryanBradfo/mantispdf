@@ -148,6 +148,12 @@ export default {
   bannerFrenchDismiss: "Non merci",
 
   // Footer
+  footerSlogan: "Every PDF tool. Zero uploads.",
+  "footerEyebrow.organize": "Pages",
+  "footerEyebrow.convert": "Files",
+  "footerEyebrow.edit": "Content",
+  "footerEyebrow.security": "Protection",
+  "footerEyebrow.recognize": "Text",
   footerPrivacy: "All processing happens in your browser. No data is uploaded.",
   footerLicense: "MIT license",
   footerGithub: "MantisPDF on GitHub",

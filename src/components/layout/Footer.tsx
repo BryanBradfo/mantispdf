@@ -4,16 +4,13 @@ import { Link, useT } from "../../i18n";
 import { MantisHead } from "../brand/MantisHead";
 import { GithubMark } from "../brand/GithubMark";
 import { FOOTER_MANTIS } from "../brand/footerMantis";
-import { sectionNumber, toolsIn, type SectionId } from "../../lib/tools";
+import { SECTIONS, toolsIn } from "../../lib/tools";
 import { focusRing } from "../../styles/ui";
 
 const GITHUB_URL = "https://github.com/BryanBradfo/mantispdf";
 
-/** Brand block, then one column per group (Recognize shares the Security column), then the project. */
-const COLUMNS: readonly (readonly SectionId[])[] = [["organize"], ["convert"], ["edit"], ["security", "recognize"]];
-
-/** Desktop columns (brand, four tool columns, project), shared by the links and the bottom row so both line up. */
-const columnsXl = "xl:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(0,1fr))]";
+/** Desktop columns (brand, one per tools section, project) on one row, shared by the links and the bottom row so both line up. */
+const columnsXl = "xl:grid-cols-[minmax(0,1.15fr)_repeat(6,minmax(0,1fr))]";
 
 /** The dithered mantis, drawn in faint ink through its 1-bit PNG as a CSS mask (one image for both themes). One
  *  image pixel is one dot: 1 CSS px on phones, 2 px from `sm` (the whole 672 px image then spans the 1344 px
@@ -38,7 +35,7 @@ const mantisStyle = {
 /** Mono uppercase micro-label (column eyebrows, bottom row). */
 const micro = "font-mono text-[11px] uppercase tracking-[0.08em]";
 /** Small uppercase, widely tracked Oswald link text, as in the header. */
-const linkText = `inline-flex items-center gap-1.5 py-1 font-display text-[12px] font-normal uppercase leading-snug tracking-[0.12em] text-ink-2 hover:text-ink ${focusRing}`;
+const linkText = `inline-flex items-center gap-1.5 py-1 font-display text-[12px] font-normal uppercase leading-snug tracking-[0.12em] text-ink-2 xl:tracking-[0.08em] hover:text-ink ${focusRing}`;
 
 function Group({ eyebrow, heading, id, children }: { eyebrow: string; heading: string; id: string; children: ReactNode }) {
   return (
@@ -49,7 +46,7 @@ function Group({ eyebrow, heading, id, children }: { eyebrow: string; heading: s
       {/* Two lines tall, text at the bottom: one-word and two-line headings share a baseline and the lists start level. */}
       <h2
         id={id}
-        className="mt-3 flex min-h-[2.1em] items-end text-balance font-display text-[26px] font-light leading-[1.05] tracking-[-0.005em] text-ink xl:text-[28px]"
+        className="mt-3 flex min-h-[2.1em] items-end text-balance font-display text-[26px] font-light leading-[1.05] tracking-[-0.005em] text-ink xl:text-[26px]"
       >
         {heading}
       </h2>
@@ -97,29 +94,35 @@ export default function Footer() {
         </p>
 
         {/* On wide screens (one row of columns) the columns climb onto the foot of the wordmark, as on the Hermes site. */}
-        <nav aria-label={t("footerNav")} className={`relative mt-12 gap-y-14 sm:mt-16 xl:-mt-[calc(100cqw/3.62*0.16)] grid grid-cols-2 gap-x-6 sm:grid-cols-3 sm:gap-x-8 ${columnsXl}`}>
+        <nav aria-label={t("footerNav")} className={`relative mt-12 gap-y-14 sm:mt-16 xl:-mt-[calc(100cqw/3.62*0.16)] grid grid-cols-2 gap-x-6 sm:grid-cols-3 sm:gap-x-8 xl:gap-x-6 ${columnsXl}`}>
           <div className="col-span-2 sm:col-span-3 xl:col-span-1">
             <Link to="/" className={`inline-block text-ink ${focusRing}`}>
               <MantisHead title="MantisPDF" className="h-14 w-auto" />
             </Link>
-            <p className={`${micro} mt-6 text-ink`}>{th("tagline")}</p>
+            {/* One sentence a line in the narrow desktop brand column, never a break inside a sentence. */}
+            <p className={`${micro} mt-6 text-ink`}>
+              {t("footerSlogan")
+                .split(/(?<=\.)\s+/)
+                .map((sentence, i) => (
+                  <span key={sentence} className="xl:block">
+                    {i > 0 && " "}
+                    {sentence}
+                  </span>
+                ))}
+            </p>
             <p className="mt-3 max-w-[17rem] text-sm leading-relaxed text-ink-2">{t("footerPrivacy")}</p>
           </div>
 
-          {COLUMNS.map((sections) => (
-            <div key={sections[0]} className="space-y-12">
-              {sections.map((section) => (
-                <Group key={section} eyebrow={sectionNumber(section)} heading={th(`sections.${section}`)} id={`footer-${section}`}>
-                  {toolsIn(section).map(({ id, href }) => (
-                    <li key={id}>
-                      <Link to={href} className={linkText}>
-                        {th(`${id}.title`)}
-                      </Link>
-                    </li>
-                  ))}
-                </Group>
+          {SECTIONS.map((section) => (
+            <Group key={section} eyebrow={t(`footerEyebrow.${section}`)} heading={th(`sections.${section}`)} id={`footer-${section}`}>
+              {toolsIn(section).map(({ id, href }) => (
+                <li key={id}>
+                  <Link to={href} className={linkText}>
+                    {th(`${id}.title`)}
+                  </Link>
+                </li>
               ))}
-            </div>
+            </Group>
           ))}
 
           <Group eyebrow={t("footerOpenSource")} heading={t("footerProject")} id="footer-project">
@@ -134,7 +137,7 @@ export default function Footer() {
         </nav>
 
         <div
-          className={`mt-20 flex flex-wrap items-center gap-x-8 gap-y-3 text-ink-3 sm:mt-24 xl:grid xl:gap-x-8 ${columnsXl} [&>p]:whitespace-nowrap ${micro}`}
+          className={`mt-20 flex flex-wrap items-center gap-x-8 gap-y-3 text-ink-3 sm:mt-24 xl:grid xl:gap-x-6 ${columnsXl} [&>p]:whitespace-nowrap ${micro}`}
         >
           <a
             href={GITHUB_URL}
