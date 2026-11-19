@@ -1,6 +1,6 @@
 import { LOCALES, localePath, type Locale } from "../../i18n";
 
-export const SITE = "https://mantispdf.vercel.app";
+export const SITE = "https://mantispdf.bradfo.me";
 
 const OG_LOCALE: Record<Locale, string> = { en: "en_US", fr: "fr_FR" };
 

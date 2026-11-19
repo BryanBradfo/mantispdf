@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { localePath, localizeRoutes, stripLocale } from "./i18n";
 import { APP_ROUTES, isRedirect } from "./routes";
 
-const SITE = "https://mantispdf.vercel.app";
+const SITE = "https://mantispdf.bradfo.me";
 const xml = readFileSync(resolve(__dirname, "../public/sitemap.xml"), "utf8");
 const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
 

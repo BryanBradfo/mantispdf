@@ -9,11 +9,11 @@
 
 <p align="center">
   <a href="https://github.com/BryanBradfo/mantispdf/actions/workflows/ci.yml"><img src="https://github.com/BryanBradfo/mantispdf/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-  <a href="https://mantispdf.vercel.app/"><img src="https://img.shields.io/github/deployments/BryanBradfo/mantispdf/Production?label=deploy&logo=vercel" alt="Deployment"></a>
+  <a href="https://mantispdf.bradfo.me/"><img src="https://img.shields.io/github/deployments/BryanBradfo/mantispdf/Production?label=deploy&logo=vercel" alt="Deployment"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
-<p align="center"><b><a href="https://mantispdf.vercel.app/">mantispdf.vercel.app</a></b></p>
+<p align="center"><b><a href="https://mantispdf.bradfo.me/">mantispdf.bradfo.me</a></b></p>
 
 **MantisPDF** is a free, open-source PDF toolkit that runs entirely in your browser: 27 tools, from
 merging and compressing to editing, filling forms, true redaction and OCR. Every file is processed on
