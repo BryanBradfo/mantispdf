@@ -2,14 +2,22 @@ import type { Messages } from "../../types";
 import type en from "../en/home";
 
 const home: Messages<typeof en> = {
-  badge: "🔒 Aucun fichier envoyé · Fonctionne avec WebAssembly",
+  heroEyebrow: "Open source · 100\u00a0% dans votre navigateur",
+  heroFigure: "Fig. 01 · Mantis religiosa",
   heading: "Outils PDF",
   tagline: "100\u00a0% privé, 100\u00a0% rapide",
   intro:
     "Tout le traitement s’effectue directement dans votre navigateur grâce à WebAssembly. Vos fichiers ne quittent jamais votre appareil, pas même une milliseconde.",
-  comingSoon: "Bientôt disponible",
+  chooseTool: "Choisir un outil",
+  sectionCount: { one: "{count}\u00a0outil", other: "{count}\u00a0outils" },
   pro: "Pro",
   upgradeToPro: "Passer à Pro",
+
+  "sections.organize": "Organiser",
+  "sections.convert": "Optimiser et convertir",
+  "sections.edit": "Éditer et signer",
+  "sections.security": "Sécurité et confidentialité",
+  "sections.recognize": "Reconnaître",
 
   "split.title": "Diviser PDF",
   "split.desc": "Découpez un PDF en plusieurs fichiers aux pages de votre choix.",

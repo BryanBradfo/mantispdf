@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link as RouterLink, useLocation } from "react-router-dom";
+import { focusRing } from "../../pages/ToolShell";
 import { loadLocale, localePath, readStoredLocale, shouldOfferFrench, storeLocale, useLocale, useT } from "../../i18n";
 
 function browserLanguages(): readonly string[] {
@@ -30,13 +31,13 @@ export default function FrenchBanner() {
       lang="fr"
       role="region"
       aria-label={t("bannerFrench")}
-      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-mantis-200 bg-mantis-50 px-4 py-2 text-sm text-gray-700 dark:border-[#1a1a1a] dark:bg-[#0f1a0f] dark:text-[#aaa]"
+      className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 border-b border-line bg-surface px-4 py-2 text-sm text-ink-2"
     >
       <span>{t("bannerFrench")}</span>
       <RouterLink
         to={{ pathname: localePath(pathname, "fr"), search, hash }}
         onClick={() => storeLocale("fr")}
-        className="font-medium text-mantis-700 underline dark:text-mantis-400"
+        className={`font-medium text-ink underline underline-offset-4 ${focusRing}`}
       >
         {t("bannerFrenchLink")}
       </RouterLink>
@@ -46,7 +47,7 @@ export default function FrenchBanner() {
           storeLocale("en");
           setDismissed(true);
         }}
-        className="text-gray-500 underline hover:text-gray-700 dark:text-[#555] dark:hover:text-[#888]"
+        className={`text-ink-2 underline underline-offset-4 hover:text-ink ${focusRing}`}
       >
         {t("bannerFrenchDismiss")}
       </button>

@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { Link, useDescribeError, useT, type UiError } from "../i18n";
-import { PageSEO } from "../components/seo/PageSEO";
+import ToolShell, { secondaryButton } from "./ToolShell";
 import { useMergeState } from "../hooks/useMergeState";
 import type { MergeFile } from "../hooks/useMergeState";
 import { usePdfWorker } from "../hooks/usePdfWorker";
@@ -84,21 +84,20 @@ export default function MergePdfPage() {
   const showOverlay = worker.merging || mergeError !== null;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <PageSEO
-        title={t("seoTitle")}
-        description={t("seoDescription")}
-        path="/merge"
-      />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{t("heading")}</h1>
-      <p className="mt-2 text-gray-600 dark:text-[#555]">
-        {t("intro")}
-      </p>
-
-      <ErrorAlert error={worker.initProblem} className="mt-4" />
+    <ToolShell
+      tool="merge"
+      wide
+      title={t("seoTitle")}
+      description={t("seoDescription")}
+      path="/merge"
+      heading={t("heading")}
+      intro={t("intro")}
+    >
+      <ErrorAlert error={worker.initProblem} className="mt-6" />
 
       <div className="mt-8">
         <DropZone
+          compact={state.files.length > 0}
           multiple
           onFiles={handleFiles}
           error={state.uploadError}
@@ -107,16 +106,13 @@ export default function MergePdfPage() {
 
       {state.files.length > 0 && (
         <>
-          <div className="mt-6 flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-[#555]">
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+            <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2">
               {t("files", { count: state.files.length })} &middot; {t("totalPages", { count: totalPages })}
             </p>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {downloaded && (
-                <Link
-                  to="/"
-                  className="rounded-lg border border-mantis-500 px-3 py-1.5 text-sm font-medium text-mantis-700 hover:bg-mantis-50 dark:border-mantis-600 dark:text-mantis-400 dark:hover:bg-mantis-950/20"
-                >
+                <Link to="/" className={secondaryButton}>
                   {tc("allTools")}
                 </Link>
               )}
@@ -147,6 +143,6 @@ export default function MergePdfPage() {
           onDismissError={() => setMergeError(null)}
         />
       )}
-    </div>
+    </ToolShell>
   );
 }

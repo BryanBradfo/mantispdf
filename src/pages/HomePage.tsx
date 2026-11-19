@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
+import { ArrowDown, Sparkles } from "lucide-react";
 import ToolGrid from "../components/home/ToolGrid";
 import { PageSEO } from "../components/seo/PageSEO";
 import LicenseDialog from "../components/license/LicenseDialog";
+import { MantisMark } from "../components/brand/MantisMark";
 import { useLicense, CHECKOUT_URL } from "../hooks/useLicense";
 import { useT } from "../i18n";
+import { primaryButton, secondaryButton } from "./ToolShell";
 
 export default function HomePage() {
   const t = useT("home");
@@ -14,44 +16,44 @@ export default function HomePage() {
 
   return (
     <div className="relative">
-      <PageSEO
-        title={tSeo("homeTitle")}
-        description={tSeo("homeDescription")}
-        path="/"
-      />
+      <PageSEO title={tSeo("homeTitle")} description={tSeo("homeDescription")} path="/" />
 
-      {/* Desktop-only license entry point. */}
-      {license.onDesktop && (
-        <button
-          onClick={() => setLicenseOpen(true)}
-          className="absolute right-4 top-4 z-20 inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 backdrop-blur transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:text-white"
-        >
-          <Sparkles className="h-3.5 w-3.5 text-accent-deep dark:text-accent" />
-          {license.isPro ? t("pro") : t("upgradeToPro")}
-        </button>
-      )}
-
-      {/* Gradient hero */}
-      <div className="hero-gradient">
-        <div className="mx-auto max-w-5xl px-4 pb-12 pt-16 text-center">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-mantis-200 bg-mantis-100 px-3 py-1 text-xs font-semibold text-mantis-700 dark:border-[#222] dark:bg-[#141414] dark:text-mantis-400">
-            {t("badge")}
+      <div className="mx-auto max-w-[1440px] px-4 sm:px-8 lg:px-12">
+        {/* Desktop-only license entry point. */}
+        {license.onDesktop && (
+          <div className="flex justify-end pt-6">
+            <button onClick={() => setLicenseOpen(true)} className={`${secondaryButton} h-9 gap-2 px-4 text-xs`}>
+              <Sparkles aria-hidden="true" strokeWidth={1.5} className="h-3.5 w-3.5" />
+              {license.isPro ? t("pro") : t("upgradeToPro")}
+            </button>
           </div>
-          <h1 className="gradient-text text-5xl font-black tracking-tight">
-            {t("heading")}
-          </h1>
-          <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-[#e5e5e5]">
-            {t("tagline")}
-          </p>
-          <p className="mx-auto mt-4 max-w-lg text-base leading-relaxed text-gray-500 dark:text-[#555]">
-            {t("intro")}
-          </p>
-        </div>
-      </div>
+        )}
 
-      {/* Tool grid */}
-      <div className="mx-auto max-w-[1800px] px-4 py-10 sm:px-6">
-        <ToolGrid />
+        <section className="grid items-center gap-12 pb-16 pt-12 sm:pt-16 lg:grid-cols-12 lg:gap-8 lg:pb-24 lg:pt-20">
+          <div className="lg:col-span-7">
+            <p className="eyebrow">{t("heroEyebrow")}</p>
+            <h1 className="mt-6 font-display w-min text-[clamp(4.5rem,24vw,8rem)] font-light leading-[0.9] tracking-[-0.02em] text-ink lg:text-[clamp(7rem,10vw,10rem)]">
+              {t("heading")}
+            </h1>
+            <p className="mt-6 font-display text-[clamp(1.5rem,5vw,2.25rem)] font-light leading-tight tracking-[-0.01em] text-ink">
+              {t("tagline")}
+            </p>
+            <p className="mt-5 max-w-md text-base leading-relaxed text-ink-2">{t("intro")}</p>
+            <a href="#tools" className={`${primaryButton} mt-10 h-12 gap-3 px-7`}>
+              {t("chooseTool")}
+              <ArrowDown aria-hidden="true" strokeWidth={1.5} className="h-4 w-4" />
+            </a>
+          </div>
+          {/* The drawing is cut on its right and bottom edges: it sits flush in a hairline plate. */}
+          <figure className="relative mx-auto aspect-[7/8] w-full max-w-[26rem] overflow-hidden border border-line sm:max-w-[30rem] lg:col-span-5 lg:mr-0 lg:max-w-none">
+            <MantisMark className="absolute bottom-0 right-0 h-[90%] w-auto text-ink" />
+            <figcaption className="eyebrow absolute left-4 top-4 sm:left-5 sm:top-5">{t("heroFigure")}</figcaption>
+          </figure>
+        </section>
+
+        <div id="tools" className="scroll-mt-4 pb-24">
+          <ToolGrid />
+        </div>
       </div>
 
       <LicenseDialog

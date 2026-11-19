@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Trans, useT, type UiError } from "../../i18n";
+import { FileUp } from "lucide-react";
 import ErrorText from "./ErrorText";
 
 interface DropZoneProps {
@@ -17,9 +18,11 @@ interface DropZoneProps {
    * (tests wait for it instead of retrying the upload); undefined when the page does not say.
    */
   engineReady?: boolean;
+  /** A slim one-line frame, for adding more files once some are loaded. */
+  compact?: boolean;
 }
 
-export default function DropZone({ onFile, onFiles, multiple, error, accept = ".pdf,application/pdf", kind = "pdf", hint, engineReady }: DropZoneProps) {
+export default function DropZone({ onFile, onFiles, multiple, error, accept = ".pdf,application/pdf", kind = "pdf", hint, engineReady, compact = false }: DropZoneProps) {
   const t = useT("common");
   const [dragging, setDragging] = useState(false);
 
@@ -62,44 +65,35 @@ export default function DropZone({ onFile, onFiles, multiple, error, accept = ".
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-12 transition ${
-          dragging
-            ? "border-mantis-500 bg-mantis-50 dark:bg-[#141414]"
-            : "border-gray-300 bg-white hover:border-mantis-400 hover:bg-mantis-50/50 dark:border-[#222] dark:bg-[#0c0c0c] dark:hover:border-mantis-500 dark:hover:bg-[#141414]"
+        data-dragging={dragging ? "true" : undefined}
+        className={`group flex cursor-pointer items-center justify-center border border-dashed px-6 text-center focus-within:outline-none focus-within:ring-2 focus-within:ring-ink focus-within:ring-offset-2 focus-within:ring-offset-paper ${
+          compact ? "flex-wrap gap-x-4 gap-y-1 py-5" : "flex-col py-12 sm:py-16"
+        } ${
+          dragging ? "border-ink bg-ink text-paper" : "border-line-strong bg-paper text-ink hover:border-ink"
         }`}
       >
-        <svg
-          className="mb-3 h-12 w-12 text-gray-400 dark:text-[#444]"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={1.5}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 16v-8m0 0-3 3m3-3 3 3M4.5 19.5h15A1.5 1.5 0 0 0 21 18V6a1.5 1.5 0 0 0-1.5-1.5h-15A1.5 1.5 0 0 0 3 6v12a1.5 1.5 0 0 0 1.5 1.5Z"
-          />
-        </svg>
-        <p className="text-lg font-medium text-gray-700 dark:text-[#aaa]">
+        <FileUp aria-hidden="true" strokeWidth={1.5} className={compact ? "h-5 w-5" : "mb-4 h-9 w-9"} />
+        <p className={compact ? "text-sm" : "text-base sm:text-lg"}>
           <Trans
             ns="common"
             k={kind === "image" ? (multiple ? "dropImages" : "dropImage") : multiple ? "dropPdfs" : "dropPdf"}
-            components={{ browse: (c) => <span className="text-mantis-600 underline">{c}</span> }}
+            components={{ browse: (c) => <span className="underline decoration-1 underline-offset-4">{c}</span> }}
           />
         </p>
-        <p className="mt-1 text-sm text-gray-500 dark:text-[#555]">{hint ?? t("dropHintPdf")}</p>
+        <p className={`${compact ? "" : "mt-3 "}font-mono text-[11px] uppercase tracking-[0.08em] ${dragging ? "text-paper" : "text-ink-2"}`}>
+          {hint ?? t("dropHintPdf")}
+        </p>
         <input
           data-engine-ready={engineReady ? "true" : undefined}
           type="file"
           accept={accept}
           multiple={multiple}
           onChange={handleChange}
-          className="hidden"
+          className="sr-only"
         />
       </label>
       {error && (
-        <div className="mt-3 text-center text-sm font-medium text-red-600 dark:text-red-400">
+        <div className="mt-3 text-center text-sm font-medium text-danger">
           <ErrorText error={error} />
         </div>
       )}

@@ -124,7 +124,10 @@ const common: Messages<typeof en> = {
   pageNMarked: "Page {n}, {mark}",
   pageEdited: "modifiée",
 
-  headerStar: "Star",
+  headerTools: "Outils",
+  headerMenu: "Menu",
+  headerGithub: "GitHub",
+  toolsMenu: "Tous les outils",
   toggleDarkMode: "Activer ou désactiver le mode sombre",
   language: "Langue",
   languageEnglish: "English",
@@ -134,6 +137,7 @@ const common: Messages<typeof en> = {
   bannerFrenchDismiss: "Non merci",
 
   footerPrivacy: "MantisPDF. Tout le traitement a lieu dans votre navigateur. Aucune donnée n’est envoyée.",
+  footerLicense: "Licence MIT",
   footerGithub: "MantisPDF sur GitHub",
 
   notFoundTitle: "Page introuvable",

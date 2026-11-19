@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { PageSEO } from "../components/seo/PageSEO";
+import { useT } from "../i18n";
+import { sectionNumber, toolById, type ToolId } from "../lib/tools";
 
 interface Props {
   title: string;
@@ -8,16 +10,35 @@ interface Props {
   heading: string;
   intro: string;
   children: ReactNode;
+  /** The tool this page is: shows its icon and `NN / SECTION` eyebrow above the title (from `lib/tools`). */
+  tool?: ToolId;
   /** Wider column for tools with a large workspace (the Edit PDF editor). */
   wide?: boolean;
 }
 
-export default function ToolShell({ title, description, path, heading, intro, children, wide = false }: Props) {
+/** The tool's icon and `NN / SECTION` label, in mono, above the page title. */
+function ToolEyebrow({ tool }: { tool: ToolId }) {
+  const t = useT("home");
+  const { section, icon: Icon } = toolById(tool);
   return (
-    <div className={`mx-auto px-4 py-8 ${wide ? "max-w-6xl" : "max-w-2xl"}`}>
+    <p data-testid="tool-eyebrow" className="eyebrow flex items-center gap-2.5">
+      <Icon aria-hidden="true" strokeWidth={1.5} className="h-4 w-4 text-ink" />
+      <span>
+        {sectionNumber(section)} / {t(`sections.${section}`)}
+      </span>
+    </p>
+  );
+}
+
+export default function ToolShell({ title, description, path, heading, intro, children, tool, wide = false }: Props) {
+  return (
+    <div className={`mx-auto px-4 pb-16 pt-8 sm:px-8 sm:pt-12 ${wide ? "max-w-6xl" : "max-w-2xl"}`}>
       <PageSEO title={title} description={description} path={path} />
-      <h1 className="font-display text-3xl font-light tracking-tight text-ink">{heading}</h1>
-      <p className="mt-2 text-ink-2">{intro}</p>
+      {tool && <ToolEyebrow tool={tool} />}
+      <h1 className={`font-display text-[2.75rem] font-light leading-[0.95] tracking-[-0.02em] text-ink sm:text-6xl ${tool ? "mt-5" : ""}`}>
+        {heading}
+      </h1>
+      <p className="mt-4 max-w-xl leading-relaxed text-ink-2">{intro}</p>
       {children}
     </div>
   );

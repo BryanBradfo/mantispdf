@@ -134,7 +134,10 @@ export default {
   pageEdited: "edited",
 
   // Header, language switcher, French banner
-  headerStar: "Star",
+  headerTools: "Tools",
+  headerMenu: "Menu",
+  headerGithub: "GitHub",
+  toolsMenu: "All tools",
   toggleDarkMode: "Toggle dark mode",
   language: "Language",
   languageEnglish: "English",
@@ -146,6 +149,7 @@ export default {
 
   // Footer
   footerPrivacy: "MantisPDF. All processing happens in your browser. No data is uploaded.",
+  footerLicense: "MIT license",
   footerGithub: "MantisPDF on GitHub",
 
   // 404

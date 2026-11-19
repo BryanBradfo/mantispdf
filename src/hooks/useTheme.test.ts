@@ -41,4 +41,16 @@ describe("useTheme", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(localStorage.getItem("theme")).toBe("light");
   });
+  it("falls back to dark when storage cannot be read, and ignores a failed write", () => {
+    const failing = {
+      getItem: () => { throw new Error("SecurityError"); },
+      setItem: () => { throw new Error("QuotaExceededError"); },
+    };
+    vi.stubGlobal("localStorage", failing);
+    expect(() => mount()).not.toThrow();
+    expect(result[0]).toBe(true);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(() => act(() => result[1](false))).not.toThrow();
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+  });
 });
