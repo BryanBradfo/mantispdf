@@ -56,6 +56,34 @@ describe("wordsFromRuns", () => {
       expect(w.box.x + w.box.w).toBeLessThanOrEqual(100);
     }
   });
+  it("exact boxes for each page rotation", () => {
+    const expected: Record<number, [number, number, number, number]> = {
+      0: [50, 17.5, 20, 12.5],
+      90: [17.5, 130, 12.5, 20],
+      180: [130, 70, 20, 12.5],
+      270: [70, 50, 12.5, 20],
+    };
+    for (const rotate of [0, 90, 180, 270]) {
+      const [w] = wordsFromRuns([run("ab", 50, 20, 20)], { view: [0, 0, 200, 100], rotate }, 0);
+      const [x, y, bw, bh] = expected[rotate];
+      expect([w.box.x, w.box.y, w.box.w, w.box.h].map((n) => Math.round(n * 1000) / 1000)).toEqual([x, y, bw, bh]);
+    }
+  });
+  it("merges a word split across runs into one word with the union box", () => {
+    const ws = wordsFromRuns([run("Hel", 10, 20, 30), run("lo", 40.5, 20, 20)], geo, 0);
+    expect(ws.map((w) => w.text)).toEqual(["Hello"]);
+    expect(ws[0].box.x).toBeCloseTo(10);
+    
+    expect(ws[0].box.x + ws[0].box.w).toBeCloseTo(60.5);
+  });
+  it("keeps two runs separated by a wide gap (no space character) as two words", () => {
+    const ws = wordsFromRuns([run("ab", 10, 20, 20), run("cd", 33, 20, 20)], geo, 0); // gap 3 = 0.3 em
+    expect(ws.map((w) => w.text)).toEqual(["ab", "cd"]);
+  });
+  it("does not merge across lines or baselines", () => {
+    expect(wordsFromRuns([run("ab", 10, 20, 20, { hasEOL: true }), run("cd", 30, 20, 20)], geo, 0)).toHaveLength(2);
+    expect(wordsFromRuns([run("ab", 10, 20, 20), run("cd", 30, 40, 20)], geo, 0)).toHaveLength(2);
+  });
   it("offsets by the CropBox origin", () => {
     const g = { view: [100, 100, 300, 200] as [number, number, number, number], rotate: 0 };
     const [w] = wordsFromRuns([run("a", 110, 120, 10)], g, 0);
@@ -79,7 +107,7 @@ describe("extractWords on fixtures", () => {
     expect(texts(pages[0])).toContain("swift");
     expect(texts(pages[0])).not.toContain("quick");
     expect(texts(pages[0])).toContain("added");
-    expect(texts(pages[1]).slice(-5).join(" ")).toBe("Paragraph two moves to the bottom later.".split(" ").slice(-5).join(" "));
+    expect(texts(pages[1]).join(" ")).toBe("Second page keeps the same words in both files. Paragraph two moves to the bottom later.");
     expect(texts(pages[2]).join(" ")).toBe("Third page exists only in the modified copy.");
   });
   it("boxes are inside the page and ordered", async () => {

@@ -310,6 +310,8 @@ describe("createCompareWorker", () => {
     expect(workers).toHaveLength(2);
     const p2 = client.compare([], []);
     expect(workers[1].sent).toHaveLength(1);
+    workers[0].onmessage?.({ data: { type: "failure", id: workers[1].sent[0].id, error: "late" } } as MessageEvent);
+    expect(client.pendingCount).toBe(1);
     workers[1].onmessage?.({ data: { type: "failure", id: workers[1].sent[0].id, error: "x" } } as MessageEvent);
     await expect(p2).rejects.toThrow("x");
   });
