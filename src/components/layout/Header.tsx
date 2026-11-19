@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { Link, stripLocale, useT } from "../../i18n";
+import { MantisHead } from "../brand/MantisHead";
 import LanguageSwitcher from "./LanguageSwitcher";
 
 function useTheme() {
@@ -55,7 +56,7 @@ export default function Header() {
     <header className="border-b border-gray-200 bg-white dark:border-[#1a1a1a] dark:bg-[#0c0c0c]">
       <div className="flex h-16 items-center justify-between px-5 sm:px-7">
         <Link to="/" className="flex items-center">
-          <img src="/mantispdf.png" alt="MantisPDF" className="h-11" />
+          <MantisHead className="h-8 w-8" title="MantisPDF" />
         </Link>
         <div className="flex items-center gap-3">
           <LanguageSwitcher />

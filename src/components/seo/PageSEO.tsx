@@ -10,9 +10,10 @@ interface PageSEOProps {
   ogImage?: string;
 }
 
-export function PageSEO({ title, description, path, ogImage = "/mantispdf.png" }: PageSEOProps) {
-  const { canonical: url, alternates, ogLocale } = seoUrls(path, useLocale());
-  const image = `${SITE}${ogImage}`;
+export function PageSEO({ title, description, path, ogImage }: PageSEOProps) {
+  const locale = useLocale();
+  const { canonical: url, alternates, ogLocale } = seoUrls(path, locale);
+  const image = `${SITE}${ogImage ?? `/og-${locale}.png`}`;
   return (
     <Helmet>
       <title>{title}</title>
