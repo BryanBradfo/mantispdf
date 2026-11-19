@@ -8,6 +8,7 @@ import { startFirstLoad } from "./firstLoad";
 // the latin files.
 import "@fontsource-variable/inter/wght.css";
 import "@fontsource-variable/jetbrains-mono/wght.css";
+import "@fontsource-variable/oswald/wght.css";
 import "./index.css";
 // The pdf.js worker is configured in src/lib/pdf.ts (the single module every
 // react-pdf consumer imports through), so it lands on the same pdfjs instance

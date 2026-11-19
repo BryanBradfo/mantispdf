@@ -16,18 +16,20 @@ export default function ToolShell({ title, description, path, heading, intro, ch
   return (
     <div className={`mx-auto px-4 py-8 ${wide ? "max-w-6xl" : "max-w-2xl"}`}>
       <PageSEO title={title} description={description} path={path} />
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-[#e5e5e5]">{heading}</h1>
-      <p className="mt-2 text-gray-600 dark:text-[#555]">{intro}</p>
+      <h1 className="font-display text-3xl font-light tracking-tight text-ink">{heading}</h1>
+      <p className="mt-2 text-ink-2">{intro}</p>
       {children}
     </div>
   );
 }
 
-export const primaryButton =
-  "rounded-lg bg-mantis-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-mantis-700 focus:outline-none focus:ring-2 focus:ring-mantis-500 focus:ring-offset-2 disabled:opacity-50";
-export const secondaryButton =
-  "rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#333] dark:text-[#aaa] dark:hover:bg-[#1a1a1a]";
-export const inputClass =
-  "mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-mantis-500 focus:outline-none focus:ring-1 focus:ring-mantis-500 dark:border-[#333] dark:bg-[#111] dark:text-[#ddd]";
-export const panelClass =
-  "mt-8 rounded-xl border border-mantis-200 bg-mantis-50/50 p-6 dark:border-mantis-900 dark:bg-[#0f1a0f]";
+export const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-paper";
+const button =
+  "inline-flex h-10 items-center justify-center rounded-none px-5 font-display text-sm font-medium uppercase tracking-wider transition-opacity disabled:pointer-events-none disabled:opacity-40";
+export const primaryButton = `${button} bg-ink text-paper hover:opacity-85 ${focusRing}`;
+export const secondaryButton = `${button} border border-line-strong bg-transparent text-ink hover:border-ink ${focusRing}`;
+export const dangerButton = `${button} border border-danger bg-transparent text-danger hover:bg-danger hover:text-paper ${focusRing}`;
+export const inputClass = `mt-1 w-full rounded-none border border-line-strong bg-paper px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus-visible:border-ink ${focusRing}`;
+export const panelClass = `mt-8 rounded-none border border-line bg-surface p-6 ${focusRing}`;
+export const noticeClass = `rounded-none border border-line-strong bg-surface px-4 py-3 text-sm text-ink ${focusRing}`;

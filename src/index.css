@@ -2,23 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-white font-sans text-gray-900 antialiased;
-  @apply dark:bg-[#0c0c0c] dark:text-[#e5e5e5];
+/* Black and white tokens as space-separated RGB channels (Tailwind alpha modifiers need them).
+   Values mirror src/styles/tokens.ts; tokens.test.ts keeps the two in sync. :root is light,
+   .dark (set before first paint by index.html, dark unless "light" is stored) is the default look. */
+:root {
+  --paper: 255 255 255;
+  --surface: 247 247 247;
+  --ink: 10 10 10;
+  --ink-2: 82 82 82;
+  --ink-3: 138 138 138;
+  --line: 229 229 229;
+  --line-strong: 138 138 138;
+  --danger: 198 40 40;
 }
 
-/* Hero gradient — supports both modes */
-.hero-gradient {
-  background: linear-gradient(160deg, #f2fde0 0%, #e3f9bb 45%, #ffffff 100%);
-}
-.dark .hero-gradient {
-  background: linear-gradient(160deg, #0c0c0c 0%, #141414 50%, #0c0c0c 100%);
+.dark {
+  --paper: 0 0 0;
+  --surface: 11 11 11;
+  --ink: 242 242 242;
+  --ink-2: 163 163 163;
+  --ink-3: 107 107 107;
+  --line: 38 38 38;
+  --line-strong: 92 92 92;
+  --danger: 255 92 92;
 }
 
-/* Gradient text for hero h1 */
-.gradient-text {
-  background: linear-gradient(135deg, #407215, #6bbf2e);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+@layer base {
+  body {
+    @apply bg-paper font-sans text-ink antialiased;
+  }
+}
+
+@layer components {
+  .eyebrow {
+    @apply font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }
