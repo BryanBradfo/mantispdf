@@ -14,5 +14,14 @@ export const pageFrame = "outline outline-1 outline-offset-1 outline-white ring-
 export const pageBadge = "bg-black text-white";
 /** A status dot on a page thumbnail (page edited, page has fields). */
 export const pageDot = "bg-black ring-2 ring-white";
+/**
+ * Invalid and required-but-empty states of a control on the page: the fixed light-theme danger red
+ * (PAGE_MARK_DANGER), not the theme token, which is too light on a white page in the dark theme.
+ * Kept in this .ts module: the raw-colour guard scans .tsx only, Tailwind scans both.
+ */
+export const pageInvalid = "!border-[#c62828] !ring-2 !ring-[#c62828]";
+export const pageMissing = "!border-[#c62828]";
+/** The selected page of a thumbnail strip: a 2 px black frame drawn inside the thumbnail (white page). */
+export const pageSelected = "outline outline-2 outline-black";
 /** Square resize handle over a page render. */
 export const pageHandle = "border border-white bg-black";

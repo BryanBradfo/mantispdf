@@ -1,8 +1,8 @@
 import { Check } from "lucide-react";
 import PageImage from "../common/PageImage";
 import { useT } from "../../i18n";
-import { focusRing, selectedOutline } from "../../styles/ui";
-import { pageBadge } from "../../styles/onPage";
+import { focusRing } from "../../styles/ui";
+import { pageBadge, pageSelected } from "../../styles/onPage";
 
 interface Props {
   source: Blob | Uint8Array;
@@ -37,8 +37,8 @@ export default function CropPageStrip({ source, count, page, disabled, onPage }:
             <span className="block border-t border-line py-0.5 font-mono text-[11px] text-ink-2">{n}</span>
             {on && (
               <>
-                {/* On an inner layer, so the focus ring's outline-none on the button cannot hide the selection. */}
-                <span data-selected-frame aria-hidden="true" className={`pointer-events-none absolute inset-0 ${selectedOutline} -outline-offset-2`} />
+                {/* On an inner layer, so the focus ring's outline-none on the button cannot hide the selection; black, it is drawn on the page. */}
+                <span data-selected-frame aria-hidden="true" className={`pointer-events-none absolute inset-0 ${pageSelected} -outline-offset-2`} />
                 <span aria-hidden="true" className={`absolute right-1 top-1 flex h-5 w-5 items-center justify-center ${pageBadge}`}>
                   <Check strokeWidth={2} className="h-3.5 w-3.5" />
                 </span>

@@ -162,9 +162,9 @@ export default function PlacementCanvas({ source, page, pageSize, signatureUrl, 
           onPointerUp={end}
           onPointerCancel={end}
           onKeyDown={key}
-          // Fixed black and white (it sits on the page render): a black ring, a white outline outside it;
-          // both thicken on hover and keyboard focus.
-          className={`absolute cursor-move touch-none ${pageFrame} hover:ring-2 focus-visible:outline-offset-2 focus-visible:ring-2`}
+          // Fixed black and white (it sits on the page render): a black ring, a white outline outside it.
+          // Hover thickens the ring; keyboard focus is a 4 px black ring with a 2 px white outline beyond it.
+          className={`absolute cursor-move touch-none ${pageFrame} hover:ring-2 hover:outline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:ring-4`}
           style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
         >
           <img src={signatureUrl} alt="" draggable={false} className="pointer-events-none h-full w-full" />

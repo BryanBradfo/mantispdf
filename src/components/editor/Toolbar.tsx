@@ -52,7 +52,8 @@ interface Props {
 // The buttons sit edge to edge: the focus ring is drawn inset so the next button cannot cover it,
 // in paper on the ink-filled active tool.
 const buttonClass = `flex min-w-[3.75rem] flex-col items-center gap-0.5 rounded-none px-2 py-1.5 text-xs font-medium transition-opacity ${focusRing} focus-visible:ring-inset focus-visible:!ring-offset-0`;
-const idleClass = "text-ink-2 hover:bg-ink hover:text-paper";
+// Hover lifts the tool to paper (the bar is surface): only the active tool is ink-filled.
+const idleClass = "text-ink-2 hover:bg-paper hover:text-ink";
 
 export default function Toolbar({ tool, onTool, onPickImage, canUndo, canRedo, onUndo, onRedo }: Props) {
   const t = useT("editPdf");

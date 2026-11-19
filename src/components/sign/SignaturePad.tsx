@@ -280,8 +280,9 @@ function TypePad({ onChange }: Props) {
             <label
               key={f}
               // The sample is the signature as it will be printed: its ink on white paper.
-              // Picked: a 2 px ink outline set off from the white sample, and a check.
-              className={`relative flex cursor-pointer items-center justify-center border bg-white px-3 py-2 text-2xl has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ink has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper ${
+              // Picked: a 2 px ink outline set off from the white sample, and a check. Keyboard focus
+              // is an inset black ring inside the sample, so it never hides under the picked outline.
+              className={`relative flex cursor-pointer items-center justify-center border bg-white px-3 py-2 text-2xl has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-black ${
                 font === f ? `border-ink ${selectedOutline} outline-offset-2` : "border-line-strong hover:border-ink"
               }`}
               style={{ color: SIGNATURE_INK }}

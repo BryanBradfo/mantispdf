@@ -24,7 +24,8 @@ describe("CropPageStrip", () => {
     expect(buttons.map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "true", "false"]);
     const frame = buttons[1].querySelector<HTMLElement>("[data-selected-frame]")!;
     expect(frame.className).toMatch(/\boutline-2\b/);
-    expect(frame.className).toMatch(/\boutline-ink\b/);
+    // Black, not the theme ink: the frame is drawn on the white page thumbnail.
+    expect(frame.className).toMatch(/\boutline-black\b/);
     // The frame is not the focused element, so the focus ring's outline-none never reaches it.
     expect(frame.className).not.toContain("focus-visible:");
     expect(buttons[1].querySelector("svg.lucide-check")).not.toBeNull();

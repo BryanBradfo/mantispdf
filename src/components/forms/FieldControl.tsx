@@ -20,6 +20,7 @@ import {
   unsupportedIn,
 } from "../../lib/forms/values";
 import { useT } from "../../i18n";
+import { pageInvalid, pageMissing } from "../../styles/onPage";
 
 
 /** Courier New's advance width, in em. */
@@ -47,13 +48,16 @@ interface OverlayProps {
 // The controls sit on the page render, which is white in both themes: black on the page, like
 // the other marks over a page (styles/onPage), not the theme ink.
 const frameClass = "border border-black/40 bg-black/[0.04]";
-const controlClass = `h-full w-full rounded-none ${frameClass} text-black outline-none focus:border-black focus:ring-2 focus:ring-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/[0.06] disabled:text-black/70`;
-/** An invalid value (aria-invalid): danger border and ring. */
-const INVALID = " !border-danger !ring-2 !ring-danger";
+// Focus is an outline set off from the box, so it shows over the invalid red ring and the dashed
+// warning border (both are drawn with !important border and ring classes).
+const focusOutline = "focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-black";
+const controlClass = `h-full w-full rounded-none ${frameClass} text-black outline-none focus:border-black ${focusOutline} disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/[0.06] disabled:text-black/70`;
+/** An invalid value (aria-invalid): the on-page danger border and ring. */
+const INVALID = ` ${pageInvalid}`;
 /** A value cut off by the box: a warning, monochrome (dashed black). */
 const WARNING = " !border-dashed !border-black !ring-1 !ring-black";
 /** An empty required field. */
-const MISSING = " !border-danger";
+const MISSING = ` ${pageMissing}`;
 
 /**
  * The HTML control drawn over one widget of the page: sized to the widget, its content turned
@@ -172,7 +176,7 @@ export default function FieldControl({ field, widget, index, value, onChange, sc
             style={frame}
             // `clip`, not `hidden`: a clipping box that is not a scroll container, so revealing
             // the caret cannot shift the cells sideways.
-            className={`overflow-clip ${frameClass} focus-within:border-black focus-within:ring-2 focus-within:ring-black${invalid}`}
+            className={`overflow-clip ${frameClass} focus-within:border-black focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-black${invalid}`}
           >
             <input
               {...common}

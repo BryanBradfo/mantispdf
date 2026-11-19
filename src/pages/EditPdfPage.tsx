@@ -28,7 +28,7 @@ import { cjkFlavourFromLanguage, type CjkFlavour } from "../lib/fonts/select";
 import { UnicodeTextContext, type UnicodeTextEnv } from "../components/editor/unicodeTextContext";
 import { jpegPassthrough, orientationToTransform, readExifOrientation } from "../lib/imageInput";
 import ToolShell from "./ToolShell";
-import { Info } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import { fileMeta, linkClass, noticeClass, primaryButton, secondaryButton } from "../styles/ui";
 import { baseName, usePdfInput, type PdfInput } from "./usePdfInput";
 import ErrorText from "../components/common/ErrorText";
@@ -326,7 +326,8 @@ function Workspace({ input, busy, run, editPdf, layoutText, onStartOver }: Works
 
       {notice && (
         <div role="status" className={`flex gap-3 ${noticeClass}`}>
-          <Info aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />
+          {/* Always a refusal (item limit reached, image too large or unreadable): a warning. */}
+          <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="min-w-0"><ErrorText error={notice} /></div>
         </div>
       )}

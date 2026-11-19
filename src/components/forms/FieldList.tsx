@@ -18,7 +18,7 @@ import {
   toggled,
   unsupportedIn,
 } from "../../lib/forms/values";
-import { Info } from "lucide-react";
+import { Info, TriangleAlert } from "lucide-react";
 import { checkClass, focusRing, linkClass, noticeClass } from "../../styles/ui";
 
 const fieldClass = `mt-1 w-full rounded-none border border-line-strong bg-paper px-2 py-1.5 text-sm text-ink focus-visible:border-ink disabled:cursor-not-allowed disabled:bg-surface disabled:text-ink-2 ${focusRing}`;
@@ -276,7 +276,12 @@ export default function FieldList({ fields, state, onChange, page, onPage }: Pro
               </p>
             )}
             {tooLong && <p id={bad === "" ? errorId : undefined} className="mt-1 text-xs text-danger">{tooLong}</p>}
-            {!tooLong && over && <p className="mt-1 text-xs text-ink">{t("overflow")}.</p>}
+            {!tooLong && over && (
+              <p className="mt-1 flex gap-1.5 text-xs text-ink">
+                <TriangleAlert aria-hidden="true" strokeWidth={1.5} className="h-3.5 w-3.5 shrink-0" />
+                <span>{t("overflow")}.</span>
+              </p>
+            )}
             {kind.kind === "text" && kind.password && (
               <p className="mt-1 text-xs text-ink-2">{t("passwordNote")}</p>
             )}
