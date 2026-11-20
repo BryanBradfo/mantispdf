@@ -185,6 +185,104 @@ test("the French page lists the changes in French", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Page 1 : supprimé « quick », ajouté « swift »" })).toBeVisible();
 });
 
+/** Open the overlay view and wait for the page on stage to be diffed. */
+async function overlay(page: Page) {
+  await page.getByRole("button", { name: "Overlay", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Overlay", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("overlay-view")).toBeVisible();
+}
+const pageList = (page: Page) => page.getByTestId("overlay-pages").getByRole("button");
+
+test("overlay: changed pages are flagged, the filter keeps them, the extra page is listed", async ({ page, baseURL }) => {
+  const foreign = watchForeign(page, new URL(baseURL!).origin);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await load(page, "compare-a.pdf", "compare-b.pdf");
+  await expect(changes(page).first()).toBeVisible({ timeout: 20000 });
+  await overlay(page);
+
+  // Page 1 changed (quick -> swift...): a red mask over the modified render, a percentage badge, a real-text summary.
+  await expect(page.getByTestId("overlay-summary")).toHaveText(/^Page 1: \d+(\.\d)?% of pixels differ$/, { timeout: 20000 });
+  await expect(page.getByTestId("overlay-badge")).toHaveText(/^\d+(\.\d)?%$/);
+  await expect(page.getByTestId("overlay-mask").locator("canvas")).toBeAttached();
+  const masked = await page.getByTestId("overlay-mask").locator("canvas").evaluate((c: HTMLCanvasElement) => {
+    const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+    return n;
+  });
+  expect(masked).toBeGreaterThan(100);
+  await expect(page.getByTestId("overlay-page-of")).toHaveText("Page 1 of 3");
+
+  // Page 3 exists only in the modified copy.
+  await expect(pageList(page)).toHaveCount(3);
+  await expect(pageList(page).nth(2)).toContainText("Only in B");
+  await pageList(page).nth(2).click();
+  await expect(page.getByTestId("overlay-summary")).toHaveText("Page 3 is only in the modified file.");
+  await expect(pageList(page).nth(2)).toHaveAttribute("aria-current", "page");
+
+  // The filter checks every pair with a progress count, then keeps the pages that differ.
+  await page.getByLabel("Only pages with differences").check();
+  await expect(page.getByTestId("overlay-scan")).toHaveText(/^\d pages? differs?$/, { timeout: 20000 });
+  await expect(page.getByTestId("overlay-scan")).toHaveText("3 pages differ");
+  await expect(pageList(page)).toHaveCount(3);
+  await expect(pageList(page).nth(1)).toContainText(/\d%/);
+  await page.getByRole("button", { name: "Previous page" }).click();
+  await expect(page.getByTestId("overlay-page-of")).toHaveText("Page 2 of 3");
+  await expect(page.getByTestId("overlay-summary")).toHaveText(/^Page 2: .*% of pixels differ$/, { timeout: 20000 });
+
+  // Back to the text view: it is still there.
+  await page.getByRole("button", { name: "Text", exact: true }).click();
+  await expect(page.getByTestId("overlay-view")).toHaveCount(0);
+  await expect(changes(page)).toHaveCount(5);
+
+  expect(errors).toEqual([]);
+  expect(foreign).toEqual([]);
+});
+
+test("overlay: identical files differ by 0 % and the filter lists no page", async ({ page }) => {
+  await load(page, "compare-a.pdf", "compare-a.pdf");
+  await expect(page.getByTestId("compare-headline")).toHaveText("No text differences", { timeout: 20000 });
+  await overlay(page);
+  await expect(page.getByTestId("overlay-summary")).toHaveText("Page 1: no pixel differs", { timeout: 20000 });
+  await expect(page.getByTestId("overlay-badge")).toHaveText("0%");
+  await page.getByLabel("Only pages with differences").check();
+  await expect(page.getByTestId("overlay-scan")).toHaveText("0 pages differ", { timeout: 20000 });
+  await expect(page.getByText("No page differs.")).toBeVisible();
+});
+
+test("overlay: rotated pages against themselves show no difference", async ({ page }) => {
+  await load(page, "rotated.pdf", "rotated.pdf");
+  await expect(page.getByTestId("compare-headline")).toHaveText("No text differences", { timeout: 20000 });
+  await overlay(page);
+  await page.getByLabel("Only pages with differences").check();
+  await expect(page.getByTestId("overlay-scan")).toHaveText("0 pages differ", { timeout: 30000 });
+  // Each page on its own: the 90 degree page keeps its landscape shape and no pixel differs.
+  await page.getByLabel("Only pages with differences").uncheck();
+  await expect(pageList(page)).toHaveCount(4);
+  await pageList(page).nth(1).click();
+  await expect(page.getByTestId("overlay-summary")).toHaveText("Page 2: no pixel differs", { timeout: 20000 });
+  const box = (await page.getByTestId("overlay-page-b").boundingBox())!;
+  expect(box.width).toBeGreaterThan(box.height);
+});
+
+test("overlay: swapping the files recomputes it", async ({ page }) => {
+  await load(page, "compare-a.pdf", "compare-b.pdf");
+  await expect(changes(page).first()).toBeVisible({ timeout: 20000 });
+  await overlay(page);
+  await expect(pageList(page).nth(2)).toContainText("Only in B", { timeout: 20000 });
+  await page.getByRole("button", { name: "Swap original and modified" }).click();
+  await expect(pageList(page).nth(2)).toContainText("Only in A", { timeout: 20000 });
+  await expect(page.getByTestId("overlay-summary")).toHaveText(/^Page 1: .*% of pixels differ$/, { timeout: 20000 });
+});
+
+test("overlay: a scan without text still gets the overlay", async ({ page }) => {
+  await load(page, "compare-scan.pdf", "compare-scan.pdf");
+  await expect(page.getByTestId("compare-no-text")).toBeVisible({ timeout: 20000 });
+  await overlay(page);
+  await expect(page.getByTestId("overlay-summary")).toHaveText("Page 1: no pixel differs", { timeout: 20000 });
+});
+
 test.describe("phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -199,5 +297,14 @@ test.describe("phone", () => {
     // Picking a change from the list brings the columns back into view.
     await changes(page).last().click();
     await expect.poll(async () => (await page.getByTestId("compare-column-b").boundingBox())!.y).toBeLessThan(844);
+  });
+
+  test("390 px overlay: no horizontal overflow", async ({ page }) => {
+    await load(page, "compare-a.pdf", "compare-b.pdf");
+    await expect(changes(page).first()).toBeVisible({ timeout: 20000 });
+    await overlay(page);
+    await expect(page.getByTestId("overlay-badge")).toBeVisible({ timeout: 20000 });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });

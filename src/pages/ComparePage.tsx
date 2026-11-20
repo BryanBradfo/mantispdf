@@ -12,7 +12,9 @@ import { buildAnchors, changeTarget, countWords, highlightMarks, mapPosition, po
 import ErrorAlert from "../components/common/ErrorAlert";
 import ChangesList from "../components/compare/ChangesList";
 import FileSlot, { type SlotView } from "../components/compare/FileSlot";
+import OverlayView from "../components/compare/OverlayView";
 import PageColumn from "../components/compare/PageColumn";
+import ToggleChip from "../components/common/ToggleChip";
 import ToolShell from "./ToolShell";
 import { COMPARE_ADDED, COMPARE_REMOVED, COMPARE_STRIKE, COMPARE_SWATCH_PAGE } from "../styles/onPage";
 import { linkClass, monoLabel, noticeClass, secondaryButton } from "../styles/ui";
@@ -248,6 +250,7 @@ export default function ComparePage() {
   const [slots, setSlots] = useState<[Slot, Slot]>([EMPTY, EMPTY]);
   const [diff, setDiff] = useState<Diff>({ status: "idle" });
   const [error, setError] = useState<UiError | null>(null);
+  const [view, setView] = useState<"text" | "overlay">("text");
   const compareRef = useRef<ReturnType<typeof createCompareWorker> | null>(null);
   const latest = useMemo(createLatest, []);
 
@@ -406,14 +409,32 @@ export default function ComparePage() {
         </p>
       )}
 
-      {(reading || running) && (
+      {a && b && (
+        <div className="mt-8 flex items-center gap-3" role="group" aria-labelledby="compare-view-label">
+          <span id="compare-view-label" className={monoLabel}>
+            {t("viewLabel")}
+          </span>
+          <ToggleChip on={view === "text"} onClick={() => setView("text")} className="!h-8 !px-3">
+            {t("viewText")}
+          </ToggleChip>
+          <ToggleChip on={view === "overlay"} onClick={() => setView("overlay")} className="!h-8 !px-3">
+            {t("viewOverlay")}
+          </ToggleChip>
+        </div>
+      )}
+
+      {(reading || (running && view === "text")) && (
         <div className="mt-10 flex items-center gap-3" aria-hidden="true">
           <span className="h-5 w-5 animate-spin rounded-full border-2 border-ink-3 border-t-transparent motion-reduce:animate-none" />
           <span className={monoLabel}>{reading ? t("reading") : t("comparing")}</span>
         </div>
       )}
 
-      {a && b && result && !(noTextA && noTextB) && <TextView a={a} b={b} result={result} />}
+      {view === "text" && a && b && result && !(noTextA && noTextB) && <TextView a={a} b={b} result={result} />}
+      {/* Keyed by both documents: a new file or a swap remounts it, which cancels everything in flight. */}
+      {view === "overlay" && a && b && (
+        <OverlayView key={`${a.key}-${b.key}`} fileA={a.file} fileB={b.file} pagesA={a.sizes.length} pagesB={b.sizes.length} />
+      )}
     </ToolShell>
   );
 }

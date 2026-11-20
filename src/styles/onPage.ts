@@ -55,3 +55,10 @@ export function compareAddedOutline(emOverPageWidth: number) {
 export const COMPARE_ACTIVE = { boxShadow: `0 0 0 1px ${PAGE_MARK_LIGHT}, 0 0 0 2.5px ${PAGE_MARK_DARK}` } as const;
 /** The white page behind the legend swatches and under a page render still loading (the marks are drawn for a white page). */
 export const COMPARE_SWATCH_PAGE = { backgroundColor: PAGE_MARK_LIGHT } as const;
+/**
+ * Overlay view: pixels that differ between the two renders, painted over the modified page in the
+ * fixed danger red (PAGE_MARK_DANGER) at about 60 % so the content under them stays legible.
+ * RGBA for the canvas painted by the pixel worker, and the same colour as CSS for the legend swatch.
+ */
+export const COMPARE_PIXEL_RGBA = [198, 40, 40, 150] as const;
+export const COMPARE_PIXEL = { backgroundColor: "rgba(198,40,40,0.59)" } as const;
