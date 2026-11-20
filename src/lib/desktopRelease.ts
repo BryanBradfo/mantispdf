@@ -46,9 +46,13 @@ export function linuxInstallCommand(version: string = DESKTOP_VERSION): string {
 export const DESKTOP_OSES = ["mac", "windows", "linux"] as const;
 export type DesktopOs = (typeof DESKTOP_OSES)[number];
 
-/** The OS of a platform or user-agent string; macOS when it cannot tell. Mac is tested first ("Darwin" holds "win"). */
+/**
+ * The OS of a platform or user-agent string; macOS when it cannot tell. Mac is tested first ("Darwin" holds
+ * "win"); Android says "Linux" in its user agent but runs no desktop installer, so it takes the fallback.
+ */
 export function detectOs(platform: string): DesktopOs {
   const p = platform.toLowerCase();
+  if (/android/.test(p)) return "mac";
   if (/mac|darwin|iphone|ipad/.test(p)) return "mac";
   if (/win/.test(p)) return "windows";
   if (/linux|x11/.test(p)) return "linux";

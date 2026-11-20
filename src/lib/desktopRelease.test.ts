@@ -19,6 +19,13 @@ describe("desktop release assets", () => {
     expect(DESKTOP_VERSION).toBe(pkg.version);
   });
 
+  it("matches the version of the Tauri app (tauri.conf.json and Cargo.toml), so a bump cannot drift", () => {
+    const conf = JSON.parse(readFileSync(resolve(__dirname, "../../src-tauri/tauri.conf.json"), "utf8")) as { version: string };
+    const cargo = readFileSync(resolve(__dirname, "../../src-tauri/Cargo.toml"), "utf8");
+    expect(conf.version).toBe(DESKTOP_VERSION);
+    expect(/^version\s*=\s*"([^"]+)"/m.exec(cargo)?.[1]).toBe(DESKTOP_VERSION);
+  });
+
   it("names the seven installers exactly as tauri-action publishes them for 2.0.0", () => {
     expect(ASSET_KINDS.map((k) => assetName(k, "2.0.0"))).toEqual([
       "MantisPDF_2.0.0_aarch64.dmg",
@@ -55,6 +62,8 @@ describe("detectOs", () => {
     ["Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36", "linux"],
     ["Mozilla/5.0 (X11; FreeBSD amd64)", "linux"],
     ["Darwin", "mac"],
+    ["Android", "mac"],
+    ["Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36", "mac"],
     ["", "mac"],
     ["Something else", "mac"],
   ] as const)("%j -> %s", (platform, os) => {
