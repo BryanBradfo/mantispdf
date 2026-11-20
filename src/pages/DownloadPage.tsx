@@ -163,6 +163,10 @@ export default function DownloadPage() {
             <div className="mt-8">
               <p className="text-sm text-ink-2">{t("noteLinux")}</p>
               <Terminal />
+              <p className={`${noticeClass} mt-6 flex items-start gap-3`}>
+                <Info aria-hidden="true" strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{t("noteDeb", { version: DESKTOP_VERSION })}</span>
+              </p>
             </div>
           ) : (
             <p className={`${noticeClass} mt-8 flex items-start gap-3`}>

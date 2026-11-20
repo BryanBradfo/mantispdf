@@ -51,7 +51,7 @@ test("FR /fr/download: Linux selected from an X11 user agent, copy button copies
     `${BASE}/MantisPDF_2.0.0_amd64.deb`,
     `${BASE}/MantisPDF-2.0.0-1.x86_64.rpm`,
   ]);
-  const command = `curl -LO ${BASE}/MantisPDF_2.0.0_amd64.AppImage && chmod +x MantisPDF_2.0.0_amd64.AppImage && ./MantisPDF_2.0.0_amd64.AppImage`;
+  const command = `curl -LO ${BASE}/MantisPDF_2.0.0_amd64.AppImage && chmod +x MantisPDF_2.0.0_amd64.AppImage && ./MantisPDF_2.0.0_amd64.AppImage --appimage-extract-and-run`;
   await expect(page.locator("code")).toHaveText(command);
   await page.getByRole("button", { name: "Copier la commande" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Copié" })).toHaveCount(1);

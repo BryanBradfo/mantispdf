@@ -40,7 +40,8 @@ export function assetUrl(kind: AssetKind, version: string = DESKTOP_VERSION): st
 /** The terminal one-liner shown on the Linux tab: fetch the AppImage, make it executable, run it. */
 export function linuxInstallCommand(version: string = DESKTOP_VERSION): string {
   const file = assetName("appImage", version);
-  return `curl -LO ${assetUrl("appImage", version)} && chmod +x ${file} && ./${file}`;
+  // --appimage-extract-and-run works without FUSE (libfuse2 is missing on recent Ubuntu and Debian).
+  return `curl -LO ${assetUrl("appImage", version)} && chmod +x ${file} && ./${file} --appimage-extract-and-run`;
 }
 
 export const DESKTOP_OSES = ["mac", "windows", "linux"] as const;
