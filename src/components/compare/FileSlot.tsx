@@ -6,7 +6,7 @@ import { fileMeta, focusRing, monoLabel } from "../../styles/ui";
 
 export type SlotView =
   | { kind: "empty"; error: UiError | null }
-  | { kind: "reading"; file: File }
+  | { kind: "reading"; file: File; progress: { done: number; total: number } | null }
   | { kind: "ready"; file: File; pages: number };
 
 interface Props {
@@ -49,7 +49,7 @@ export default function FileSlot({ marker, label, removeLabel, slot, engineReady
             </button>
           </div>
           {slot.kind === "reading" ? (
-            <LoadingRow label={t("readingFile")} />
+            <LoadingRow label={slot.progress ? t("readingPage", { done: slot.progress.done, total: slot.progress.total }) : t("readingFile")} />
           ) : (
             <p className={fileMeta}>
               {t("pageCount", { count: slot.pages })} · {formatBytes(slot.file.size, locale)}

@@ -167,7 +167,10 @@ export default function OverlayView({ fileA, fileB, sizesA, sizesB }: Props) {
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
-    const measure = () => setCssWidth(el.clientWidth);
+    // Hidden (the text view is on show) it measures 0: keep the last width so nothing re-renders.
+    const measure = () => {
+      if (el.clientWidth > 0) setCssWidth(el.clientWidth);
+    };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(measure);
@@ -246,12 +249,23 @@ export default function OverlayView({ fileA, fileB, sizesA, sizesB }: Props) {
     const s = formatNumber(value, locale, { style: "percent", maximumFractionDigits: 1 });
     return below ? t("lessThan", { percent: s }) : s;
   };
-  const badgeOf = (e: OverlayEntry): string => {
-    if (e.kind === "only-a") return t("onlyInA");
-    if (e.kind === "only-b") return t("onlyInB");
+  /** The badge of a page in the list: its text and whether it marks a difference (ink) or not (grey). */
+  const badgeOf = (e: OverlayEntry): { text: string; differs: boolean; failed?: boolean } | null => {
+    if (e.kind === "only-a") return { text: t("onlyInA"), differs: false };
+    if (e.kind === "only-b") return { text: t("onlyInB"), differs: false };
     const r = results.get(e.page);
-    return r?.status === "done" ? pct(r.ratio) : r?.status === "error" ? "!" : "";
+    if (r?.status === "done") return { text: pct(r.ratio), differs: r.ratio > 0 };
+    if (r?.status === "error") return { text: "!", differs: true, failed: true };
+    return null;
   };
+
+  // With the filter on, a page shown that turns out not to differ gives way to the first one that does.
+  useEffect(() => {
+    if (!onlyDifferent || listed.length === 0 || !entry) return;
+    if (!listed.some((e) => e.page === page) && entryDiffers(entry, results) === false) setPage(listed[0].page);
+  }, [onlyDifferent, listed, entry, page, results]);
+  // "Page X of N" counts the pages listed (all, or the differing ones with the filter).
+  const position = listed.findIndex((e) => e.page === page);
 
   // Previous / next move through the pages listed (all, or the differing ones with the filter).
   const step = (dir: 1 | -1) => {
@@ -299,7 +313,10 @@ export default function OverlayView({ fileA, fileB, sizesA, sizesB }: Props) {
               )}
             </div>
           ) : shown.status === "error" && onStage ? (
-            <div className={`flex aspect-[8.5/11] items-center justify-center p-4 text-center ${monoLabel}`}>!</div>
+            <div className={`flex aspect-[8.5/11] items-center justify-center p-4 text-center ${monoLabel}`}>
+              <span aria-hidden="true">!</span>
+              <span className="sr-only">{t("drawFailedShort")}</span>
+            </div>
           ) : (
             <div className="flex aspect-[8.5/11] items-center justify-center">
               <Spinner />
@@ -313,7 +330,7 @@ export default function OverlayView({ fileA, fileB, sizesA, sizesB }: Props) {
   if (docs.status === "error") {
     return (
       <p className={`mt-6 ${noticeClass}`} role="alert">
-        {t("renderFailed", { page })}
+        {t("overlayOpenFailed")}
       </p>
     );
   }
@@ -326,7 +343,7 @@ export default function OverlayView({ fileA, fileB, sizesA, sizesB }: Props) {
             <ChevronLeft aria-hidden="true" strokeWidth={1.5} className="h-4 w-4" />
           </button>
           <p className={`${monoLabel} min-w-[8.5rem] text-center`} data-testid="overlay-page-of">
-            {t("pageOf", { page, total: entries.length })}
+            {position >= 0 ? t("pageOf", { page: position + 1, total: listed.length }) : t("pageOf", { page, total: entries.length })}
           </p>
           <button type="button" className={`${smallButton} h-9 w-9`} onClick={() => step(1)} disabled={!hasNext} aria-label={t("nextPage")}>
             <ChevronRight aria-hidden="true" strokeWidth={1.5} className="h-4 w-4" />
@@ -383,7 +400,18 @@ export default function OverlayView({ fileA, fileB, sizesA, sizesB }: Props) {
                         {on && <Check aria-hidden="true" strokeWidth={2} className="h-3.5 w-3.5" />}
                         {t("page", { page: e.page })}
                       </span>
-                      {badge && <span className={`font-mono text-[11px] uppercase tracking-[0.08em] ${e.kind === "pair" && badge !== pct(0) ? "text-ink" : "text-ink-2"}`}>{badge}</span>}
+                      {badge && (
+                        <span className={`font-mono text-[11px] uppercase tracking-[0.08em] ${badge.differs ? "text-ink" : "text-ink-2"}`}>
+                          {badge.failed ? (
+                            <>
+                              <span aria-hidden="true">!</span>
+                              <span className="sr-only">{t("drawFailedShort")}</span>
+                            </>
+                          ) : (
+                            badge.text
+                          )}
+                        </span>
+                      )}
                     </button>
                   </li>
                 );

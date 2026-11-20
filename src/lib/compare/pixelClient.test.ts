@@ -39,7 +39,6 @@ describe("handlePixelMessage", () => {
     expect(res.type).toBe("success");
     if (res.type !== "success") return;
     expect(res.id).toBe(7);
-    expect(res.changed).toBe(1);
     expect(res.ratio).toBeCloseTo(1 / 25);
     const overlay = new Uint8ClampedArray(res.overlay);
     expect(overlay.length).toBe(100);
@@ -60,8 +59,8 @@ describe("createPixelDiffer", () => {
     const one = differ.diff({ width: 2, height: 1, data: pixels(2, 1) }, { width: 2, height: 1, data: pixels(2, 1, [1]) }, RED);
     const two = differ.diff({ width: 2, height: 1, data: pixels(2, 1) }, { width: 2, height: 1, data: pixels(2, 1) }, RED);
     w.flush();
-    expect((await one).changed).toBe(1);
-    expect((await two).changed).toBe(0);
+    expect((await one).ratio).toBeCloseTo(0.5);
+    expect((await two).ratio).toBe(0);
   });
 
   it("rejects pending work and stops the worker on dispose", async () => {
@@ -97,7 +96,7 @@ describe("createPixelDiffer", () => {
     const next = differ.diff(img(), img(), RED);
     expect(workers).toHaveLength(2);
     workers[1].flush();
-    expect((await next).changed).toBe(0);
+    expect((await next).ratio).toBe(0);
     // Nothing pending: reset keeps the worker.
     differ.reset();
     expect(workers[1].terminated()).toBe(false);

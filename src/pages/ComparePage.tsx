@@ -27,7 +27,7 @@ const SYNC_LINE = 0.3;
 
 type Slot =
   | { kind: "empty"; error: UiError | null }
-  | { kind: "reading"; key: number; file: File }
+  | { kind: "reading"; key: number; file: File; progress: { done: number; total: number } | null }
   | { kind: "ready"; key: number; file: File; sizes: Size[]; words: Word[][] };
 
 type Diff =
@@ -48,7 +48,7 @@ const ocrLink = (children: ReactNode) => (
 
 function slotView(slot: Slot): SlotView {
   if (slot.kind === "empty") return slot;
-  if (slot.kind === "reading") return { kind: "reading", file: slot.file };
+  if (slot.kind === "reading") return { kind: "reading", file: slot.file, progress: slot.progress };
   return { kind: "ready", file: slot.file, pages: slot.sizes.length };
 }
 
@@ -251,6 +251,10 @@ export default function ComparePage() {
   const [diff, setDiff] = useState<Diff>({ status: "idle" });
   const [error, setError] = useState<UiError | null>(null);
   const [view, setView] = useState<"text" | "overlay">("text");
+  // The overlay mounts on first use and then stays mounted (hidden under the text view) so its cache survives.
+  const [overlayUsed, setOverlayUsed] = useState(false);
+  // Text extraction per slot key, aborted when its file is removed or replaced.
+  const reads = useRef(new Map<number, AbortController>());
   const compareRef = useRef<ReturnType<typeof createCompareWorker> | null>(null);
   const latest = useMemo(createLatest, []);
 
@@ -276,27 +280,46 @@ export default function ComparePage() {
       if (!worker.ready) return fail(tc("engineLoading"));
       if (file.size > MAX_MB * 1024 * 1024) return fail(t("tooLarge", { name: file.name, max: MAX_MB }));
       const key = nextKey++;
-      setSlots((cur) => (index === 0 ? [{ kind: "reading", key, file }, cur[1]] : [cur[0], { kind: "reading", key, file }]));
+      const ctrl = new AbortController();
+      reads.current.set(key, ctrl);
+      setSlots((cur) => {
+        // The file it replaces stops being read.
+        const old = cur[index];
+        if (old.kind === "reading") reads.current.get(old.key)?.abort();
+        const next: Slot = { kind: "reading", key, file, progress: null };
+        return index === 0 ? [next, cur[1]] : [cur[0], next];
+      });
       const back = (e: UiError) => settle(key, { kind: "empty", error: e });
+      const progress = (done: number, total: number) =>
+        setSlots((cur) => cur.map((s) => (s.kind === "reading" && s.key === key ? { ...s, progress: { done, total } } : s)) as [Slot, Slot]);
       try {
         const bytes = await readFileAsUint8Array(file);
         const sizes = await pageSizes(bytes);
         if (sizes.length > MAX_PAGES) return back(t("tooManyPages", { name: file.name, count: sizes.length, max: MAX_PAGES }));
+        if (ctrl.signal.aborted) return;
         const doc = await pdfjs.getDocument({ data: bytes.slice() }).promise;
         try {
-          const words = await extractWords(doc as unknown as PdfLike);
+          const words = await extractWords(doc as unknown as PdfLike, progress, ctrl.signal);
           settle(key, { kind: "ready", key, file, sizes, words });
         } finally {
           void doc.destroy();
         }
       } catch (e) {
+        if (ctrl.signal.aborted) return;
         back(e instanceof UserError ? e.message : describe(e));
+      } finally {
+        reads.current.delete(key);
       }
     },
     [worker.initError, worker.ready, pageSizes, settle, t, tc, describe],
   );
 
-  const remove = (index: 0 | 1) => setSlots((cur) => (index === 0 ? [EMPTY, cur[1]] : [cur[0], EMPTY]));
+  const remove = (index: 0 | 1) =>
+    setSlots((cur) => {
+      const old = cur[index];
+      if (old.kind === "reading") reads.current.get(old.key)?.abort();
+      return index === 0 ? [EMPTY, cur[1]] : [cur[0], EMPTY];
+    });
   const swap = () => setSlots(([x, y]) => [y, x]);
 
   const [sa, sb] = slots;
@@ -417,7 +440,14 @@ export default function ComparePage() {
           <ToggleChip on={view === "text"} onClick={() => setView("text")} className="!h-8 !px-3">
             {t("viewText")}
           </ToggleChip>
-          <ToggleChip on={view === "overlay"} onClick={() => setView("overlay")} className="!h-8 !px-3">
+          <ToggleChip
+            on={view === "overlay"}
+            onClick={() => {
+              setView("overlay");
+              setOverlayUsed(true);
+            }}
+            className="!h-8 !px-3"
+          >
             {t("viewOverlay")}
           </ToggleChip>
         </div>
@@ -430,10 +460,17 @@ export default function ComparePage() {
         </div>
       )}
 
-      {view === "text" && a && b && result && !(noTextA && noTextB) && <TextView a={a} b={b} result={result} />}
+      {/* Both views stay mounted once used (the hidden one keeps its scroll, picked change and overlay cache). */}
+      {a && b && result && !(noTextA && noTextB) && (
+        <div hidden={view !== "text"}>
+          <TextView a={a} b={b} result={result} />
+        </div>
+      )}
       {/* Keyed by both documents: a new file or a swap remounts it, which cancels everything in flight. */}
-      {view === "overlay" && a && b && (
-        <OverlayView key={`${a.key}-${b.key}`} fileA={a.file} fileB={b.file} sizesA={a.sizes} sizesB={b.sizes} />
+      {overlayUsed && a && b && (
+        <div hidden={view !== "overlay"}>
+          <OverlayView key={`${a.key}-${b.key}`} fileA={a.file} fileB={b.file} sizesA={a.sizes} sizesB={b.sizes} />
+        </div>
       )}
     </ToolShell>
   );

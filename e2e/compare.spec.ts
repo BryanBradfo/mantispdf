@@ -231,9 +231,9 @@ test("overlay: changed pages are flagged, the filter keeps them, the extra page 
   await expect(page.getByTestId("overlay-page-of")).toHaveText("Page 2 of 3");
   await expect(page.getByTestId("overlay-summary")).toHaveText(/^Page 2: .*% of pixels differ$/, { timeout: 20000 });
 
-  // Back to the text view: it is still there.
+  // Back to the text view: it is still there, the overlay hidden but kept.
   await page.getByRole("button", { name: "Text", exact: true }).click();
-  await expect(page.getByTestId("overlay-view")).toHaveCount(0);
+  await expect(page.getByTestId("overlay-view")).toBeHidden();
   await expect(changes(page)).toHaveCount(5);
 
   expect(errors).toEqual([]);
@@ -255,6 +255,36 @@ test("overlay: the same pair gives the same percentage on a wide and a narrow sc
   const wide = await read(1440, 1000, 1);
   const narrow = await read(390, 844, 3);
   expect(narrow).toEqual(wide);
+});
+
+test("switching views keeps the picked change and the overlay results", async ({ page }) => {
+  await load(page, "compare-a.pdf", "compare-b.pdf");
+  await expect(changes(page).first()).toBeVisible({ timeout: 20000 });
+  await changes(page).last().click();
+  const colB = page.getByTestId("compare-column-b");
+  await expect.poll(() => colB.evaluate((el) => el.scrollTop)).toBeGreaterThan(100);
+  const scrolled = await colB.evaluate((el) => el.scrollTop);
+  await overlay(page);
+  await page.getByLabel("Only pages with differences").check();
+  await expect(page.getByTestId("overlay-scan")).toHaveText("3 pages differ", { timeout: 20000 });
+  await page.getByRole("button", { name: "Text", exact: true }).click();
+  await expect(changes(page).last()).toHaveAttribute("aria-current", "true");
+  expect(await colB.evaluate((el) => el.scrollTop)).toBe(scrolled);
+  await page.getByRole("button", { name: "Overlay", exact: true }).click();
+  // Known at once: no new scan.
+  await expect(page.getByTestId("overlay-scan")).toHaveText("3 pages differ");
+  await expect(page.getByTestId("overlay-badge")).toBeVisible();
+});
+
+test("with the filter on, the page counter counts the differing pages", async ({ page }) => {
+  await load(page, "compare-a.pdf", "compare-a.pdf");
+  await expect(page.getByTestId("compare-headline")).toHaveText("No text differences", { timeout: 20000 });
+  await overlay(page);
+  await expect(page.getByTestId("overlay-page-of")).toHaveText("Page 1 of 2", { timeout: 20000 });
+  await page.getByLabel("Only pages with differences").check();
+  await expect(page.getByTestId("overlay-scan")).toHaveText("0 pages differ", { timeout: 20000 });
+  // Nothing differs: the counter falls back to all pages.
+  await expect(page.getByTestId("overlay-page-of")).toHaveText("Page 1 of 2");
 });
 
 test("overlay: identical files differ by 0 % and the filter lists no page", async ({ page }) => {

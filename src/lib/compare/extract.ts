@@ -8,7 +8,8 @@ export interface PdfLike {
 }
 
 const DESCENT = 0.25;
-const WHITESPACE = /[^\s   -   　]+/gu;
+/** Runs of non-space characters (`\s` already covers NBSP, thin and ideographic spaces). */
+const WORD = /\S+/gu;
 
 const SAME_BASELINE = 0.2; // em
 const MERGE_GAP = 0.15; // em: closer than this means no word break
@@ -72,7 +73,7 @@ export function wordsFromRuns(runs: TextRun[], geometry: PageGeometry, page: num
     const size = Math.hypot(c, d);
     const [ux, uy] = [a / along, b / along];
     const [vx, vy] = size > 0 ? [c / size, d / size] : [-uy, ux];
-    for (const m of run.str.matchAll(WHITESPACE)) {
+    for (const m of run.str.matchAll(WORD)) {
       const s0 = (run.width * m.index) / run.str.length;
       const s1 = (run.width * (m.index + m[0].length)) / run.str.length;
       const corners = [
@@ -91,10 +92,22 @@ export function wordsFromRuns(runs: TextRun[], geometry: PageGeometry, page: num
   return words;
 }
 
-/** Words of every page, page i at index i (an empty array for a page without text). */
-export async function extractWords(doc: PdfLike, onProgress?: (done: number, total: number) => void): Promise<Word[][]> {
+/**
+ * Words of every page, page i at index i (an empty array for a page without text). `onProgress`
+ * gets page i of N after each page; `signal` stops it between pages (rejects with an AbortError).
+ */
+export async function extractWords(
+  doc: PdfLike,
+  onProgress?: (done: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<Word[][]> {
   const pages: Word[][] = [];
   for (let n = 1; n <= doc.numPages; n++) {
+    if (signal?.aborted) {
+      const e = new Error("Extraction cancelled");
+      e.name = "AbortError";
+      throw e;
+    }
     const p = await doc.getPage(n);
     const content = await p.getTextContent();
     const runs: TextRun[] = [];

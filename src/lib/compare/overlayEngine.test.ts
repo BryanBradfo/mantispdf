@@ -13,7 +13,9 @@ function deps(keep = 4, rejectOnAbort = false) {
       new Promise((resolve, reject) => {
         // Like the real renders: an abort rejects the computation.
         if (rejectOnAbort) signal.addEventListener("abort", () => reject(Object.assign(new Error("cancelled"), { name: "AbortError" })));
-        calls.push({ page, lane, signal, resolve: (ratio) => resolve({ ratio, overlay: `o${page}` }), reject });
+        const nth = calls.filter((c) => c.page === page).length;
+        const overlay = nth === 0 ? `o${page}` : `o${page}#${nth + 1}`;
+        calls.push({ page, lane, signal, resolve: (ratio) => resolve({ ratio, overlay }), reject });
       }),
     resetLane: (lane) => resets.push(lane),
     release: (o) => released.push(o),
@@ -232,5 +234,53 @@ describe("OverlayEngine", () => {
     calls[0].resolve(0);
     await s;
     expect(fn).toHaveBeenCalled();
+  });
+
+  it("the scan waits for a new stage run of the page instead of starting a duplicate (the shown mask survives)", async () => {
+    const { d, calls, released } = deps();
+    const e = new OverlayEngine(d);
+    // Page 2 on stage; the scan waits on it.
+    const first = e.stage(2);
+    await flush();
+    e.startScan([2]);
+    // Another page, then back to 2: the first run is aborted (its render ends late), a new stage run starts.
+    const other = e.stage(1);
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    await flush();
+    calls[1].resolve(0);
+    await other;
+    await flush();
+    // Back to page 2: the stage and the scan both wait on the stale run.
+    const again = e.stage(2);
+    await flush();
+    expect(calls.map((c) => [c.page, c.lane])).toEqual([[2, "stage"], [1, "stage"]]);
+    // The stale run ends in an AbortError: exactly one new run of page 2 starts (whichever of the
+    // stage and the scan gets there first), and the other waits for it.
+    calls[0].reject(Object.assign(new Error("cancelled"), { name: "AbortError" }));
+    await flush();
+    expect(calls).toHaveLength(3);
+    expect(calls[2].page).toBe(2);
+    calls[2].resolve(0.3);
+    const shown = await again;
+    await flush();
+    expect(calls).toHaveLength(3);
+    expect(shown.ratio).toBe(0.3);
+    expect(released).not.toContain(shown.overlay);
+    expect(e.getScan()).toMatchObject({ status: "done" });
+  });
+
+  it("staging the page already loading again reuses its run (a resize does not restart the diff)", async () => {
+    const { d, calls, resets } = deps();
+    const e = new OverlayEngine(d);
+    const one = e.stage(4);
+    await flush();
+    const again = e.stage(4);
+    await flush();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].signal.aborted).toBe(false);
+    expect(resets).toEqual([]);
+    calls[0].resolve(0.25);
+    expect(await again).toEqual({ ratio: 0.25, overlay: "o4" });
+    expect(await one).toEqual({ ratio: 0.25, overlay: "o4" });
   });
 });

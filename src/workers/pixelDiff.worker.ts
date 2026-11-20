@@ -11,7 +11,7 @@ export function handlePixelMessage(msg: PixelRequest): PixelResponse {
       { width: msg.width, height: msg.height, data: new Uint8ClampedArray(msg.b) },
     );
     const overlay = paintMask(d.mask, msg.rgba);
-    return { type: "success", id, changed: d.changed, ratio: d.ratio, overlay: overlay.buffer };
+    return { type: "success", id, ratio: d.ratio, overlay: overlay.buffer };
   } catch (err) {
     return { type: "failure", id, error: String(err) };
   }

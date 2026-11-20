@@ -1,11 +1,10 @@
 import type { Token, Word } from "./types";
 
-const SPACES = /[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/g;
 const INVISIBLE = /[\u00ad\u200b]/g;
 
-/** NFKC, soft hyphens and zero-width spaces removed, exotic spaces to plain spaces, collapsed, trimmed. */
+/** NFKC, soft hyphens and zero-width spaces removed, every space (`\s` includes NBSP and thin spaces) collapsed to one, trimmed. */
 export function normalizeText(text: string): string {
-  return text.normalize("NFKC").replace(INVISIBLE, "").replace(SPACES, " ").replace(/\s+/g, " ").trim();
+  return text.normalize("NFKC").replace(INVISIBLE, "").replace(/\s+/g, " ").trim();
 }
 
 /**

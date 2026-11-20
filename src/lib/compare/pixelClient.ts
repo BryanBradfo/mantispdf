@@ -4,11 +4,11 @@ export type Rgba = readonly [number, number, number, number];
 
 export type PixelRequest = { type: "diff"; id: number; width: number; height: number; a: ArrayBuffer; b: ArrayBuffer; rgba: Rgba };
 export type PixelResponse =
-  | { type: "success"; id: number; changed: number; ratio: number; overlay: ArrayBuffer }
+  | { type: "success"; id: number; ratio: number; overlay: ArrayBuffer }
   | { type: "failure"; id: number; error: string };
 
 export interface PixelResult {
-  changed: number;
+  /** Share of pixels that changed (before dilation). */
   ratio: number;
   /** RGBA pixels of the overlay (the colour where pixels differ, transparent elsewhere). */
   overlay: Uint8ClampedArray<ArrayBuffer>;
@@ -56,7 +56,7 @@ export function createPixelDiffer(spawn: () => PixelWorkerLike = defaultSpawn) {
       const p = pending.get(msg.id);
       if (!p) return;
       pending.delete(msg.id);
-      if (msg.type === "success") p.resolve({ changed: msg.changed, ratio: msg.ratio, overlay: new Uint8ClampedArray(msg.overlay) });
+      if (msg.type === "success") p.resolve({ ratio: msg.ratio, overlay: new Uint8ClampedArray(msg.overlay) });
       else p.reject(new Error(msg.error));
     };
     w.onerror = () => {

@@ -148,3 +148,33 @@ describe("extractWords on fixtures", () => {
     expect(seen).toEqual([1, 2, 3]);
   });
 });
+
+describe("extractWords progress and cancel", () => {
+  /** A fake document of `n` empty pages counting the pages read. */
+  function fakeDoc(n: number) {
+    const read: number[] = [];
+    const doc: PdfLike = {
+      numPages: n,
+      getPage: async (k) => {
+        read.push(k);
+        return { view: [0, 0, 612, 792], rotate: 0, getTextContent: async () => ({ items: [] }) };
+      },
+    };
+    return { doc, read };
+  }
+
+  it("reports page i of N", async () => {
+    const { doc } = fakeDoc(3);
+    const seen: string[] = [];
+    await extractWords(doc, (d, t) => seen.push(`${d}/${t}`));
+    expect(seen).toEqual(["1/3", "2/3", "3/3"]);
+  });
+
+  it("stops between pages once aborted", async () => {
+    const { doc, read } = fakeDoc(5);
+    const ctrl = new AbortController();
+    const p = extractWords(doc, (d) => d === 2 && ctrl.abort(), ctrl.signal);
+    await expect(p).rejects.toMatchObject({ name: "AbortError" });
+    expect(read).toEqual([1, 2]);
+  });
+});

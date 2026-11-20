@@ -60,6 +60,8 @@ export class OverlayEngine<O> {
   private readonly inflight = new Map<number, Promise<PairOutput<O>>>();
   private pinned: number | null = null;
   private stageCtrl: AbortController | null = null;
+  /** The stage request in flight (page and its promise), reused when the same page is asked again. */
+  private staging: { page: number; promise: Promise<PairOutput<O>> } | null = null;
   private scanCtrl: AbortController | null = null;
   private scan: ScanState = { status: "idle" };
   private pauses = 0;
@@ -90,6 +92,8 @@ export class OverlayEngine<O> {
   /** The pair on show: from the cache, from the scan's work on it, or computed now. Supersedes the previous stage. */
   stage(page: number): Promise<PairOutput<O>> {
     if (this.disposed) return Promise.reject(abortError());
+    // The same page asked again while it loads (a resize): the grid does not depend on the screen, reuse the run.
+    if (this.staging && this.staging.page === page) return this.staging.promise;
     this.pinned = page;
     if (this.stageCtrl) {
       this.stageCtrl.abort();
@@ -97,7 +101,7 @@ export class OverlayEngine<O> {
     }
     const ctrl = new AbortController();
     this.stageCtrl = ctrl;
-    return this.pauseWhile(async () => {
+    const promise = this.pauseWhile(async () => {
       for (;;) {
         if (ctrl.signal.aborted) throw abortError();
         const r = this.results.get(page);
@@ -120,6 +124,13 @@ export class OverlayEngine<O> {
       if (ctrl.signal.aborted) throw abortError();
       return out;
     });
+    const staging = { page, promise };
+    this.staging = staging;
+    const done = () => {
+      if (this.staging === staging) this.staging = null;
+    };
+    promise.then(done, done);
+    return promise;
   }
 
   /** Hold the scan while `fn` runs (the stage's own renders). */
@@ -151,20 +162,26 @@ export class OverlayEngine<O> {
         await this.deps.idle();
         await this.unpaused();
         if (ctrl.signal.aborted) return;
-        if (this.results.has(page)) continue;
-        const pending = this.inflight.get(page);
-        if (pending) {
-          try {
-            await untilAbort(pending, ctrl.signal);
-          } catch {
-            // The stage run it waited on was aborted (or failed): computed below unless known now.
+        // Wait for any run of this page in flight (the stage's), again after each one ends: an aborted
+        // run may already have been replaced by a new one. Compute it here only when none is left.
+        for (;;) {
+          if (ctrl.signal.aborted) return;
+          if (this.results.has(page)) break;
+          const pending = this.inflight.get(page);
+          if (pending) {
+            try {
+              await untilAbort(pending, ctrl.signal);
+            } catch {
+              // Aborted or failed: look again.
+            }
+            continue;
           }
-          if (ctrl.signal.aborted) return;
-        }
-        try {
-          if (!this.results.has(page)) await untilAbort(this.run(page, "scan", ctrl.signal), ctrl.signal);
-        } catch {
-          if (ctrl.signal.aborted) return;
+          try {
+            await untilAbort(this.run(page, "scan", ctrl.signal), ctrl.signal);
+          } catch {
+            if (ctrl.signal.aborted) return;
+          }
+          break;
         }
         progress("running");
       }
@@ -201,9 +218,11 @@ export class OverlayEngine<O> {
         }
         this.setResult(page, { status: "done", ratio: out.ratio });
         // Masks are kept for the page on show (and the last few shown); a scanned page keeps its ratio only.
-        if (lane === "stage" || page === this.pinned) this.store(page, out.overlay);
-        else this.deps.release(out.overlay);
-        return out;
+        if (lane !== "stage" && page !== this.pinned) {
+          this.deps.release(out.overlay);
+          return out;
+        }
+        return { ratio: out.ratio, overlay: this.store(page, out.overlay) };
       },
       (e: unknown) => {
         if (!signal.aborted && !this.disposed) this.setResult(page, { status: "error" });
@@ -223,9 +242,17 @@ export class OverlayEngine<O> {
     this.emit();
   }
 
-  private store(page: number, overlay: O) {
+  /**
+   * Keep `overlay` as the page's mask and return the mask to use. Idempotent: a mask already kept
+   * for the page (maybe on screen) stays, and the new one is freed instead.
+   */
+  private store(page: number, overlay: O): O {
     const old = this.overlays.get(page);
-    if (old !== undefined && old !== overlay) this.deps.release(old);
+    if (old !== undefined) {
+      if (old !== overlay) this.deps.release(overlay);
+      this.touch(page, old);
+      return old;
+    }
     this.touch(page, overlay);
     for (const key of this.overlays.keys()) {
       if (this.overlays.size <= this.keep) break;
@@ -233,6 +260,7 @@ export class OverlayEngine<O> {
       this.deps.release(this.overlays.get(key) as O);
       this.overlays.delete(key);
     }
+    return overlay;
   }
 
   /** Most recently used last. */
