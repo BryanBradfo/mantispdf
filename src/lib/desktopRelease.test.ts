@@ -47,7 +47,7 @@ describe("desktop release assets", () => {
 
   it("builds the Linux one-liner from the AppImage URL", () => {
     expect(linuxInstallCommand("2.0.0")).toBe(
-      `curl -LO ${BASE}/v2.0.0/MantisPDF_2.0.0_amd64.AppImage && chmod +x MantisPDF_2.0.0_amd64.AppImage && ./MantisPDF_2.0.0_amd64.AppImage`,
+      `curl -LO ${BASE}/v2.0.0/MantisPDF_2.0.0_amd64.AppImage && chmod +x MantisPDF_2.0.0_amd64.AppImage && ./MantisPDF_2.0.0_amd64.AppImage --appimage-extract-and-run`,
     );
   });
 });

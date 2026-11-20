@@ -22,6 +22,8 @@ const download: Messages<typeof en> = {
   noteWindows:
     "L’installateur n’est pas encore signé. Si SmartScreen vous avertit, cliquez sur Informations complémentaires, puis Exécuter quand même.",
   noteLinux: "Ou installez depuis un terminal :",
+  noteDeb:
+    "Sur Ubuntu ou Debian, le .deb fait une vraie installation avec une icône dans le menu : double-cliquez dessus, ou lancez sudo apt install ./MantisPDF_{version}_amd64.deb.",
   terminal: "Commande du terminal",
   copy: "Copier la commande",
   copied: "Copié",
