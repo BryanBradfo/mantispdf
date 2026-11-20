@@ -1,63 +1,77 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatNumber, useLocale, useT } from "../../i18n";
-import { createLatest } from "../../lib/latest";
-import { createPixelDiffer, type PixelDiffer } from "../../lib/compare/pixelClient";
-import { entryDiffers, overlayEntries, overlayRenderWidth, percentParts, visibleEntries, type OverlayEntry, type PageResult } from "../../lib/compare/overlay";
-import { abortError, canvasFrom, isAbort, onWhite, openOverlayDoc, pixelsOf, release, renderPage, type OverlayDoc } from "../../lib/compare/overlayRender";
+import { createPixelDiffer } from "../../lib/compare/pixelClient";
+import { entryDiffers, overlayEntries, overlayRenderWidth, pairGrid, percentParts, visibleEntries, type OverlayEntry, type PageResult } from "../../lib/compare/overlay";
+import { OverlayEngine, type Lane, type ScanState } from "../../lib/compare/overlayEngine";
+import {
+  abortError,
+  canvasFrom,
+  isAbort,
+  onWhite,
+  openOverlayDoc,
+  pixelsOf,
+  release,
+  renderBoth,
+  renderPage,
+  sameSize,
+  type OverlayDoc,
+} from "../../lib/compare/overlayRender";
+import type { Size } from "../../lib/compare/view";
 import { COMPARE_PIXEL, COMPARE_PIXEL_RGBA, COMPARE_SWATCH_PAGE, pageBadge } from "../../styles/onPage";
 import { checkClass, focusRing, monoLabel, noticeClass, smallButton } from "../../styles/ui";
 
 interface Props {
   fileA: File;
   fileB: File;
-  pagesA: number;
-  pagesB: number;
+  /** Page sizes in visible orientation (rotation applied), as the text view uses them. */
+  sizesA: readonly Size[];
+  sizesB: readonly Size[];
 }
 
 type Docs = { status: "opening" } | { status: "ready"; a: OverlayDoc; b: OverlayDoc } | { status: "error" };
 
-/** What the stage shows: a pair with its overlay, a page from one document only, or a failure. */
+/**
+ * The mask of a pair on the fixed compute grid (`canvas`, grid size) and the widths the two pages
+ * took on it, so the display renders can be laid out the same way at screen resolution.
+ */
+interface GridOverlay {
+  canvas: HTMLCanvasElement;
+  widthA: number;
+  widthB: number;
+}
+
+/** What the stage shows: a pair (display renders + grid mask), a page from one document only, or a failure. */
 type Shown =
   | { status: "loading"; page: number }
-  | { status: "pair"; page: number; a: HTMLCanvasElement; b: HTMLCanvasElement; overlay: HTMLCanvasElement; ratio: number }
+  | { status: "pair"; page: number; a: HTMLCanvasElement; b: HTMLCanvasElement; overlay: GridOverlay; ratio: number }
   | { status: "single"; page: number; side: "a" | "b"; canvas: HTMLCanvasElement }
   | { status: "error"; page: number };
 
-type Scan = { status: "idle" } | { status: "running"; done: number; total: number } | { status: "done" };
+const NO_RESULTS: ReadonlyMap<number, PageResult> = new Map();
+const IDLE: ScanState = { status: "idle" };
 
-/** Render page `page` of both documents at `px` wide on same-size white canvases and diff them off the main thread. */
-async function computePair(docs: { a: OverlayDoc; b: OverlayDoc }, page: number, px: number, differ: PixelDiffer, signal: AbortSignal) {
-  const [ra, rb] = await Promise.all([renderPage(docs.a, page, px, signal), renderPage(docs.b, page, px, signal)]);
-  // Same width; the shorter page is padded with white (a taller page really differs there).
-  const h = Math.max(ra.height, rb.height);
-  const a = onWhite(ra, px, h);
-  const b = onWhite(rb, px, h);
-  release(ra, rb);
-  try {
-    const d = await differ.diff(pixelsOf(a), pixelsOf(b), COMPARE_PIXEL_RGBA);
-    if (signal.aborted) throw abortError();
-    return { a, b, overlay: canvasFrom(d.overlay, px, h), ratio: d.ratio };
-  } catch (e) {
-    release(a, b);
-    throw e;
-  }
-}
+/** Give the main thread back between two scanned pages. */
+const idle = () =>
+  new Promise<void>((resolve) => {
+    if (typeof requestIdleCallback === "function") requestIdleCallback(() => resolve(), { timeout: 100 });
+    else setTimeout(resolve, 0);
+  });
 
-/** Shows a canvas made elsewhere (no copy): it is moved into this box and scaled to its width. */
-function CanvasHost({ canvas, className = "", testId }: { canvas: HTMLCanvasElement; className?: string; testId?: string }) {
+/** Shows a canvas made elsewhere (no copy): it is moved into this box and scaled to its width (or to the box with `fill`). */
+function CanvasHost({ canvas, className = "", testId, fill = false }: { canvas: HTMLCanvasElement; className?: string; testId?: string; fill?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     canvas.style.display = "block";
     canvas.style.width = "100%";
-    canvas.style.height = "auto";
+    canvas.style.height = fill ? "100%" : "auto";
     el.replaceChildren(canvas);
     return () => {
       if (canvas.parentNode === el) el.removeChild(canvas);
     };
-  }, [canvas]);
+  }, [canvas, fill]);
   return <div ref={ref} aria-hidden="true" data-testid={testId} className={className} />;
 }
 
@@ -66,29 +80,24 @@ function Spinner() {
 }
 
 /**
- * The overlay view: page pair i drawn at the same width, the pixels that differ painted red over
- * the modified page; a page list (with the share of changed pixels once known) and a filter that
- * checks every page. Remounted for new documents (the caller keys it); unmounting cancels it all.
+ * The overlay view: page pair i diffed on a fixed compute grid (same result on every screen), the
+ * pages drawn at screen resolution with the grid's mask scaled over the modified one; a page list
+ * with the share of changed pixels once known, and a filter that checks every page. Remounted for
+ * new documents (the caller keys it); unmounting cancels it all.
  */
-export default function OverlayView({ fileA, fileB, pagesA, pagesB }: Props) {
+export default function OverlayView({ fileA, fileB, sizesA, sizesB }: Props) {
   const t = useT("compare");
   const locale = useLocale();
-  const entries = useMemo(() => overlayEntries(pagesA, pagesB), [pagesA, pagesB]);
+  const entries = useMemo(() => overlayEntries(sizesA.length, sizesB.length), [sizesA.length, sizesB.length]);
   const [docs, setDocs] = useState<Docs>({ status: "opening" });
-  const [differ, setDiffer] = useState<PixelDiffer | null>(null);
-  const [results, setResults] = useState<ReadonlyMap<number, PageResult>>(() => new Map());
+  const [engine, setEngine] = useState<OverlayEngine<GridOverlay> | null>(null);
   const [page, setPage] = useState(1);
   const [onlyDifferent, setOnlyDifferent] = useState(false);
-  const [scan, setScan] = useState<Scan>({ status: "idle" });
   const [shown, setShown] = useState<Shown>({ status: "loading", page: 1 });
   const [cssWidth, setCssWidth] = useState(0);
   const stageRef = useRef<HTMLDivElement>(null);
-  const shownLatest = useMemo(createLatest, []);
-  const scanLatest = useMemo(createLatest, []);
 
-  const record = useCallback((n: number, r: PageResult) => setResults((cur) => new Map(cur).set(n, r)), []);
-
-  // One pdf.js document per file and one pixel worker for the life of the view.
+  // One pdf.js document per file for the life of the view.
   useEffect(() => {
     let alive = true;
     const opened: OverlayDoc[] = [];
@@ -102,18 +111,59 @@ export default function OverlayView({ fileA, fileB, pagesA, pagesB }: Props) {
       ([a, b]) => alive && setDocs({ status: "ready", a, b }),
       () => alive && setDocs({ status: "error" }),
     );
-    const d = createPixelDiffer();
-    setDiffer(d);
     return () => {
       alive = false;
-      shownLatest.invalidate();
-      scanLatest.invalidate();
-      d.dispose();
       for (const doc of opened) void doc.destroy();
     };
-  }, [fileA, fileB, shownLatest, scanLatest]);
+  }, [fileA, fileB]);
 
-  // Width of the modified page on screen; renders follow it (stepped, so small resizes keep them).
+  // The engine: page pairs rendered on the fixed grid and diffed in a worker per lane (stage, scan).
+  useEffect(() => {
+    if (docs.status !== "ready") return;
+    const differs = { stage: createPixelDiffer(), scan: createPixelDiffer() };
+    const compute = async (n: number, lane: Lane, signal: AbortSignal) => {
+      const grid = pairGrid(sizesA[n - 1] ?? [0, 0], sizesB[n - 1] ?? [0, 0]);
+      const [ra, rb] = await renderBoth(
+        () => renderPage(docs.a, n, grid.widthA, signal),
+        () => renderPage(docs.b, n, grid.widthB, signal),
+      );
+      const widthA = ra.width;
+      const widthB = rb.width;
+      // Same size for the diff: the smaller page padded with white (a taller page really differs there).
+      const [a, b] = sameSize(ra, rb);
+      const w = a.width;
+      const h = a.height;
+      let pa, pb;
+      try {
+        pa = pixelsOf(a);
+        pb = pixelsOf(b);
+      } finally {
+        release(a, b);
+      }
+      const d = await differs[lane].diff(pa, pb, COMPARE_PIXEL_RGBA);
+      if (signal.aborted) throw abortError();
+      return { ratio: d.ratio, overlay: { canvas: canvasFrom(d.overlay, w, h), widthA, widthB } };
+    };
+    const e = new OverlayEngine<GridOverlay>({
+      compute,
+      resetLane: (lane) => differs[lane].reset(),
+      release: (o) => release(o.canvas),
+      idle,
+    });
+    setEngine(e);
+    return () => {
+      e.dispose();
+      differs.stage.dispose();
+      differs.scan.dispose();
+      setEngine(null);
+    };
+  }, [docs, sizesA, sizesB]);
+
+  const subscribe = useMemo(() => (engine ? engine.subscribe : () => () => {}), [engine]);
+  const results = useSyncExternalStore(subscribe, () => engine?.getResults() ?? NO_RESULTS);
+  const scan = useSyncExternalStore(subscribe, () => engine?.getScan() ?? IDLE);
+
+  // Width of the modified page on screen: the display renders follow it (stepped); the diff does not.
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
@@ -128,84 +178,65 @@ export default function OverlayView({ fileA, fileB, pagesA, pagesB }: Props) {
 
   const entry: OverlayEntry | undefined = entries[page - 1];
 
-  // The page on stage: rendered and diffed when it is picked (lazily), superseded by the next pick.
+  // The page on stage, when picked (lazily): its grid diff from the engine, then both pages drawn at
+  // screen resolution in the grid's layout. A new pick or a resize supersedes it.
   useEffect(() => {
-    if (docs.status !== "ready" || !differ || !entry || px === 0) return;
-    const current = shownLatest.begin();
+    if (docs.status !== "ready" || !engine || !entry || px === 0) return;
     const ctrl = new AbortController();
+    const { signal } = ctrl;
     setShown({ status: "loading", page: entry.page });
     const run = async (): Promise<Shown> => {
-      if (entry.kind === "pair") {
-        const r = await computePair(docs, entry.page, px, differ, ctrl.signal);
-        return { status: "pair", page: entry.page, ...r };
+      if (entry.kind !== "pair") {
+        const side = entry.kind === "only-a" ? "a" : "b";
+        const canvas = await engine.pauseWhile(() => renderPage(docs[side], entry.page, px, signal));
+        return { status: "single", page: entry.page, side, canvas };
       }
-      const side = entry.kind === "only-a" ? "a" : "b";
-      const canvas = await renderPage(docs[side], entry.page, px, ctrl.signal);
-      return { status: "single", page: entry.page, side, canvas };
+      const { ratio, overlay } = await engine.stage(entry.page);
+      if (signal.aborted) throw abortError();
+      const k = px / overlay.canvas.width;
+      const h = Math.max(1, Math.round(overlay.canvas.height * k));
+      const [da, db] = await engine.pauseWhile(() =>
+        renderBoth(
+          () => renderPage(docs.a, entry.page, Math.max(1, Math.round(overlay.widthA * k)), signal),
+          () => renderPage(docs.b, entry.page, Math.max(1, Math.round(overlay.widthB * k)), signal),
+        ),
+      );
+      const a = onWhite(da, px, h);
+      const b = onWhite(db, px, h);
+      release(da, db);
+      return { status: "pair", page: entry.page, a, b, overlay, ratio };
     };
     run().then(
       (next) => {
-        if (!current()) {
-          if (next.status === "pair") release(next.a, next.b, next.overlay);
+        if (signal.aborted) {
+          if (next.status === "pair") release(next.a, next.b);
           else if (next.status === "single") release(next.canvas);
           return;
         }
-        if (next.status === "pair") record(next.page, { status: "done", ratio: next.ratio });
         setShown(next);
       },
       (e: unknown) => {
-        if (!current() || isAbort(e)) return;
-        if (entry.kind === "pair") record(entry.page, { status: "error" });
+        if (signal.aborted || isAbort(e)) return;
         setShown({ status: "error", page: entry.page });
       },
     );
     return () => ctrl.abort();
-  }, [docs, differ, entry, px, shownLatest, record]);
+  }, [docs, engine, entry, px]);
 
-  // Free the canvases of a page once another one replaces it.
+  // Free the display canvases of a page once another one replaces it (the engine owns the masks).
   useEffect(() => {
     return () => {
-      if (shown.status === "pair") release(shown.a, shown.b, shown.overlay);
+      if (shown.status === "pair") release(shown.a, shown.b);
       else if (shown.status === "single") release(shown.canvas);
     };
   }, [shown]);
 
-  // The filter checks every page pair not known yet, one at a time, with a progress count.
+  // The filter checks every page pair in the engine (shared cache, known pages skipped).
   useEffect(() => {
-    if (!onlyDifferent || docs.status !== "ready" || !differ || px === 0) {
-      setScan({ status: "idle" });
-      return;
-    }
-    const current = scanLatest.begin();
-    const ctrl = new AbortController();
-    const pairs = entries.filter((e) => e.kind === "pair");
-    // Pages already computed (shown before) are skipped.
-    const known = new Set(results.keys());
-    const todo = pairs.filter((e) => !known.has(e.page));
-    let done = pairs.length - todo.length;
-    setScan(todo.length ? { status: "running", done, total: pairs.length } : { status: "done" });
-    void (async () => {
-      for (const e of todo) {
-        if (!current()) return;
-        try {
-          const r = await computePair(docs, e.page, px, differ, ctrl.signal);
-          release(r.a, r.b, r.overlay);
-          if (!current()) return;
-          record(e.page, { status: "done", ratio: r.ratio });
-        } catch (err) {
-          if (!current() || isAbort(err)) return;
-          record(e.page, { status: "error" });
-        }
-        done++;
-        setScan(done < pairs.length ? { status: "running", done, total: pairs.length } : { status: "done" });
-      }
-    })();
-    return () => {
-      scanLatest.invalidate();
-      ctrl.abort();
-    };
-    // `results` is read once at the start: the scan's own results must not restart it.
-  }, [onlyDifferent, docs, differ, px, entries, scanLatest, record]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!onlyDifferent || !engine) return;
+    engine.startScan(entries.filter((e) => e.kind === "pair").map((e) => e.page));
+    return () => engine.stopScan();
+  }, [onlyDifferent, engine, entries]);
 
   const listed = visibleEntries(entries, results, onlyDifferent);
   const differing = entries.filter((e) => entryDiffers(e, results) === true).length;
@@ -260,7 +291,7 @@ export default function OverlayView({ fileA, fileB, pagesA, pagesB }: Props) {
           ) : canvas && onStage ? (
             <div className="relative" style={COMPARE_SWATCH_PAGE} data-testid={`overlay-page-${side}`}>
               <CanvasHost canvas={canvas} />
-              {side === "b" && shown.status === "pair" && <CanvasHost canvas={shown.overlay} className="absolute inset-0" testId="overlay-mask" />}
+              {side === "b" && shown.status === "pair" && <CanvasHost canvas={shown.overlay.canvas} fill className="absolute inset-0" testId="overlay-mask" />}
               {side === "b" && pairRatio !== null && (
                 <span className={`absolute right-2 top-2 px-2 py-1 font-mono text-[11px] uppercase tracking-[0.08em] ${pageBadge}`} data-testid="overlay-badge">
                   {pct(pairRatio)}

@@ -40,11 +40,15 @@ export async function renderPage(doc: OverlayDoc, n: number, pxWidth: number, si
     signal.addEventListener("abort", stop);
     try {
       await task.promise;
+      if (signal.aborted) throw abortError();
+      return canvas;
+    } catch (e) {
+      // Cancelled or failed: free the half-drawn canvas now.
+      release(canvas);
+      throw e;
     } finally {
       signal.removeEventListener("abort", stop);
     }
-    if (signal.aborted) throw abortError();
-    return canvas;
   } finally {
     page.cleanup();
   }
@@ -61,6 +65,34 @@ export function onWhite(src: HTMLCanvasElement | null, w: number, h: number): HT
   ctx.fillRect(0, 0, w, h);
   if (src) ctx.drawImage(src, 0, 0);
   return c;
+}
+
+/**
+ * Both canvases on one size (the larger of each side), padded with white where a page is smaller.
+ * The inputs are reused when they already have that size, else copied and freed.
+ */
+export function sameSize(a: HTMLCanvasElement, b: HTMLCanvasElement): [HTMLCanvasElement, HTMLCanvasElement] {
+  const w = Math.max(a.width, b.width);
+  const h = Math.max(a.height, b.height);
+  const fit = (c: HTMLCanvasElement) => {
+    if (c.width === w && c.height === h) return c;
+    const out = onWhite(c, w, h);
+    release(c);
+    return out;
+  };
+  return [fit(a), fit(b)];
+}
+
+/** Render two pages (both or neither): a failure or cancel frees the one that did render. */
+export async function renderBoth(
+  a: () => Promise<HTMLCanvasElement>,
+  b: () => Promise<HTMLCanvasElement>,
+): Promise<[HTMLCanvasElement, HTMLCanvasElement]> {
+  const [ra, rb] = await Promise.allSettled([a(), b()]);
+  if (ra.status === "fulfilled" && rb.status === "fulfilled") return [ra.value, rb.value];
+  if (ra.status === "fulfilled") release(ra.value);
+  if (rb.status === "fulfilled") release(rb.value);
+  throw ra.status === "rejected" ? ra.reason : (rb as PromiseRejectedResult).reason;
 }
 
 /** The canvas pixels as a fresh buffer (handed over to the pixel worker). */

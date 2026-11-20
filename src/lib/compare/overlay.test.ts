@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_RENDER_PX, overlayEntries, overlayRenderWidth, percentParts, visibleEntries, type PageResult } from "./overlay";
+import { GRID_MAX_SIDE, GRID_PIXELS, MAX_RENDER_PX, overlayEntries, pairGrid, overlayRenderWidth, percentParts, visibleEntries, type PageResult } from "./overlay";
 
 describe("overlayEntries", () => {
   it("pairs pages by index and lists the extra pages of the longer document", () => {
@@ -61,5 +61,37 @@ describe("percentParts", () => {
   it("never rounds a real change up to 100 %", () => {
     expect(percentParts(0.9996)).toEqual({ value: 0.999, below: false });
     expect(percentParts(1)).toEqual({ value: 1, below: false });
+  });
+});
+
+describe("pairGrid", () => {
+  it("renders a pair on a fixed pixel budget, whatever the screen", () => {
+    const g = pairGrid([612, 792], [612, 792]);
+    expect(GRID_PIXELS).toBe(1_500_000);
+    expect(g.widthA).toBe(g.widthB);
+    expect(g.widthA * Math.round(792 * (g.widthA / 612))).toBeGreaterThan(GRID_PIXELS * 0.99);
+    expect(g.widthA * Math.round(792 * (g.widthA / 612))).toBeLessThan(GRID_PIXELS * 1.01);
+    // The same sizes always give the same grid (no viewport, no devicePixelRatio).
+    expect(pairGrid([612, 792], [612, 792])).toEqual(g);
+  });
+
+  it("fits the modified page to the original's width", () => {
+    const g = pairGrid([612, 792], [1224, 1584]);
+    expect(g.widthB).toBe(g.widthA);
+    expect(g.scaleB).toBeCloseTo(g.scaleA / 2);
+  });
+
+  it("keeps a landscape page landscape and bounds posters", () => {
+    const land = pairGrid([792, 612], [792, 612]);
+    expect(land.widthA).toBeGreaterThan(Math.round(612 * land.scaleA));
+    const strip = pairGrid([100, 20000], [100, 20000]);
+    expect(20000 * strip.scaleA).toBeLessThanOrEqual(GRID_MAX_SIDE + 0.5);
+    // A short original against a very tall modified page: the tall page is scaled down to fit too.
+    const tall = pairGrid([612, 792], [612, 50000]);
+    expect(50000 * tall.scaleB).toBeLessThanOrEqual(GRID_MAX_SIDE + 0.5);
+  });
+
+  it("falls back to Letter for an unknown size", () => {
+    expect(pairGrid([0, 0], [612, 792])).toEqual(pairGrid([612, 792], [612, 792]));
   });
 });

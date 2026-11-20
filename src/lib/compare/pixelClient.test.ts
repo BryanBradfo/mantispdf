@@ -81,4 +81,25 @@ describe("createPixelDiffer", () => {
     w.onerror?.(new Event("error"));
     await expect(p).rejects.toThrow(/crashed/);
   });
+
+  it("reset drops a stale diff: it rejects, the worker stops, the next diff gets a fresh worker", async () => {
+    const workers: ReturnType<typeof fakeWorker>[] = [];
+    const differ = createPixelDiffer(() => {
+      const w = fakeWorker();
+      workers.push(w);
+      return w;
+    });
+    const img = () => ({ width: 1, height: 1, data: pixels(1, 1) });
+    const stale = differ.diff(img(), img(), RED);
+    differ.reset();
+    await expect(stale).rejects.toMatchObject({ name: "AbortError" });
+    expect(workers[0].terminated()).toBe(true);
+    const next = differ.diff(img(), img(), RED);
+    expect(workers).toHaveLength(2);
+    workers[1].flush();
+    expect((await next).changed).toBe(0);
+    // Nothing pending: reset keeps the worker.
+    differ.reset();
+    expect(workers[1].terminated()).toBe(false);
+  });
 });

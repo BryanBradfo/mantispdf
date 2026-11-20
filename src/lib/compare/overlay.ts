@@ -53,3 +53,35 @@ export function percentParts(ratio: number): { value: number; below: boolean } {
   if (ratio >= 1) return { value: 1, below: false };
   return { value: Math.min(0.999, Math.round(ratio * 1000) / 1000), below: false };
 }
+
+/** Pixel budget of the compute grid per page (about 1.5 MP: 1077 x 1393 for Letter). */
+export const GRID_PIXELS = 1_500_000;
+/** Longest side of a page on the grid (bounds posters and strips). */
+export const GRID_MAX_SIDE = 4000;
+const LETTER: readonly [number, number] = [612, 792];
+
+export interface PairGrid {
+  /** Render scales (device pixels per PDF unit) of the original and the modified page. */
+  scaleA: number;
+  scaleB: number;
+  /** Render widths in device pixels. */
+  widthA: number;
+  widthB: number;
+}
+
+/**
+ * The fixed grid a page pair is diffed on: the original at the scale that fills GRID_PIXELS, the
+ * modified page fitted to the same width (spec 1.4), each bounded to GRID_MAX_SIDE. It depends on
+ * the page sizes only (visible orientation), never on the screen, so the percentage, the mask and
+ * "differs" are the same on every device.
+ */
+export function pairGrid(sizeA: readonly [number, number], sizeB: readonly [number, number]): PairGrid {
+  const ok = (s: readonly [number, number]) => (s[0] > 0 && s[1] > 0 ? s : LETTER);
+  const [wA, hA] = ok(sizeA);
+  const [wB, hB] = ok(sizeB);
+  const scaleA = Math.min(Math.sqrt(GRID_PIXELS / (wA * hA)), GRID_MAX_SIDE / wA, GRID_MAX_SIDE / hA);
+  const widthA = Math.max(1, Math.round(wA * scaleA));
+  const scaleB = Math.min(widthA / wB, GRID_MAX_SIDE / hB);
+  const widthB = Math.max(1, Math.round(wB * scaleB));
+  return { scaleA, scaleB, widthA, widthB };
+}

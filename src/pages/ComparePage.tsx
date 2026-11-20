@@ -433,7 +433,7 @@ export default function ComparePage() {
       {view === "text" && a && b && result && !(noTextA && noTextB) && <TextView a={a} b={b} result={result} />}
       {/* Keyed by both documents: a new file or a swap remounts it, which cancels everything in flight. */}
       {view === "overlay" && a && b && (
-        <OverlayView key={`${a.key}-${b.key}`} fileA={a.file} fileB={b.file} pagesA={a.sizes.length} pagesB={b.sizes.length} />
+        <OverlayView key={`${a.key}-${b.key}`} fileA={a.file} fileB={b.file} sizesA={a.sizes} sizesB={b.sizes} />
       )}
     </ToolShell>
   );

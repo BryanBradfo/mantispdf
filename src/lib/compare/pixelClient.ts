@@ -25,6 +25,12 @@ export interface PixelWorkerLike {
 const defaultSpawn = (): PixelWorkerLike =>
   new Worker(new URL("../../workers/pixelDiff.worker.ts", import.meta.url), { type: "module" }) as unknown as PixelWorkerLike;
 
+function cancelled(): Error {
+  const e = new Error("Pixel diff cancelled");
+  e.name = "AbortError";
+  return e;
+}
+
 type Pending = { resolve: (r: PixelResult) => void; reject: (e: Error) => void };
 
 /**
@@ -79,11 +85,16 @@ export function createPixelDiffer(spawn: () => PixelWorkerLike = defaultSpawn) {
         }
       });
     },
+    /** Drop the diffs in flight (superseded): they reject with an AbortError and the worker is replaced on the next diff. */
+    reset(): void {
+      if (pending.size === 0) return;
+      failAll(cancelled());
+      worker?.terminate();
+      worker = null;
+    },
     dispose(): void {
       disposed = true;
-      const e = new Error("Pixel diff cancelled");
-      e.name = "AbortError";
-      failAll(e);
+      failAll(cancelled());
       worker?.terminate();
       worker = null;
     },

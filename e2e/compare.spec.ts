@@ -240,6 +240,23 @@ test("overlay: changed pages are flagged, the filter keeps them, the extra page 
   expect(foreign).toEqual([]);
 });
 
+test("overlay: the same pair gives the same percentage on a wide and a narrow screen", async ({ browser, baseURL }) => {
+  const read = async (width: number, height: number, deviceScaleFactor: number) => {
+    const ctx = await browser.newContext({ baseURL, viewport: { width, height }, deviceScaleFactor });
+    const page = await ctx.newPage();
+    await load(page, "compare-a.pdf", "compare-b.pdf");
+    await expect(changes(page).first()).toBeVisible({ timeout: 20000 });
+    await overlay(page);
+    await expect(page.getByTestId("overlay-badge")).toBeVisible({ timeout: 20000 });
+    const out = { badge: await page.getByTestId("overlay-badge").textContent(), summary: await page.getByTestId("overlay-summary").textContent() };
+    await ctx.close();
+    return out;
+  };
+  const wide = await read(1440, 1000, 1);
+  const narrow = await read(390, 844, 3);
+  expect(narrow).toEqual(wide);
+});
+
 test("overlay: identical files differ by 0 % and the filter lists no page", async ({ page }) => {
   await load(page, "compare-a.pdf", "compare-a.pdf");
   await expect(page.getByTestId("compare-headline")).toHaveText("No text differences", { timeout: 20000 });
