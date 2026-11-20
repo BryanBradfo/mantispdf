@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/extractImages";
 
 const extractImages: Messages<typeof en> = {
-  seoTitle: "Extraire les images d’un PDF | MantisPDF",
+  seoTitle: "Extraire les images d’un PDF | MantisPDF by Bradfo",
   seoDescription: "Récupérez les images intégrées à un PDF en fichiers JPEG ou PNG. Gratuit, privé, sans envoi.",
   heading: "Extraire les images",
   intro: "Enregistrez les images contenues dans un PDF en fichiers JPEG ou PNG.",

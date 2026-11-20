@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/encrypt";
 
 const encrypt: Messages<typeof en> = {
-  seoTitle: "Chiffrer un PDF | MantisPDF",
+  seoTitle: "Chiffrer un PDF | MantisPDF by Bradfo",
   seoDescription: "Protégez votre PDF par un mot de passe pour que seuls les lecteurs autorisés puissent l’ouvrir. Traitement local, rien n’est envoyé.",
   heading: "Chiffrer",
   intro: "Définissez un mot de passe pour limiter qui peut ouvrir votre PDF. Tout se passe dans votre navigateur.",

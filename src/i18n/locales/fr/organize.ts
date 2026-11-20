@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/organize";
 
 const organize: Messages<typeof en> = {
-  seoTitle: "Organiser les pages d’un PDF | MantisPDF",
+  seoTitle: "Organiser les pages d’un PDF | MantisPDF by Bradfo",
   seoDescription: "Réordonnez, faites pivoter, dupliquez, supprimez et insérez des pages blanches, même entre plusieurs PDF. Gratuit, privé, sans envoi.",
   heading: "Organiser",
   intro: "Déposez un ou plusieurs PDF, puis glissez les pages à leur place, faites-les pivoter, dupliquez-les, supprimez-les ou ajoutez des pages blanches.",

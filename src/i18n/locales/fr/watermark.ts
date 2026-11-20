@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/watermark";
 
 const watermark: Messages<typeof en> = {
-  seoTitle: "Ajouter un filigrane à un PDF | MantisPDF",
+  seoTitle: "Ajouter un filigrane à un PDF | MantisPDF by Bradfo",
   seoDescription: "Ajoutez un filigrane en diagonale sur chaque page de votre PDF. Traitement local, rien n’est envoyé.",
   heading: "Filigrane",
   intro: "Apposez un texte sur chaque page\u00a0: CONFIDENTIEL, BROUILLON ou toute autre mention. Tout se passe dans votre navigateur.",

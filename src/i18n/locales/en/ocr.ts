@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "OCR PDF: Make Scanned PDFs Searchable | MantisPDF",
+  seoTitle: "OCR PDF: Make Scanned PDFs Searchable | MantisPDF by Bradfo",
   seoDescription:
     "Recognise the text of scanned PDFs in your browser and add it as a searchable, copyable text layer. Free, private, nothing is uploaded.",
   heading: "OCR PDF",

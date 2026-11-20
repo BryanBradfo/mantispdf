@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/crop";
 
 const crop: Messages<typeof en> = {
-  seoTitle: "Rogner les pages d’un PDF | MantisPDF",
+  seoTitle: "Rogner les pages d’un PDF | MantisPDF by Bradfo",
   seoDescription: "Rognez les pages d’un PDF dans votre navigateur\u00a0: tracez la zone ou détectez les marges automatiquement. Gratuit, privé, sans envoi.",
   heading: "Rogner",
   intro: "Réduisez les marges de vos pages, à la main ou automatiquement. Tout reste sur votre appareil.",

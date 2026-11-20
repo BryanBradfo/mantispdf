@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Sanitize PDF | MantisPDF",
+  seoTitle: "Sanitize PDF | MantisPDF by Bradfo",
   seoDescription:
     "Strip hidden data from a PDF: metadata, scripts, attachments, form data and hidden content from removed pages. Free, private, nothing is uploaded.",
   heading: "Sanitize PDF",

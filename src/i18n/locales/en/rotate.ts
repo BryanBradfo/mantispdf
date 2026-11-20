@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Rotate PDF Pages | MantisPDF",
+  seoTitle: "Rotate PDF Pages | MantisPDF by Bradfo",
   seoDescription: "Rotate individual pages or entire PDF documents online. Client-side processing, nothing is uploaded.",
   heading: "Rotate Pages",
   intro: "Upload a PDF and rotate individual pages or the entire document. All processing happens in your browser.",

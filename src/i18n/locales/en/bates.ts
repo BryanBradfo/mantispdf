@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Bates Numbering for PDF | MantisPDF",
+  seoTitle: "Bates Numbering for PDF | MantisPDF by Bradfo",
   seoDescription: "Add Bates numbers across one or many PDFs, continuing the count from file to file. Free, private, nothing is uploaded.",
   heading: "Bates numbering",
   intro: "Stamp a running identifier on every page, continuing across documents. Everything stays on your device.",

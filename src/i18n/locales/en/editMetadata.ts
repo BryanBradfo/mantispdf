@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Edit PDF Metadata | MantisPDF",
+  seoTitle: "Edit PDF Metadata | MantisPDF by Bradfo",
   seoDescription: "Edit the title, author, subject and keywords of a PDF. Free, private, nothing is uploaded.",
   heading: "Edit Metadata",
   intro: "Change the title, author, subject and keywords stored inside a PDF.",

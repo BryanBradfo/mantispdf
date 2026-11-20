@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Sign PDF: Add Your Signature | MantisPDF",
+  seoTitle: "Sign PDF: Add Your Signature | MantisPDF by Bradfo",
   seoDescription: "Sign a PDF in your browser: draw, type or upload your signature and place it on the page. Free, private, nothing is uploaded.",
   heading: "Sign PDF",
   intro: "Draw, type or upload your signature and place it on any page. Everything stays on your device.",

@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/headerFooter";
 
 const headerFooter: Messages<typeof en> = {
-  seoTitle: "Ajouter un en-tête et un pied de page à un PDF | MantisPDF",
+  seoTitle: "Ajouter un en-tête et un pied de page à un PDF | MantisPDF by Bradfo",
   seoDescription: "Ajoutez un en-tête et un pied de page à chaque page d’un PDF, avec numéros de page, date et nom du fichier. Gratuit, privé, sans envoi.",
   heading: "En-tête et pied de page",
   intro: "Ajoutez du texte en haut et en bas de vos pages. Tout reste sur votre appareil.",

@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Redact PDF: Permanently Remove Text and Images | MantisPDF",
+  seoTitle: "Redact PDF: Permanently Remove Text and Images | MantisPDF by Bradfo",
   seoDescription:
     "Redact a PDF in your browser: mark areas or find text, and the content under the marks is removed from the file, not just covered. Free, private, nothing is uploaded.",
   heading: "Redact PDF",

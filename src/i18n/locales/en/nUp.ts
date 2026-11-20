@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "N-up PDF: Several Pages per Sheet | MantisPDF",
+  seoTitle: "N-up PDF: Several Pages per Sheet | MantisPDF by Bradfo",
   seoDescription: "Put 2, 4, 6, 8, 9 or 16 PDF pages on each sheet. Free, private, nothing is uploaded.",
   heading: "N-up pages",
   intro: "Place several pages on each sheet, for handouts or saving paper. Everything stays on your device.",

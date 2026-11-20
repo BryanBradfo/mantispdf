@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Split PDF Online | MantisPDF",
+  seoTitle: "Split PDF Online | MantisPDF by Bradfo",
   seoDescription: "Split a PDF into multiple files instantly. Choose exact split points. Runs in your browser, no upload needed.",
   heading: "Split PDF",
   intro: "Upload a PDF, click the scissors between pages to mark split points, then hit Split.",

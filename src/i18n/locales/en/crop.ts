@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Crop PDF Pages | MantisPDF",
+  seoTitle: "Crop PDF Pages | MantisPDF by Bradfo",
   seoDescription: "Crop PDF pages in your browser: draw the crop box or detect the margins automatically. Free, private, nothing is uploaded.",
   heading: "Crop PDF",
   intro: "Trim the margins of your pages, by hand or automatically. Everything stays on your device.",

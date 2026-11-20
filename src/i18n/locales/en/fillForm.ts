@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Fill PDF Form: Type Into PDF Form Fields | MantisPDF",
+  seoTitle: "Fill PDF Form: Type Into PDF Form Fields | MantisPDF by Bradfo",
   seoDescription:
     "Fill in PDF forms in your browser: text fields, checkboxes, radio buttons and lists, then download the filled or flattened PDF. Free, private, nothing is uploaded.",
   heading: "Fill PDF form",

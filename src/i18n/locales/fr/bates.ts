@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/bates";
 
 const bates: Messages<typeof en> = {
-  seoTitle: "Numérotation Bates de PDF | MantisPDF",
+  seoTitle: "Numérotation Bates de PDF | MantisPDF by Bradfo",
   seoDescription: "Ajoutez une numérotation Bates sur un ou plusieurs PDF, qui se poursuit d’un fichier à l’autre. Gratuit, privé, sans envoi.",
   heading: "Numérotation Bates",
   intro: "Apposez un identifiant continu sur chaque page, d’un document à l’autre. Tout reste sur votre appareil.",

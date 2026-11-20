@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Watermark PDF | MantisPDF",
+  seoTitle: "Watermark PDF | MantisPDF by Bradfo",
   seoDescription: "Add a diagonal text watermark to every page of your PDF. Client-side only, nothing is uploaded.",
   heading: "Watermark PDF",
   intro: "Stamp text on every page: CONFIDENTIAL, DRAFT, or any label. Processed entirely in your browser.",
