@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/merge";
 
 const merge: Messages<typeof en> = {
-  seoTitle: "Fusionner des PDF | MantisPDF",
+  seoTitle: "Fusionner des PDF | MantisPDF by Bradfo",
   seoDescription: "Combinez plusieurs PDF en un seul document et réordonnez-les par glisser-déposer. Gratuit, privé, sans envoi.",
   heading: "Fusionner PDF",
   intro: "Ajoutez plusieurs PDF, faites glisser une carte pour changer l’ordre, puis fusionnez-les en un seul document.",

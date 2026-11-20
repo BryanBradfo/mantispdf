@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/pdfToImage";
 
 const pdfToImage: Messages<typeof en> = {
-  seoTitle: "PDF en images\u00a0: exporter les pages en PNG ou JPEG | MantisPDF",
+  seoTitle: "PDF en images\u00a0: exporter les pages en PNG ou JPEG | MantisPDF by Bradfo",
   seoDescription: "Convertissez chaque page d’un PDF en image PNG ou JPEG. Sans envoi, aucune donnée ne quitte votre appareil.",
   heading: "PDF en images",
   intro: "Exportez chaque page de votre PDF en image PNG ou JPEG. Tout le traitement a lieu dans votre navigateur.",

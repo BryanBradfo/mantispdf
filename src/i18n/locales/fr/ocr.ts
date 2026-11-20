@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/ocr";
 
 const ocr: Messages<typeof en> = {
-  seoTitle: "OCR PDF\u00a0: rendez les PDF numérisés interrogeables | MantisPDF",
+  seoTitle: "OCR PDF\u00a0: rendez les PDF numérisés interrogeables | MantisPDF by Bradfo",
   seoDescription:
     "Reconnaissez le texte des PDF numérisés dans votre navigateur et ajoutez-le comme couche de texte interrogeable et copiable. Gratuit, privé, sans envoi.",
   heading: "OCR",

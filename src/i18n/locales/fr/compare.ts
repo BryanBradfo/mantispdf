@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/compare";
 
 const compare: Messages<typeof en> = {
-  seoTitle: "Comparer des PDF\u00a0: voyez ce qui a changé entre deux PDF | MantisPDF",
+  seoTitle: "Comparer des PDF\u00a0: voyez ce qui a changé entre deux PDF | MantisPDF by Bradfo",
   seoDescription:
     "Comparez deux PDF dans votre navigateur et voyez côte à côte chaque mot ajouté, supprimé ou modifié. Gratuit, privé, sans envoi.",
   heading: "Comparer des PDF",

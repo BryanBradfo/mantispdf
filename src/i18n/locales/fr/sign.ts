@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/sign";
 
 const sign: Messages<typeof en> = {
-  seoTitle: "Signer un PDF\u00a0: ajoutez votre signature | MantisPDF",
+  seoTitle: "Signer un PDF\u00a0: ajoutez votre signature | MantisPDF by Bradfo",
   seoDescription: "Signez un PDF dans votre navigateur\u00a0: dessinez, saisissez ou importez votre signature et placez-la sur la page. Gratuit, privé, sans envoi.",
   heading: "Signer",
   intro: "Dessinez, saisissez ou importez votre signature et placez-la sur la page de votre choix. Tout reste sur votre appareil.",

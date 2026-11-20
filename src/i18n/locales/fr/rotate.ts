@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/rotate";
 
 const rotate: Messages<typeof en> = {
-  seoTitle: "Faire pivoter les pages d’un PDF | MantisPDF",
+  seoTitle: "Faire pivoter les pages d’un PDF | MantisPDF by Bradfo",
   seoDescription: "Faites pivoter certaines pages ou un PDF entier en ligne. Traitement local, rien n’est envoyé.",
   heading: "Faire pivoter",
   intro: "Choisissez un PDF et faites pivoter certaines pages ou le document entier. Tout se passe dans votre navigateur.",

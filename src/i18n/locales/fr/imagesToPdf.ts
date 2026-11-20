@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/imagesToPdf";
 
 const imagesToPdf: Messages<typeof en> = {
-  seoTitle: "Images en PDF\u00a0: JPG, PNG, WebP en PDF | MantisPDF",
+  seoTitle: "Images en PDF\u00a0: JPG, PNG, WebP en PDF | MantisPDF by Bradfo",
   seoDescription: "Transformez des images en PDF, une par page. Réordonnez, faites pivoter, choisissez un format. Gratuit, privé, sans envoi.",
   heading: "Images en PDF",
   intro: "Placez des images JPG, PNG ou WebP sur des pages PDF. Les JPEG sont intégrés sans réencodage. Tout reste sur votre appareil.",

@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Unlock PDF | MantisPDF",
+  seoTitle: "Unlock PDF | MantisPDF by Bradfo",
   seoDescription: "Remove the password and restrictions from a PDF you are allowed to open. Free, private, nothing is uploaded.",
   heading: "Unlock PDF",
   intro: "Remove the password and restrictions from a PDF you are allowed to open.",

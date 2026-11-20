@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/resize";
 
 const resize: Messages<typeof en> = {
-  seoTitle: "Redimensionner les pages d’un PDF | MantisPDF",
+  seoTitle: "Redimensionner les pages d’un PDF | MantisPDF by Bradfo",
   seoDescription: "Passez les pages d’un PDF en A4, au format Lettre US ou à une taille personnalisée, en adaptant le contenu. Gratuit, privé, sans envoi.",
   heading: "Redimensionner",
   intro: "Changez le format des pages d’un PDF et adaptez le contenu à la nouvelle taille. Tout reste sur votre appareil.",

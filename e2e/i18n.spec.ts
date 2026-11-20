@@ -6,7 +6,7 @@ test("French home: French copy, html lang, cards link under /fr, hreflang altern
   await page.goto("/fr");
   await expect(page.getByRole("heading", { name: "Outils PDF" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "fr");
-  await expect(page).toHaveTitle("MantisPDF\u00a0: outils PDF gratuits dans votre navigateur");
+  await expect(page).toHaveTitle("MantisPDF by Bradfo | Site officiel");
   await expect(page.locator("#tools").getByRole("link", { name: /Fusionner PDF/ })).toHaveAttribute("href", "/fr/merge");
   await expect(page.locator('main a[href^="/"]:not([href^="/fr"])')).toHaveCount(0);
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://mantispdf.bradfo.me/fr");
@@ -70,7 +70,7 @@ async function upload(page: Page, files: string[], testId: string, count: number
 test("French Merge: full flow in French", async ({ page }) => {
   await page.goto("/fr/merge");
   await expect(page.getByRole("heading", { name: "Fusionner PDF" })).toBeVisible();
-  await expect(page).toHaveTitle("Fusionner des PDF | MantisPDF");
+  await expect(page).toHaveTitle("Fusionner des PDF | MantisPDF by Bradfo");
   await expect(page.getByText("Glissez vos PDF ici ou parcourez vos fichiers")).toBeVisible();
   await upload(page, [fx("alpha.pdf"), fx("bravo.pdf")], "merge-card", 2);
   await expect(page.getByText("2\u00a0fichiers · 2\u00a0pages au total")).toBeVisible();
@@ -192,7 +192,7 @@ test("French engine errors: a wrong password reads in French", async ({ page }, 
 
 test("French head: one title and one description, both French (no static English left)", async ({ page }) => {
   await page.goto("/fr/merge");
-  await expect(page).toHaveTitle("Fusionner des PDF | MantisPDF");
+  await expect(page).toHaveTitle("Fusionner des PDF | MantisPDF by Bradfo");
   await expect(page.locator("head title")).toHaveCount(1);
   const description = page.locator('head meta[name="description"]');
   await expect(description).toHaveCount(1);
@@ -200,7 +200,7 @@ test("French head: one title and one description, both French (no static English
   for (const selector of ['meta[property="og:title"]', 'meta[property="og:description"]', 'meta[name="twitter:title"]', 'meta[name="twitter:description"]', 'meta[property="og:url"]']) {
     await expect(page.locator(`head ${selector}`), selector).toHaveCount(1);
   }
-  await expect(page.locator('head meta[property="og:title"]')).toHaveAttribute("content", "Fusionner des PDF | MantisPDF");
+  await expect(page.locator('head meta[property="og:title"]')).toHaveAttribute("content", "Fusionner des PDF | MantisPDF by Bradfo");
   await expect(page.locator('head meta[property="og:url"]')).toHaveAttribute("content", "https://mantispdf.bradfo.me/fr/merge");
 });
 

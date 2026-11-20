@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/sanitize";
 
 const sanitize: Messages<typeof en> = {
-  seoTitle: "Assainir un PDF | MantisPDF",
+  seoTitle: "Assainir un PDF | MantisPDF by Bradfo",
   seoDescription:
     "Retirez les données cachées d’un PDF\u00a0: métadonnées, scripts, pièces jointes, données de formulaire et contenu caché des pages supprimées. Gratuit, privé, sans envoi.",
   heading: "Assainir",

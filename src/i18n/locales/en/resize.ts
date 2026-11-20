@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Resize PDF Pages | MantisPDF",
+  seoTitle: "Resize PDF Pages | MantisPDF by Bradfo",
   seoDescription: "Resize PDF pages to A4, Letter or a custom size, scaling the content to fit. Free, private, nothing is uploaded.",
   heading: "Resize pages",
   intro: "Change the page size of a PDF and scale the content to fit. Everything stays on your device.",

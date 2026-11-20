@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Remove PDF Metadata | MantisPDF",
+  seoTitle: "Remove PDF Metadata | MantisPDF by Bradfo",
   seoDescription: "Remove the title, author, subject and keywords from a PDF. Free, private, nothing is uploaded.",
   heading: "Remove Metadata",
   intro: "Remove the title, author, subject and keywords stored inside a PDF.",

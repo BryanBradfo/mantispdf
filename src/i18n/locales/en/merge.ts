@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Merge PDF Files | MantisPDF",
+  seoTitle: "Merge PDF Files | MantisPDF by Bradfo",
   seoDescription: "Combine multiple PDFs into one document. Drag to reorder pages. Free, private, no upload required.",
   heading: "Merge PDF",
   intro: "Upload multiple PDFs, grab a card to reorder, then merge into a single document.",

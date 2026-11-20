@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Compare PDF: See What Changed Between Two PDFs | MantisPDF",
+  seoTitle: "Compare PDF: See What Changed Between Two PDFs | MantisPDF by Bradfo",
   seoDescription:
     "Compare two PDFs in your browser and see every added, removed and changed word side by side. Free, private, nothing is uploaded.",
   heading: "Compare PDF",

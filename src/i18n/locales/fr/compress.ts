@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/compress";
 
 const compress: Messages<typeof en> = {
-  seoTitle: "Compresser un PDF\u00a0: réduire la taille du fichier | MantisPDF",
+  seoTitle: "Compresser un PDF\u00a0: réduire la taille du fichier | MantisPDF by Bradfo",
   seoDescription: "Réduisez la taille d’un PDF en compressant ses images et ses flux. Sans envoi, aucune donnée ne quitte votre appareil.",
   heading: "Compresser PDF",
   intro: "Réduisez la taille du fichier en rééchantillonnant et réencodant les images, en retirant les métadonnées et en compressant les flux, sans aucun envoi.",

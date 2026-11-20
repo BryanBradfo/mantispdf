@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Compress PDF: Reduce File Size | MantisPDF",
+  seoTitle: "Compress PDF: Reduce File Size | MantisPDF by Bradfo",
   seoDescription: "Reduce PDF file size by compressing images and streams. No upload, no data sent to any server.",
   heading: "Compress PDF",
   intro: "Reduce file size by downsampling and re-encoding images, stripping metadata, and compressing streams, no upload required.",

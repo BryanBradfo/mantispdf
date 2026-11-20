@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Extract images from PDF | MantisPDF",
+  seoTitle: "Extract images from PDF | MantisPDF by Bradfo",
   seoDescription: "Pull the embedded images out of a PDF as JPEG or PNG files. Free, private, nothing is uploaded.",
   heading: "Extract images",
   intro: "Save the images embedded in a PDF as JPEG or PNG files.",

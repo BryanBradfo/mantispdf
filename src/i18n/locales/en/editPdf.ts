@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Edit PDF: Add Text, Images and Shapes | MantisPDF",
+  seoTitle: "Edit PDF: Add Text, Images and Shapes | MantisPDF by Bradfo",
   seoDescription:
     "Edit a PDF in your browser: add text, images, shapes, arrows, highlights, drawings and whiteout. Free, private, nothing is uploaded.",
   heading: "Edit PDF",

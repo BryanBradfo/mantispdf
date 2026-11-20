@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Encrypt PDF | MantisPDF",
+  seoTitle: "Encrypt PDF | MantisPDF by Bradfo",
   seoDescription: "Password-protect your PDF so only authorized readers can open it. Client-side only, nothing is uploaded.",
   heading: "Encrypt PDF",
   intro: "Set a password to restrict who can open your PDF. Processed entirely in your browser.",

@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/redact";
 
 const redact: Messages<typeof en> = {
-  seoTitle: "Caviarder un PDF\u00a0: supprimez définitivement du texte et des images | MantisPDF",
+  seoTitle: "Caviarder un PDF\u00a0: supprimez définitivement du texte et des images | MantisPDF by Bradfo",
   seoDescription:
     "Caviardez un PDF dans votre navigateur\u00a0: marquez des zones ou cherchez du texte, et le contenu sous les marques est retiré du fichier, pas seulement masqué. Gratuit, privé, sans envoi.",
   heading: "Caviarder",

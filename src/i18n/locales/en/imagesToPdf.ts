@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  seoTitle: "Images to PDF: JPG, PNG, WebP to PDF | MantisPDF",
+  seoTitle: "Images to PDF: JPG, PNG, WebP to PDF | MantisPDF by Bradfo",
   seoDescription: "Turn images into a PDF, one per page. Reorder, rotate, pick a page size. Free, private, nothing is uploaded.",
   heading: "Images to PDF",
   intro: "Put JPG, PNG or WebP images on PDF pages. JPEGs are embedded without re-encoding. Everything stays on your device.",

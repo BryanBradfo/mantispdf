@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/editPdf";
 
 const editPdf: Messages<typeof en> = {
-  seoTitle: "Modifier un PDF\u00a0: ajoutez du texte, des images et des formes | MantisPDF",
+  seoTitle: "Modifier un PDF\u00a0: ajoutez du texte, des images et des formes | MantisPDF by Bradfo",
   seoDescription:
     "Modifiez un PDF dans votre navigateur\u00a0: ajoutez du texte, des images, des formes, des flèches, du surlignage, des dessins et du blanc correcteur. Gratuit, privé, sans envoi.",
   heading: "Modifier le PDF",
