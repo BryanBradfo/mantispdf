@@ -1,6 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "MantisPDF",
+  "mainBinaryName": "mantispdf",
   "version": "2.0.0",
   "identifier": "com.mantispdf.app",
   "build": {
@@ -32,8 +33,10 @@
   },
   "bundle": {
     "active": true,
+    "category": "Productivity",
     "targets": "all",
     "icon": [
+      "icons/icon.png",
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",

@@ -37,6 +37,12 @@ pub fn run() {
             .build(),
         )?;
       }
+      // Linux shells show a generic icon for a window without one (no installed .desktop to match, e.g. a
+      // freshly run AppImage): give the main window the app icon.
+      #[cfg(target_os = "linux")]
+      if let (Some(window), Some(icon)) = (app.get_webview_window("main"), app.default_window_icon().cloned()) {
+        let _ = window.set_icon(icon);
+      }
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
