@@ -118,7 +118,14 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "MantisPDF ${{ github.ref_name }}"
-          releaseBody: "Download the installer for your platform below. All processing runs locally."
-          releaseDraft: true
+          # Published at once (not a draft): the site's download page links straight to these assets.
+          releaseBody: |
+            Download the installer for your platform below, or from https://mantispdf.bradfo.me/download. All processing runs locally.
+
+            The installers are not signed yet:
+            - macOS: on first launch, right-click MantisPDF in Applications, choose Open, then Open again.
+            - Windows: if SmartScreen warns you, click More info, then Run anyway.
+            - Linux: `chmod +x` the AppImage and run it, or install the .deb or .rpm.
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
