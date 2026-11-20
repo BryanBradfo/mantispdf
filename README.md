@@ -12,8 +12,8 @@
 
 <p align="center"><b><a href="https://mantispdf.bradfo.me/">mantispdf.bradfo.me</a></b></p>
 
-**MantisPDF** is a free, open-source PDF toolkit that runs entirely in your browser: 27 tools, from
-merging and compressing to editing, filling forms, true redaction and OCR. Every file is processed on
+**MantisPDF** is a free, open-source PDF toolkit that runs entirely in your browser: 28 tools, from
+merging and compressing to editing, filling forms, true redaction, OCR and comparing two PDFs. Every file is processed on
 your device by a Rust engine compiled to WebAssembly. Nothing is uploaded.
 
 ---
@@ -32,16 +32,15 @@ The hosted site uses Vercel's cookieless page-view analytics. Your documents are
 
 ## Tools
 
-| Organize | Optimize and convert | Edit and annotate | Security |
-|---|---|---|---|
-| Split PDF | Compress PDF | Edit PDF (text, images, shapes, drawings) | Encrypt PDF |
-| Merge PDF | PDF to Images | Fill PDF form (editable or flattened) | Unlock PDF |
-| Organize PDF | Images to PDF | Sign PDF | Redact PDF (true removal) |
-| Rotate Pages | Extract Images | Watermark PDF | Sanitize PDF |
-| Remove Pages | OCR PDF (searchable scans) | Page Numbers | Remove Metadata |
-| Extract Pages | Crop PDF | Header & Footer | Edit Metadata |
-| | Resize Pages | Bates Numbering | |
-| | N-up Pages | | |
+| Organize | Optimize and convert | Edit and annotate | Security | Analyze |
+|---|---|---|---|---|
+| Split PDF | Compress PDF | Edit PDF (text, images, shapes, drawings) | Encrypt PDF | OCR PDF (searchable scans) |
+| Merge PDF | PDF to Images | Fill PDF form (editable or flattened) | Unlock PDF | Compare PDF (text and overlay) |
+| Organize PDF | Images to PDF | Sign PDF | Redact PDF (true removal) | |
+| Rotate Pages | Extract Images | Watermark PDF | Sanitize PDF | |
+| Remove Pages | Crop PDF | Page Numbers | Remove Metadata | |
+| Extract Pages | Resize Pages | Header & Footer | Edit Metadata | |
+| | N-up Pages | Bates Numbering | | |
 
 A few that go further than most online tools:
 
@@ -49,6 +48,8 @@ A few that go further than most online tools:
   and refuses to deliver it if anything marked is still there. Pages it cannot guarantee are converted
   to images, and it tells you which ones.
 - **OCR PDF** adds an invisible, searchable text layer to scans, in 7 languages, with automatic deskew.
+- **Compare PDF** shows what changed between two versions: a word-by-word text view with a list of
+  changes, and a pixel overlay that paints every visual difference in red, page by page.
 - **Fill PDF form** handles text, checkboxes, radio buttons and lists, and never stores password fields.
 
 ## Tech stack
@@ -98,8 +99,8 @@ mantispdf/
 │   ├── pages/            one page per tool
 │   ├── components/       UI components, grouped by tool, plus shared ones in common/
 │   ├── hooks/            usePdfWorker and per-tool state
-│   ├── workers/          pdf.worker.ts: loads the engine and runs operations off the main thread
-│   └── lib/              worker protocol, thumbnails, editor, forms, redaction and OCR logic
+│   ├── workers/          pdf.worker.ts (the engine), compare and pixel-diff workers, off the main thread
+│   └── lib/              worker protocol, thumbnails, editor, forms, redaction, OCR and compare logic
 ├── e2e/                  Playwright tests and their fixtures
 ├── scripts/              build helpers and fixture generators
 └── src-tauri/            desktop app
