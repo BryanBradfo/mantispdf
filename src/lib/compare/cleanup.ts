@@ -2,8 +2,16 @@ import type { Op, Token } from "./types";
 
 /** Shared runs shorter than this are not kept when an edit region is re-aligned (they read as noise). */
 export const MIN_ANCHOR = 3;
-/** Edit regions larger than this (tokens A x tokens B) are not re-aligned (bounded work): they keep the minimal diff's ops. */
-const MAX_REALIGN = 4_000_000;
+/**
+ * Work allowed for re-aligning (token visits and candidate matches, summed over every region and
+ * recursion step of one comparison). A region that would pass it keeps the minimal diff's ops.
+ */
+export const REALIGN_WORK = 4_000_000;
+
+/** What is left of the re-align work for one comparison (share one across per-page calls). */
+export interface WorkBudget {
+  left: number;
+}
 
 interface Block {
   eq: boolean;
@@ -54,7 +62,9 @@ function foldSmallEqualities(blocks: Block[]): Block[] {
 }
 
 /** Longest run of equal tokens in a[a0, a1) and b[b0, b1) (difflib's find_longest_match). */
-function longestMatch(a: Token[], b: Token[], a0: number, a1: number, b0: number, b1: number): { i: number; j: number; k: number } {
+function longestMatch(a: Token[], b: Token[], a0: number, a1: number, b0: number, b1: number, budget: WorkBudget): { i: number; j: number; k: number } | null {
+  budget.left -= a1 - a0 + (b1 - b0);
+  if (budget.left < 0) return null;
   const where = new Map<string, number[]>();
   for (let j = b0; j < b1; j++) {
     const list = where.get(b[j].text);
@@ -65,7 +75,10 @@ function longestMatch(a: Token[], b: Token[], a0: number, a1: number, b0: number
   let runs = new Map<number, number>();
   for (let i = a0; i < a1; i++) {
     const next = new Map<number, number>();
-    for (const j of where.get(a[i].text) ?? []) {
+    const js = where.get(a[i].text) ?? [];
+    budget.left -= js.length;
+    if (budget.left < 0) return null;
+    for (const j of js) {
       const k = (runs.get(j - 1) ?? 0) + 1;
       next.set(j, k);
       if (k > best.k) best = { i: i - k + 1, j: j - k + 1, k };
@@ -80,8 +93,8 @@ function longestMatch(a: Token[], b: Token[], a0: number, a1: number, b0: number
  * recursing on both sides: a moved paragraph is then matched where it is whole instead of by
  * scattered common words. Blocks come out in document order.
  */
-function realignRegion(a: Token[], b: Token[], region: Block): Block[] | null {
-  if ((region.a1 - region.a0) * (region.b1 - region.b0) > MAX_REALIGN) return null;
+function realignRegion(a: Token[], b: Token[], region: Block, budget: WorkBudget): Block[] | null {
+  if (budget.left <= 0) return null;
   const out: Block[] = [];
   const stack: Block[] = [region];
   while (stack.length) {
@@ -91,7 +104,8 @@ function realignRegion(a: Token[], b: Token[], region: Block): Block[] | null {
       out.push(r);
       continue;
     }
-    const m = r.a1 > r.a0 && r.b1 > r.b0 ? longestMatch(a, b, r.a0, r.a1, r.b0, r.b1) : { i: 0, j: 0, k: 0 };
+    const m = r.a1 > r.a0 && r.b1 > r.b0 ? longestMatch(a, b, r.a0, r.a1, r.b0, r.b1, budget) : { i: 0, j: 0, k: 0 };
+    if (!m) return null; // out of work: the caller keeps the minimal diff for this region
     if (m.k < MIN_ANCHOR) {
       out.push(r);
       continue;
@@ -118,6 +132,7 @@ export function cleanupOps(
   b: Token[],
   pageA: (i: number) => number = (i) => a[i].page,
   pageB: (j: number) => number = (j) => b[j].page,
+  budget: WorkBudget = { left: REALIGN_WORK },
 ): Op[] {
   const original = toBlocks(ops);
   const folded = foldSmallEqualities(original);
@@ -127,8 +142,8 @@ export function cleanupOps(
     // The minimal diff's blocks inside this one (folded blocks are unions of consecutive ones).
     const inside: Block[] = [];
     while (o < original.length && original[o].a1 <= k.a1 && original[o].b1 <= k.b1) inside.push(original[o++]);
-    // Too large to re-align: keep the minimal diff's own blocks for this region.
-    const parts = k.eq ? [k] : realignRegion(a, b, k) ?? inside;
+    // Out of re-align work: keep the minimal diff's own blocks for this region.
+    const parts = k.eq ? [k] : realignRegion(a, b, k, budget) ?? inside;
     for (const part of parts) {
       const last = blocks[blocks.length - 1];
       if (last && last.eq === part.eq && last.a1 === part.a0 && last.b1 === part.b0) {

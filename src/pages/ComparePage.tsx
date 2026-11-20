@@ -70,10 +70,28 @@ function TextView({ a, b, result }: TextViewProps) {
   const expected = useRef<Record<Side, number | null>>({ a: null, b: null });
   const columnsRef = useRef<HTMLDivElement>(null);
 
-  const geometry = (side: Side) => {
+  // Page offsets per column, read once and kept until a column is resized or the documents change
+  // (not on every scroll event).
+  type Geometry = { tops: number[]; heights: number[] };
+  const geometryCache = useRef<Record<Side, Geometry | null>>({ a: null, b: null });
+  const geometry = (side: Side): Geometry => {
+    const cached = geometryCache.current[side];
+    if (cached) return cached;
     const els = pages[side].current.slice(0, (side === "a" ? a : b).sizes.length);
-    return { tops: els.map((el) => el?.offsetTop ?? 0), heights: els.map((el) => el?.offsetHeight ?? 0) };
+    const g = { tops: els.map((el) => el?.offsetTop ?? 0), heights: els.map((el) => el?.offsetHeight ?? 0) };
+    geometryCache.current[side] = g;
+    return g;
   };
+  useEffect(() => {
+    geometryCache.current = { a: null, b: null };
+    const els = [scroll.a.current, scroll.b.current].filter((el): el is HTMLDivElement => el !== null);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      geometryCache.current = { a: null, b: null };
+    });
+    for (const el of els) ro.observe(el);
+    return () => ro.disconnect();
+  }, [a.sizes, b.sizes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveTo = (side: Side, top: number) => {
     const el = scroll[side].current;
@@ -119,8 +137,7 @@ function TextView({ a, b, result }: TextViewProps) {
       }
       // On narrow screens the list sits under the columns: bring them into view.
       const cols = columnsRef.current;
-      if (cols && cols.getBoundingClientRect().bottom < 0) cols.scrollIntoView({ block: "start" });
-      else if (cols && cols.getBoundingClientRect().top < 0) cols.scrollIntoView({ block: "start" });
+      if (cols && cols.getBoundingClientRect().top < 0) cols.scrollIntoView({ block: "start" });
     },
     [result, a, b], // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -169,7 +186,7 @@ function TextView({ a, b, result }: TextViewProps) {
           </span>
           <span className="flex items-center gap-2">
             <span aria-hidden="true" className="relative inline-block h-3 w-6 p-[3px]" style={COMPARE_SWATCH_PAGE}>
-              <span className="block h-full w-full" style={{ ...COMPARE_ADDED, outlineOffset: "0px", outlineWidth: "1.5px" }} />
+              <span className="block h-full w-full" style={{ ...COMPARE_ADDED, outlineOffset: "-1.5px", outlineWidth: "1.5px" }} />
             </span>
             {t("kindAdded")}
           </span>
@@ -293,7 +310,11 @@ export default function ComparePage() {
       return;
     }
     const client = compareRef.current?.client;
-    if (!client) return;
+    if (!client) {
+      setDiff({ status: "idle" });
+      setError(tc("errorCompareFailed"));
+      return;
+    }
     setDiff({ status: "running", aKey: sa.key, bKey: sb.key });
     client.compare(sa.words, sb.words).then(
       (result) => {

@@ -1,5 +1,5 @@
 import { groupChanges } from "./changes";
-import { cleanupOps } from "./cleanup";
+import { REALIGN_WORK, cleanupOps } from "./cleanup";
 import { diffTokens } from "./diff";
 import { tokenize } from "./tokens";
 import { DEFAULT_LIMITS, type Change, type CompareLimits, type CompareResult, type Op, type Token, type Word } from "./types";
@@ -34,13 +34,15 @@ export function compareDocuments(aWords: Word[][], bWords: Word[][], limits: Com
   const { tokens: a, ranges: as } = tokenizePages(aWords);
   const { tokens: b, ranges: bs } = tokenizePages(bWords);
 
+  // One re-align budget for the whole comparison (all pages in per-page mode).
+  const budget = { left: REALIGN_WORK };
   let mode: CompareResult["mode"] = "document";
   let changes: Change[] = [];
   const whole = a.length + b.length > limits.maxTokens ? "over-budget" : diffTokens(a, b, { maxEdits: limits.maxEdits });
   if (whole !== "over-budget") {
     const pa = pageIndex(as, a.length);
     const pb = pageIndex(bs, b.length);
-    changes = groupChanges(cleanupOps(whole, a, b, (i) => pa[i], (j) => pb[j]), a, b);
+    changes = groupChanges(cleanupOps(whole, a, b, (i) => pa[i], (j) => pb[j], budget), a, b);
   } else {
     mode = "per-page";
     const pageCount = Math.max(aWords.length, bWords.length);
@@ -58,7 +60,7 @@ export function compareDocuments(aWords: Word[][], bWords: Word[][], limits: Com
         ].filter((o) => o.aEnd > o.aStart || o.bEnd > o.bStart) as Op[];
       }
       // Cleaned per page: nothing is folded across a page boundary.
-      const clean = cleanupOps(ops, ta, tb, () => i, () => i);
+      const clean = cleanupOps(ops, ta, tb, () => i, () => i, budget);
       changes.push(...groupChanges(shift(clean, a0, b0), a, b));
     }
   }

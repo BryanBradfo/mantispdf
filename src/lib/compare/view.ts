@@ -50,6 +50,17 @@ export function mergeLineBoxes(words: Word[]): Box[] {
   return out;
 }
 
+/**
+ * The part of a word box a mark covers. Extraction boxes run from 0.25 em below the baseline to
+ * 1 em above it (1.25 em, so lines set solid touch); a mark keeps 0.15 em below to 0.85 em above,
+ * which leaves a gap to the lines above and below. Assumes horizontal text in the visible page
+ * (pages turned by /Rotate are already upright there).
+ */
+export function markBox(box: Box): Box {
+  const em = box.h / 1.25;
+  return { x: box.x, y: box.y + 0.1 * em, w: box.w, h: em };
+}
+
 /** The distinct source words of a token range, in order (a word split into several tokens counts once). */
 function wordsOf(index: number[], start: number, end: number, flat: Word[]): Word[] {
   const out: Word[] = [];
@@ -78,7 +89,7 @@ function marksForSide(result: CompareResult, side: Side, pages: Word[][]): Mark[
       else byPage.set(w.page, [w]);
     }
     for (const [page, words] of byPage) {
-      for (const box of mergeLineBoxes(words)) out[page]?.push({ change, kind, box });
+      for (const box of mergeLineBoxes(words.map((w) => ({ ...w, box: markBox(w.box) })))) out[page]?.push({ change, kind, box });
     }
   });
   return out;

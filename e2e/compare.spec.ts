@@ -117,6 +117,48 @@ test("swap exchanges original and modified", async ({ page }) => {
   await expect(page.getByTestId("compare-column-a").locator("[data-page]")).toHaveCount(3);
 });
 
+test("marks sit on their words on pages turned by /Rotate 0, 90, 180 and 270", async ({ page }) => {
+  // rotated.pdf: 4 pages with /Rotate 0/90/180/270, each with one word (R0..R270). Against
+  // compare-a.pdf every word of it is removed, so each page has one mark over its word.
+  await load(page, "rotated.pdf", "compare-a.pdf");
+  const col = page.getByTestId("compare-column-a");
+  await expect(col.locator("[data-page]")).toHaveCount(4, { timeout: 20000 });
+  for (let n = 1; n <= 4; n++) {
+    const pg = col.locator(`[data-page="${n}"]`);
+    await pg.scrollIntoViewIfNeeded();
+    await expect(pg.locator('img[data-thumb="ready"]')).toBeVisible({ timeout: 20000 });
+    await expect(pg.locator('[data-mark="removed"]')).toHaveCount(1);
+    // Dark render pixels under the mark (the word), none in the same box moved to the far corner.
+    const ink = await pg.evaluate(async (el) => {
+      const img = el.querySelector("img") as HTMLImageElement;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const ctx = c.getContext("2d")!;
+      ctx.drawImage(img, 0, 0);
+      const page = el.getBoundingClientRect();
+      const m = (el.querySelector('[data-mark="removed"]') as HTMLElement).getBoundingClientRect();
+      const sx = c.width / page.width;
+      const sy = c.height / page.height;
+      const dark = (left: number, top: number) => {
+        const w = Math.max(1, Math.round(m.width * sx));
+        const h = Math.max(1, Math.round(m.height * sy));
+        const data = ctx.getImageData(Math.round(left * sx), Math.round(top * sy), w, h).data;
+        let n = 0;
+        for (let i = 0; i < data.length; i += 4) if (data[i] + data[i + 1] + data[i + 2] < 300) n++;
+        return n;
+      };
+      const left = m.left - page.left;
+      const top = m.top - page.top;
+      const far = { left: left < page.width / 2 ? page.width - m.width - 2 : 2, top: top < page.height / 2 ? page.height - m.height - 2 : 2 };
+      return { under: dark(left, top), away: dark(far.left, far.top) };
+    });
+    expect(ink.under, `page ${n}`).toBeGreaterThan(20);
+    expect(ink.away, `page ${n}`).toBe(0);
+  }
+});
+
 test("identical files show No text differences", async ({ page }) => {
   await load(page, "compare-a.pdf", "compare-a.pdf");
   await expect(page.getByTestId("compare-headline")).toHaveText("No text differences", { timeout: 20000 });

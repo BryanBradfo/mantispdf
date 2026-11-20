@@ -79,17 +79,29 @@ describe("cleanupOps", () => {
     ]);
   });
 
-  it("stays valid and quick on a heavily edited document; a region too large to re-align keeps the minimal diff", () => {
+  it("stays valid and quick on a heavily edited document", () => {
     const n = 4000;
     const x = Array.from({ length: n }, (_, i) => `w${i}`).join(" ");
     const y = Array.from({ length: n }, (_, i) => (i % 2 ? `v${i}` : `w${i}`)).join(" ");
     const t0 = performance.now();
-    const { ops } = clean(x, y);
+    const { changes } = clean(x, y);
     expect(performance.now() - t0).toBeLessThan(3000);
-    // Every other word changed: the folded region is 4000 x 4000 tokens, over the re-align bound.
-    expect(ops.filter((o) => o.kind === "equal").length).toBeGreaterThan(1000);
-    const small = clean(x.split(" ").slice(0, 600).join(" "), y.split(" ").slice(0, 600).join(" "));
-    expect(small.changes).toHaveLength(1);
+    // Every other word changed: one rewritten passage, not 2000 one-word changes.
+    expect(changes).toHaveLength(1);
+  });
+
+  it("keeps the minimal diff for a region once the re-align work budget is spent", () => {
+    const a = toks("p A q B r C s");
+    const b = toks("p X q Y r Z s");
+    const ops = diffTokens(a, b, { maxEdits: 1e9 });
+    if (ops === "over-budget") throw new Error("unexpected");
+    const spent = cleanupOps(ops, a, b, undefined, undefined, { left: 0 });
+    replay(spent, a, b);
+    expect(spent.filter((o) => o.kind === "equal").map((o) => a[o.aStart].text)).toEqual(["p", "q", "r", "s"]);
+    const budget = { left: 1_000 };
+    const done = cleanupOps(ops, a, b, undefined, undefined, budget);
+    expect(done.filter((o) => o.kind === "equal").map((o) => a[o.aStart].text)).toEqual(["p", "s"]);
+    expect(budget.left).toBeLessThan(1_000);
   });
 
   it("splits a pure addition at page boundaries", () => {
@@ -103,8 +115,10 @@ describe("cleanupOps", () => {
   });
 
   it("does not fold across a page boundary in per-page mode", () => {
-    const a = [words("a X", 0), words("Y b", 1)];
-    const b = [words("a P", 0), words("Q b", 1)];
+    // "c" opens page 2 between two edits: document mode folds it, per-page mode keeps the pages apart.
+    const a = [words("a X", 0), words("c Y b", 1)];
+    const b = [words("a P", 0), words("c Q b", 1)];
+    expect(compareDocuments(a, b).changes.map((c) => [c.aText, c.bText])).toEqual([["X c Y", "P c Q"]]);
     const r = compareDocuments(a, b, { maxTokens: 1, maxEdits: 100 });
     expect(r.mode).toBe("per-page");
     expect(r.changes.map((c) => [c.aText, c.bText])).toEqual([

@@ -2,7 +2,7 @@ import { memo, type RefObject } from "react";
 import { useT } from "../../i18n";
 import PageImage from "../common/PageImage";
 import type { Mark, Size } from "../../lib/compare/view";
-import { COMPARE_ACTIVE, COMPARE_ADDED, COMPARE_REMOVED, COMPARE_STRIKE, COMPARE_SWATCH_PAGE } from "../../styles/onPage";
+import { COMPARE_ACTIVE, COMPARE_ADDED, compareAddedOutline, COMPARE_REMOVED, COMPARE_STRIKE, COMPARE_SWATCH_PAGE } from "../../styles/onPage";
 import { focusRing, monoLabel } from "../../styles/ui";
 
 /** Render width of the page images (CSS pixels at 2x for a ~400 px column). */
@@ -37,7 +37,7 @@ function MarkBox({ mark, size, active }: { mark: Mark; size: Size; active: boole
     top: pct((h - y - bh) / h),
     width: pct(bw / w),
     height: pct(bh / h),
-    ...(mark.kind === "removed" ? COMPARE_REMOVED : COMPARE_ADDED),
+    ...(mark.kind === "removed" ? COMPARE_REMOVED : { ...COMPARE_ADDED, ...compareAddedOutline(bh / w) }),
     ...(active ? COMPARE_ACTIVE : {}),
   };
   return (
@@ -77,7 +77,7 @@ function PageColumn({ label, fileName, regionLabel, source, sizes, marks, active
                 data-page={i + 1}
                 className="relative w-full overflow-hidden outline outline-1 outline-line"
                 // A white page while the render loads, so the marks (drawn for a white page) are always visible.
-                style={{ ...COMPARE_SWATCH_PAGE, aspectRatio: ok ? `${w} / ${h}` : "8.5 / 11" }}
+                style={{ ...COMPARE_SWATCH_PAGE, containerType: "inline-size", aspectRatio: ok ? `${w} / ${h}` : "8.5 / 11" }}
               >
                 <PageImage source={source} page={i + 1} width={RENDER_WIDTH} alt={tc("pageN", { n: i + 1 })} className="!absolute inset-0 !aspect-auto h-full !bg-transparent" />
                 {ok && (

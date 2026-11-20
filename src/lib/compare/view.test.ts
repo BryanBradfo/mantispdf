@@ -7,6 +7,7 @@ import {
   countWords,
   highlightMarks,
   mapPosition,
+  markBox,
   mergeLineBoxes,
   posFromPx,
   pxFromPos,
@@ -19,6 +20,16 @@ const LETTER: Size = [612, 792];
 function line(text: string, page: number, y: number): Word[] {
   return text.split(" ").map((t, i) => ({ text: t, page, box: { x: 72 + i * 35, y, w: 30, h: 10 } }));
 }
+
+describe("markBox", () => {
+  it("trims a word box to 0.15 em below and 0.85 em above the baseline", () => {
+    const m = markBox({ x: 10, y: 96.5, w: 30, h: 17.5 }); // 14 pt type, baseline at 100
+    expect(m.x).toBe(10);
+    expect(m.w).toBe(30);
+    expect(m.y).toBeCloseTo(100 - 0.15 * 14);
+    expect(m.y + m.h).toBeCloseTo(100 + 0.85 * 14);
+  });
+});
 
 describe("mergeLineBoxes", () => {
   it("joins neighbouring words of one line into one box", () => {
@@ -47,10 +58,10 @@ describe("highlightMarks", () => {
     const result = compareDocuments(a, b);
     const marks = highlightMarks(result, a, b);
     expect(result.changes.map((c) => c.kind)).toEqual(["changed", "added"]);
-    expect(marks.a).toEqual([[{ change: 0, kind: "removed", box: { x: 107, y: 700, w: 30, h: 10 } }], []]);
+    expect(marks.a).toEqual([[{ change: 0, kind: "removed", box: { x: 107, y: 700.8, w: 30, h: 8 } }], []]);
     expect(marks.b).toEqual([
-      [{ change: 0, kind: "added", box: { x: 107, y: 700, w: 30, h: 10 } }],
-      [{ change: 1, kind: "added", box: { x: 107, y: 700, w: 30, h: 10 } }],
+      [{ change: 0, kind: "added", box: { x: 107, y: 700.8, w: 30, h: 8 } }],
+      [{ change: 1, kind: "added", box: { x: 107, y: 700.8, w: 30, h: 8 } }],
     ]);
   });
 
@@ -66,11 +77,28 @@ describe("highlightMarks", () => {
   });
 
   it("gives a word split into several tokens one mark", () => {
-    const a = [[{ text: "10 km", page: 0, box: { x: 72, y: 700, w: 40, h: 10 } }]];
+    const a = [[{ text: "10\u00a0km", page: 0, box: { x: 72, y: 700, w: 40, h: 10 } }]];
     const b: Word[][] = [[]];
     const result = compareDocuments(a, b);
     const marks = highlightMarks(result, a, b);
-    expect(marks.a[0]).toEqual([{ change: 0, kind: "removed", box: { x: 72, y: 700, w: 40, h: 10 } }]);
+    expect(marks.a[0]).toEqual([{ change: 0, kind: "removed", box: { x: 72, y: 700.8, w: 40, h: 8 } }]);
+  });
+
+  it("keeps a mark off the line above and below (lines set at 18 pt leading, 14 pt type)", () => {
+    // Boxes as extraction makes them: 0.25 em below the baseline to 1 em above.
+    const at = (text: string, x: number, baseline: number): Word => ({ text, page: 0, box: { x, y: baseline - 3.5, w: 30, h: 17.5 } });
+    const a = [[at("above", 72, 718), at("old", 72, 700), at("below", 72, 682)]];
+    const b = [[at("above", 72, 718), at("new", 72, 700), at("below", 72, 682)]];
+    const marks = highlightMarks(compareDocuments(a, b), a, b);
+    for (const m of [...marks.a[0], ...marks.b[0]]) {
+      // Under the baseline of the line above, with room for a mark on that line (it stops 0.15 em under it).
+      expect(m.box.y + m.box.h).toBeLessThan(718 - 0.15 * 14);
+      // Above the cap line of the line below, not covering its glyphs.
+      expect(m.box.y).toBeGreaterThan(682 + 0.85 * 14);
+      // Still covers its own word from below the baseline to the ascenders.
+      expect(m.box.y).toBeLessThan(700);
+      expect(m.box.y + m.box.h).toBeGreaterThanOrEqual(700 + 0.85 * 14 - 1e-9);
+    }
   });
 
   it("splits one change across pages", () => {
