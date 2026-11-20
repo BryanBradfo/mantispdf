@@ -49,7 +49,7 @@ describe("Footer", () => {
     expect(hrefs('section a[href^="/"]')).toEqual(TOOLS.map((t) => t.href));
     expect(footer().querySelectorAll("h2")).toHaveLength(6);
     expect(footer().textContent).toContain("Merge PDF");
-    expect(footer().textContent).toContain("Recognize");
+    expect(footer().textContent).toContain("Analyze");
   });
 
   it("localizes the tool links under /fr", async () => {
@@ -101,7 +101,7 @@ describe("Footer", () => {
   it("puts each section in its own column, under a one-word eyebrow, with the slogan in the brand block", async () => {
     await renderAt("/");
     const headings = [...footer().querySelectorAll("h2")].map((h) => h.textContent);
-    expect(headings).toEqual(["Organize", "Optimize and convert", "Edit and sign", "Security and privacy", "Recognize", "Project"]);
+    expect(headings).toEqual(["Organize", "Optimize and convert", "Edit and sign", "Security and privacy", "Analyze", "Project"]);
     const eyebrows = [...footer().querySelectorAll("nav section")].map((sec) => sec.querySelector("p")?.textContent);
     expect(eyebrows).toEqual(["Pages", "Files", "Content", "Protection", "Text", "Open source"]);
     // Six columns side by side: no column holds two sections any more.

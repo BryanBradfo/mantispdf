@@ -34,3 +34,31 @@ export const REDACT_PREVIEW = {
   black: { tint: "rgba(0,0,0,0.18)", hatch: "#000000", edge: "#000000" },
   white: { tint: "rgba(255,255,255,0.55)", hatch: "#8a8a8a", edge: "#525252" },
 } as const;
+/**
+ * Compare highlights over the page renders. Removed words (on the original): the fixed danger red
+ * at about 25 % with a strike line through the middle of the line. Added words (on the modified
+ * copy): a black outline (0.5-2 px, about 0.1 em) drawn inside the box over a light grey fill, readable without colour. The change picked in
+ * the list also gets a white then black ring outside its marks.
+ */
+export const COMPARE_REMOVED = { backgroundColor: "rgba(198,40,40,0.25)" } as const;
+export const COMPARE_STRIKE = { backgroundColor: PAGE_MARK_DANGER } as const;
+export const COMPARE_ADDED = { outlineStyle: "solid", outlineColor: PAGE_MARK_DARK, backgroundColor: "rgba(0,0,0,0.07)" } as const;
+/**
+ * The added outline's width and offset, drawn inside the mark: about 0.1 em of the word, given as a
+ * share of the page width in `cqw` (the page box is a size container), kept between 0.5 px (one device pixel on phones) and 2 px so a
+ * small render never turns the word into a black bar.
+ */
+export function compareAddedOutline(emOverPageWidth: number) {
+  const width = `clamp(0.5px, ${(10 * emOverPageWidth).toFixed(4)}cqw, 2px)`;
+  return { outlineWidth: width, outlineOffset: `calc(-1 * ${width})` };
+}
+export const COMPARE_ACTIVE = { boxShadow: `0 0 0 1px ${PAGE_MARK_LIGHT}, 0 0 0 2.5px ${PAGE_MARK_DARK}` } as const;
+/** The white page behind the legend swatches and under a page render still loading (the marks are drawn for a white page). */
+export const COMPARE_SWATCH_PAGE = { backgroundColor: PAGE_MARK_LIGHT } as const;
+/**
+ * Overlay view: pixels that differ between the two renders, painted over the modified page in the
+ * fixed danger red (PAGE_MARK_DANGER) at about 60 % so the content under them stays legible.
+ * RGBA for the canvas painted by the pixel worker, and the same colour as CSS for the legend swatch.
+ */
+export const COMPARE_PIXEL_RGBA = [198, 40, 40, 150] as const;
+export const COMPARE_PIXEL = { backgroundColor: "rgba(198,40,40,0.59)" } as const;

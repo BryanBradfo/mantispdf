@@ -6,10 +6,10 @@ export type ToolId =
   | "compress" | "pdfToImage" | "imagesToPdf" | "extractImages"
   | "editPdf" | "fillForm" | "sign" | "watermark" | "pageNumbers" | "headerFooter" | "bates"
   | "encrypt" | "unlock" | "redact" | "sanitize" | "removeMetadata" | "editMetadata"
-  | "ocr";
+  | "ocr" | "compare";
 
 /** Section ids name the `home` keys `sections.<id>`. */
-export type SectionId = "organize" | "convert" | "edit" | "security" | "recognize";
+export type SectionId = "organize" | "convert" | "edit" | "security" | "analyze";
 
 export interface Tool {
   id: ToolId;
@@ -20,7 +20,7 @@ export interface Tool {
   pixel: PixelGlyph;
 }
 
-export const SECTIONS: readonly SectionId[] = ["organize", "convert", "edit", "security", "recognize"];
+export const SECTIONS: readonly SectionId[] = ["organize", "convert", "edit", "security", "analyze"];
 
 /** Id, path and section of every tool, in spec 3.6 order. */
 const TABLE: readonly Omit<Tool, "pixel">[] = [
@@ -54,7 +54,8 @@ const TABLE: readonly Omit<Tool, "pixel">[] = [
   { id: "removeMetadata", href: "/remove-metadata", section: "security" },
   { id: "editMetadata", href: "/edit-metadata", section: "security" },
 
-  { id: "ocr", href: "/ocr", section: "recognize" },
+  { id: "ocr", href: "/ocr", section: "analyze" },
+  { id: "compare", href: "/compare", section: "analyze" },
 ];
 
 /** The single source for the home grid, the header TOOLS menu and the tool-page eyebrow (spec 3.6 order). */

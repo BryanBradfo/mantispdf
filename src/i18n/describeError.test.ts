@@ -82,6 +82,8 @@ describe("describeError", () => {
     ["Redaction verification failed on page 2", "La vérification du caviardage a échoué (page 2). Le fichier n’a pas été enregistré.", false],
     ["OCR engine could not start", "Le moteur OCR n’a pas pu démarrer. Vérifiez votre connexion à ce site et réessayez.", false],
     ["WASM engine not initialized", "Le moteur PDF n’est pas encore prêt. Réessayez dans un instant.", false],
+    ["Compare worker crashed", "La comparaison s’est arrêtée de façon inattendue. Réessayez ou rechargez la page.", false],
+    ["Compare worker message error", "La comparaison s’est arrêtée de façon inattendue. Réessayez ou rechargez la page.", false],
   ])("maps the engine message %j", (raw, french, withDetails) => {
     expect(describeError(new Error(raw), tFr, "fr")).toEqual({ message: french, details: withDetails ? raw : null });
     expect(describeError(new Error(raw), tEn, "en")).toEqual({ message: raw, details: null });

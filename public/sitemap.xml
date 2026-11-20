@@ -209,6 +209,14 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://mantispdf.bradfo.me/compare</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.bradfo.me/compare"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.bradfo.me/fr/compare"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.bradfo.me/compare"/>
+    <lastmod>2026-11-20</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://mantispdf.bradfo.me/images-to-pdf</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.bradfo.me/images-to-pdf"/>
     <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.bradfo.me/fr/images-to-pdf"/>
@@ -430,6 +438,14 @@
     <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.bradfo.me/fr/ocr"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.bradfo.me/ocr"/>
     <lastmod>2026-10-22</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.bradfo.me/fr/compare</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.bradfo.me/compare"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.bradfo.me/fr/compare"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.bradfo.me/compare"/>
+    <lastmod>2026-11-20</lastmod>
     <priority>0.8</priority>
   </url>
   <url>

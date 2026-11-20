@@ -29,6 +29,7 @@ const EditPdfPage = lazy(PAGE_LOADERS["/edit-pdf"]);
 const FillFormPage = lazy(PAGE_LOADERS["/fill-form"]);
 const RedactPage = lazy(PAGE_LOADERS["/redact"]);
 const OcrPage = lazy(PAGE_LOADERS["/ocr"]);
+const ComparePage = lazy(PAGE_LOADERS["/compare"]);
 const ImagesToPdfPage = lazy(PAGE_LOADERS["/images-to-pdf"]);
 const ExtractImagesPage = lazy(PAGE_LOADERS["/extract-images"]);
 
@@ -72,6 +73,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   { path: "/fill-form", element: <FillFormPage /> },
   { path: "/redact", element: <RedactPage /> },
   { path: "/ocr", element: <OcrPage /> },
+  { path: "/compare", element: <ComparePage /> },
   { path: "/organize", element: <OrganizePdfPage /> },
   { path: "/remove-pages", element: <RemovePagesPage /> },
   { path: "/extract-pages", element: <ExtractPagesPage /> },

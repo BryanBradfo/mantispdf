@@ -17,7 +17,7 @@ const home: Messages<typeof en> = {
   "sections.convert": "Optimiser et convertir",
   "sections.edit": "Éditer et signer",
   "sections.security": "Sécurité et confidentialité",
-  "sections.recognize": "Reconnaître",
+  "sections.analyze": "Analyser",
 
   "split.title": "Diviser PDF",
   "split.desc": "Découpez un PDF en plusieurs fichiers aux pages de votre choix.",
@@ -69,6 +69,8 @@ const home: Messages<typeof en> = {
   "redact.desc": "Supprimez définitivement le texte et les images sensibles.",
   "ocr.title": "OCR",
   "ocr.desc": "Permettez la recherche et la copie du texte de vos PDF numérisés.",
+  "compare.title": "Comparer des PDF",
+  "compare.desc": "Voyez ce qui a changé entre deux PDF, mot par mot.",
   "imagesToPdf.title": "Images en PDF",
   "imagesToPdf.desc": "Transformez des images JPG, PNG ou WebP en PDF, une image par page.",
   "extractImages.title": "Extraire les images",

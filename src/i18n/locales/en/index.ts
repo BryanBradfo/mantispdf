@@ -20,6 +20,7 @@ import editPdf from "./editPdf";
 import fillForm from "./fillForm";
 import redact from "./redact";
 import ocr from "./ocr";
+import compare from "./compare";
 import stamp from "./stamp";
 import watermark from "./watermark";
 import pageNumbers from "./pageNumbers";
@@ -69,6 +70,7 @@ export const en = {
   fillForm,
   redact,
   ocr,
+  compare,
 };
 
 export type EnDictionary = typeof en;

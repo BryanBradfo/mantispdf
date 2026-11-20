@@ -109,6 +109,8 @@ const KNOWN: readonly Known[] = [
   // OCR (lib/ocr/engine) and the worker.
   { pattern: /^OCR engine could not start$/, describe: (_, t) => t("errorOcrNotStarted") },
   { pattern: /^(WASM engine not initialized|Worker not initialized)$/, describe: (_, t) => t("errorNotReady") },
+  // Compare (lib/compare/client): the diff worker failed.
+  { pattern: /^Compare worker (crashed|message error)$/, describe: (_, t) => t("errorCompareFailed") },
 ];
 
 /** The KNOWN patterns, for the guard test that checks each message still exists in the sources. */
