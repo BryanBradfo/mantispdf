@@ -26,6 +26,37 @@ for (const [locale, path] of [["en", "/"], ["fr", "/fr"]] as const) {
   });
 }
 
+const BAND = {
+  en: { title: "MantisPDF Desktop App", prefix: "/" },
+  fr: { title: "MantisPDF pour ordinateur", prefix: "/fr/" },
+};
+
+for (const [locale, path] of [["en", "/"], ["fr", "/fr"]] as const) {
+  test(`${locale} home: the desktop app band sits above section 01 with three OS tiles`, async ({ page }) => {
+    await page.goto(path);
+    const band = page.getByRole("region", { name: BAND[locale].title });
+    await expect(band).toBeVisible();
+    const tiles = band.getByRole("link");
+    await expect(tiles).toHaveText([/macOS$/, /Windows$/, /Linux$/]);
+    expect(await tiles.evaluateAll((as) => as.map((a) => a.getAttribute("href")))).toEqual(
+      ["mac", "windows", "linux"].map((os) => `${BAND[locale].prefix}download?os=${os}`),
+    );
+    const bandBottom = (await band.boundingBox())!;
+    const first = (await page.locator("#tools").getByRole("heading", { level: 2 }).first().boundingBox())!;
+    expect(bandBottom.y + bandBottom.height).toBeLessThanOrEqual(first.y);
+  });
+}
+
+test("the macOS tile opens /download on the macOS tab, whatever the visitor's OS", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "userAgentData", { get: () => ({ platform: "Windows" }), configurable: true });
+  });
+  await page.goto("/fr");
+  await page.getByRole("region", { name: BAND.fr.title }).getByRole("link", { name: /macOS/ }).click();
+  await expect(page).toHaveURL(/\/fr\/download\?os=mac$/);
+  await expect(page.getByRole("tab", { name: "macOS" })).toHaveAttribute("aria-selected", "true");
+});
+
 test("the hero button scrolls to the tools", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: "Choose a tool" }).click();
@@ -82,6 +113,15 @@ test.describe("on a 390 px phone", () => {
       expect(await overflow(page)).toBe(0);
     });
   }
+
+  test("the desktop band stacks its tiles in one column and fits the phone", async ({ page }) => {
+    await page.goto("/");
+    const tiles = page.getByRole("region", { name: BAND.en.title }).getByRole("link");
+    await expect(tiles).toHaveCount(3);
+    const xs = await tiles.evaluateAll((as) => as.map((a) => Math.round(a.getBoundingClientRect().x)));
+    expect(new Set(xs).size).toBe(1);
+    expect(await overflow(page)).toBe(0);
+  });
 
   test("the footer of a tool page fits the phone and links every tool under /fr", async ({ page }) => {
     await page.goto("/fr/merge");

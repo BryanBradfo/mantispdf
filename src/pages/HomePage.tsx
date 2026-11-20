@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArrowDown, Download, Sparkles } from "lucide-react";
+import DesktopBand from "../components/home/DesktopBand";
 import ToolGrid from "../components/home/ToolGrid";
 import { PageSEO } from "../components/seo/PageSEO";
 import LicenseDialog from "../components/license/LicenseDialog";
@@ -62,6 +63,9 @@ export default function HomePage() {
             <figcaption className="eyebrow absolute left-4 top-4 sm:left-5 sm:top-5">{t("heroFigure")}</figcaption>
           </figure>
         </section>
+
+        {/* Hidden in the desktop app (it checks isTauri itself). */}
+        <DesktopBand />
 
         <div id="tools" className="scroll-mt-4 pb-24">
           <ToolGrid />

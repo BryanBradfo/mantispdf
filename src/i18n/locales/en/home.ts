@@ -13,6 +13,13 @@ export default {
   pro: "Pro",
   upgradeToPro: "Upgrade to Pro",
 
+  "desktop.eyebrow": "Desktop app",
+  "desktop.title": "MantisPDF Desktop App",
+  "desktop.subtitle": "Available on every computer.",
+  "desktop.mac": "Apple Silicon & Intel",
+  "desktop.windows": "Windows 10 & 11",
+  "desktop.linux": "AppImage · deb · rpm",
+
   "sections.organize": "Organize",
   "sections.convert": "Optimize and convert",
   "sections.edit": "Edit and sign",
