@@ -1,8 +1,8 @@
-# MantisPDF
-
 <p align="center">
-    <img src="docs/brand/readme-hero.png" alt="MantisPDF" width="600">
+  <img src="docs/brand/readme-logo.png" alt="MantisPDF logo: an ink-drawn praying mantis" width="320">
 </p>
+
+# MantisPDF
 
 <p align="center">
   <a href="https://github.com/BryanBradfo/mantispdf/actions/workflows/ci.yml"><img src="https://github.com/BryanBradfo/mantispdf/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
