@@ -21,6 +21,8 @@ export default {
   noteWindows:
     "The installer is not signed yet. If SmartScreen warns you, click More info, then Run anyway.",
   noteLinux: "Or install from a terminal:",
+  noteDeb:
+    "On Ubuntu or Debian, the .deb gives a full install with a menu icon: double-click it, or run sudo apt install ./MantisPDF_{version}_amd64.deb.",
   terminal: "Terminal command",
   copy: "Copy command",
   copied: "Copied",
