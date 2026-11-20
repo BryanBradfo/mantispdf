@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ArrowUpRight } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
 import { Link, useT } from "../../i18n";
 import { MantisHead } from "../brand/MantisHead";
 import { GithubMark } from "../brand/GithubMark";
@@ -126,6 +127,14 @@ export default function Footer() {
           ))}
 
           <Group eyebrow={t("footerOpenSource")} heading={t("footerProject")} id="footer-project">
+            {/* The installers page, left out inside the desktop app itself. */}
+            {!isTauri() && (
+              <li>
+                <Link to="/download" className={linkText}>
+                  {t("footerDesktopApp")}
+                </Link>
+              </li>
+            )}
             <External href={GITHUB_URL}>
               <span className="text-ink-3">{t("footerGoTo")}</span>
               {t("headerGithub")}

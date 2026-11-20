@@ -9,6 +9,7 @@ const home: Messages<typeof en> = {
   intro:
     "Tout le traitement s’effectue directement dans votre navigateur grâce à WebAssembly. Vos fichiers ne quittent jamais votre appareil, pas même une milliseconde.",
   chooseTool: "Choisir un outil",
+  downloadApp: "Télécharger l’application",
   sectionCount: { one: "{count}\u00a0outil", other: "{count}\u00a0outils" },
   pro: "Pro",
   upgradeToPro: "Passer à Pro",

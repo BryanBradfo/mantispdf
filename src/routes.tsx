@@ -32,6 +32,7 @@ const OcrPage = lazy(PAGE_LOADERS["/ocr"]);
 const ComparePage = lazy(PAGE_LOADERS["/compare"]);
 const ImagesToPdfPage = lazy(PAGE_LOADERS["/images-to-pdf"]);
 const ExtractImagesPage = lazy(PAGE_LOADERS["/extract-images"]);
+const DownloadPage = lazy(PAGE_LOADERS["/download"]);
 
 function NotFound() {
   const t = useT("common");
@@ -94,5 +95,6 @@ export const APP_ROUTES: readonly AppRoute[] = [
   { path: "/images-to-pdf", element: <ImagesToPdfPage /> },
   { path: "/jpg-to-pdf", element: <Navigate to="/images-to-pdf" replace /> },
   { path: "/extract-images", element: <ExtractImagesPage /> },
+  { path: "/download", element: <DownloadPage /> },
   { path: "*", element: <NotFound /> },
 ];

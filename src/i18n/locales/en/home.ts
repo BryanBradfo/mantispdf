@@ -8,6 +8,7 @@ export default {
   intro:
     "All processing runs directly in your browser via WebAssembly. Your files never leave your device, not even for a millisecond.",
   chooseTool: "Choose a tool",
+  downloadApp: "Download the app",
   sectionCount: { one: "{count} tool", other: "{count} tools" },
   pro: "Pro",
   upgradeToPro: "Upgrade to Pro",

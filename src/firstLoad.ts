@@ -34,6 +34,7 @@ export const PAGE_LOADERS: Record<string, () => Promise<PageModule>> = {
   "/n-up": () => import("./pages/NupPdfPage"),
   "/images-to-pdf": () => import("./pages/ImagesToPdfPage"),
   "/extract-images": () => import("./pages/ExtractImagesPage"),
+  "/download": () => import("./pages/DownloadPage"),
 };
 
 /** The page chunk of a URL path in any locale (`/fr/merge?x` -> the Merge loader), if it is a page. */

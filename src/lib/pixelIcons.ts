@@ -518,3 +518,28 @@ export const PIXEL_ICONS: Record<ToolId, PixelGlyph> = {
     "................",
   ],
 };
+
+/**
+ * Icons of the pages that are not tools (same family rules: 16x16, 1 px lines, open chevrons).
+ * `download`: a monitor with a down arrow onto a tray line, on a two-legged stand.
+ */
+export const PAGE_ICONS = {
+  download: [
+    "................",
+    "###############.",
+    "#.............#.",
+    "#......#......#.",
+    "#......#......#.",
+    "#...#..#..#...#.",
+    "#....#.#.#....#.",
+    "#.....###.....#.",
+    "#......#......#.",
+    "#.............#.",
+    "#...#######...#.",
+    "#.............#.",
+    "###############.",
+    "......#.#.......",
+    "....#######.....",
+    "................",
+  ],
+} as const satisfies Record<string, PixelGlyph>;
