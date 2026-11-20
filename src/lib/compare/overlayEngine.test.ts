@@ -4,13 +4,15 @@ import { OverlayEngine, type EngineDeps, type Lane } from "./overlayEngine";
 type Call = { page: number; lane: Lane; signal: AbortSignal; resolve: (ratio: number) => void; reject: (e: Error) => void };
 
 /** Deps whose computations stay pending until the test settles them. */
-function deps(keep = 4) {
+function deps(keep = 4, rejectOnAbort = false) {
   const calls: Call[] = [];
   const released: string[] = [];
   const resets: Lane[] = [];
   const d: EngineDeps<string> = {
     compute: (page, lane, signal) =>
       new Promise((resolve, reject) => {
+        // Like the real renders: an abort rejects the computation.
+        if (rejectOnAbort) signal.addEventListener("abort", () => reject(Object.assign(new Error("cancelled"), { name: "AbortError" })));
         calls.push({ page, lane, signal, resolve: (ratio) => resolve({ ratio, overlay: `o${page}` }), reject });
       }),
     resetLane: (lane) => resets.push(lane),
@@ -153,21 +155,61 @@ describe("OverlayEngine", () => {
     expect(e.getScan()).toEqual({ status: "idle" });
   });
 
-  it("keeps a few overlays, never evicting the stage page", async () => {
-    const { d, calls, released } = deps(2);
+  it("the scan computes a page itself when the stage run it waited on is aborted", async () => {
+    const { d, calls } = deps();
+    const e = new OverlayEngine(d);
+    const two = e.stage(2);
+    await flush();
+    e.startScan([2]);
+    // The person moves on to page 3; page 2's stage run is aborted but its render ends late.
+    const three = e.stage(3);
+    await expect(two).rejects.toMatchObject({ name: "AbortError" });
+    await flush();
+    calls[1].resolve(0);
+    await three;
+    await flush();
+    // The scan now waits on page 2's stale run, which ends in an AbortError.
+    expect(calls.map((c) => [c.page, c.lane])).toEqual([[2, "stage"], [3, "stage"]]);
+    calls[0].reject(Object.assign(new Error("cancelled"), { name: "AbortError" }));
+    await flush();
+    expect(calls.map((c) => [c.page, c.lane])).toEqual([[2, "stage"], [3, "stage"], [2, "scan"]]);
+    calls[2].resolve(0.4);
+    await flush();
+    expect(e.getResults().get(2)).toEqual({ status: "done", ratio: 0.4 });
+    expect(e.getScan()).toEqual({ status: "done", done: 1, total: 1 });
+  });
+
+  it("keeps only ratios for scanned pages, masks for the stage", async () => {
+    const { d, calls, released } = deps();
     const e = new OverlayEngine(d);
     const s = e.stage(1);
     await flush();
     calls[0].resolve(0);
     await s;
-    e.startScan([2, 3, 4]);
-    for (let i = 1; i <= 3; i++) {
+    e.startScan([2, 3]);
+    for (let i = 1; i <= 2; i++) {
       await flush();
-      calls[i].resolve(0);
+      calls[i].resolve(0.1);
     }
     await flush();
     expect(released).toEqual(["o2", "o3"]);
+    expect(e.getResults().get(3)).toEqual({ status: "done", ratio: 0.1 });
     expect(await e.stage(1)).toEqual({ ratio: 0, overlay: "o1" });
+  });
+
+  it("keeps a few overlays, never evicting the stage page", async () => {
+    const { d, calls, released } = deps(2);
+    const e = new OverlayEngine(d);
+    for (let p = 1; p <= 3; p++) {
+      const s = e.stage(p);
+      await flush();
+      calls[p - 1].resolve(0);
+      await s;
+    }
+    // Pages 1, 2, 3 viewed in turn with room for 2 masks: page 1's is freed, page 3 (on stage) kept.
+    expect(released).toEqual(["o1"]);
+    expect(await e.stage(3)).toEqual({ ratio: 0, overlay: "o3" });
+    expect(calls).toHaveLength(3);
   });
 
   it("records a failed page as an error (not when cancelled)", async () => {

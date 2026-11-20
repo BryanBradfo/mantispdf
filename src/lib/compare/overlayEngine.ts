@@ -50,7 +50,7 @@ function untilAbort<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
 
 /**
  * The overlay's computations for one pair of documents: a per-page cache shared by the stage and
- * the scan (ratios for every page, overlays for a few), deduplicated work in flight, and the scan
+ * the scan (ratios for every page, masks only for the last few pages shown), deduplicated work in flight, and the scan
  * that pauses while the stage is loading and reads the known pages live. Framework-free; the view
  * subscribes to it.
  */
@@ -153,9 +153,16 @@ export class OverlayEngine<O> {
         if (ctrl.signal.aborted) return;
         if (this.results.has(page)) continue;
         const pending = this.inflight.get(page);
+        if (pending) {
+          try {
+            await untilAbort(pending, ctrl.signal);
+          } catch {
+            // The stage run it waited on was aborted (or failed): computed below unless known now.
+          }
+          if (ctrl.signal.aborted) return;
+        }
         try {
-          if (pending) await untilAbort(pending, ctrl.signal);
-          if (!this.results.has(page) && !ctrl.signal.aborted) await untilAbort(this.run(page, "scan", ctrl.signal), ctrl.signal);
+          if (!this.results.has(page)) await untilAbort(this.run(page, "scan", ctrl.signal), ctrl.signal);
         } catch {
           if (ctrl.signal.aborted) return;
         }
@@ -193,7 +200,9 @@ export class OverlayEngine<O> {
           throw abortError();
         }
         this.setResult(page, { status: "done", ratio: out.ratio });
-        this.store(page, out.overlay);
+        // Masks are kept for the page on show (and the last few shown); a scanned page keeps its ratio only.
+        if (lane === "stage" || page === this.pinned) this.store(page, out.overlay);
+        else this.deps.release(out.overlay);
         return out;
       },
       (e: unknown) => {
