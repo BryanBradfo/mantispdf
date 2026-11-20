@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { ArrowDown, Sparkles } from "lucide-react";
+import { ArrowDown, Download, Sparkles } from "lucide-react";
 import ToolGrid from "../components/home/ToolGrid";
 import { PageSEO } from "../components/seo/PageSEO";
 import LicenseDialog from "../components/license/LicenseDialog";
 import { MantisMark } from "../components/brand/MantisMark";
 import DecodeText from "../components/common/DecodeText";
 import { useLicense, CHECKOUT_URL } from "../hooks/useLicense";
-import { useT } from "../i18n";
+import { Link, useT } from "../i18n";
 import { primaryButton, secondaryButton } from "../styles/ui";
 
 export default function HomePage() {
@@ -42,10 +42,19 @@ export default function HomePage() {
               {t("tagline")}
             </p>
             <p className="mt-5 max-w-md text-base leading-relaxed text-ink-2">{t("intro")}</p>
-            <a href="#tools" className={`${primaryButton} mt-10 h-12 gap-3 px-7`}>
-              {t("chooseTool")}
-              <ArrowDown aria-hidden="true" strokeWidth={1.5} className="h-4 w-4" />
-            </a>
+            <div className="mt-10 flex flex-wrap gap-3">
+              <a href="#tools" className={`${primaryButton} h-12 gap-3 px-7`}>
+                {t("chooseTool")}
+                <ArrowDown aria-hidden="true" strokeWidth={1.5} className="h-4 w-4" />
+              </a>
+              {/* The desktop app has nothing to download. */}
+              {!license.onDesktop && (
+                <Link to="/download" className={`${secondaryButton} h-12 gap-3 px-7`}>
+                  {t("downloadApp")}
+                  <Download aria-hidden="true" strokeWidth={1.5} className="h-4 w-4" />
+                </Link>
+              )}
+            </div>
           </div>
           {/* The drawing is cut on its right and bottom edges: it sits flush in a hairline plate. */}
           <figure className="relative mx-auto aspect-[7/8] w-full max-w-[26rem] overflow-hidden border border-line sm:max-w-[30rem] lg:col-span-5 lg:mr-0 lg:max-w-none">

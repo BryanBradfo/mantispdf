@@ -36,7 +36,8 @@ describe("the tool table", () => {
   });
 
   it("covers every page route of the app once (home, 404 and redirects aside)", () => {
-    const pages = APP_ROUTES.filter((r) => r.path !== "/" && r.path !== "*" && !isRedirect(r)).map((r) => r.path);
+    // Pages that are not tools: home, the 404, the redirects and the desktop download page.
+    const pages = APP_ROUTES.filter((r) => !["/", "*", "/download"].includes(r.path) && !isRedirect(r)).map((r) => r.path);
     expect([...TOOLS.map((t) => t.href)].sort()).toEqual([...pages].sort());
   });
 

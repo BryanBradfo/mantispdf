@@ -35,6 +35,7 @@ import sanitize from "./sanitize";
 import metadata from "./metadata";
 import removeMetadata from "./removeMetadata";
 import editMetadata from "./editMetadata";
+import download from "./download";
 
 /** French, loaded as its own chunk when a `/fr` page is first rendered (or preloaded). */
 const fr: Dictionary<EnDictionary> = {
@@ -73,6 +74,7 @@ const fr: Dictionary<EnDictionary> = {
   redact,
   ocr,
   compare,
+  download,
 };
 
 export default fr;

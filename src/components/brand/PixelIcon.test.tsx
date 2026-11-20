@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import PixelIcon, { glyphPath } from "./PixelIcon";
-import { PIXEL_ICONS } from "../../lib/pixelIcons";
+import { PAGE_ICONS, PIXEL_ICONS } from "../../lib/pixelIcons";
 
 const row = (s: string) => s.padEnd(16, ".");
 const glyph = [row("##.#"), row(".###"), ...Array.from({ length: 14 }, () => row(""))];
@@ -36,5 +36,16 @@ describe("PixelIcon", () => {
     expect(html).toContain('role="img"');
     expect(html).toContain("<title>Merge</title>");
     expect(html).not.toContain("aria-hidden");
+  });
+});
+
+describe("page icons", () => {
+  it("are 16x16 # and . glyphs, distinct from every tool glyph", () => {
+    const tools = new Set(Object.values(PIXEL_ICONS).map((g) => g.join("")));
+    for (const [id, g] of Object.entries(PAGE_ICONS)) {
+      expect(g, id).toHaveLength(16);
+      for (const r of g) expect(r, id).toMatch(/^[#.]{16}$/);
+      expect(tools.has(g.join("")), id).toBe(false);
+    }
   });
 });

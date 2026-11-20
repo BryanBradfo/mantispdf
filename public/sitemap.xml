@@ -233,6 +233,14 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://mantispdf.bradfo.me/download</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.bradfo.me/download"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.bradfo.me/fr/download"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.bradfo.me/download"/>
+    <lastmod>2026-11-20</lastmod>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://mantispdf.bradfo.me/fr</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.bradfo.me/"/>
     <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.bradfo.me/fr"/>
@@ -463,5 +471,13 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.bradfo.me/extract-images"/>
     <lastmod>2026-10-22</lastmod>
     <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mantispdf.bradfo.me/fr/download</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mantispdf.bradfo.me/download"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://mantispdf.bradfo.me/fr/download"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mantispdf.bradfo.me/download"/>
+    <lastmod>2026-11-20</lastmod>
+    <priority>0.7</priority>
   </url>
 </urlset>

@@ -46,7 +46,7 @@ const REPO = "https://github.com/BryanBradfo/mantispdf";
 describe("Footer", () => {
   it("links every tool, section by section, from the tool table", async () => {
     await renderAt("/");
-    expect(hrefs('section a[href^="/"]')).toEqual(TOOLS.map((t) => t.href));
+    expect(hrefs('section a[href^="/"]')).toEqual([...TOOLS.map((t) => t.href), "/download"]);
     expect(footer().querySelectorAll("h2")).toHaveLength(6);
     expect(footer().textContent).toContain("Merge PDF");
     expect(footer().textContent).toContain("Analyze");
@@ -54,9 +54,18 @@ describe("Footer", () => {
 
   it("localizes the tool links under /fr", async () => {
     await renderAt("/fr");
-    expect(hrefs('section a[href^="/"]')).toEqual(TOOLS.map((t) => `/fr${t.href}`));
+    expect(hrefs('section a[href^="/"]')).toEqual([...TOOLS.map((t) => `/fr${t.href}`), "/fr/download"]);
     expect(footer().textContent).toContain("Fusionner PDF");
     expect(footer().textContent).toContain("100 % dans votre navigateur");
+  });
+
+  it("links the desktop app page first in the Project column", async () => {
+    await renderAt("/");
+    const project = footer().querySelector('section[aria-labelledby="footer-project"]')!;
+    const first = project.querySelector("a")!;
+    expect(first.getAttribute("href")).toBe("/download");
+    expect(first.textContent).toBe("Desktop app");
+    expect(first.target).toBe("");
   });
 
   it("links the project on GitHub in a new tab, without an opener", async () => {

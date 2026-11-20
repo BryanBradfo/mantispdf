@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { ChevronDown, Menu, Moon, Sun, X } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
 import { Link, useT } from "../../i18n";
 import { MantisHead } from "../brand/MantisHead";
 import { GithubMark } from "../brand/GithubMark";
@@ -13,12 +14,16 @@ const GITHUB_URL = "https://github.com/BryanBradfo/mantispdf";
 
 /** Small uppercase, widely tracked header text (Oswald). */
 const navText = "font-display text-[13px] font-normal uppercase tracking-[0.14em]";
+/** The boxed DOWNLOAD button (Hermes' "INSTALL HERMES"): a square hairline box that fills with ink on hover. */
+const boxedButton = `inline-flex h-9 items-center border border-line-strong px-4 text-ink hover:border-ink hover:bg-ink hover:text-paper ${navText} ${focusRing}`;
 
 export default function Header() {
   const t = useT("common");
   const [dark, setDark] = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
+  // Inside the desktop app there is nothing to download.
+  const onDesktop = isTauri();
   const menuId = useId();
   const headerRef = useRef<HTMLElement>(null);
   /** The button that opened the menu (TOOLS on desktop, MENU on phones): focus goes back to it on Escape. */
@@ -64,6 +69,12 @@ export default function Header() {
       <GithubMark className="h-3.5 w-3.5" />
       {t("headerGithub")}
     </a>
+  );
+
+  const download = onDesktop ? null : (
+    <Link to="/download" data-testid="header-download" className={boxedButton}>
+      {t("headerDownload")}
+    </Link>
   );
 
   return (
@@ -132,6 +143,7 @@ export default function Header() {
               <Menu aria-hidden="true" strokeWidth={1.5} className="h-5 w-5" />
             )}
           </button>
+          {download && <span className="hidden lg:inline-flex">{download}</span>}
         </div>
       </div>
 
@@ -139,10 +151,14 @@ export default function Header() {
         <ToolsMenu
           id={menuId}
           onNavigate={() => closeMenu(false)}
+          extrasUntil={download ? "lg" : "sm"}
           mobileExtras={
             <>
-              <LanguageSwitcher />
-              {github}
+              <span className="flex items-center gap-6 sm:hidden">
+                <LanguageSwitcher />
+                {github}
+              </span>
+              {download && <span className="ml-auto flex">{download}</span>}
             </>
           }
         />

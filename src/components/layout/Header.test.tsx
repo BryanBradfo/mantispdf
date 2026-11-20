@@ -104,6 +104,27 @@ describe("Header TOOLS menu", () => {
   });
 });
 
+describe("Header DOWNLOAD button", () => {
+  const downloads = () => [...host.querySelectorAll<HTMLAnchorElement>('[data-testid="header-download"]')];
+
+  it("is a boxed link to the download page on the web, in the current locale", async () => {
+    await renderAt("/merge");
+    expect(downloads()).toHaveLength(1);
+    expect(downloads()[0].getAttribute("href")).toBe("/download");
+    expect(downloads()[0].textContent).toBe("Download");
+    expect(downloads()[0].className).toMatch(/\bborder\b/);
+    await act(async () => downloads()[0].click());
+    expect(where()).toBe("/download");
+  });
+
+  it("also sits in the menu panel for phones and tablets", async () => {
+    await renderAt("/merge");
+    await act(async () => toolsButton().click());
+    expect(downloads()).toHaveLength(2);
+    expect(downloads()[1].closest(".lg\\:hidden")).not.toBeNull();
+  });
+});
+
 describe("ToolShell eyebrow", () => {
   it("shows the tool's section number and name above the title", async () => {
     await renderAt(

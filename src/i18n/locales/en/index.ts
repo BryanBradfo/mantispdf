@@ -33,6 +33,7 @@ import sanitize from "./sanitize";
 import metadata from "./metadata";
 import removeMetadata from "./removeMetadata";
 import editMetadata from "./editMetadata";
+import download from "./download";
 
 /** The English dictionary, bundled with the app. Add a namespace here, then in every locale. */
 export const en = {
@@ -71,6 +72,7 @@ export const en = {
   redact,
   ocr,
   compare,
+  download,
 };
 
 export type EnDictionary = typeof en;

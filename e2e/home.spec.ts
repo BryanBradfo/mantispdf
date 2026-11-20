@@ -90,7 +90,7 @@ test.describe("on a 390 px phone", () => {
     await expect(footer.getByRole("heading", { name: "Projet" })).toBeVisible();
     const nav = footer.getByRole("navigation", { name: "Plan du site" });
     await expect(nav.getByRole("link", { name: "Fusionner PDF" })).toHaveAttribute("href", "/fr/merge");
-    expect((await nav.locator('a[href^="/fr/"]').count())).toBe(28);
+    expect((await nav.locator('a[href^="/fr/"]').count())).toBe(29);
     expect(await overflow(page)).toBe(0);
     expect(await footer.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
   });
