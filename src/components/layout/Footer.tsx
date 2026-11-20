@@ -75,27 +75,29 @@ export default function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="bg-paper">
-      {/* An inline-size container: `cqw` below is a hundredth of the content width, padding excluded. */}
-      <div className="mx-auto max-w-[1440px] px-4 pb-10 pt-20 [container-type:inline-size] sm:px-8 sm:pt-28 lg:px-12">
+    <footer className="overflow-x-clip bg-paper">
+      {/* `--wm` is the wordmark size: the content width (viewport or 1440 px, minus the side padding) over 3.62, the
+          wordmark's width in em. Viewport units, not container units: the desktop app's WebKitGTK sized `cqw` wrongly
+          and the wordmark overflowed the window. */}
+      <div className="mx-auto max-w-[1440px] px-4 pb-10 pt-20 [--pad:1rem] [--wm:calc((min(100vw,1440px)-2*var(--pad))/3.62)] sm:px-8 sm:pt-28 sm:[--pad:2rem] lg:px-12 lg:[--pad:3rem]">
         <div
           aria-hidden="true"
           data-testid="footer-mantis"
           style={mantisStyle}
-          className="pointer-events-none -mb-[calc(100cqw/3.62*0.3)] bg-ink/25 [--dot:1px] sm:[--dot:2px] dark:bg-ink/[0.22]"
+          className="pointer-events-none -mb-[calc(var(--wm)*0.3)] bg-ink/25 [--dot:1px] sm:[--dot:2px] dark:bg-ink/[0.22]"
         />
         {/* Oswald 300 "MantisPDF" is 3.585 em wide: this size spans the content width at every viewport, with
             no scrollbar maths. The negative margin cancels the M's side bearing so the stem lines up with the columns. */}
         <p
           aria-hidden="true"
           data-testid="footer-wordmark"
-          className="relative -ml-[0.04em] select-none whitespace-nowrap font-display text-[calc(100cqw/3.62)] font-light leading-[0.78] tracking-[-0.01em] text-line"
+          className="relative -ml-[0.04em] select-none whitespace-nowrap font-display text-[length:var(--wm)] font-light leading-[0.78] tracking-[-0.01em] text-line"
         >
           MantisPDF
         </p>
 
         {/* On wide screens (one row of columns) the columns climb onto the foot of the wordmark, as on the Hermes site. */}
-        <nav aria-label={t("footerNav")} className={`relative mt-12 gap-y-14 sm:mt-16 xl:-mt-[calc(100cqw/3.62*0.16)] grid grid-cols-2 gap-x-6 sm:grid-cols-3 sm:gap-x-8 xl:gap-x-6 ${columnsXl}`}>
+        <nav aria-label={t("footerNav")} className={`relative mt-12 gap-y-14 sm:mt-16 xl:-mt-[calc(var(--wm)*0.16)] grid grid-cols-2 gap-x-6 sm:grid-cols-3 sm:gap-x-8 xl:gap-x-6 ${columnsXl}`}>
           <div className="col-span-2 sm:col-span-3 xl:col-span-1">
             <Link to="/" className={`inline-block text-ink ${focusRing}`}>
               <MantisHead title="MantisPDF" className="h-14 w-auto" />
