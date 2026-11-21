@@ -47,6 +47,14 @@ export function linuxInstallCommand(version: string = DESKTOP_VERSION): string {
 export const DESKTOP_OSES = ["mac", "windows", "linux"] as const;
 export type DesktopOs = (typeof DESKTOP_OSES)[number];
 
+/** OS names are proper nouns, the same in every language, shown in their own case ("macOS", not "MACOS"). */
+export const OS_NAMES: Record<DesktopOs, string> = { mac: "macOS", windows: "Windows", linux: "Linux" };
+
+/** The OS id in a `?os=` query value, or null when it names none of the three. */
+export function asDesktopOs(value: string | null): DesktopOs | null {
+  return (DESKTOP_OSES as readonly string[]).includes(value ?? "") ? (value as DesktopOs) : null;
+}
+
 /**
  * The OS of a platform or user-agent string; macOS when it cannot tell. Mac is tested first ("Darwin" holds
  * "win"); Android says "Linux" in its user agent but runs no desktop installer, so it takes the fallback.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  asDesktopOs,
   ASSET_KINDS,
   DESKTOP_VERSION,
   RELEASES_URL,
@@ -68,5 +69,14 @@ describe("detectOs", () => {
     ["Something else", "mac"],
   ] as const)("%j -> %s", (platform, os) => {
     expect(detectOs(platform)).toBe(os);
+  });
+});
+
+describe("asDesktopOs", () => {
+  it("accepts the three OS ids and nothing else", () => {
+    expect(asDesktopOs("mac")).toBe("mac");
+    expect(asDesktopOs("windows")).toBe("windows");
+    expect(asDesktopOs("linux")).toBe("linux");
+    for (const v of [null, "", "Mac", "beos", "toString"]) expect(asDesktopOs(v), String(v)).toBeNull();
   });
 });

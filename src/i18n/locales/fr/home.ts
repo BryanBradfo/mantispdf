@@ -14,6 +14,13 @@ const home: Messages<typeof en> = {
   pro: "Pro",
   upgradeToPro: "Passer à Pro",
 
+  "desktop.eyebrow": "Application de bureau",
+  "desktop.title": "MantisPDF pour ordinateur",
+  "desktop.subtitle": "Disponible sur tous les ordinateurs.",
+  "desktop.mac": "Apple Silicon et Intel",
+  "desktop.windows": "Windows 10 et 11",
+  "desktop.linux": "AppImage · deb · rpm",
+
   "sections.organize": "Organiser",
   "sections.convert": "Optimiser et convertir",
   "sections.edit": "Éditer et signer",

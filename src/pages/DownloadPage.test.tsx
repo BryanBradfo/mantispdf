@@ -81,6 +81,17 @@ describe("DownloadPage", () => {
     expect(tabs().map((t) => t.tabIndex)).toEqual([-1, -1, 0]);
   });
 
+  it("preselects the tab named by ?os=, over the visitor's OS", async () => {
+    await render("/download?os=linux", "Windows");
+    expect(selected()).toBe("Linux");
+    expect(links()).toEqual([assetUrl("appImage"), assetUrl("deb"), assetUrl("rpm")]);
+  });
+
+  it("falls back to the visitor's OS when ?os= is unknown", async () => {
+    await render("/download?os=beos", "Windows");
+    expect(selected()).toBe("Windows");
+  });
+
   it("lists the Mac and Linux installers and the Linux one-liner", async () => {
     await render("/download", "macOS");
     expect(links()).toEqual([assetUrl("macArm"), assetUrl("macIntel")]);

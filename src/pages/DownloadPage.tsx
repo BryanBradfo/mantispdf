@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ArrowUpRight, Check, Copy, Download, Info } from "lucide-react";
 import { PageSEO } from "../components/seo/PageSEO";
 import PixelIcon from "../components/brand/PixelIcon";
@@ -7,7 +8,9 @@ import { useT } from "../i18n";
 import {
   DESKTOP_OSES,
   DESKTOP_VERSION,
+  OS_NAMES,
   RELEASES_URL,
+  asDesktopOs,
   assetUrl,
   linuxInstallCommand,
   visitorOs,
@@ -18,9 +21,6 @@ import { listStep } from "../lib/gridNav";
 import { PAGE_ICONS } from "../lib/pixelIcons";
 import { TOOLS } from "../lib/tools";
 import { focusRing, monoLabel, noticeClass, primaryButton, secondaryButton } from "../styles/ui";
-
-/** OS names are proper nouns, the same in every language, shown in their own case ("macOS", not "MACOS"). */
-const OS_NAMES: Record<DesktopOs, string> = { mac: "macOS", windows: "Windows", linux: "Linux" };
 
 /** Per OS: the main installer(s), then the other formats. */
 const INSTALLERS: Record<DesktopOs, { primary: AssetKind; secondary: AssetKind[] }> = {
@@ -89,7 +89,9 @@ function Terminal() {
 export default function DownloadPage() {
   const t = useT("download");
   const tc = useT("common");
-  const [os, setOs] = useState<DesktopOs>(visitorOs);
+  // `?os=mac|windows|linux` (the home band's tiles) picks the tab; otherwise the visitor's OS.
+  const [params] = useSearchParams();
+  const [os, setOs] = useState<DesktopOs>(() => asDesktopOs(params.get("os")) ?? visitorOs());
   const tabs = useRef<Partial<Record<DesktopOs, HTMLButtonElement | null>>>({});
   const id = useId();
   const tabId = (o: DesktopOs) => `${id}-tab-${o}`;
