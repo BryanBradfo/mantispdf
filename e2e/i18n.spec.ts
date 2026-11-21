@@ -71,7 +71,8 @@ test("French Merge: full flow in French", async ({ page }) => {
   await page.goto("/fr/merge");
   await expect(page.getByRole("heading", { name: "Fusionner PDF" })).toBeVisible();
   await expect(page).toHaveTitle("Fusionner des PDF | MantisPDF by Bradfo");
-  await expect(page.getByText("Glissez vos PDF ici ou parcourez vos fichiers")).toBeVisible();
+  await expect(page.getByText("Choisir des fichiers PDF")).toBeVisible();
+  await expect(page.getByText("ou déposez-les ici")).toBeVisible();
   await upload(page, [fx("alpha.pdf"), fx("bravo.pdf")], "merge-card", 2);
   await expect(page.getByText("2\u00a0fichiers · 2\u00a0pages au total")).toBeVisible();
   const download = page.waitForEvent("download");

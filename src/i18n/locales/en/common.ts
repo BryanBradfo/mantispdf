@@ -125,6 +125,16 @@ export default {
   dropImage: "Drop your image here or <browse>browse</browse>",
   dropImages: "Drop your images here or <browse>browse</browse>",
   dropHintPdf: "PDF files",
+  dropHintPdfMax: "PDF files · up to {max} MB",
+  dropChoosePdf: "Choose a PDF file",
+  dropChoosePdfs: "Choose PDF files",
+  dropChooseImage: "Choose an image",
+  dropChooseImages: "Choose images",
+  dropOrPdf: "or drop it here",
+  dropOrImage: "or drop it here",
+  dropOrMany: "or drop them here",
+  // PageDropOverlay (files dragged over the window)
+  dropOverlay: "Drop to open",
 
   // PageImage, PageStrip
   previewLoading: "Loading preview",

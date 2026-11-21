@@ -16,13 +16,15 @@ interface Props {
   removeLabel: string;
   slot: SlotView;
   engineReady: boolean;
+  /** Compare's size limit, shown under the drop button. */
+  maxMb: number;
   onFile: (file: File) => void;
   onRemove: () => void;
   testId: string;
 }
 
 /** One input of the comparison: a drop zone, then the chosen file with its page count and a remove button. */
-export default function FileSlot({ marker, label, removeLabel, slot, engineReady, onFile, onRemove, testId }: Props) {
+export default function FileSlot({ marker, label, removeLabel, slot, engineReady, maxMb, onFile, onRemove, testId }: Props) {
   const t = useT("compare");
   const locale = useLocale();
   return (
@@ -33,7 +35,7 @@ export default function FileSlot({ marker, label, removeLabel, slot, engineReady
         <span>{label}</span>
       </p>
       {slot.kind === "empty" ? (
-        <DropZone onFile={onFile} error={slot.error} engineReady={engineReady} />
+        <DropZone onFile={onFile} error={slot.error} engineReady={engineReady} maxMb={maxMb} />
       ) : (
         <div className="flex flex-1 flex-col justify-between gap-6 border border-line bg-surface p-5">
           <div className="flex items-start justify-between gap-4">
