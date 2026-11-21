@@ -1,23 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../../i18n";
 import { PAGE_ICONS } from "../../lib/pixelIcons";
 import PixelIcon from "../brand/PixelIcon";
-import { dragHasFiles } from "./pageDrop";
+import { dragHasFiles, pageDragActive, setPageDragActive, subscribePageDrop } from "./pageDrop";
 
 interface Props {
-  /** Files dropped anywhere on the page. */
+  /** Files dropped anywhere on the page (but not on another zone, which takes its own drop). */
   onFiles: (files: File[]) => void;
+  /** Draw the full-page layer (one zone on the page); without it the zones light up themselves. */
+  overlay: boolean;
 }
 
 /**
  * While files are dragged over the window, a full-page "Drop to open" layer; a drop anywhere hands
  * the files to `onFiles`. Drags without files (text, links, in-page cards) are ignored. Rendered by
- * the drop zone that leads (see `pageDrop.ts`), so the window listeners exist once.
+ * the drop zone that leads (see `pageDrop.ts`), so the window listeners exist once; the drag state
+ * is shared through `pageDrop.ts` so every zone can show it.
  */
-export default function PageDropOverlay({ onFiles }: Props) {
+export default function PageDropOverlay({ onFiles, overlay }: Props) {
   const t = useT("common");
-  const [visible, setVisible] = useState(false);
+  const visible = useSyncExternalStore(subscribePageDrop, pageDragActive, () => false);
   const onFilesRef = useRef(onFiles);
   useEffect(() => {
     onFilesRef.current = onFiles;
@@ -28,13 +31,13 @@ export default function PageDropOverlay({ onFiles }: Props) {
     let depth = 0;
     const hide = () => {
       depth = 0;
-      setVisible(false);
+      setPageDragActive(false);
     };
     const enter = (e: DragEvent) => {
       if (!dragHasFiles(e)) return;
       e.preventDefault();
       depth += 1;
-      setVisible(true);
+      setPageDragActive(true);
     };
     const over = (e: DragEvent) => {
       if (!dragHasFiles(e)) return;
@@ -44,7 +47,7 @@ export default function PageDropOverlay({ onFiles }: Props) {
     const leave = (e: DragEvent) => {
       if (!dragHasFiles(e)) return;
       depth = Math.max(0, depth - 1);
-      if (depth === 0) setVisible(false);
+      if (depth === 0) setPageDragActive(false);
     };
     const drop = (e: DragEvent) => {
       if (!dragHasFiles(e)) return;
@@ -71,9 +74,11 @@ export default function PageDropOverlay({ onFiles }: Props) {
       window.removeEventListener("drop", drop);
       window.removeEventListener("dragend", hide);
       window.removeEventListener("keydown", key);
+      hide();
     };
   }, []);
 
+  if (!overlay) return null;
   return createPortal(
     <div
       data-testid="page-drop-overlay"

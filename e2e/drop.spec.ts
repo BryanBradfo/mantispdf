@@ -66,6 +66,29 @@ test("a single-file tool takes the dropped file", async ({ page }) => {
   }).toPass({ timeout: 20000 });
 });
 
+test("Compare: no full-page overlay, both slots light up, a drop on slot B fills B; elsewhere fills A", async ({ page }) => {
+  await page.goto("/compare");
+  const slotA = page.getByTestId("compare-slot-a");
+  const slotB = page.getByTestId("compare-slot-b");
+  await slotA.locator('input[type="file"][data-engine-ready="true"]').waitFor({ state: "attached", timeout: 20000 });
+
+  await dragFiles(page, "dragenter", ["compare-b.pdf"]);
+  await expect(overlay(page)).toHaveCount(0);
+  await expect(slotA.locator("label")).toHaveAttribute("data-dragging", "true");
+  await expect(slotB.locator("label")).toHaveAttribute("data-dragging", "true");
+
+  await dragFiles(page, "drop", ["compare-b.pdf"], '[data-testid="compare-slot-b"] label');
+  await expect(slotB.getByText("compare-b.pdf")).toBeVisible({ timeout: 10000 });
+  await expect(slotA.locator('input[type="file"]')).toHaveCount(1);
+  await expect(slotA.locator("label")).not.toHaveAttribute("data-dragging", "true");
+
+  // Only A is left: the page drop goes to it (through the overlay again).
+  await dragFiles(page, "dragenter", ["compare-a.pdf"]);
+  await expect(overlay(page)).toBeVisible();
+  await dragFiles(page, "drop", ["compare-a.pdf"], '[data-testid="page-drop-overlay"]');
+  await expect(slotA.getByText("compare-a.pdf")).toBeVisible({ timeout: 10000 });
+});
+
 test.describe("phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 

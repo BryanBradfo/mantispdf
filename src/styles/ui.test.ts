@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { cellButton, dangerButton, focusRing, inputClass, noticeClass, panelClass, primaryButton, secondaryButton, smallButton } from "./ui";
+import { cellButton, dangerButton, focusRing, inputClass, noticeClass, panelClass, primaryButton, primaryButtonLarge, secondaryButton, smallButton } from "./ui";
 
 describe("shared UI class constants", () => {
-  const all = { primaryButton, secondaryButton, dangerButton, inputClass, panelClass, noticeClass, smallButton, focusRing };
+  const all = { primaryButton, primaryButtonLarge: primaryButtonLarge(), primaryButtonLargeOnInk: primaryButtonLarge(true), secondaryButton, dangerButton, inputClass, panelClass, noticeClass, smallButton, focusRing };
   for (const [name, value] of Object.entries(all)) {
     it(`${name} has a visible focus ring with offset`, () => {
       expect(value).toContain("focus-visible:ring-2");

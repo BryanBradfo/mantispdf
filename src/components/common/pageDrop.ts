@@ -1,7 +1,8 @@
 /**
  * Drop anywhere on the page: the mounted, enabled drop zones register here. The first one in
  * document order (the one a person would reach first) receives files dropped on the page overlay;
- * when it unmounts (its file is loaded), the next one takes over (Compare's second slot).
+ * when it unmounts (its file is loaded), the next one takes over (Compare's second slot). With one
+ * zone a full-page overlay takes the drop; with several, each zone stays a visible target.
  */
 export interface PageDropTarget {
   /** The zone's element, for document order. */
@@ -15,6 +16,27 @@ const subscribers = new Set<() => void>();
 
 function notify() {
   for (const s of subscribers) s();
+}
+
+let dragActive = false;
+
+/** Files are being dragged over the window (set by the leader's window listeners). */
+export function setPageDragActive(active: boolean) {
+  if (active === dragActive) return;
+  dragActive = active;
+  notify();
+}
+
+export function pageDragActive(): boolean {
+  return dragActive;
+}
+
+/**
+ * More than one zone takes drops (Compare): no full-page overlay then, every zone lights up as a
+ * target, a drop on a zone goes to it and a drop elsewhere goes to the leader.
+ */
+export function pageHasSeveralDropTargets(): boolean {
+  return targets.size > 1;
 }
 
 export function registerPageDropTarget(target: PageDropTarget): () => void {

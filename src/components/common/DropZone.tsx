@@ -5,8 +5,15 @@ import ErrorText from "./ErrorText";
 import PixelIcon from "../brand/PixelIcon";
 import PageDropOverlay from "./PageDropOverlay";
 import { PAGE_ICONS } from "../../lib/pixelIcons";
-import { pageDropLeader, registerPageDropTarget, subscribePageDrop, type PageDropTarget } from "./pageDrop";
-import { primaryButton } from "../../styles/ui";
+import {
+  pageDragActive,
+  pageDropLeader,
+  pageHasSeveralDropTargets,
+  registerPageDropTarget,
+  subscribePageDrop,
+  type PageDropTarget,
+} from "./pageDrop";
+import { primaryButtonLarge } from "../../styles/ui";
 
 interface DropZoneProps {
   onFile?: (file: File) => void;
@@ -31,9 +38,7 @@ interface DropZoneProps {
 }
 
 /** The home's white primary button, drawn on a span (the zone is the one control); paper on ink while dragging. */
-const bigPrimary = primaryButton.replace("h-10", "h-12").replace("px-5", "px-8");
-const buttonFace = (dragging: boolean) =>
-  `${dragging ? bigPrimary.replace("bg-ink text-paper", "bg-paper text-ink") : bigPrimary} pointer-events-none group-hover:opacity-85`;
+const buttonFace = (dragging: boolean) => `${primaryButtonLarge(dragging)} pointer-events-none group-hover:opacity-85`;
 
 export default function DropZone({
   onFile,
@@ -48,7 +53,7 @@ export default function DropZone({
   compact = false,
 }: DropZoneProps) {
   const t = useT("common");
-  const [dragging, setDragging] = useState(false);
+  const [over, setOver] = useState(false);
   const labelRef = useRef<HTMLLabelElement>(null);
 
   const deliver = useCallback(
@@ -76,11 +81,15 @@ export default function DropZone({
     return registerPageDropTarget(target);
   }, [enabled, target]);
   const leads = useSyncExternalStore(subscribePageDrop, () => pageDropLeader() === target, () => false);
+  const several = useSyncExternalStore(subscribePageDrop, pageHasSeveralDropTargets, () => false);
+  const pageDrag = useSyncExternalStore(subscribePageDrop, pageDragActive, () => false);
+  // Files over this zone, or (several zones, no overlay) files anywhere over the page: show it as a target.
+  const dragging = over || (enabled && several && pageDrag);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      setDragging(false);
+      setOver(false);
       deliver(Array.from(e.dataTransfer.files));
     },
     [deliver],
@@ -104,9 +113,9 @@ export default function DropZone({
         ref={labelRef}
         onDragOver={(e) => {
           e.preventDefault();
-          setDragging(true);
+          setOver(true);
         }}
-        onDragLeave={() => setDragging(false)}
+        onDragLeave={() => setOver(false)}
         onDrop={handleDrop}
         data-dragging={dragging ? "true" : undefined}
         className={`group flex cursor-pointer items-center justify-center border border-dashed px-6 text-center has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ink has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-paper ${
@@ -156,7 +165,7 @@ export default function DropZone({
           className="sr-only"
         />
       </label>
-      {leads && <PageDropOverlay onFiles={deliver} />}
+      {leads && <PageDropOverlay onFiles={deliver} overlay={!several} />}
       {error && (
         <div className="mt-3 text-center text-sm font-medium text-danger">
           <ErrorText error={error} />

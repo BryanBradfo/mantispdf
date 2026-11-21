@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { act, Suspense, type ReactNode } from "react";
+import { act, Suspense, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { LocaleProvider, loadLocale, localeFromPath } from "../../i18n";
@@ -155,7 +155,7 @@ describe("drop anywhere on the page", () => {
     expect(overlay()).toBeNull();
   });
 
-  it("feeds the first zone of the page when there are two (Compare)", async () => {
+  it("with two zones (Compare): no overlay, both light up, each takes its own drop, the page feeds the first", async () => {
     const a = vi.fn();
     const b = vi.fn();
     await render(
@@ -164,9 +164,42 @@ describe("drop anywhere on the page", () => {
         <DropZone onFile={b} error={null} />
       </>,
     );
-    expect(document.querySelectorAll('[data-testid="page-drop-overlay"]')).toHaveLength(1);
-    drag("drop", overlay()!, { files: [pdf("a.pdf")] });
-    expect(a).toHaveBeenCalledOnce();
-    expect(b).not.toHaveBeenCalled();
+    const [zoneA, zoneB] = Array.from(host.querySelectorAll("label"));
+    expect(overlay()).toBeNull();
+
+    drag("dragenter", document.body, { types: ["text/plain"] });
+    expect(zoneA.dataset.dragging).toBeUndefined();
+    drag("dragenter", document.body);
+    expect(zoneA.dataset.dragging).toBe("true");
+    expect(zoneB.dataset.dragging).toBe("true");
+
+    drag("drop", zoneB, { files: [pdf("b.pdf")] });
+    expect(b).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: "b.pdf" }));
+    expect(a).not.toHaveBeenCalled();
+    expect(zoneA.dataset.dragging).toBeUndefined();
+    expect(zoneB.dataset.dragging).toBeUndefined();
+
+    drag("dragenter", document.body);
+    drag("drop", document.body, { files: [pdf("a.pdf")] });
+    expect(a).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: "a.pdf" }));
+    expect(b).toHaveBeenCalledOnce();
+  });
+
+  it("goes back to the full-page overlay when only one zone is left", async () => {
+    let fill: () => void = () => {};
+    function Two() {
+      const [both, setBoth] = useState(true);
+      fill = () => setBoth(false);
+      return (
+        <>
+          {both && <DropZone onFile={() => {}} error={null} />}
+          <DropZone onFile={() => {}} error={null} />
+        </>
+      );
+    }
+    await render(<Two />);
+    expect(overlay()).toBeNull();
+    act(() => fill());
+    expect(overlay()).not.toBeNull();
   });
 });
