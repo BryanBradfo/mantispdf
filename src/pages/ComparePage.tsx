@@ -386,6 +386,7 @@ export default function ComparePage() {
 
       <div className="mt-8 grid items-stretch gap-4 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:gap-6">
         <FileSlot
+          maxMb={MAX_MB}
           marker="A"
           label={t("original")}
           removeLabel={t("removeOriginal")}
@@ -402,6 +403,7 @@ export default function ComparePage() {
           </button>
         </div>
         <FileSlot
+          maxMb={MAX_MB}
           marker="B"
           label={t("modified")}
           removeLabel={t("removeModified")}

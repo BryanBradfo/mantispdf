@@ -524,8 +524,27 @@ export const PIXEL_ICONS: Record<ToolId, PixelGlyph> = {
  * `download`: a monitor with a down arrow onto a tray line, on a two-legged stand.
  * `mac`, `windows`, `linux` (home desktop band): an apple with a leaf and a bite, a four-pane window,
  * a Tux-like penguin (eyes, beak, belly, flippers, flat feet).
+ * `fileUp` (drop zones, drop overlay): the dog-eared page with an up arrow (open chevron) inside.
  */
 export const PAGE_ICONS = {
+  fileUp: [
+    "................",
+    "..#########.....",
+    "..#.......##....",
+    "..#.......#.#...",
+    "..#.......####..",
+    "..#....#.....#..",
+    "..#...###....#..",
+    "..#..#.#.#...#..",
+    "..#.#..#..#..#..",
+    "..#....#.....#..",
+    "..#....#.....#..",
+    "..#....#.....#..",
+    "..#....#.....#..",
+    "..#..........#..",
+    "..############..",
+    "................",
+  ],
   download: [
     "................",
     "###############.",
