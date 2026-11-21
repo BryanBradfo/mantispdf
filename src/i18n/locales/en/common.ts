@@ -66,7 +66,7 @@ export default {
   fileProblem: "{name}: {problem}",
   loadingPdf: "Loading PDF…",
   previewLoadingText: "Loading preview…",
-  fileWithPages: { one: "{name} · {count} page", other: "{name} · {count} pages" },
+  fileWithPages: { one: "{name}, {count} page", other: "{name}, {count} pages" },
   fileWithPagesParen: { one: "{name} ({count} page)", other: "{name} ({count} pages)" },
 
   // Worker progress steps (describeProgress)
@@ -125,7 +125,7 @@ export default {
   dropImage: "Drop your image here or <browse>browse</browse>",
   dropImages: "Drop your images here or <browse>browse</browse>",
   dropHintPdf: "PDF files",
-  dropHintPdfMax: "PDF files · up to {max} MB",
+  dropHintMax: "up to {max} MB",
   dropChoosePdf: "Choose a PDF file",
   dropChoosePdfs: "Choose PDF files",
   dropChooseImage: "Choose an image",

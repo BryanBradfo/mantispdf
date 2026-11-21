@@ -8,7 +8,7 @@ const extractImages: Messages<typeof en> = {
   intro: "Enregistrez les images contenues dans un PDF en fichiers JPEG ou PNG.",
   selectNamed: "Sélectionner {name}",
   cardPage: "Page {page}",
-  cardPageSize: "Page {page} · {width}×{height}",
+  cardPageSize: "Page {page}, {width}×{height}",
   preparing: "Préparation de {n} sur {total}…",
   found: { one: "{count}\u00a0image trouvée", other: "{count}\u00a0images trouvées" },
   extracting: "Extraction…",

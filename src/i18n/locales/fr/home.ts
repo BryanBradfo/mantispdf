@@ -2,7 +2,8 @@ import type { Messages } from "../../types";
 import type en from "../en/home";
 
 const home: Messages<typeof en> = {
-  heroEyebrow: "Open source · 100\u00a0% dans votre navigateur",
+  heroEyebrowSource: "Open source",
+  heroEyebrowPrivacy: "100\u00a0% dans votre navigateur",
   heroFigure: "Mantis religiosa",
   heading: "Outils PDF",
   tagline: "100\u00a0% privé, 100\u00a0% rapide",
@@ -19,7 +20,7 @@ const home: Messages<typeof en> = {
   "desktop.subtitle": "Disponible sur tous les ordinateurs.",
   "desktop.mac": "Apple Silicon et Intel",
   "desktop.windows": "Windows 10 et 11",
-  "desktop.linux": "AppImage · deb · rpm",
+  "desktop.linux": "AppImage, deb, rpm",
 
   "sections.organize": "Organiser",
   "sections.convert": "Optimiser et convertir",

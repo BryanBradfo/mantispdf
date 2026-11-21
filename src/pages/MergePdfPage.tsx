@@ -1,3 +1,4 @@
+import MetaItems from "../components/common/MetaItems";
 import { useCallback, useRef, useState } from "react";
 import { Link, useDescribeError, useT, type UiError } from "../i18n";
 import ToolShell from "./ToolShell";
@@ -109,7 +110,10 @@ export default function MergePdfPage() {
         <>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
             <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-2">
-              {t("files", { count: state.files.length })} &middot; {t("totalPages", { count: totalPages })}
+              <MetaItems className="!justify-start">
+                {t("files", { count: state.files.length })}
+                {t("totalPages", { count: totalPages })}
+              </MetaItems>
             </p>
             <div className="flex flex-wrap items-center gap-3">
               {downloaded && (

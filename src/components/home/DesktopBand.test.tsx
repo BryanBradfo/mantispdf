@@ -59,7 +59,7 @@ describe("DesktopBand", () => {
     expect(tiles().map((a) => a.textContent)).toEqual([
       "Apple Silicon & IntelmacOS",
       "Windows 10 & 11Windows",
-      "AppImage · deb · rpmLinux",
+      "AppImage, deb, rpmLinux",
     ]);
     for (const a of tiles()) expect(a.querySelector("svg")).not.toBeNull();
     expect(BANNED_COLOR_PATTERN.test(host.innerHTML)).toBe(false);

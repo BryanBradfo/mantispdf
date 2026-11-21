@@ -97,7 +97,7 @@ describe("the scanner", () => {
   });
 
   it("lets translated text, symbols, numbers and other props through", () => {
-    expect(texts(`const a = <p title={t("x")}>{t("y")} · {n} / 12 &middot; ↺</p>;`)).toEqual([]);
+    expect(texts(`const a = <p title={t("x")}>{t("y")} {n} / 12 &middot; ↺</p>;`)).toEqual([]);
     expect(texts(`const a = <p className="mt-2 text-sm" data-testid="hf-preview" />;`)).toEqual([]);
   });
 });

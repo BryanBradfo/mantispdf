@@ -31,5 +31,5 @@ export const cellButton = `flex flex-1 items-center justify-center text-ink-2 ho
 export const checkClass = `h-4 w-4 shrink-0 rounded-none accent-ink ${focusRing}`;
 /** Text link inside copy. */
 export const linkClass = `font-medium text-ink underline decoration-1 underline-offset-4 hover:opacity-70 ${focusRing}`;
-/** File name and page count line ("report.pdf · 4 pages"): mono like the labels, but keeps the name's case. */
+/** File name and page count line ("report.pdf, 4 pages"): mono like the labels, but keeps the name's case. */
 export const fileMeta = "font-mono text-xs tracking-[0.02em] text-ink-2";

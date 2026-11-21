@@ -20,8 +20,8 @@ const nUp: Messages<typeof en> = {
   note: "Remarque\u00a0: les commentaires, les liens et les champs de formulaire ne sont pas reportés sur les feuilles. Seul le contenu visible des pages l’est.",
   sameAsFirst: "comme la première page",
   summary: {
-    one: "{perSheet} par feuille · {paper} · {orientation} · {order} · marge de {margin}\u00a0mm, espacement de {gap}\u00a0mm · {count}\u00a0feuille",
-    other: "{perSheet} par feuille · {paper} · {orientation} · {order} · marge de {margin}\u00a0mm, espacement de {gap}\u00a0mm · {count}\u00a0feuilles",
+    one: "{perSheet} par feuille, {paper}, {orientation}, {order}, marge de {margin}\u00a0mm, espacement de {gap}\u00a0mm, {count}\u00a0feuille",
+    other: "{perSheet} par feuille, {paper}, {orientation}, {order}, marge de {margin}\u00a0mm, espacement de {gap}\u00a0mm, {count}\u00a0feuilles",
   },
   blankPages: {
     one: "La page {list} n’a pas pu être lue et a été laissée vide sur les feuilles.",

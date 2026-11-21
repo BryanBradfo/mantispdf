@@ -297,7 +297,10 @@ export default function OverlayView({ fileA, fileB, sizesA, sizesB }: Props) {
       <figure className="flex min-w-0 flex-col">
         <figcaption className={`${monoLabel} mb-2 truncate`}>
           {side === "a" ? `A / ${t("original")}` : `B / ${t("modified")}`}
-          <span className="hidden sm:inline"> · {side === "a" ? fileA.name : fileB.name}</span>
+          <span className="ml-4 hidden sm:inline">
+            <span className="sr-only">, </span>
+            {side === "a" ? fileA.name : fileB.name}
+          </span>
         </figcaption>
         <div ref={side === "b" ? stageRef : undefined} className="relative w-full border border-line bg-surface">
           {missing ? (
@@ -372,7 +375,7 @@ export default function OverlayView({ fileA, fileB, sizesA, sizesB }: Props) {
         </div>
         <nav aria-labelledby="overlay-pages-heading" className="min-w-0 lg:sticky lg:top-6 lg:self-start">
           <h2 id="overlay-pages-heading" className={`${monoLabel} mb-2`}>
-            {t("pageList")} · {entries.length}
+            {t("pageList")} ({entries.length})
           </h2>
           {onlyDifferent && (
             <p className={`${monoLabel} mb-2`} data-testid="overlay-scan">

@@ -1,7 +1,8 @@
 import type { Namespace } from "../../types";
 
 export default {
-  heroEyebrow: "Open source · 100% in your browser",
+  heroEyebrowSource: "Open source",
+  heroEyebrowPrivacy: "100% in your browser",
   heroFigure: "Mantis religiosa",
   heading: "PDF Tools",
   tagline: "100% Private, 100% Fast",
@@ -18,7 +19,7 @@ export default {
   "desktop.subtitle": "Available on every computer.",
   "desktop.mac": "Apple Silicon & Intel",
   "desktop.windows": "Windows 10 & 11",
-  "desktop.linux": "AppImage · deb · rpm",
+  "desktop.linux": "AppImage, deb, rpm",
 
   "sections.organize": "Organize",
   "sections.convert": "Optimize and convert",

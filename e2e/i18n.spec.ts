@@ -74,7 +74,8 @@ test("French Merge: full flow in French", async ({ page }) => {
   await expect(page.getByText("Choisir des fichiers PDF")).toBeVisible();
   await expect(page.getByText("ou déposez-les ici")).toBeVisible();
   await upload(page, [fx("alpha.pdf"), fx("bravo.pdf")], "merge-card", 2);
-  await expect(page.getByText("2\u00a0fichiers · 2\u00a0pages au total")).toBeVisible();
+  await expect(page.getByText("2\u00a0fichiers", { exact: true })).toBeVisible();
+  await expect(page.getByText("2\u00a0pages au total", { exact: true })).toBeVisible();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Fusionner 2\u00a0fichiers" }).click();
   expect((await download).suggestedFilename()).toBe("merged.pdf");

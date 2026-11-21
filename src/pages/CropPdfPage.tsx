@@ -137,7 +137,7 @@ export default function CropPdfPage() {
       : scope === "all"
         ? t("targetAll")
         : describePages(selected, total, tp).toLocaleLowerCase(locale);
-  const permanentTag = permanent ? ` · ${t("permanentTag")}` : "";
+  const permanentTag = permanent ? `, ${t("permanentTag")}` : "";
   const summary = perPage
     ? t("summaryPerPage", { count: perPage.size }) + permanentTag
     : shown

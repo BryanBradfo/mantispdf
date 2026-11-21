@@ -18,7 +18,7 @@ const pages: Messages<typeof en> = {
 
   blankPage: "Page blanche",
   captionPage: "Page {page}",
-  captionSourcePage: "{name} · {page}",
+  captionSourcePage: "{name}, {page}",
   rotateLeft: "Faire pivoter à gauche",
   rotateLeftItem: "Faire pivoter {caption} à gauche",
   rotateRight: "Faire pivoter à droite",
@@ -37,8 +37,8 @@ const pages: Messages<typeof en> = {
   everythingLocal: "Tout se passe dans votre navigateur.",
   perPageZip: "Un fichier par page (ZIP)",
   resultOf: {
-    one: "{name} · résultat\u00a0: {result} sur {count}\u00a0page",
-    other: "{name} · résultat\u00a0: {result} sur {count}\u00a0pages",
+    one: "{name}, résultat\u00a0: {result} sur {count}\u00a0page",
+    other: "{name}, résultat\u00a0: {result} sur {count}\u00a0pages",
   },
   mustRemain: "(il doit rester au moins une page)",
 };

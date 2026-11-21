@@ -19,8 +19,8 @@ export default {
   note: "Note: comments, links and form fields are not carried to the sheets. Only the visible page content is.",
   sameAsFirst: "same as first page",
   summary: {
-    one: "{perSheet} per sheet · {paper} · {orientation} · {order} · margin {margin} mm, gap {gap} mm · {count} sheet",
-    other: "{perSheet} per sheet · {paper} · {orientation} · {order} · margin {margin} mm, gap {gap} mm · {count} sheets",
+    one: "{perSheet} per sheet, {paper}, {orientation}, {order}, margin {margin} mm, gap {gap} mm, {count} sheet",
+    other: "{perSheet} per sheet, {paper}, {orientation}, {order}, margin {margin} mm, gap {gap} mm, {count} sheets",
   },
   blankPages: {
     one: "Page {list} could not be read and was left blank on the sheets.",

@@ -89,7 +89,7 @@ const common: Messages<typeof en> = {
   fileProblem: "{name}\u00a0: {problem}",
   loadingPdf: "Chargement du PDF…",
   previewLoadingText: "Chargement de l’aperçu…",
-  fileWithPages: { one: "{name} · {count}\u00a0page", other: "{name} · {count}\u00a0pages" },
+  fileWithPages: { one: "{name}, {count}\u00a0page", other: "{name}, {count}\u00a0pages" },
   fileWithPagesParen: { one: "{name} ({count}\u00a0page)", other: "{name} ({count}\u00a0pages)" },
 
   progressStarting: "Démarrage…",
@@ -117,7 +117,7 @@ const common: Messages<typeof en> = {
   dropImage: "Glissez votre image ici ou <browse>parcourez vos fichiers</browse>",
   dropImages: "Glissez vos images ici ou <browse>parcourez vos fichiers</browse>",
   dropHintPdf: "Fichiers PDF",
-  dropHintPdfMax: "Fichiers PDF · jusqu’à {max}\u00a0Mo",
+  dropHintMax: "jusqu’à {max}\u00a0Mo",
   dropChoosePdf: "Choisir un fichier PDF",
   dropChoosePdfs: "Choisir des fichiers PDF",
   dropChooseImage: "Choisir une image",

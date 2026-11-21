@@ -1,3 +1,4 @@
+import MetaItems from "../components/common/MetaItems";
 import { useState } from "react";
 import { ArrowDown, Download, Sparkles } from "lucide-react";
 import DesktopBand from "../components/home/DesktopBand";
@@ -34,7 +35,10 @@ export default function HomePage() {
         <section className="grid items-center gap-12 pb-16 pt-12 sm:pt-16 lg:grid-cols-12 lg:gap-8 lg:pb-24 lg:pt-20">
           <div className="lg:col-span-7">
             <p className="eyebrow">
-              <DecodeText text={t("heroEyebrow")} trigger="mount" />
+              <MetaItems className="!justify-start">
+                <DecodeText text={t("heroEyebrowSource")} trigger="mount" />
+                <DecodeText text={t("heroEyebrowPrivacy")} trigger="mount" />
+              </MetaItems>
             </p>
             <h1 className="mt-6 font-display w-min text-[clamp(4.5rem,24vw,8rem)] font-light leading-[0.9] tracking-[-0.02em] text-ink lg:text-[clamp(7rem,10vw,10rem)]">
               {t("heading")}

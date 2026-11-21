@@ -19,7 +19,7 @@ const crop: Messages<typeof en> = {
   targetPage: "page {page}",
   targetAll: "toutes les pages",
   summaryPerPage: "Zone détectée sur chacune des {count}\u00a0pages",
-  summaryBox: "{width} × {height}\u00a0pt · {target}",
+  summaryBox: "{width} × {height}\u00a0pt, {target}",
   permanentTag: "définitif",
   autoThis: "Détecter les marges de cette page",
   autoAll: "Détecter les marges de toutes les pages",

@@ -38,8 +38,8 @@ export default {
   marginRange: "Margin must be between 0 and {max} mm.",
   marginTooLarge: "Margin is too large for this page size: keep it under {max} mm.",
   summary: {
-    one: "{count} image · {count} page · {paper} · {orientation} · margin {margin} mm",
-    other: "{count} images · {count} pages · {paper} · {orientation} · margin {margin} mm",
+    one: "{count} image, {count} page, {paper}, {orientation}, margin {margin} mm",
+    other: "{count} images, {count} pages, {paper}, {orientation}, margin {margin} mm",
   },
   tooLarge: "{name} is too large ({width} x {height}); the limit is {max} megapixels per image.",
   overBudget:
