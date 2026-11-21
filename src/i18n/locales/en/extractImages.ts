@@ -7,7 +7,7 @@ export default {
   intro: "Save the images embedded in a PDF as JPEG or PNG files.",
   selectNamed: "Select {name}",
   cardPage: "Page {page}",
-  cardPageSize: "Page {page} · {width}×{height}",
+  cardPageSize: "Page {page}, {width}×{height}",
   preparing: "Preparing {n} of {total}…",
   found: { one: "{count} image found", other: "{count} images found" },
   extracting: "Extracting…",

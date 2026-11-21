@@ -1,3 +1,4 @@
+import MetaItems from "../components/common/MetaItems";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeftRight, TriangleAlert } from "lucide-react";
 import { Link, Trans, UserError, useDescribeError, useT, type UiError } from "../i18n";
@@ -174,7 +175,11 @@ function TextView({ a, b, result }: TextViewProps) {
           </p>
           {!sameText && (
             <p className={`${monoLabel} mt-3`} data-testid="compare-counts">
-              {t("addedCount", { count: added })} · {t("removedCount", { count: removed })} · {t("changedCount", { count: changed })}
+              <MetaItems className="!justify-start">
+                {t("addedCount", { count: added })}
+                {t("removedCount", { count: removed })}
+                {t("changedCount", { count: changed })}
+              </MetaItems>
             </p>
           )}
         </div>
@@ -228,7 +233,7 @@ function TextView({ a, b, result }: TextViewProps) {
         {!sameText && (
           <aside aria-labelledby="compare-changes-heading" className="min-w-0 lg:sticky lg:top-6 lg:self-start">
             <h2 id="compare-changes-heading" className={`${monoLabel} mb-2`}>
-              {t("changes")} · {total}
+              {t("changes")} ({total})
             </h2>
             <div className="lg:max-h-[74vh] lg:overflow-y-auto">
               <ChangesList changes={result.changes} active={active} onPick={pick} />

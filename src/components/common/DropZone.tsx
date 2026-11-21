@@ -1,3 +1,4 @@
+import MetaItems from "./MetaItems";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Trans, useT, type UiError } from "../../i18n";
 import { FileUp } from "lucide-react";
@@ -25,7 +26,7 @@ interface DropZoneProps {
   /** What the prompt asks for (default PDFs); `hint` overrides the line under it ("PDF files"). */
   kind?: "pdf" | "image";
   hint?: string;
-  /** The tool's real size limit in MB, shown in the default PDF hint ("PDF files · up to 64 MB"). */
+  /** The tool's real size limit in MB, shown in the default PDF hint ("PDF files", "up to 64 MB" as separate items). */
   maxMb?: number;
   /**
    * The PDF engine can take the file now. Exposed as `data-engine-ready="true"` on the file input
@@ -105,7 +106,12 @@ export default function DropZone({
   );
 
   const image = kind === "image";
-  const hintText = hint ?? (maxMb ? t("dropHintPdfMax", { max: maxMb }) : t("dropHintPdf"));
+  const hintText = hint ?? (maxMb ? (
+    <MetaItems>
+      {t("dropHintPdf")}
+      {t("dropHintMax", { max: maxMb })}
+    </MetaItems>
+  ) : t("dropHintPdf"));
 
   return (
     <div>

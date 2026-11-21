@@ -9,7 +9,7 @@ import { selectedOutline } from "../../styles/ui";
 interface Props {
   item: PlannerItem;
   source: PlannerSource | undefined;
-  /** Caption under the thumbnail, e.g. "report.pdf · 3". */
+  /** Caption under the thumbnail, e.g. "report.pdf, 3". */
   label: string;
   /** Visual state for select modes. */
   tone?: "normal" | "removed" | "picked";

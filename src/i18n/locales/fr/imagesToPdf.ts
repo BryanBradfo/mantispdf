@@ -41,8 +41,8 @@ const imagesToPdf: Messages<typeof en> = {
   marginRange: "La marge doit être comprise entre 0 et {max}\u00a0mm.",
   marginTooLarge: "La marge est trop grande pour ce format\u00a0: restez sous {max}\u00a0mm.",
   summary: {
-    one: "{count}\u00a0image · {count}\u00a0page · {paper} · {orientation} · marge de {margin}\u00a0mm",
-    other: "{count}\u00a0images · {count}\u00a0pages · {paper} · {orientation} · marge de {margin}\u00a0mm",
+    one: "{count}\u00a0image, {count}\u00a0page, {paper}, {orientation}, marge de {margin}\u00a0mm",
+    other: "{count}\u00a0images, {count}\u00a0pages, {paper}, {orientation}, marge de {margin}\u00a0mm",
   },
   tooLarge: "{name} est trop grande ({width} × {height})\u00a0; la limite est de {max}\u00a0mégapixels par image.",
   overBudget:

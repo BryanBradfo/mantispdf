@@ -68,7 +68,7 @@ export default function PageNumbersPage() {
     date: stampDate(locale),
     filename: input ? baseName(input.file) : "",
   });
-  const summary = `${anchorLabel(anchor, ts)} · ${describePages(selected, total, tp)} · ${describeStyle(style, ts)} · "${firstShown}"`;
+  const summary = `${anchorLabel(anchor, ts)}, ${describePages(selected, total, tp)}, ${describeStyle(style, ts)}, "${firstShown}"`;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

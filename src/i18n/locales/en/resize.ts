@@ -11,7 +11,7 @@ export default {
   extendOption: "Extend (never enlarge)",
   fitWord: "Fit",
   extendWord: "Extend",
-  summary: "{paper} · {orientation} · {mode} · margin {margin} mm · {pages}",
+  summary: "{paper}, {orientation}, {mode}, margin {margin} mm, {pages}",
   preview: "Preview",
   previewPage: "Preview (page {page})",
   previewLabel: "One page placed on the target sheet",

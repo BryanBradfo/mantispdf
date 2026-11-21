@@ -54,7 +54,10 @@ function PageColumn({ label, fileName, regionLabel, source, sizes, marks, active
     <div className="flex min-w-0 flex-col">
       <p className={`${monoLabel} mb-2 truncate`}>
         {label}
-        <span className="hidden sm:inline"> · {fileName}</span>
+        <span className="ml-4 hidden sm:inline">
+          <span className="sr-only">, </span>
+          {fileName}
+        </span>
       </p>
       <div
         ref={scrollRef}

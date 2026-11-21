@@ -1,3 +1,4 @@
+import MetaItems from "../components/common/MetaItems";
 import { useCallback, useState } from "react";
 import ToolShell from "./ToolShell";
 import LoadingRow from "../components/common/LoadingRow";
@@ -60,7 +61,10 @@ export default function OrganizePdfPage() {
         <>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
             <p className={monoLabel}>
-              {t("pagesInResult", { count: pageCount })} · {t("files", { count: state.sources.length })}
+              <MetaItems className="!justify-start">
+                {t("pagesInResult", { count: pageCount })}
+                {t("files", { count: state.sources.length })}
+              </MetaItems>
             </p>
             <div className="flex flex-wrap gap-3">
               <button

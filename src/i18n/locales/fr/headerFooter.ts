@@ -14,7 +14,7 @@ const headerFooter: Messages<typeof en> = {
   empty: "(vide)",
   none: "aucun",
   needText: "Remplissez au moins un champ d’en-tête ou de pied de page.",
-  summary: { one: "{count} texte ({slots}) · {pages} · {style}", other: "{count} textes ({slots}) · {pages} · {style}" },
+  summary: { one: "{count} texte ({slots}), {pages}, {style}", other: "{count} textes ({slots}), {pages}, {style}" },
   stamping: "Ajout du texte…",
   submit: "Ajouter et télécharger",
 };

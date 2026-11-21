@@ -70,7 +70,7 @@ describe("DropZone", () => {
     const [one, images, image] = Array.from(host.querySelectorAll("label")).map((l) => l.textContent);
     expect(one).toContain("Choose a PDF file");
     expect(one).toContain("or drop it here");
-    expect(one).toContain("PDF files · up to 64 MB");
+    expect(one).toContain("PDF files, up to 64 MB");
     expect(images).toContain("Choose images");
     expect(images).toContain("JPG, PNG");
     expect(image).toContain("Choose an image");
@@ -80,7 +80,7 @@ describe("DropZone", () => {
     await render(<DropZone multiple onFiles={() => {}} error={null} maxMb={64} />, "/fr/merge");
     expect(zone().textContent).toContain("Choisir des fichiers PDF");
     expect(zone().textContent).toContain("ou déposez-les ici");
-    expect(zone().textContent).toContain("Fichiers PDF · jusqu’à 64 Mo");
+    expect(zone().textContent).toContain("Fichiers PDF, jusqu’à 64 Mo");
   });
 
   it("keeps the compact frame as it was (one line, no big button)", async () => {

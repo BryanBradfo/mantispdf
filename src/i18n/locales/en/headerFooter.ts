@@ -13,7 +13,7 @@ export default {
   empty: "(empty)",
   none: "none",
   needText: "Fill in at least one header or footer field.",
-  summary: { one: "{count} text ({slots}) · {pages} · {style}", other: "{count} texts ({slots}) · {pages} · {style}" },
+  summary: { one: "{count} text ({slots}), {pages}, {style}", other: "{count} texts ({slots}), {pages}, {style}" },
   stamping: "Stamping…",
   submit: "Add and download",
 } as const satisfies Namespace;

@@ -20,7 +20,7 @@ export default {
   // Planner cards (Organize, Remove, Extract)
   blankPage: "Blank page",
   captionPage: "Page {page}",
-  captionSourcePage: "{name} · {page}",
+  captionSourcePage: "{name}, {page}",
   rotateLeft: "Rotate left",
   rotateLeftItem: "Rotate {caption} left",
   rotateRight: "Rotate right",
@@ -41,8 +41,8 @@ export default {
   everythingLocal: "Everything runs in your browser.",
   perPageZip: "One file per page (ZIP)",
   resultOf: {
-    one: "{name} · {result} of {count} page in the result",
-    other: "{name} · {result} of {count} pages in the result",
+    one: "{name}, {result} of {count} page in the result",
+    other: "{name}, {result} of {count} pages in the result",
   },
   mustRemain: "(at least one page must remain)",
 } as const satisfies Namespace;

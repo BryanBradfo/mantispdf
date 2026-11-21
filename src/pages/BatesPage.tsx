@@ -223,7 +223,7 @@ export default function BatesPage() {
           </label>
 
           <LiveSummary
-            text={`${anchorLabel(anchor, ts)} · ${describeStyle(style, ts)}${rangeText ? ` · ${rangeText}` : ""}`}
+            text={`${anchorLabel(anchor, ts)}, ${describeStyle(style, ts)}${rangeText ? `, ${rangeText}` : ""}`}
             className="mt-4 text-sm text-ink-2"
           />
 

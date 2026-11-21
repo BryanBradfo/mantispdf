@@ -1,3 +1,4 @@
+import MetaItems from "../common/MetaItems";
 import { X } from "lucide-react";
 import { formatBytes, useLocale, useT, type UiError } from "../../i18n";
 import DropZone from "../common/DropZone";
@@ -54,7 +55,10 @@ export default function FileSlot({ marker, label, removeLabel, slot, engineReady
             <LoadingRow label={slot.progress ? t("readingPage", { done: slot.progress.done, total: slot.progress.total }) : t("readingFile")} />
           ) : (
             <p className={fileMeta}>
-              {t("pageCount", { count: slot.pages })} · {formatBytes(slot.file.size, locale)}
+              <MetaItems className="!justify-start">
+                {t("pageCount", { count: slot.pages })}
+                {formatBytes(slot.file.size, locale)}
+              </MetaItems>
             </p>
           )}
         </div>

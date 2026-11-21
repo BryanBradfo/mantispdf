@@ -34,11 +34,11 @@ async function download(page: Page, name: string | RegExp): Promise<Uint8Array> 
 test("organize: two files, duplicate, blank, rotate", async ({ page }) => {
   await page.goto("/organize");
   await upload(page, [fx("four-pages.pdf"), fx("alpha.pdf")], 5);
-  await page.getByRole("button", { name: "Delete four-pages.pdf · 4" }).click();
-  // multi-file captions are "<file> · <n>"
-  await page.getByRole("button", { name: "Duplicate four-pages.pdf · 1" }).click();
-  await page.getByRole("button", { name: "Rotate alpha.pdf · 1 right" }).click();
-  await page.getByRole("button", { name: "Insert blank page after four-pages.pdf · 2" }).click();
+  await page.getByRole("button", { name: "Delete four-pages.pdf, 4" }).click();
+  // multi-file captions are "<file>, <n>"
+  await page.getByRole("button", { name: "Duplicate four-pages.pdf, 1" }).click();
+  await page.getByRole("button", { name: "Rotate alpha.pdf, 1 right" }).click();
+  await page.getByRole("button", { name: "Insert blank page after four-pages.pdf, 2" }).click();
   await expect(page.getByText("6 pages in the result")).toBeVisible();
 
   const { texts, rotations } = await pdfInfo(await download(page, "Download PDF"));

@@ -12,7 +12,7 @@ const resize: Messages<typeof en> = {
   extendOption: "Étendre (sans jamais agrandir)",
   fitWord: "Ajuster",
   extendWord: "Étendre",
-  summary: "{paper} · {orientation} · {mode} · marge de {margin}\u00a0mm · {pages}",
+  summary: "{paper}, {orientation}, {mode}, marge de {margin}\u00a0mm, {pages}",
   preview: "Aperçu",
   previewPage: "Aperçu (page {page})",
   previewLabel: "Une page placée sur la feuille cible",

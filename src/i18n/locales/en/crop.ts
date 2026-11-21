@@ -18,7 +18,7 @@ export default {
   targetPage: "page {page}",
   targetAll: "all pages",
   summaryPerPage: "Detected box on each of {count} pages",
-  summaryBox: "{width} x {height} pt · {target}",
+  summaryBox: "{width} x {height} pt, {target}",
   permanentTag: "permanent",
   autoThis: "Auto-detect margins on this page",
   autoAll: "Auto-detect margins on all pages",
