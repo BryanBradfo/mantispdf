@@ -5,6 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 import { LocaleProvider, loadLocale, localeFromPath } from "../../i18n";
 import { TOOLS } from "../../lib/tools";
 import Footer from "./Footer";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 let root: Root;
 let host: HTMLDivElement;
@@ -74,8 +76,6 @@ describe("Footer", () => {
     expect(external.map((a) => a.getAttribute("href"))).toEqual([
       REPO,
       `${REPO}/issues`,
-      `${REPO}/blob/main/CONTRIBUTING.md`,
-      `${REPO}/blob/main/LICENSE`,
       REPO,
     ]);
     for (const a of external) {
@@ -112,7 +112,7 @@ describe("Footer", () => {
     const headings = [...footer().querySelectorAll("h2")].map((h) => h.textContent);
     expect(headings).toEqual(["Organize", "Optimize and convert", "Edit and sign", "Security and privacy", "Analyze", "Project"]);
     const eyebrows = [...footer().querySelectorAll("nav section")].map((sec) => sec.querySelector("p")?.textContent);
-    expect(eyebrows).toEqual(["Pages", "Files", "Content", "Protection", "Text", "Open source"]);
+    expect(eyebrows).toEqual(["Pages", "Files", "Content", "Protection", "Text", "Resources"]);
     // Six columns side by side: no column holds two sections any more.
     const nav = footer().querySelector("nav")!;
     expect([...nav.children].filter((c) => c.querySelectorAll("section").length > 1)).toEqual([]);
@@ -124,7 +124,16 @@ describe("Footer", () => {
   it("translates the eyebrows and the slogan under /fr", async () => {
     await renderAt("/fr");
     const eyebrows = [...footer().querySelectorAll("nav section")].map((sec) => sec.querySelector("p")?.textContent);
-    expect(eyebrows).toEqual(["Pages", "Fichiers", "Contenu", "Protection", "Texte", "Open source"]);
+    expect(eyebrows).toEqual(["Pages", "Fichiers", "Contenu", "Protection", "Texte", "Ressources"]);
     expect(footer().textContent).toContain("Tous les outils PDF. Zéro envoi.");
+  });
+});
+
+describe("Product wording", () => {
+  it("never advertises the product as open source or names its license in the UI", () => {
+    const dir = "src/i18n/locales";
+    const files = readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts"));
+    const hits = files.filter((f) => /open[ -]?source|MIT licen[cs]e|licence MIT/i.test(readFileSync(join(dir, f), "utf8")));
+    expect(hits).toEqual([]);
   });
 });
