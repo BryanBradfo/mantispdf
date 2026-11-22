@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "MantisPDF",
   "mainBinaryName": "mantispdf",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "identifier": "com.mantispdf.app",
   "build": {
     "frontendDist": "../dist",

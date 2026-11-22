@@ -1,6 +1,6 @@
 {
   "name": "mantispdf",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Client-side PDF tools powered by WebAssembly. Your files never leave your browser.",
   "type": "module",
   "license": "MIT",
