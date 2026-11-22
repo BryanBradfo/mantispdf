@@ -309,6 +309,32 @@ for (const locale of ["en", "fr"]) {
   write("docs/brand/readme-logo.png", png(svg, side, fonts));
 }
 
+// 3c. GitHub social preview (1280x640, set by hand in the repo settings): Hermes-like, black, the mark
+// bleeding off the bottom right, a light Oswald wordmark, the slogan and three spaced facts (no middle dot).
+{
+  const W = 1280;
+  const H = 640;
+  const mh = 700;
+  const mw = Math.round((markBox.w / markBox.h) * mh);
+  const facts = ["28 TOOLS", "OPEN SOURCE", "BROWSER AND DESKTOP"];
+  let fx = 84;
+  const factEls = facts
+    .map((f) => {
+      const el = `<text x="${fx}" y="540" font-family="Oswald" font-weight="500" font-size="22" letter-spacing="4" fill="#a3a3a3">${f}</text>`;
+      fx += Math.round(f.length * 14.5) + 34;
+      return el;
+    })
+    .join("\n");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+<rect width="${W}" height="${H}" fill="#000"/>
+<svg x="${W - mw + 90}" y="${H - mh + 150}" width="${mw}" height="${mh}" viewBox="${markBox.x} ${markBox.y} ${markBox.w} ${markBox.h}" fill="#fff"><path d="${markD}" fill-rule="evenodd"/></svg>
+<text x="78" y="300" font-family="Oswald" font-weight="300" font-size="168" letter-spacing="-4" fill="${INK}">MantisPDF</text>
+<text x="84" y="384" font-family="Oswald" font-weight="300" font-size="46" fill="${INK}">Every PDF tool. Zero uploads.</text>
+${factEls}
+</svg>`;
+  write("docs/brand/social-preview.png", png(svg, W, fonts));
+}
+
 // 4. Tauri icons from a 1024 px head (white on black).
 const iconSource = join(iconDir, "head-1024.png");
 writeFileSync(iconSource, png(headSquare, 1024));
