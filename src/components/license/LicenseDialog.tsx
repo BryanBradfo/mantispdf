@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check, Loader2, Sparkles, X } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
 import type { LicenseStatus } from "../../hooks/useLicense";
+import UpdateSettings from "../desktop/UpdateSettings";
 import { useDescribeError, useT, type UiError } from "../../i18n";
 import ErrorText from "../common/ErrorText";
 import { focusRing, inputClass, linkClass, primaryButton, secondaryButton } from "../../styles/ui";
@@ -23,6 +25,8 @@ interface LicenseDialogProps {
   onActivate: (key: string) => Promise<LicenseStatus>;
   onDeactivate: () => Promise<void>;
   checkoutUrl: string;
+  /** Where focus lands on open: the license part (default) or the update settings (desktop). */
+  focusSection?: "license" | "updates";
 }
 
 export default function LicenseDialog({
@@ -32,6 +36,7 @@ export default function LicenseDialog({
   onActivate,
   onDeactivate,
   checkoutUrl,
+  focusSection = "license",
 }: LicenseDialogProps) {
   const t = useT("common");
   const [key, setKey] = useState("");
@@ -52,10 +57,19 @@ export default function LicenseDialog({
     if (!open) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const panel = panelRef.current;
-    (panel?.querySelector<HTMLElement>("input:not([disabled])") ?? focusables(panel)[0])?.focus();
+    const updates = focusSection === "updates" ? panel?.querySelector<HTMLElement>("[data-update-settings] input") : null;
+    if (updates) {
+      updates.focus();
+      updates.scrollIntoView?.({ block: "nearest" });
+    } else {
+      // The key input (not the update settings' checkbox, desktop only), else the first control.
+      (panel?.querySelector<HTMLElement>('input:not([disabled]):not([type="checkbox"])') ?? focusables(panel)[0])?.focus();
+    }
     return () => {
       if (opener?.isConnected) opener.focus();
     };
+    // Focus moves once per opening; the section is read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   /** Escape closes; Tab and Shift+Tab cycle inside the dialog. */
@@ -134,7 +148,7 @@ export default function LicenseDialog({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, ...rise }}
             transition={transition}
-            className="relative w-full max-w-md rounded-none border border-line-strong bg-paper"
+            className="relative max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-none border border-line-strong bg-paper"
           >
             <button
               onClick={onClose}
@@ -220,6 +234,8 @@ export default function LicenseDialog({
                 </>
               )}
             </div>
+            {/* The desktop app's only settings live here: automatic updates. */}
+            {isTauri() && <UpdateSettings />}
           </motion.div>
         </motion.div>
       )}

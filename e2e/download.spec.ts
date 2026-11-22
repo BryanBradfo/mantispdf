@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 
-const BASE = "https://github.com/BryanBradfo/mantispdf/releases/download/v2.0.1";
+const BASE = "https://github.com/BryanBradfo/mantispdf/releases/download/v2.1.0";
 
 /** Pretend to be a visitor on `platform` (User-Agent Client Hints, as the page reads them first). */
 async function asPlatform(page: Page, platform: string) {
@@ -15,19 +15,19 @@ const overflow = (page: Page) =>
 const hrefs = (page: Page) =>
   page.getByRole("tabpanel").locator("a[download]").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
 
-test("EN /download: the visitor's OS is selected and the links are the 2.0.1 installers", async ({ page }) => {
+test("EN /download: the visitor's OS is selected and the links are the 2.1.0 installers", async ({ page }) => {
   await asPlatform(page, "Windows");
   await page.goto("/download");
   await expect(page).toHaveTitle("Download MantisPDF for macOS, Windows and Linux | MantisPDF by Bradfo");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("MantisPDF for your desktop");
   await expect(page.getByRole("tab", { name: "Windows" })).toHaveAttribute("aria-selected", "true");
-  expect(await hrefs(page)).toEqual([`${BASE}/MantisPDF_2.0.1_x64-setup.exe`, `${BASE}/MantisPDF_2.0.1_x64_en-US.msi`]);
+  expect(await hrefs(page)).toEqual([`${BASE}/MantisPDF_2.1.0_x64-setup.exe`, `${BASE}/MantisPDF_2.1.0_x64_en-US.msi`]);
 
   await page.getByRole("tab", { name: "Windows" }).focus();
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByRole("tab", { name: "macOS" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tab", { name: "macOS" })).toBeFocused();
-  expect(await hrefs(page)).toEqual([`${BASE}/MantisPDF_2.0.1_aarch64.dmg`, `${BASE}/MantisPDF_2.0.1_x64.dmg`]);
+  expect(await hrefs(page)).toEqual([`${BASE}/MantisPDF_2.1.0_aarch64.dmg`, `${BASE}/MantisPDF_2.1.0_x64.dmg`]);
   await expect(page.getByRole("link", { name: /All releases/ })).toHaveAttribute(
     "href",
     "https://github.com/BryanBradfo/mantispdf/releases",
@@ -47,11 +47,11 @@ test("FR /fr/download: Linux selected from an X11 user agent, copy button copies
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("MantisPDF sur votre ordinateur");
   await expect(page.getByRole("tab", { name: "Linux" })).toHaveAttribute("aria-selected", "true");
   expect(await hrefs(page)).toEqual([
-    `${BASE}/MantisPDF_2.0.1_amd64.AppImage`,
-    `${BASE}/MantisPDF_2.0.1_amd64.deb`,
-    `${BASE}/MantisPDF-2.0.1-1.x86_64.rpm`,
+    `${BASE}/MantisPDF_2.1.0_amd64.AppImage`,
+    `${BASE}/MantisPDF_2.1.0_amd64.deb`,
+    `${BASE}/MantisPDF-2.1.0-1.x86_64.rpm`,
   ]);
-  const command = `curl -LO ${BASE}/MantisPDF_2.0.1_amd64.AppImage && chmod +x MantisPDF_2.0.1_amd64.AppImage && ./MantisPDF_2.0.1_amd64.AppImage --appimage-extract-and-run`;
+  const command = `curl -LO ${BASE}/MantisPDF_2.1.0_amd64.AppImage && chmod +x MantisPDF_2.1.0_amd64.AppImage && ./MantisPDF_2.1.0_amd64.AppImage --appimage-extract-and-run`;
   await expect(page.locator("code")).toHaveText(command);
   await page.getByRole("button", { name: "Copier la commande" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Copié" })).toHaveCount(1);

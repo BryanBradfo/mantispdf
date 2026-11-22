@@ -16,6 +16,9 @@ export const CHECKOUT_URL: string =
 // state is irrelevant there (the desktop app is the paid product).
 const WEB_STATUS: LicenseStatus = { tier: "free", status: "web" };
 
+/** Fired after an activation or deactivation, so every `useLicense` (home button, settings dialog) refreshes. */
+const LICENSE_CHANGED = "mantispdf:license-changed";
+
 /**
  * Frontend view of the backend-enforced license. The backend is the source of
  * truth (ADR 03); this hook only reflects it so the UI can show/hide Pro
@@ -42,18 +45,22 @@ export function useLicense() {
 
   useEffect(() => {
     void refresh();
+    const onChange = () => void refresh();
+    window.addEventListener(LICENSE_CHANGED, onChange);
+    return () => window.removeEventListener(LICENSE_CHANGED, onChange);
   }, [refresh]);
 
   /** Activate a key; throws (with the backend's message) on failure. */
   const activate = useCallback(async (key: string): Promise<LicenseStatus> => {
     const s = await invoke<LicenseStatus>("activate_license", { key: key.trim() });
     setStatus(s);
+    window.dispatchEvent(new Event(LICENSE_CHANGED));
     return s;
   }, []);
 
   const deactivate = useCallback(async () => {
     await invoke("deactivate_license");
-    await refresh();
+    window.dispatchEvent(new Event(LICENSE_CHANGED));
   }, [refresh]);
 
   return {

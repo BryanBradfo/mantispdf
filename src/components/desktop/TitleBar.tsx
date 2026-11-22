@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { X, Minus, Plus } from "lucide-react";
+import { X, Minus, Plus, Settings } from "lucide-react";
 import { useT } from "../../i18n";
 import { MantisHead } from "../brand/MantisHead";
 import { focusRing } from "../../styles/ui";
+import { openSettings } from "../../lib/settingsDialog";
 
 /** A window control: a round (round by nature, like the OS ones) hairline button that fills with ink on hover. */
 const control = `flex h-3 w-3 items-center justify-center rounded-full border border-line-strong text-ink hover:border-ink hover:bg-ink hover:text-paper ${focusRing} focus-visible:!ring-offset-1`;
@@ -76,8 +77,17 @@ export default function TitleBar() {
         <span className="font-display text-xs font-medium uppercase tracking-wider">MantisPDF</span>
       </div>
 
-      {/* Right drag spacer; mirrors the controls' width so the title stays centered. */}
-      <div data-tauri-drag-region className="ml-auto h-full w-[72px]" />
+      {/* Right: settings (license, updates); the drag region fills the rest of the bar. */}
+      <div data-tauri-drag-region className="ml-auto flex h-full w-[72px] items-center justify-end pr-2">
+        <button
+          type="button"
+          onClick={() => openSettings("updates")}
+          aria-label={t("settings")}
+          className={`flex h-7 w-7 items-center justify-center rounded-none text-ink-2 hover:text-ink ${focusRing} focus-visible:ring-inset focus-visible:!ring-offset-0`}
+        >
+          <Settings aria-hidden="true" strokeWidth={1.5} className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
