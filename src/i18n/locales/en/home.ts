@@ -1,7 +1,7 @@
 import type { Namespace } from "../../types";
 
 export default {
-  heroEyebrowSource: "Open source",
+  heroEyebrowTools: "{count} PDF tools",
   heroEyebrowPrivacy: "100% in your browser",
   heroFigure: "Mantis religiosa",
   heading: "PDF Tools",

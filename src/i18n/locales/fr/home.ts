@@ -2,7 +2,7 @@ import type { Messages } from "../../types";
 import type en from "../en/home";
 
 const home: Messages<typeof en> = {
-  heroEyebrowSource: "Open source",
+  heroEyebrowTools: "{count}\u00a0outils PDF",
   heroEyebrowPrivacy: "100\u00a0% dans votre navigateur",
   heroFigure: "Mantis religiosa",
   heading: "Outils PDF",

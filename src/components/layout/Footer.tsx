@@ -128,7 +128,7 @@ export default function Footer() {
             </Group>
           ))}
 
-          <Group eyebrow={t("footerOpenSource")} heading={t("footerProject")} id="footer-project">
+          <Group eyebrow={t("footerEyebrowProject")} heading={t("footerProject")} id="footer-project">
             {/* The installers page, left out inside the desktop app itself. */}
             {!isTauri() && (
               <li>
@@ -142,8 +142,6 @@ export default function Footer() {
               {t("headerGithub")}
             </External>
             <External href={`${GITHUB_URL}/issues`}>{t("footerReportBug")}</External>
-            <External href={`${GITHUB_URL}/blob/main/CONTRIBUTING.md`}>{t("footerContribute")}</External>
-            <External href={`${GITHUB_URL}/blob/main/LICENSE`}>{t("footerLicense")}</External>
           </Group>
         </nav>
 
@@ -159,11 +157,9 @@ export default function Footer() {
           >
             <GithubMark className="h-[18px] w-[18px]" />
           </a>
-          {/* Phones: the icon gets a line of its own, the four labels wrap under it. */}
+          {/* Phones: the icon gets a line of its own, the labels wrap under it. */}
           <span aria-hidden="true" className="basis-full xl:hidden" />
           <p className="text-ink-2">{t("footerCopyright", { year })}</p>
-          <p>{t("footerOpenSource")}</p>
-          <p>{t("footerLicense")}</p>
           <p>{t("footerInBrowser")}</p>
         </div>
       </div>

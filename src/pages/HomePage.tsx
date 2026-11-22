@@ -1,3 +1,4 @@
+import { TOOLS } from "../lib/tools";
 import MetaItems from "../components/common/MetaItems";
 import { ArrowDown, Download, Sparkles } from "lucide-react";
 import DesktopBand from "../components/home/DesktopBand";
@@ -34,7 +35,7 @@ export default function HomePage() {
           <div className="lg:col-span-7">
             <p className="eyebrow">
               <MetaItems className="!justify-start">
-                <DecodeText text={t("heroEyebrowSource")} trigger="mount" />
+                <DecodeText text={t("heroEyebrowTools", { count: TOOLS.length })} trigger="mount" />
                 <DecodeText text={t("heroEyebrowPrivacy")} trigger="mount" />
               </MetaItems>
             </p>
