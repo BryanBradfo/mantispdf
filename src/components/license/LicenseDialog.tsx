@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check, Loader2, Sparkles, X } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
 import type { LicenseStatus } from "../../hooks/useLicense";
+import UpdateSettings from "../desktop/UpdateSettings";
 import { useDescribeError, useT, type UiError } from "../../i18n";
 import ErrorText from "../common/ErrorText";
 import { focusRing, inputClass, linkClass, primaryButton, secondaryButton } from "../../styles/ui";
@@ -52,7 +54,8 @@ export default function LicenseDialog({
     if (!open) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const panel = panelRef.current;
-    (panel?.querySelector<HTMLElement>("input:not([disabled])") ?? focusables(panel)[0])?.focus();
+    // The key input (not the update settings' checkbox, desktop only), else the first control.
+    (panel?.querySelector<HTMLElement>('input:not([disabled]):not([type="checkbox"])') ?? focusables(panel)[0])?.focus();
     return () => {
       if (opener?.isConnected) opener.focus();
     };
@@ -220,6 +223,8 @@ export default function LicenseDialog({
                 </>
               )}
             </div>
+            {/* The desktop app's only settings live here: automatic updates. */}
+            {isTauri() && <UpdateSettings />}
           </motion.div>
         </motion.div>
       )}

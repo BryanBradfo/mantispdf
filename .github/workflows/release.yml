@@ -112,9 +112,10 @@ jobs:
           # APPLE_ID: ${{ secrets.APPLE_ID }}
           # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Tauri updater signature (only if you enable the updater):
-          # TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Tauri updater signature (required: bundle.createUpdaterArtifacts is on, so every updater
+          # bundle is signed with this key; the app checks it against plugins.updater.pubkey).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "MantisPDF ${{ github.ref_name }}"
@@ -128,6 +129,10 @@ jobs:
             - Windows: if SmartScreen warns you, click More info, then Run anyway.
             - Linux: `chmod +x` the AppImage and run it, or install the .deb or .rpm.
           releaseDraft: true
+          # Each build merges its platform into latest.json on the release. The app reads it from
+          # releases/latest/download/latest.json, which resolves only once the publish job below makes
+          # the release public (after every platform uploaded).
+          uploadUpdaterJson: true
           prerelease: false
           args: ${{ matrix.args }}
 

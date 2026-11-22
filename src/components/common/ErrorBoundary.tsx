@@ -22,6 +22,8 @@ interface Props {
   children: ReactNode;
   /** A new value (e.g. the pathname) clears a caught error, so navigating away recovers. */
   resetKey?: string;
+  /** Render nothing instead of the crash notice (an optional extra, like the desktop update panel). */
+  silent?: boolean;
 }
 
 /** Catches a render error (or a lazy chunk that fails to load) so the app never goes blank. */
@@ -41,6 +43,7 @@ export default class ErrorBoundary extends Component<Props, { error: unknown; ke
   }
 
   render() {
-    return this.state.error ? <CrashNotice /> : this.props.children;
+    if (!this.state.error) return this.props.children;
+    return this.props.silent ? null : <CrashNotice />;
   }
 }

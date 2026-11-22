@@ -37,6 +37,13 @@ pub fn run() {
             .build(),
         )?;
       }
+      // Automatic updates (desktop only): the updater checks latest.json on the GitHub release, the process
+      // plugin relaunches the app once the new version is installed.
+      #[cfg(desktop)]
+      {
+        app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+        app.handle().plugin(tauri_plugin_process::init())?;
+      }
       // Linux shells show a generic icon for a window without one (no installed .desktop to match, e.g. a
       // freshly run AppImage): give the main window the app icon.
       #[cfg(target_os = "linux")]

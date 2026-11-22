@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-updates",
+  "description": "automatic updates: check, download and install a signed release, then relaunch the app",
+  "platforms": ["linux", "macOS", "windows"],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

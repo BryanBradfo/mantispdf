@@ -45,6 +45,18 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNENjVCNUQ0RUE1MjU1RUYKUldUdlZWTHExTFZsUGJtTWRaSDZUcE5SeXBEV1NFS2VSZEJSVmhnWUdzdDFDZ252V29zVDRHTHoK",
+      "endpoints": [
+        "https://github.com/BryanBradfo/mantispdf/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }
