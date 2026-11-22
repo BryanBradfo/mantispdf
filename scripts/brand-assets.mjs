@@ -310,13 +310,14 @@ for (const locale of ["en", "fr"]) {
 }
 
 // 3c. GitHub social preview (1280x640, set by hand in the repo settings): Hermes-like, black, the mark
-// bleeding off the bottom right, a light Oswald wordmark, the slogan and three spaced facts (no middle dot).
+// bleeding off the bottom right, a light Oswald wordmark, the slogan and three spaced facts (no middle dot,
+// no "open source": the product does not advertise it).
 {
   const W = 1280;
   const H = 640;
   const mh = 700;
   const mw = Math.round((markBox.w / markBox.h) * mh);
-  const facts = ["28 TOOLS", "OPEN SOURCE", "BROWSER AND DESKTOP"];
+  const facts = ["28 TOOLS", "100% PRIVATE", "BROWSER AND DESKTOP"];
   let fx = 84;
   const factEls = facts
     .map((f) => {
