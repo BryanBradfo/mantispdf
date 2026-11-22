@@ -221,6 +221,10 @@ export default {
   updateChecking: "Checking…",
   updateUpToDate: "MantisPDF {version} is the latest version.",
   updateFound: "MantisPDF {version} is available.",
+  updateLastAutoFailed: "Last automatic check failed:",
+  updateManual: "Update this install from the <link>download page</link>.",
+  updateRestartRequired: "Restart MantisPDF to finish the update.",
+  settings: "Settings",
   // Unicode fonts (Edit PDF, Fill form)
   noFontChars: "No font can show these characters: {chars}",
   usesFontFor: "Uses {family} for these characters",

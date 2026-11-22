@@ -121,10 +121,7 @@ jobs:
           releaseName: "MantisPDF ${{ github.ref_name }}"
           # A draft until every installer is uploaded; the publish job below then makes it public
           # (the site's download page links straight to these assets).
-          # The first line also becomes the update notes in latest.json, shown in the app's update banner.
           releaseBody: |
-            New fixes and improvements for MantisPDF.
-
             Download the installer for your platform below, or from https://mantispdf.bradfo.me/download. All processing runs locally.
 
             The installers are not signed yet:
@@ -132,20 +129,56 @@ jobs:
             - Windows: if SmartScreen warns you, click More info, then Run anyway.
             - Linux: `chmod +x` the AppImage and run it (add `--appimage-extract-and-run` if FUSE is missing), or install the .deb or .rpm.
           releaseDraft: true
-          # Each build merges its platform into latest.json on the release. The app reads it from
-          # releases/latest/download/latest.json, which resolves only once the publish job below makes
-          # the release public (after every platform uploaded).
-          uploadUpdaterJson: true
+          # latest.json is NOT written here: parallel builds would race to merge it. The publish job
+          # builds it once from every uploaded signature (scripts/release-latest-json.mjs).
+          uploadUpdaterJson: false
           prerelease: false
           args: ${{ matrix.args }}
 
   # Publish the draft only once all four matrix builds have uploaded their installers. A failed build
   # leaves a draft (invisible to the download links) instead of a half-filled public release.
+  # Before that, write the updater manifest (latest.json) from the signed assets on the release: the app
+  # reads releases/latest/download/latest.json, which resolves only once the release is public.
   publish:
     needs: release
     runs-on: ubuntu-latest
     steps:
+      # Full history and tags: the annotated tag's subject becomes the update notes.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Build and upload latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # actions/checkout can turn the pushed tag into a lightweight one: fetch the real tag objects.
+          git fetch --force --tags origin
+          NOTES=""
+          if [ "$(git cat-file -t "refs/tags/$TAG")" = "tag" ]; then
+            NOTES="$(git for-each-ref "refs/tags/$TAG" --format='%(contents:subject)')"
+          fi
+          mkdir -p release-sigs
+          gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' > release-assets.txt
+          echo "Assets on the release:"; cat release-assets.txt
+          gh release download "$TAG" --repo "$REPO" --pattern '*.sig' --dir release-sigs
+          # Fails (and the release stays a draft) when a base platform is missing or unsigned.
+          node scripts/release-latest-json.mjs --tag "$TAG" --repo "$REPO" \
+            --assets release-assets.txt --sigs release-sigs --notes "$NOTES" --out latest.json
+          cat latest.json
+          gh release upload "$TAG" latest.json --clobber --repo "$REPO"
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${{ github.ref_name }}" --draft=false --latest --repo "${{ github.repository }}"
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: gh release edit "$TAG" --draft=false --latest --repo "$REPO"

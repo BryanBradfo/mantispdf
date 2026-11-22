@@ -13,6 +13,7 @@ vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: () => relaunch() }));
 
 import DesktopUpdateBanner from "./DesktopUpdateBanner";
 import { __resetUpdateForTests, checkNow } from "../../lib/desktopUpdate";
+import { closeSettings, getSettingsDialog } from "../../lib/settingsDialog";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -151,5 +152,40 @@ describe("DesktopUpdateBanner", () => {
       button("Later").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
     expect(panel()).toBeNull();
+  });
+
+  it("a failed relaunch asks for a restart instead of offering the install again", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    relaunch.mockRejectedValue(new Error("no"));
+    offer();
+    await render();
+    await act(async () => void (await checkNow()));
+    await act(async () => button("Install and restart").click());
+    await act(async () => finish());
+    expect(panel()!.textContent).toContain("Restart MantisPDF to finish the update.");
+    expect(button("Install and restart")).toBeUndefined();
+    expect(button("Later").disabled).toBe(false);
+    warn.mockRestore();
+  });
+
+  it("a package this install cannot apply sends the person to the download page", async () => {
+    offer();
+    await render("fr");
+    await act(async () => void (await checkNow()));
+    await act(async () => button("Installer et redémarrer").click());
+    await act(async () => finish("invalid updater binary format"));
+    const line = host.querySelector(".text-danger")!;
+    expect(line.textContent).toBe("Mettez à jour depuis la page de téléchargement.");
+    expect(line.querySelector("a")!.getAttribute("href")).toBe("/fr/download");
+  });
+
+  it("Settings opens the settings dialog on the update settings", async () => {
+    closeSettings();
+    offer();
+    await render();
+    await act(async () => void (await checkNow()));
+    await act(async () => button("Settings").click());
+    expect(getSettingsDialog()).toEqual({ open: true, section: "updates" });
+    closeSettings();
   });
 });

@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import TitleBar from "./TitleBar";
 import { BANNED_COLOR_PATTERN } from "../../styles/rawColors";
+import { closeSettings, getSettingsDialog } from "../../lib/settingsDialog";
 
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({
@@ -29,10 +30,28 @@ describe("TitleBar in the desktop shell", () => {
     expect(bar.className).toMatch(/\bbg-paper\b/);
     expect(host.querySelector('svg[fill="currentColor"]')).not.toBeNull();
     const buttons = [...host.querySelectorAll("button")];
-    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual(["Close window", "Minimize window", "Maximize window"]);
+    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Close window",
+      "Minimize window",
+      "Maximize window",
+      "Settings",
+    ]);
     for (const b of buttons) expect(b.className).toContain("focus-visible:ring-2");
     expect(BANNED_COLOR_PATTERN.test(host.innerHTML)).toBe(false);
     expect(host.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    act(() => root.unmount());
+  });
+
+  it("the gear opens the settings dialog on the update settings", async () => {
+    closeSettings();
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    await act(async () => root.render(<TitleBar />));
+    const gear = host.querySelector<HTMLButtonElement>('button[aria-label="Settings"]')!;
+    expect(gear.querySelector("svg")?.getAttribute("stroke-width")).toBe("1.5");
+    await act(async () => gear.click());
+    expect(getSettingsDialog()).toEqual({ open: true, section: "updates" });
+    closeSettings();
     act(() => root.unmount());
   });
 });

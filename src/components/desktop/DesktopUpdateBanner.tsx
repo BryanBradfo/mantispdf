@@ -1,7 +1,8 @@
 import { useEffect, useSyncExternalStore, type KeyboardEvent } from "react";
 import { Loader2 } from "lucide-react";
-import { useDescribeError, useT } from "../../i18n";
-import ErrorText from "../common/ErrorText";
+import { useT } from "../../i18n";
+import UpdateErrorText from "./UpdateErrorText";
+import { openSettings } from "../../lib/settingsDialog";
 import {
   dismissUpdate,
   getUpdateView,
@@ -10,7 +11,7 @@ import {
   startAutoChecks,
   subscribeUpdate,
 } from "../../lib/desktopUpdate";
-import { primaryButton, secondaryButton, monoLabel } from "../../styles/ui";
+import { linkClass, monoLabel, primaryButton, secondaryButton } from "../../styles/ui";
 
 /**
  * The desktop update panel, bottom right. Mounted by App ONLY in Tauri, through `lazy()`, so the web
@@ -19,14 +20,14 @@ import { primaryButton, secondaryButton, monoLabel } from "../../styles/ui";
  */
 export default function DesktopUpdateBanner() {
   const t = useT("common");
-  const describe = useDescribeError();
   const view = useSyncExternalStore(subscribeUpdate, getUpdateView);
 
   useEffect(() => startAutoChecks(), []);
 
   if (!view.visible || view.version === null) return null;
 
-  const busy = view.phase !== "idle";
+  const busy = view.phase === "downloading" || view.phase === "restarting";
+  const installed = view.phase === "restartRequired";
   const percent = progressPercent(view);
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
@@ -75,19 +76,26 @@ export default function DesktopUpdateBanner() {
         </div>
       )}
 
+      {installed && <p className="mt-4 text-sm text-ink">{t("updateRestartRequired")}</p>}
+
       {view.error !== null && view.error !== undefined && (
         <div className="mt-3 text-xs text-danger">
-          <ErrorText error={describe(view.error)} />
+          <UpdateErrorText error={view.error} />
         </div>
       )}
 
-      <div className="mt-5 flex flex-wrap gap-3">
-        <button type="button" onClick={() => void installUpdate()} disabled={busy} className={`gap-2 ${primaryButton}`}>
-          {busy && <Loader2 aria-hidden="true" strokeWidth={1.5} className="h-4 w-4 animate-spin" />}
-          {t("updateInstall")}
-        </button>
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        {!installed && (
+          <button type="button" onClick={() => void installUpdate()} disabled={busy} className={`gap-2 ${primaryButton}`}>
+            {busy && <Loader2 aria-hidden="true" strokeWidth={1.5} className="h-4 w-4 animate-spin" />}
+            {t("updateInstall")}
+          </button>
+        )}
         <button type="button" onClick={dismissUpdate} disabled={busy} className={secondaryButton}>
           {t("updateLater")}
+        </button>
+        <button type="button" onClick={() => openSettings("updates")} className={`ml-auto text-xs ${linkClass}`}>
+          {t("settings")}
         </button>
       </div>
     </section>

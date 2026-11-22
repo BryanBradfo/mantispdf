@@ -14,16 +14,24 @@ const ROUTES = localizeRoutes(APP_ROUTES);
 
 // Desktop only, and loaded lazily: the web bundle never carries the updater plugins.
 const DesktopUpdateBanner = lazy(() => import("./components/desktop/DesktopUpdateBanner"));
+const DesktopSettingsDialog = lazy(() => import("./components/desktop/DesktopSettingsDialog"));
 
-/** The update panel in the Tauri shell; a failure there (even a chunk that will not load) shows nothing. */
-function DesktopUpdates() {
+/** The settings dialog and update panel of the Tauri shell; a failure there (even a chunk that will not load) shows nothing. */
+function DesktopExtras() {
   if (!isTauri()) return null;
   return (
-    <ErrorBoundary silent>
-      <Suspense fallback={null}>
-        <DesktopUpdateBanner />
-      </Suspense>
-    </ErrorBoundary>
+    <>
+      <ErrorBoundary silent>
+        <Suspense fallback={null}>
+          <DesktopUpdateBanner />
+        </Suspense>
+      </ErrorBoundary>
+      <ErrorBoundary silent>
+        <Suspense fallback={null}>
+          <DesktopSettingsDialog />
+        </Suspense>
+      </ErrorBoundary>
+    </>
   );
 }
 
@@ -68,7 +76,7 @@ export default function App() {
               </main>
               <Footer />
             </div>
-            <DesktopUpdates />
+            <DesktopExtras />
           </LocaleProvider>
         </Suspense>
       </ErrorBoundary>

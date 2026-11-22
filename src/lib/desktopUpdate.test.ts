@@ -108,12 +108,19 @@ describe("automatic checks", () => {
     expect(check).not.toHaveBeenCalled();
   });
 
-  it("offline or any failure: silent, no error in the view", async () => {
+  it("offline or any failure: no banner, but logged and kept as lastAutoError until a check succeeds", async () => {
     vi.useFakeTimers();
-    check.mockRejectedValue(new Error("error sending request"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const offline = new Error("error sending request");
+    check.mockRejectedValue(offline);
     startAutoChecks();
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(getUpdateView()).toMatchObject({ visible: false, error: null });
+    expect(getUpdateView()).toMatchObject({ visible: false, error: null, lastAutoError: offline });
+    expect(warn).toHaveBeenCalledWith(offline);
+    check.mockResolvedValue(null);
+    await vi.advanceTimersByTimeAsync(6 * HOUR);
+    expect(getUpdateView().lastAutoError).toBeNull();
+    warn.mockRestore();
   });
 
   it("Later: hidden, and later automatic checks keep it hidden until the next launch", async () => {
@@ -192,6 +199,21 @@ describe("installUpdate", () => {
     expect(view).toMatchObject({ visible: true, phase: "idle" });
     expect(String(view.error)).toContain("signature verification failed");
     expect(relaunch).not.toHaveBeenCalled();
+  });
+});
+
+describe("installUpdate, relaunch refused", () => {
+  it("installed but not relaunched: restartRequired, and no second install", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const update = fakeUpdate();
+    check.mockResolvedValue(update);
+    relaunch.mockRejectedValue(new Error("restart refused"));
+    await checkNow();
+    await installUpdate();
+    expect(getUpdateView()).toMatchObject({ phase: "restartRequired", error: null, visible: true });
+    await installUpdate();
+    expect(update.downloadAndInstall).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 });
 

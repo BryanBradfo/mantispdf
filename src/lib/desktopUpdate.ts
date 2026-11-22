@@ -20,12 +20,15 @@ export interface UpdateView {
   notes: string | null;
   /** The banner is shown: an update exists and "Later" was not chosen. */
   visible: boolean;
-  phase: "idle" | "downloading" | "restarting";
+  /** `restartRequired`: installed, but the relaunch failed; the person restarts the app themselves. */
+  phase: "idle" | "downloading" | "restarting" | "restartRequired";
   downloaded: number;
   /** Download size, null while unknown. */
   total: number | null;
   /** Why the last install failed (null when it did not). */
   error: unknown;
+  /** Why the last background check failed (null once a check succeeds). Shown in the settings only. */
+  lastAutoError: unknown;
 }
 
 const EMPTY: UpdateView = {
@@ -36,6 +39,7 @@ const EMPTY: UpdateView = {
   downloaded: 0,
   total: null,
   error: null,
+  lastAutoError: null,
 };
 
 let view: UpdateView = EMPTY;
@@ -86,8 +90,8 @@ async function runCheck(): Promise<Update | null> {
   pending = found;
   set(
     found
-      ? { version: found.version, notes: firstNotesLine(found.body), error: null }
-      : { version: null, notes: null, error: null },
+      ? { version: found.version, notes: firstNotesLine(found.body), error: null, lastAutoError: null }
+      : { version: null, notes: null, error: null, lastAutoError: null },
   );
   return found;
 }
@@ -104,8 +108,11 @@ async function autoCheck(): Promise<void> {
   if (!readAutoCheck()) return;
   try {
     await runCheck();
-  } catch {
-    // Offline, or the release endpoint is unreachable: say nothing, the next check will try again.
+  } catch (e) {
+    // Offline, or the release endpoint is unreachable: no banner, the next check tries again. The
+    // settings show it, and the console keeps it for a bug report.
+    console.warn(e);
+    set({ lastAutoError: e });
   }
 }
 
@@ -131,7 +138,10 @@ export function dismissUpdate(): void {
   set({});
 }
 
-/** Downloads and installs the offered update, then relaunches. Never throws: a failure lands in `error`. */
+/**
+ * Downloads and installs the offered update, then relaunches. Never throws: a failed download or
+ * install lands in `error` (retry possible), a failed relaunch in `restartRequired`.
+ */
 export async function installUpdate(): Promise<void> {
   const update = pending;
   if (!update || view.phase !== "idle") return;
@@ -141,10 +151,17 @@ export async function installUpdate(): Promise<void> {
       if (event.event === "Started") set({ downloaded: 0, total: event.data.contentLength ?? null });
       else if (event.event === "Progress") set({ downloaded: view.downloaded + event.data.chunkLength });
     });
-    set({ phase: "restarting" });
-    await relaunch();
   } catch (e) {
     set({ phase: "idle", error: e });
+    return;
+  }
+  // Installed: a failed relaunch must not offer to install again.
+  set({ phase: "restarting" });
+  try {
+    await relaunch();
+  } catch (e) {
+    console.warn(e);
+    set({ phase: "restartRequired" });
   }
 }
 

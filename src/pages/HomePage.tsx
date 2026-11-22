@@ -1,13 +1,12 @@
 import MetaItems from "../components/common/MetaItems";
-import { useState } from "react";
 import { ArrowDown, Download, Sparkles } from "lucide-react";
 import DesktopBand from "../components/home/DesktopBand";
 import ToolGrid from "../components/home/ToolGrid";
 import { PageSEO } from "../components/seo/PageSEO";
-import LicenseDialog from "../components/license/LicenseDialog";
 import { MantisMark } from "../components/brand/MantisMark";
 import DecodeText from "../components/common/DecodeText";
-import { useLicense, CHECKOUT_URL } from "../hooks/useLicense";
+import { useLicense } from "../hooks/useLicense";
+import { openSettings } from "../lib/settingsDialog";
 import { Link, useT } from "../i18n";
 import { primaryButton, secondaryButton } from "../styles/ui";
 
@@ -15,7 +14,6 @@ export default function HomePage() {
   const t = useT("home");
   const tSeo = useT("seo");
   const license = useLicense();
-  const [licenseOpen, setLicenseOpen] = useState(false);
 
   return (
     <div className="relative">
@@ -25,7 +23,7 @@ export default function HomePage() {
         {/* Desktop-only license entry point. */}
         {license.onDesktop && (
           <div className="flex justify-end pt-6">
-            <button onClick={() => setLicenseOpen(true)} className={`${secondaryButton} h-9 gap-2 px-4 text-xs`}>
+            <button onClick={() => openSettings("license")} className={`${secondaryButton} h-9 gap-2 px-4 text-xs`}>
               <Sparkles aria-hidden="true" strokeWidth={1.5} className="h-3.5 w-3.5" />
               {license.isPro ? t("pro") : t("upgradeToPro")}
             </button>
@@ -75,15 +73,6 @@ export default function HomePage() {
           <ToolGrid />
         </div>
       </div>
-
-      <LicenseDialog
-        open={licenseOpen}
-        onClose={() => setLicenseOpen(false)}
-        status={license.status}
-        onActivate={license.activate}
-        onDeactivate={license.deactivate}
-        checkoutUrl={CHECKOUT_URL}
-      />
     </div>
   );
 }
