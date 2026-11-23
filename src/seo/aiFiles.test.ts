@@ -28,6 +28,11 @@ describe("llms.txt", () => {
     expect(privacy).toContain("processed on your own device");
     expect(privacy).toContain("offline");
     expect(privacy).not.toMatch(/free/i);
+    const bullets = privacy.split("\n").filter((l) => l.startsWith("- "));
+    expect(bullets).toEqual([
+      expect.stringMatching(/^- \*\*Are my files uploaded to a server\?\*\* No\. /),
+      expect.stringMatching(/^- \*\*Does it work offline\?\*\* /),
+    ]);
   });
 
   it("links the download page and the full guide", () => {

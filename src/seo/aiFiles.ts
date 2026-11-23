@@ -19,6 +19,10 @@ function sectionName(dict: AppDictionary, section: string): string {
 /** /llms.txt (llmstxt.org): what MantisPDF is, every tool with its URL, the desktop app, privacy. English. */
 export function llmsTxt(dict: AppDictionary): string {
   const answer = (topic: Parameters<typeof homeFaqEntry>[1]) => homeFaqEntry(dict, topic).a;
+  const qa = (topic: Parameters<typeof homeFaqEntry>[1]) => {
+    const { q, a } = homeFaqEntry(dict, topic);
+    return `**${q}** ${a}`;
+  };
   const lines = [
     "# MantisPDF",
     "",
@@ -38,8 +42,8 @@ export function llmsTxt(dict: AppDictionary): string {
     "",
     "## Privacy",
     "",
-    `- ${answer("uploads")}`,
-    `- ${answer("offline")}`,
+    `- ${qa("uploads")}`,
+    `- ${qa("offline")}`,
     "",
     "## Optional",
     "",
