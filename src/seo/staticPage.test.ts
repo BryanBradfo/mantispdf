@@ -112,16 +112,17 @@ describe("renderPage for the home and /download", () => {
 });
 
 describe("buildSeoFiles", () => {
-  it("writes the shell and every page", () => {
-    const files = buildSeoFiles(SHELL).map((f) => f.file);
+  it("writes the shell, every page, llms.txt, llms-full.txt and sitemap.xml", () => {
+    const files = buildSeoFiles(SHELL, "2026-11-23").map((f) => f.file);
     expect(files).toContain("shell.html");
     expect(files).toContain("index.html");
     expect(files).toContain("fr/merge/index.html");
-    expect(files.length).toBe(prerenderedPages().length + 1);
+    expect(files).toEqual(expect.arrayContaining(["llms.txt", "llms-full.txt", "sitemap.xml"]));
+    expect(files.length).toBe(prerenderedPages().length + 4);
   });
 
   it("works on the real index.html", () => {
     const shell = readFileSync(resolve(__dirname, "../../index.html"), "utf8");
-    expect(() => buildSeoFiles(shell)).not.toThrow();
+    expect(() => buildSeoFiles(shell, "2026-11-23")).not.toThrow();
   });
 });

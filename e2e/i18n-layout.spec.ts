@@ -1,13 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
+import { TOOLS } from "../src/lib/tools";
 
 const fx = (n: string) => fileURLToPath(new URL(`./fixtures/${n}`, import.meta.url));
 
-/** Every French page, from the sitemap (src/sitemap.test.ts keeps it equal to the app's routes). */
-const FR_ROUTES = [...readFileSync(fileURLToPath(new URL("../public/sitemap.xml", import.meta.url)), "utf8").matchAll(/<loc>([^<]+)<\/loc>/g)]
-  .map((m) => new URL(m[1]).pathname)
-  .filter((path) => path === "/fr" || path.startsWith("/fr/"));
+/** Every French page: the pages the sitemap lists (src/seo/staticPage.ts PAGE_PATHS), under /fr. */
+const FR_ROUTES = ["/fr", ...TOOLS.map((t) => `/fr${t.href}`), "/fr/download"];
 
 /** Horizontal overflow of the page, in CSS pixels (0 when nothing sticks out). */
 const overflow = (page: Page) =>

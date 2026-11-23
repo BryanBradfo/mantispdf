@@ -4,7 +4,8 @@
 //   dist/<path>/index.html  one per page and locale (the English home replaces dist/index.html),
 //                            with title, meta, canonical, hreflang, og:/twitter:, JSON-LD and the
 //                            page's content in #root (the app replaces it when it mounts);
-//   dist/shell.html          the bare app shell, served by vercel.json for every other path.
+//   dist/shell.html          the bare app shell, served by vercel.json for every other path;
+//   dist/llms.txt, dist/llms-full.txt, dist/sitemap.xml (lastmod = build day).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,14 +30,15 @@ const server = await createServer({
 });
 try {
   const { buildSeoFiles } = await server.ssrLoadModule("/src/seo/build.ts");
-  const files = buildSeoFiles(shell);
+  const today = new Date().toISOString().slice(0, 10);
+  const files = buildSeoFiles(shell, today);
   for (const { file, content } of files) {
     const out = join(dist, file);
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, content);
   }
   const pages = files.filter((f) => f.file.endsWith("index.html")).length;
-  console.log(`prerender: ${pages} pages, shell.html`);
+  console.log(`prerender: ${pages} pages, shell.html, llms.txt, llms-full.txt, sitemap.xml (lastmod ${today})`);
 } finally {
   await server.close();
 }

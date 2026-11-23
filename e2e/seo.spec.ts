@@ -42,6 +42,16 @@ test.describe("prerendered HTML, without JavaScript", () => {
     expect(html).toContain('<div id="root"></div>');
     expect(html).not.toContain("data-prerender>");
   });
+
+  test("llms.txt, llms-full.txt, sitemap.xml and robots.txt are served as files", async ({ page }) => {
+    const llms = await (await page.request.get("/llms.txt")).text();
+    expect(llms.startsWith("# MantisPDF\n")).toBe(true);
+    expect(llms).toContain("(https://mantispdf.bradfo.me/merge)");
+    expect(await (await page.request.get("/llms-full.txt")).text()).toContain("How to merge PDF files");
+    const sitemap = await (await page.request.get("/sitemap.xml")).text();
+    expect(sitemap).toContain("<loc>https://mantispdf.bradfo.me/fr/merge</loc>");
+    expect(await (await page.request.get("/robots.txt")).text()).toContain("User-agent: GPTBot");
+  });
 });
 
 test.describe("after the app mounts", () => {
