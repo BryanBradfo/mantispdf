@@ -3,7 +3,7 @@ import { interpolate } from "../i18n/translate";
 import { ASSET_KINDS, DESKTOP_VERSION, assetUrl } from "../lib/desktopRelease";
 import { SECTIONS, TOOLS, toolsIn } from "../lib/tools";
 import { SITE, seoUrls } from "../components/seo/seoUrls";
-import { homeFaq, message, toolDescription, toolGuide, toolPage, toolTitle, type AppDictionary } from "./guide";
+import { homeFaq, homeFaqEntry, message, toolDescription, toolGuide, toolPage, toolTitle, type AppDictionary } from "./guide";
 import { PAGE_PATHS } from "./staticPage";
 
 const absolute = (path: string) => seoUrls(path, "en").canonical;
@@ -18,13 +18,15 @@ function sectionName(dict: AppDictionary, section: string): string {
 
 /** /llms.txt (llmstxt.org): what MantisPDF is, every tool with its URL, the desktop app, privacy. English. */
 export function llmsTxt(dict: AppDictionary): string {
-  const faq = homeFaq(dict);
+  const answer = (topic: Parameters<typeof homeFaqEntry>[1]) => homeFaqEntry(dict, topic).a;
   const lines = [
     "# MantisPDF",
     "",
     `> ${summary(dict)}`,
     "",
-    faq[0].a,
+    answer("what"),
+    "",
+    answer("free"),
     "",
     "## Tools",
     "",
@@ -36,9 +38,8 @@ export function llmsTxt(dict: AppDictionary): string {
     "",
     "## Privacy",
     "",
-    `- ${faq[2].a}`,
-    `- ${faq[3].a}`,
-    `- ${faq[1].a}`,
+    `- ${answer("uploads")}`,
+    `- ${answer("offline")}`,
     "",
     "## Optional",
     "",

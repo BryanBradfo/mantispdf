@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
 import App from "./App";
 import { startFirstLoad } from "./firstLoad";
+import { dropPrerenderedHead } from "./seo/prerenderedHead";
 // UI fonts, self-hosted (no request leaves the app origin). Every subset is
 // declared with its unicode-range, so a page in Latin script downloads only
 // the latin files.
@@ -15,9 +16,8 @@ import "./index.css";
 // the components use — code-splitting otherwise gives lazy routes a separate
 // instance, which is why configuring it here previously had no effect.
 
-// A prerendered page (scripts/prerender.mjs) carries its title, meta, links and JSON-LD for crawlers.
-// PageSEO renders them again once the app mounts (React 19 does not dedupe them), so drop the static copies.
-for (const el of document.querySelectorAll("[data-prerender]")) el.remove();
+// Prerendered head tags give way to PageSEO's (the title stays until the app sets its own).
+dropPrerenderedHead(document);
 
 // A /fr first load fetches the French dictionary and the page's chunk in parallel.
 startFirstLoad(window.location.pathname);

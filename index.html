@@ -29,8 +29,14 @@
         if (dark) document.documentElement.classList.add("dark");
         var meta = document.querySelector('meta[name="theme-color"]');
         if (meta) meta.setAttribute("content", dark ? "#000000" : "#ffffff");
+        // The desktop app (Tauri) loads this file too: it must not show the prerendered web page
+        // (download link, English copy) while the app starts.
+        if ("__TAURI_INTERNALS__" in window) document.documentElement.classList.add("is-desktop");
       })();
     </script>
+    <style>
+      .is-desktop #root > [data-prerender-body] { display: none; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

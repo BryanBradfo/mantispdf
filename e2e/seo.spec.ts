@@ -108,3 +108,28 @@ test.describe("after the app mounts", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
   });
 });
+
+test.describe("the prerendered block before the app mounts", () => {
+  /** Loads `path` with the app bundle blocked, so the page stays in its pre-mount state. */
+  async function beforeMount(page: Page, path: string) {
+    await page.route(/\/assets\/index-[^/]+\.js$/, (route) => route.abort());
+    await page.goto(path);
+    return page.locator("#root > [data-prerender-body]");
+  }
+
+  test("is shown on the web", async ({ page }) => {
+    const block = await beforeMount(page, "/");
+    await expect(block).toBeVisible();
+    await expect(block.locator("h1")).toHaveText("PDF Tools");
+  });
+
+  test("is hidden in the desktop app (Tauri), which loads the same index.html", async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    });
+    const block = await beforeMount(page, "/");
+    await expect(page.locator("html")).toHaveClass(/\bis-desktop\b/);
+    await expect(block).toBeAttached();
+    await expect(block).toBeHidden();
+  });
+});

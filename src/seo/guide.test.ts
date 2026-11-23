@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { en } from "../i18n/locales/en";
 import fr from "../i18n/locales/fr/fr";
 import { TOOLS } from "../lib/tools";
-import { homeFaq, relatedTools, toolGuide, toolPage } from "./guide";
+import { HOME_FAQ, homeFaq, homeFaqEntry, relatedTools, toolGuide, toolPage } from "./guide";
 
 const dicts = [
   ["en", en],
@@ -26,8 +26,11 @@ describe("tool guides", () => {
     },
   );
 
-  it("gives French the same number of steps as English for every tool", () => {
-    for (const { id } of TOOLS) expect(toolGuide(fr, id).steps.length, id).toBe(toolGuide(en, id).steps.length);
+  it("gives French the same number of steps and FAQ entries as English for every tool", () => {
+    for (const { id } of TOOLS) {
+      expect(toolGuide(fr, id).steps.length, id).toBe(toolGuide(en, id).steps.length);
+      expect(toolGuide(fr, id).faq.length, id).toBe(toolGuide(en, id).faq.length);
+    }
   });
 
   it("never says open source, names the license, or uses a middle dot", () => {
@@ -50,6 +53,14 @@ describe("home FAQ", () => {
     expect(faq).toHaveLength(5);
     expect(faq[0].a).toContain(String(TOOLS.length));
     expect(JSON.stringify(faq)).not.toContain("{count}");
+  });
+});
+
+describe("home FAQ topics", () => {
+  it("name every entry, in order", () => {
+    expect(Object.values(HOME_FAQ)).toEqual([1, 2, 3, 4, 5]);
+    expect(homeFaqEntry(en, "uploads").q).toBe("Are my files uploaded to a server?");
+    expect(homeFaqEntry(en, "free").q).toBe("Is MantisPDF free?");
   });
 });
 

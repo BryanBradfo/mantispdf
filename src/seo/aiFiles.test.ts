@@ -23,6 +23,13 @@ describe("llms.txt", () => {
     expect(txt).toContain(`[${en.home[`${id}.title` as keyof typeof en.home]}]`);
   });
 
+  it("keeps Privacy about privacy: on-device processing and offline use, not the price", () => {
+    const privacy = txt.slice(txt.indexOf("## Privacy"), txt.indexOf("## Optional"));
+    expect(privacy).toContain("processed on your own device");
+    expect(privacy).toContain("offline");
+    expect(privacy).not.toMatch(/free/i);
+  });
+
   it("links the download page and the full guide", () => {
     expect(txt).toContain(`${SITE}/download`);
     expect(txt).toContain(`${SITE}/llms-full.txt`);

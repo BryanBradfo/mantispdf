@@ -53,6 +53,19 @@ export function toolGuide(dict: AppDictionary, id: ToolId): ToolGuideContent {
   };
 }
 
+/** The home FAQ entries by topic: `howto` keys `home.q<n>` / `home.a<n>`. */
+export const HOME_FAQ = { what: 1, free: 2, uploads: 3, offline: 4, tools: 5 } as const;
+export type HomeFaqTopic = keyof typeof HOME_FAQ;
+
+/** One home FAQ entry, by topic. */
+export function homeFaqEntry(dict: AppDictionary, topic: HomeFaqTopic): QA {
+  const n = HOME_FAQ[topic];
+  return {
+    q: required(dict, "howto", `home.q${n}`),
+    a: interpolate(required(dict, "howto", `home.a${n}`), { count: TOOLS.length }),
+  };
+}
+
 /** The home page FAQ (what, free, uploads, offline, which tools). */
 export function homeFaq(dict: AppDictionary): QA[] {
   return numbered(dict, "home.q").map((i) => ({

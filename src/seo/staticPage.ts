@@ -168,7 +168,7 @@ function brand(locale: Locale): string {
 function homeBody(dict: AppDictionary, locale: Locale): string {
   const text = (ns: "home" | "howto", key: string) => escapeHtml(message(dict, ns, key) ?? "");
   return [
-    `<main class="${SHELL}">`,
+    `<main data-prerender-body class="${SHELL}">`,
     brand(locale),
     `<p class="eyebrow mt-10">${escapeHtml(interpolate(message(dict, "home", "heroEyebrowTools") ?? "", { count: TOOLS.length }))}</p>`,
     `<h1 class="${H1}">${text("home", "heading")}</h1>`,
@@ -186,7 +186,7 @@ function toolBody(dict: AppDictionary, locale: Locale, id: ToolId): string {
   const section = toolById(id).section;
   const sectionName = escapeHtml(message(dict, "home", `sections.${section}`) ?? section);
   return [
-    `<main class="${SHELL}">`,
+    `<main data-prerender-body class="${SHELL}">`,
     brand(locale),
     `<p class="eyebrow mt-10">${sectionNumber(section)} / ${sectionName}</p>`,
     `<h1 class="${H1}">${escapeHtml(heading)}</h1>`,
@@ -204,7 +204,7 @@ function downloadBody(dict: AppDictionary, locale: Locale): string {
     (kind) => `<li class="py-1"><a class="text-ink underline underline-offset-4" href="${escapeHtml(assetUrl(kind))}">${text(kind)}</a></li>`,
   ).join("");
   return [
-    `<main class="${SHELL}">`,
+    `<main data-prerender-body class="${SHELL}">`,
     brand(locale),
     `<p class="eyebrow mt-10">${text("eyebrow")}</p>`,
     `<h1 class="${H1}">${text("heading")}</h1>`,
@@ -216,7 +216,10 @@ function downloadBody(dict: AppDictionary, locale: Locale): string {
   ].join("");
 }
 
-/** The static content of a page, put inside `<div id="root">` (the app replaces it when it mounts). */
+/**
+ * The static content of a page, put inside `<div id="root">` (the app replaces it when it mounts). Its
+ * `<main data-prerender-body>` is hidden in the desktop app (index.html's inline script and style).
+ */
 export function bodyHtml(dict: AppDictionary, locale: Locale, path: string): string {
   if (path === "/") return homeBody(dict, locale);
   if (path === "/download") return downloadBody(dict, locale);
