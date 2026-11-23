@@ -90,3 +90,26 @@ describe("service worker updates", () => {
     expect(update).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("stale code", () => {
+  it("recognises a failed dynamic import in each engine, and nothing else", async () => {
+    const { isStaleCodeError } = await import("./swUpdate");
+    expect(isStaleCodeError(new TypeError("Failed to fetch dynamically imported module: https://x/assets/a.js"))).toBe(true);
+    expect(isStaleCodeError(new TypeError("Importing a module script failed."))).toBe(true);
+    expect(isStaleCodeError(new TypeError("error loading dynamically imported module: https://x/a.js"))).toBe(true);
+    expect(isStaleCodeError(new Error("Unable to preload CSS for /assets/a.css"))).toBe(true);
+    expect(isStaleCodeError(new Error("boom"))).toBe(false);
+    expect(isStaleCodeError(null)).toBe(false);
+  });
+
+  it("a stale chunk shows the panel, and Reload just reloads", async () => {
+    const { reportStaleCode } = await import("./swUpdate");
+    const sw = fakeRegister();
+    startSwUpdates(sw.register, { reload });
+    reportStaleCode();
+    expect(getSwUpdateView()).toEqual({ visible: true });
+    await applyUpdate();
+    expect(sw.updateSW).not.toHaveBeenCalled();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+});

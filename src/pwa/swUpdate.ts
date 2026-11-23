@@ -72,6 +72,23 @@ export async function applyUpdate(): Promise<void> {
   await updateSW();
 }
 
+/**
+ * The message of a failed dynamic import (Chromium, WebKit, Firefox) or of Vite's CSS preload: this page's
+ * code names chunks the server no longer has, after a deploy (or another tab switched to the new version).
+ */
+export function isStaleCodeError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Unable to preload CSS/i.test(
+    message,
+  );
+}
+
+/** A chunk of this page's version failed to load while online: offer Reload (to the new version) as the way out. */
+export function reportStaleCode(): void {
+  activated = true;
+  setVisible(true);
+}
+
 /** Later: hide the panel until the next version. */
 export function dismissSwUpdate(): void {
   setVisible(false);

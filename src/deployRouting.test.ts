@@ -89,7 +89,7 @@ describe("vercel.json routing", () => {
   // filesystem prior to rewrites being applied", so /assets/*, /llms.txt, /sitemap.xml
   // and friends are served as files and never reach the catch-all.
   // Vercel serves files before rewrites, but a specific rewrite must never claim them.
-  it.each(["/sw.js", "/workbox-07f22231.js", "/manifest.webmanifest", "/icons/pwa-512.png"])(
+  it.each(["/sw.js", "/workbox-07f22231.js", "/sw-runtime-ac767fb040-c6ef4774b0.js", "/manifest.webmanifest", "/icons/pwa-512.png"])(
     "has no page rewrite for the web app file %s",
     (path) => {
       const specific = rewrites().filter((r) => r.source !== "/(.*)");

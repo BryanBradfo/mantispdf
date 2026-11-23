@@ -31,3 +31,38 @@ describe("ErrorBoundary resetKey", () => {
     act(() => root.unmount());
   });
 });
+
+describe("ErrorBoundary and an old deploy's missing chunk", () => {
+  function Stale(): never {
+    throw new TypeError("Failed to fetch dynamically imported module: https://mantispdf.app/assets/MergePdfPage-old.js");
+  }
+
+  it("offers the new version (update panel) instead of the crash notice", async () => {
+    const { __resetSwUpdateForTests, getSwUpdateView } = await import("../../pwa/swUpdate");
+    __resetSwUpdateForTests();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    act(() => root.render(<ErrorBoundary resetKey="/merge"><Stale /></ErrorBoundary>));
+    expect(host.querySelector("[role=alert]")).toBeNull();
+    expect(getSwUpdateView()).toEqual({ visible: true });
+    spy.mockRestore();
+    act(() => root.unmount());
+    __resetSwUpdateForTests();
+  });
+
+  it("offline, it stays a crash notice (Reload would not help)", async () => {
+    const { __resetSwUpdateForTests, getSwUpdateView } = await import("../../pwa/swUpdate");
+    __resetSwUpdateForTests();
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    act(() => root.render(<ErrorBoundary resetKey="/merge"><Stale /></ErrorBoundary>));
+    expect(host.querySelector("[role=alert]")).not.toBeNull();
+    expect(getSwUpdateView()).toEqual({ visible: false });
+    spy.mockRestore();
+    online.mockRestore();
+    act(() => root.unmount());
+  });
+});

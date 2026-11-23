@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { PWA_ICONS, RUNTIME_CACHES, SHELL_URL, SHORTCUTS, webManifest, workboxOptions } from "./config";
+import {
+  PWA_ICONS,
+  SHELL_URL,
+  SHORTCUTS,
+  runtimeCacheNames,
+  runtimeCleanupFile,
+  runtimeCleanupScript,
+  webManifest,
+  workboxOptions as workboxFor,
+} from "./config";
+import { pdfWorkerPath } from "../lib/pdfWorkerUrl";
 import { SHELL_FILE } from "../seo/build";
 import { TOOLS } from "../lib/tools";
 import common from "../i18n/locales/en/common";
@@ -50,6 +60,9 @@ describe("web app manifest", () => {
   });
 });
 
+const IDS = { pdfjsVersion: "4.8.69", fontsId: "f0f0f0f0f0", ocrId: "0c0c0c0c0c" };
+const workboxOptions = workboxFor(IDS);
+
 describe("service worker options", () => {
   it("falls back to the prerender's shell", () => {
     expect(SHELL_URL).toBe(SHELL_FILE);
@@ -88,13 +101,62 @@ describe("service worker options", () => {
     expect(match(0, "https://mantispdf.app/assets/x.js", { request: { mode: "cors" } })).toBe(false);
   });
 
-  it("caches each runtime folder on first use, same origin only", () => {
-    RUNTIME_CACHES.forEach(({ prefix, cacheName }, k) => {
+  it("caches each runtime folder on first use, same origin only, in a cache named after its content", () => {
+    const names = runtimeCacheNames(IDS);
+    expect(names).toEqual({ fonts: "mantis-fonts-runtime-f0f0f0f0f0", ocr: "mantis-ocr-runtime-0c0c0c0c0c" });
+    (
+      [
+        ["/fonts-runtime/", names.fonts, 40],
+        ["/ocr-runtime/", names.ocr, 30],
+      ] as const
+    ).forEach(([prefix, cacheName, maxEntries], k) => {
       const i = k + 1;
-      expect(routes[i]).toMatchObject({ handler: "CacheFirst", options: { cacheName } });
+      expect(routes[i]).toMatchObject({
+        handler: "CacheFirst",
+        options: { cacheName, expiration: { maxEntries, purgeOnQuotaError: true }, cacheableResponse: { statuses: [200] } },
+      });
       expect(match(i, `https://mantispdf.app${prefix}file.bin`)).toBe(true);
       expect(match(i, `https://elsewhere.example${prefix}file.bin`)).toBe(false);
       expect(match(i, "https://mantispdf.app/assets/file.bin")).toBe(false);
     });
+  });
+
+  it("a change in a runtime folder renames its cache, and only that one", () => {
+    const next = runtimeCacheNames({ ...IDS, fontsId: "1111111111" });
+    expect(next.fonts).not.toBe(runtimeCacheNames(IDS).fonts);
+    expect(next.ocr).toBe(runtimeCacheNames(IDS).ocr);
+    expect(runtimeCleanupFile({ ...IDS, fontsId: "1111111111" })).not.toBe(runtimeCleanupFile(IDS));
+    expect(workboxOptions.importScripts).toEqual([runtimeCleanupFile(IDS)]);
+  });
+
+  it("the cleanup script deletes older runtime caches on activate and keeps everything else", async () => {
+    const names = runtimeCacheNames(IDS);
+    const store = new Set([
+      "mantis-fonts-runtime",
+      "mantis-fonts-runtime-aaaaaaaaaa",
+      names.fonts,
+      "mantis-ocr-runtime-bbbbbbbbbb",
+      names.ocr,
+      "workbox-precache-v2-https://mantispdf.app/",
+    ]);
+    let onActivate: ((e: { waitUntil(p: Promise<unknown>): void }) => void) | undefined;
+    const self = { addEventListener: (type: string, l: typeof onActivate) => type === "activate" && (onActivate = l) };
+    const caches = { keys: async () => [...store], delete: async (n: string) => store.delete(n) };
+    new Function("self", "caches", runtimeCleanupScript([names.fonts, names.ocr]))(self, caches);
+    let done: Promise<unknown> = Promise.resolve();
+    onActivate!({ waitUntil: (p) => (done = p) });
+    await done;
+    expect([...store]).toEqual([names.fonts, names.ocr, "workbox-precache-v2-https://mantispdf.app/"]);
+  });
+
+  it("precaches the pdf.js worker under the versioned URL the app requests", async () => {
+    const transform = workboxOptions.manifestTransforms[0];
+    const { manifest } = await transform([
+      { url: "index.html", revision: "a", size: 1 },
+      { url: "pdf.worker.min.mjs", revision: "b", size: 2 },
+      { url: "assets/x.js", revision: null, size: 3 },
+    ]);
+    expect(manifest.map((e) => e.url)).toEqual([SHELL_URL, "pdf.worker.min.mjs?v=4.8.69", "assets/x.js"]);
+    expect(`/${manifest[1].url}`).toBe(pdfWorkerPath("4.8.69"));
   });
 });

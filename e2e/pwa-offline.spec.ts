@@ -75,6 +75,55 @@ test("the service worker takes over, then Merge loads and merges offline", async
   await context.setOffline(false);
 });
 
+test("the pdf.js worker is requested under its versioned URL and served by the service worker", async ({ page }) => {
+  const workerUrls: string[] = [];
+  page.context().on("request", (r) => {
+    if (r.url().includes("pdf.worker.min.mjs")) workerUrls.push(new URL(r.url()).pathname + new URL(r.url()).search);
+  });
+  await page.goto("/");
+  await controlledBySw(page);
+  await page.goto("/merge");
+  await upload(page, [fx("alpha.pdf"), fx("bravo.pdf")], "merge-card", 2);
+  await expect(page.locator('img[data-thumb="ready"]')).toHaveCount(2, { timeout: 15000 });
+  expect(workerUrls.length).toBeGreaterThan(0);
+  for (const u of workerUrls) expect(u).toMatch(/^\/pdf\.worker\.min\.mjs\?v=\d+\.\d+\.\d+$/);
+});
+
+test("Unicode text: the Noto font used online is cached and still works offline", async ({ page, context }) => {
+  test.setTimeout(120_000);
+  const fill = async () => {
+    const input = page.locator('input[type="file"][data-engine-ready="true"]');
+    await input.waitFor({ state: "attached", timeout: 20000 });
+    await input.setInputFiles(fx("form.pdf"));
+    const canvas = page.getByTestId("form-canvas");
+    await canvas.getByLabel("Full name").fill("Иван Петров");
+    // The required fields, so the download does not stop to ask.
+    await canvas.getByLabel("I agree").check();
+    await canvas.getByLabel("Colour: green").check();
+    await expect(page.getByText("Uses Noto Sans for these characters").first()).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText(/No font can show these characters/)).toHaveCount(0);
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download PDF" }).click();
+    expect((await download).suggestedFilename()).toMatch(/\.pdf$/);
+  };
+  await page.goto("/");
+  await controlledBySw(page);
+  await page.goto("/fill-form");
+  await fill();
+  const cached = await page.evaluate(async () => {
+    const name = (await caches.keys()).find((n) => n.startsWith("mantis-fonts-runtime-"));
+    if (!name) return [];
+    return (await (await caches.open(name)).keys()).map((r) => new URL(r.url).pathname);
+  });
+  expect(cached).toEqual(expect.arrayContaining(["/fonts-runtime/fonts.json"]));
+  expect(cached.some((p) => /^\/fonts-runtime\/NotoSans_/.test(p))).toBe(true);
+
+  await context.setOffline(true);
+  await page.goto("/fill-form");
+  await fill();
+  await context.setOffline(false);
+});
+
 test("no request leaves the origin, service worker included", async ({ page, baseURL }) => {
   const origins = new Set<string>();
   page.context().on("request", (r) => origins.add(new URL(r.url()).origin));

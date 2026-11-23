@@ -1,4 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { isStaleCodeError, reportStaleCode } from "../../pwa/swUpdate";
 import { useT } from "../../i18n";
 import { primaryButton } from "../../styles/ui";
 
@@ -26,6 +28,14 @@ interface Props {
   silent?: boolean;
 }
 
+/**
+ * A chunk of an older deploy that the server no longer has (an old tab), while online on the web: the update
+ * panel's "new version is ready" with Reload replaces the crash notice. The desktop app has no such panel.
+ */
+function staleCode(error: unknown): boolean {
+  return isStaleCodeError(error) && navigator.onLine !== false && !isTauri();
+}
+
 /** Catches a render error (or a lazy chunk that fails to load) so the app never goes blank. */
 export default class ErrorBoundary extends Component<Props, { error: unknown; key?: string }> {
   state: { error: unknown; key?: string } = { error: null, key: this.props.resetKey };
@@ -40,10 +50,12 @@ export default class ErrorBoundary extends Component<Props, { error: unknown; ke
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
     console.error(error, info.componentStack);
+    if (staleCode(error)) reportStaleCode();
   }
 
   render() {
     if (!this.state.error) return this.props.children;
+    if (staleCode(this.state.error)) return null;
     return this.props.silent ? null : <CrashNotice />;
   }
 }

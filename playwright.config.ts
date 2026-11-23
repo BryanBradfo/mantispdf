@@ -25,7 +25,11 @@ export default defineConfig({
     // answer navigations itself, so it stays blocked in every spec but the PWA ones (test.use allow).
     serviceWorkers: "block",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: /pwa-update\.spec\.ts/ },
+    // Edits dist/sw.js to simulate a deploy: alone, after everything else.
+    { name: "pwa-update", use: { ...devices["Desktop Chrome"] }, testMatch: /pwa-update\.spec\.ts/, dependencies: ["chromium"] },
+  ],
   webServer: {
     command: `npm run build && npm run preview -- --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
