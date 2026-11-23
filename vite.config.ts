@@ -6,6 +6,8 @@ import type { Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import wasm from "vite-plugin-wasm";
+import { VitePWA } from "vite-plugin-pwa";
+import { webManifest, workboxOptions } from "./src/pwa/config";
 
 // The desktop download links (src/lib/desktopRelease.ts) follow the package version.
 const pkg = JSON.parse(readFileSync(new URL("package.json", import.meta.url), "utf8")) as { version: string };
@@ -34,7 +36,20 @@ function prerenderedPreview(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), wasm(), prerenderedPreview()],
+  plugins: [
+    react(),
+    wasm(),
+    prerenderedPreview(),
+    // Installable web app: dist/manifest.webmanifest (linked from every page) and dist/sw.js. Registered by
+    // src/pwa/start.ts (never in Tauri); "prompt": a new version waits for the person (PwaUpdatePanel).
+    VitePWA({
+      registerType: "prompt",
+      injectRegister: false,
+      manifest: webManifest,
+      includeManifestIcons: false,
+      workbox: workboxOptions,
+    }),
+  ],
   define: {
     __MANTIS_VERSION__: JSON.stringify(pkg.version),
   },

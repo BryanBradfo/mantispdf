@@ -21,6 +21,9 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "on-first-retry",
+    // The built app registers a service worker (src/pwa). It would serve later loads from its precache and
+    // answer navigations itself, so it stays blocked in every spec but the PWA ones (test.use allow).
+    serviceWorkers: "block",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {

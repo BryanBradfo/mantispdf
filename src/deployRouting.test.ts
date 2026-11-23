@@ -88,6 +88,15 @@ describe("vercel.json routing", () => {
   // Static assets need no exclusion here: Vercel gives "precedence to the
   // filesystem prior to rewrites being applied", so /assets/*, /llms.txt, /sitemap.xml
   // and friends are served as files and never reach the catch-all.
+  // Vercel serves files before rewrites, but a specific rewrite must never claim them.
+  it.each(["/sw.js", "/workbox-07f22231.js", "/manifest.webmanifest", "/icons/pwa-512.png"])(
+    "has no page rewrite for the web app file %s",
+    (path) => {
+      const specific = rewrites().filter((r) => r.source !== "/(.*)");
+      expect(specific.map((r) => resolveRewrite(r, path)).filter(Boolean)).toEqual([]);
+    },
+  );
+
   it("keeps the catch-all last so a future specific rewrite is not shadowed", () => {
     const all = rewrites();
     const catchAllIndex = all.findIndex((r) => r.source === "/(.*)");
@@ -121,6 +130,15 @@ describe("vercel.json cache headers", () => {
       expect(cacheControlFor(path)).toBe("public, max-age=604800, stale-while-revalidate=86400");
     },
   );
+
+  // The browser checks /sw.js for a new version on navigations; a cached copy would delay every deploy.
+  it("never lets a cache keep the service worker", () => {
+    expect(cacheControlFor("/sw.js")).toBe("no-cache");
+  });
+
+  it("keeps the web app manifest an hour at most", () => {
+    expect(cacheControlFor("/manifest.webmanifest")).toBe("public, max-age=3600");
+  });
 
   it("leaves the app shell to the host's default (it must update on deploy)", () => {
     expect(cacheControlFor("/index.html")).toBeUndefined();

@@ -30,7 +30,7 @@
     "test:e2e": "playwright test",
     "predev": "node scripts/copy-pdf-worker.mjs && node scripts/copy-ocr-assets.mjs && node scripts/copy-font-assets.mjs",
     "prebuild": "node scripts/copy-pdf-worker.mjs && node scripts/copy-ocr-assets.mjs && node scripts/copy-font-assets.mjs",
-    "postbuild": "node scripts/prerender.mjs && node scripts/copy-ocr-assets.mjs --check dist && node scripts/copy-font-assets.mjs --check dist",
+    "postbuild": "node scripts/prerender.mjs && node scripts/check-pwa.mjs dist && node scripts/copy-ocr-assets.mjs --check dist && node scripts/copy-font-assets.mjs --check dist",
     "brand": "node scripts/brand-assets.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -94,8 +94,10 @@
     "tailwindcss": "^3.4.17",
     "typescript": "~5.7.2",
     "vite": "^6.0.5",
+    "vite-plugin-pwa": "2.0.0",
     "vite-plugin-top-level-await": "^1.4.4",
     "vite-plugin-wasm": "^3.3.0",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "workbox-window": "7.4.1"
   }
 }
