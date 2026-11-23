@@ -3,6 +3,7 @@ import MetaItems from "../components/common/MetaItems";
 import { ArrowDown, Download, Sparkles } from "lucide-react";
 import DesktopBand from "../components/home/DesktopBand";
 import ToolGrid from "../components/home/ToolGrid";
+import HomeFaq from "../components/guide/HomeFaq";
 import { PageSEO } from "../components/seo/PageSEO";
 import { MantisMark } from "../components/brand/MantisMark";
 import DecodeText from "../components/common/DecodeText";
@@ -73,6 +74,8 @@ export default function HomePage() {
         <div id="tools" className="scroll-mt-4 pb-24">
           <ToolGrid />
         </div>
+
+        <HomeFaq />
       </div>
     </div>
   );

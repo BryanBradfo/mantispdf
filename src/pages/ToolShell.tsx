@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { PageSEO } from "../components/seo/PageSEO";
 import PixelIcon from "../components/brand/PixelIcon";
 import DecodeText from "../components/common/DecodeText";
+import ToolGuide from "../components/guide/ToolGuide";
 import { useT } from "../i18n";
 import { sectionNumber, toolById, type ToolId } from "../lib/tools";
 
@@ -42,6 +43,7 @@ export default function ToolShell({ title, description, path, heading, intro, ch
       </h1>
       <p className="mt-4 max-w-xl leading-relaxed text-ink-2">{intro}</p>
       {children}
+      <ToolGuide tool={tool} />
     </div>
   );
 }

@@ -12,6 +12,7 @@ export {
   useLocale,
   useLocaleNavigate,
   useDescribeError,
+  useDictionary,
   useLocalePath,
   useT,
 } from "./LocaleProvider";

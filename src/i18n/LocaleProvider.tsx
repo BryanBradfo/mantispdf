@@ -156,6 +156,11 @@ export function useLocale(): Locale {
   return useContext(LocaleContext).locale;
 }
 
+/** The whole dictionary of the current locale (guide content and structured data read it by key). */
+export function useDictionary(): AppDictionary {
+  return useContext(LocaleContext).dict;
+}
+
 /** `t` for one namespace: `const t = useT("merge"); t("title"); t("files", { count })`. */
 export function useT<NS extends NamespaceName>(ns: NS): TFunction<EnDictionary[NS]> {
   const { locale, dict } = useContext(LocaleContext);

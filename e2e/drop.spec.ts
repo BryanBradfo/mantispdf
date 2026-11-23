@@ -57,12 +57,13 @@ test("files dragged anywhere show the overlay; a drop loads them into the tool",
 
 test("a single-file tool takes the dropped file", async ({ page }) => {
   await page.goto("/compress");
-  await expect(page.getByText("Choose a PDF file")).toBeVisible();
+  // The drop zone's button (the tool guide below also says "Choose a PDF file.").
+  await expect(page.getByTestId("drop-button")).toHaveText("Choose a PDF file");
   await expect(overlay(page)).toBeAttached();
   await expect(async () => {
     await dragFiles(page, "dragenter", ["alpha.pdf"]);
     await dragFiles(page, "drop", ["alpha.pdf"], '[data-testid="page-drop-overlay"]');
-    await expect(page.getByText("Choose a PDF file")).toHaveCount(0, { timeout: 3000 });
+    await expect(page.getByTestId("drop-button")).toHaveCount(0, { timeout: 3000 });
   }).toPass({ timeout: 20000 });
 });
 
