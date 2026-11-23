@@ -12,25 +12,14 @@
     <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource-variable/oswald/files/oswald-latin-wght-normal.woff2" />
     <meta name="robots" content="index, follow" />
     <meta name="google-site-verification" content="xkhnRyi1X7Cpuq4DIPkfiDSTWxUL3tM5NSf2XY7-tMc" />
-    <!-- Title, description, canonical, hreflang and the og:/twitter: page tags are rendered per page and
-         language by PageSEO (react-helmet-async; React 19 hoists them into <head>). Static copies here would
-         stay next to them as English duplicates, so only the tags PageSEO does not manage remain. -->
+    <!-- Title, description, canonical, hreflang, the og:/twitter: page tags and the JSON-LD are rendered per
+         page and language by PageSEO (react-helmet-async; React 19 hoists them into <head>). The build
+         (scripts/prerender.mjs) writes them into each page's HTML too, marked data-prerender, and main.tsx
+         removes those copies before the app mounts. Only the tags PageSEO does not manage stay here. -->
     <meta property="og:site_name" content="MantisPDF" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "MantisPDF",
-      "applicationCategory": "UtilitiesApplication",
-      "operatingSystem": "Web",
-      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "description": "Free browser-based PDF tools. Split, merge, compress, rotate. Files never leave your device.",
-      "url": "https://mantispdf.bradfo.me"
-    }
-    </script>
     <script>
       (function () {
         // Dark unless the user stored "light" (same rule as src/hooks/useTheme.ts).

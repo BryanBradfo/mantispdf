@@ -2,10 +2,23 @@
   "buildCommand": "HOME=/root rustup target add wasm32-unknown-unknown && HOME=/root cargo install --root /usr/local wasm-pack --locked && npm run build:wasm && npm run build",
   "outputDirectory": "dist",
   "framework": null,
+  "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/fr",
+      "destination": "/fr/index.html"
+    },
+    {
+      "source": "/:page(merge|split|organize|rotate|remove-pages|extract-pages|crop|resize|n-up|compress|pdf-to-image|images-to-pdf|extract-images|edit-pdf|fill-form|sign|watermark|page-numbers|header-footer|bates|encrypt|unlock|redact|sanitize|remove-metadata|edit-metadata|ocr|compare|download)",
+      "destination": "/:page/index.html"
+    },
+    {
+      "source": "/fr/:page(merge|split|organize|rotate|remove-pages|extract-pages|crop|resize|n-up|compress|pdf-to-image|images-to-pdf|extract-images|edit-pdf|fill-form|sign|watermark|page-numbers|header-footer|bates|encrypt|unlock|redact|sanitize|remove-metadata|edit-metadata|ocr|compare|download)",
+      "destination": "/fr/:page/index.html"
+    },
+    {
       "source": "/(.*)",
-      "destination": "/index.html"
+      "destination": "/shell.html"
     }
   ],
   "headers": [

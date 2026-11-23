@@ -2,9 +2,10 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowUpRight, Check, Copy, Download, Info } from "lucide-react";
 import { PageSEO } from "../components/seo/PageSEO";
+import { downloadJsonLd } from "../seo/structuredData";
 import PixelIcon from "../components/brand/PixelIcon";
 import DecodeText from "../components/common/DecodeText";
-import { useT } from "../i18n";
+import { useDictionary, useLocale, useT } from "../i18n";
 import {
   DESKTOP_OSES,
   DESKTOP_VERSION,
@@ -88,6 +89,8 @@ function Terminal() {
 
 export default function DownloadPage() {
   const t = useT("download");
+  const dict = useDictionary();
+  const locale = useLocale();
   const tc = useT("common");
   // `?os=mac|windows|linux` (the home band's tiles) picks the tab; otherwise the visitor's OS.
   const [params] = useSearchParams();
@@ -114,6 +117,7 @@ export default function DownloadPage() {
         title={t("seoTitle")}
         description={t("seoDescription", { count: TOOLS.length })}
         path="/download"
+        jsonLd={downloadJsonLd(dict, locale)}
       />
       <p data-testid="download-eyebrow" className="eyebrow flex items-center gap-2.5">
         <PixelIcon icon={PAGE_ICONS.download} className="h-4 w-4 text-ink" />

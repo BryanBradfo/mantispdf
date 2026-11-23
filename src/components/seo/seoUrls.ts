@@ -1,4 +1,4 @@
-import { LOCALES, localePath, type Locale } from "../../i18n";
+import { LOCALES, localePath, type Locale } from "../../i18n/locale";
 
 export const SITE = "https://mantispdf.bradfo.me";
 

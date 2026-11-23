@@ -5,21 +5,23 @@ import DesktopBand from "../components/home/DesktopBand";
 import ToolGrid from "../components/home/ToolGrid";
 import HomeFaq from "../components/guide/HomeFaq";
 import { PageSEO } from "../components/seo/PageSEO";
+import { homeJsonLd } from "../seo/structuredData";
 import { MantisMark } from "../components/brand/MantisMark";
 import DecodeText from "../components/common/DecodeText";
 import { useLicense } from "../hooks/useLicense";
 import { openSettings } from "../lib/settingsDialog";
-import { Link, useT } from "../i18n";
+import { Link, useDictionary, useLocale, useT } from "../i18n";
 import { primaryButton, secondaryButton } from "../styles/ui";
 
 export default function HomePage() {
   const t = useT("home");
   const tSeo = useT("seo");
   const license = useLicense();
+  const jsonLd = homeJsonLd(useDictionary(), useLocale());
 
   return (
     <div className="relative">
-      <PageSEO title={tSeo("homeTitle")} description={tSeo("homeDescription")} path="/" />
+      <PageSEO title={tSeo("homeTitle")} description={tSeo("homeDescription", { count: TOOLS.length })} path="/" jsonLd={jsonLd} />
 
       <div className="mx-auto max-w-[1440px] px-4 sm:px-8 lg:px-12">
         {/* Desktop-only license entry point. */}

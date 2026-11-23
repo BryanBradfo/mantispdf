@@ -1,6 +1,8 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from "vitest/config";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import type { Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import wasm from "vite-plugin-wasm";
@@ -8,8 +10,31 @@ import wasm from "vite-plugin-wasm";
 // The desktop download links (src/lib/desktopRelease.ts) follow the package version.
 const pkg = JSON.parse(readFileSync(new URL("package.json", import.meta.url), "utf8")) as { version: string };
 
+/**
+ * `vite preview` serves the prerendered pages as Vercel does (vercel.json): `/fr/merge` gets
+ * dist/fr/merge/index.html, any other page-like path the bare shell (dist/shell.html). Without it,
+ * preview would answer every path with dist/index.html, the prerendered English home.
+ */
+function prerenderedPreview(): Plugin {
+  return {
+    name: "mantis-prerendered-preview",
+    configurePreviewServer(server) {
+      const dist = resolve(server.config.root, server.config.build.outDir);
+      server.middlewares.use((req, _res, next) => {
+        const [pathname, query = ""] = (req.url ?? "/").split("?");
+        const wantsHtml = req.method === "GET" || req.method === "HEAD";
+        if (!wantsHtml || pathname === "/" || pathname.includes(".")) return next();
+        const page = join(pathname.replace(/\/+$/, ""), "index.html");
+        const target = existsSync(join(dist, page)) ? page : existsSync(join(dist, "shell.html")) ? "/shell.html" : null;
+        if (target) req.url = target + (query ? `?${query}` : "");
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), wasm()],
+  plugins: [react(), wasm(), prerenderedPreview()],
   define: {
     __MANTIS_VERSION__: JSON.stringify(pkg.version),
   },

@@ -3,16 +3,21 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { localizeRoutes } from "./i18n";
 import { APP_ROUTES } from "./routes";
+import { prerenderedPages } from "./seo/staticPage";
+import { SHELL_FILE } from "./seo/build";
 
 /**
- * MantisPDF uses <BrowserRouter>, so every client route must be served the
- * SPA shell by the host. Vercel serves static files only: without a rewrite,
- * a hard load / refresh / shared link of `/split` returns Vercel's own 404
- * before any JS runs.
+ * MantisPDF uses <BrowserRouter>, so every client route must be served an HTML page by the host.
+ * Vercel serves static files only: without a rewrite, a hard load / refresh / shared link of `/split`
+ * returns Vercel's own 404 before any JS runs.
  *
- * This cannot be caught by Playwright: `vite preview` has a built-in SPA
- * fallback, so the built app looks fine locally while production 404s. The
- * deployment contract therefore has to be asserted against vercel.json.
+ * Every indexable page is prerendered at build (src/seo/staticPage.ts, scripts/prerender.mjs) to
+ * `dist/<path>/index.html`; vercel.json rewrites each page URL to its file (so the routing does not
+ * depend on how the host maps a directory), and every other path (legacy redirects, unknown paths)
+ * to the bare SPA shell, `dist/shell.html`, where React Router redirects or renders NotFound.
+ *
+ * This cannot be caught by Playwright: `vite preview` has its own fallback, so the built app looks
+ * fine locally while production 404s. The deployment contract is asserted against vercel.json.
  */
 
 const root = resolve(__dirname, "..");
@@ -30,10 +35,33 @@ const rewrites = (): Rewrite[] => {
   return cfg.rewrites ?? [];
 };
 
-const destinationFor = (path: string): string | undefined =>
-  rewrites().find((r) => new RegExp(`^${r.source}$`).test(path))?.destination;
+/**
+ * Vercel's path-to-regexp sources, as far as vercel.json uses them: a named group `:name(a|b)`
+ * (its value fills `:name` in the destination) and an unnamed group `(.*)`.
+ */
+function resolveRewrite(rule: Rewrite, path: string): string | undefined {
+  const names: string[] = [];
+  const pattern = rule.source.replace(/:(\w+)\(([^)]*)\)/g, (_m, name: string, alt: string) => {
+    names.push(name);
+    return `(${alt})`;
+  });
+  const m = new RegExp(`^${pattern}$`).exec(path);
+  if (!m) return undefined;
+  return names.reduce((dest, name, i) => dest.replace(`:${name}`, m[i + 1]), rule.destination);
+}
 
-describe("vercel.json SPA rewrites", () => {
+const destinationFor = (path: string): string | undefined => {
+  for (const rule of rewrites()) {
+    const dest = resolveRewrite(rule, path);
+    if (dest !== undefined) return dest;
+  }
+  return undefined;
+};
+
+/** What Vercel serves for a hard load of `path`: the home is dist/index.html, the rest goes through the rewrites. */
+const servedFile = (path: string): string | undefined => (path === "/" ? "/index.html" : destinationFor(path));
+
+describe("vercel.json routing", () => {
   it("declares at least one route to protect", () => {
     expect(clientRoutes().length).toBeGreaterThan(1);
   });
@@ -42,22 +70,34 @@ describe("vercel.json SPA rewrites", () => {
     expect(clientRoutes()).toEqual(expect.arrayContaining(["/fr", "/fr/merge", "/fr/ocr"]));
   });
 
-  it.each(clientRoutes())("serves the SPA shell for a hard load of %s", (path) => {
-    expect(destinationFor(path)).toBe("/index.html");
+  it.each(prerenderedPages().map((p) => [p.url, p.file]))("serves %s its prerendered file %s", (url, file) => {
+    expect(servedFile(url)).toBe(`/${file}`);
   });
 
-  it("serves the SPA shell for an unknown path so React Router renders NotFound", () => {
-    expect(destinationFor("/no-such-page")).toBe("/index.html");
+  it.each(clientRoutes())("serves an HTML page for a hard load of %s", (path) => {
+    expect(servedFile(path)).toMatch(/\.html$/);
   });
+
+  it.each(["/edit", "/jpg-to-pdf", "/fr/edit", "/no-such-page", "/fr/no-such-page", "/merge/extra"])(
+    "serves the bare SPA shell for %s (a redirect or NotFound, not another page's content)",
+    (path) => {
+      expect(destinationFor(path)).toBe(`/${SHELL_FILE}`);
+    },
+  );
 
   // Static assets need no exclusion here: Vercel gives "precedence to the
-  // filesystem prior to rewrites being applied", so /assets/*, /pdf.worker.min.mjs
+  // filesystem prior to rewrites being applied", so /assets/*, /llms.txt, /sitemap.xml
   // and friends are served as files and never reach the catch-all.
   it("keeps the catch-all last so a future specific rewrite is not shadowed", () => {
     const all = rewrites();
     const catchAllIndex = all.findIndex((r) => r.source === "/(.*)");
 
     expect(catchAllIndex).toBe(all.length - 1);
+  });
+
+  it("drops trailing slashes, so /merge/ and /merge are one URL", () => {
+    const cfg = JSON.parse(readFileSync(resolve(root, "vercel.json"), "utf8"));
+    expect(cfg.trailingSlash).toBe(false);
   });
 });
 
