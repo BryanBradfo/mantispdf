@@ -138,7 +138,7 @@ test("French Watermark: a narrow no-break space typed before ! is accepted", asy
 
 test("French Redact: search, review and marks read in French", async ({ page }) => {
   await page.goto("/fr/redact");
-  await expect(page.getByRole("heading", { name: "Caviarder" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Caviarder" })).toBeVisible();
   const input = page.locator('input[type="file"][data-engine-ready="true"]');
   await input.waitFor({ state: "attached", timeout: 20000 });
   await input.setInputFiles(fx("redact.pdf"));

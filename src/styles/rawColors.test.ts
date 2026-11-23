@@ -7,9 +7,14 @@ import { RAW_COLOR_ALLOWLIST } from "./rawColorsAllowlist";
 const root = process.cwd();
 const srcDir = join(root, "src");
 
+/** Every .tsx, plus the .ts files under src/seo (class strings of the guide and the prerendered pages). */
+const scanned = (path: string, name: string) =>
+  !name.includes(".test.") &&
+  (name.endsWith(".tsx") || (name.endsWith(".ts") && relative(srcDir, path).split(/[\\/]/)[0] === "seo"));
+
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-    e.isDirectory() ? walk(join(dir, e.name)) : e.name.endsWith(".tsx") ? [join(dir, e.name)] : [],
+    e.isDirectory() ? walk(join(dir, e.name)) : scanned(join(dir, e.name), e.name) ? [join(dir, e.name)] : [],
   );
 }
 const dirty = walk(srcDir)
@@ -26,6 +31,11 @@ describe("the banned pattern", () => {
 });
 
 describe("raw colour guard", () => {
+  it("scans the class strings of src/seo", () => {
+    expect(walk(srcDir).map((f) => relative(root, f))).toEqual(
+      expect.arrayContaining(["src/seo/guideStyles.ts", "src/seo/staticPage.ts"]),
+    );
+  });
   it("no file outside the allowlist uses a raw palette class", () => {
     expect(dirty.filter((f) => !(f in RAW_COLOR_ALLOWLIST))).toEqual([]);
   });

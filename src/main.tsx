@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
 import App from "./App";
 import { startFirstLoad } from "./firstLoad";
+import { dropPrerenderedHead } from "./seo/prerenderedHead";
 // UI fonts, self-hosted (no request leaves the app origin). Every subset is
 // declared with its unicode-range, so a page in Latin script downloads only
 // the latin files.
@@ -14,6 +15,9 @@ import "./index.css";
 // react-pdf consumer imports through), so it lands on the same pdfjs instance
 // the components use — code-splitting otherwise gives lazy routes a separate
 // instance, which is why configuring it here previously had no effect.
+
+// Prerendered head tags give way to PageSEO's (the title stays until the app sets its own).
+dropPrerenderedHead(document);
 
 // A /fr first load fetches the French dictionary and the page's chunk in parallel.
 startFirstLoad(window.location.pathname);

@@ -1,6 +1,7 @@
 import { Helmet } from "react-helmet-async";
 import { useLocale } from "../../i18n";
 import { SITE, seoUrls } from "./seoUrls";
+import { jsonLdScript, type JsonLd } from "../../seo/structuredData";
 
 interface PageSEOProps {
   title: string;
@@ -8,13 +9,16 @@ interface PageSEOProps {
   /** The page's English path (`/merge`); the current locale's URL is derived from it. */
   path: string;
   ogImage?: string;
+  /** The page's structured data (schema.org JSON-LD), rendered as an inline script. */
+  jsonLd?: JsonLd;
 }
 
-export function PageSEO({ title, description, path, ogImage }: PageSEOProps) {
+export function PageSEO({ title, description, path, ogImage, jsonLd }: PageSEOProps) {
   const locale = useLocale();
   const { canonical: url, alternates, ogLocale } = seoUrls(path, locale);
   const image = `${SITE}${ogImage ?? `/og-${locale}.png`}`;
   return (
+    <>
     <Helmet>
       <title>{title}</title>
       <meta name="description" content={description} />
@@ -33,6 +37,9 @@ export function PageSEO({ title, description, path, ogImage }: PageSEOProps) {
       <meta name="twitter:description" content={description} />
       <meta name="twitter:image" content={image} />
     </Helmet>
+      {/* Not in Helmet: React hoists only title/meta/link. A JSON-LD script is valid anywhere in the page. */}
+      {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />}
+    </>
   );
 }
 

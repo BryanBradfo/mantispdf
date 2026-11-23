@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { localePath, localizeRoutes, stripLocale } from "./i18n";
 import { APP_ROUTES, isRedirect } from "./routes";
+import { sitemapXml } from "./seo/aiFiles";
 
+/** sitemap.xml is generated at build (scripts/prerender.mjs) with that day's date. */
 const SITE = "https://mantispdf.bradfo.me";
-const xml = readFileSync(resolve(__dirname, "../public/sitemap.xml"), "utf8");
+const xml = sitemapXml("2026-11-23");
 const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
 
 // Pages worth indexing: every route but the 404 catch-all and the legacy redirects.
@@ -13,9 +13,13 @@ const pages = localizeRoutes(APP_ROUTES.filter((r) => r.path !== "*" && !isRedir
   r.path === "/" ? `${SITE}/` : `${SITE}${r.path}`,
 );
 
-describe("public/sitemap.xml", () => {
+describe("sitemap.xml", () => {
   it("lists every page in English and in French, once", () => {
     expect([...locs].sort()).toEqual([...pages].sort());
+  });
+
+  it("dates every page with the build day", () => {
+    expect(xml.match(/<lastmod>2026-11-23<\/lastmod>/g)).toHaveLength(locs.length);
   });
 
   it("gives every page its hreflang alternates", () => {

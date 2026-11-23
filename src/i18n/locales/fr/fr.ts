@@ -36,6 +36,7 @@ import metadata from "./metadata";
 import removeMetadata from "./removeMetadata";
 import editMetadata from "./editMetadata";
 import download from "./download";
+import howto from "./howto";
 
 /** French, loaded as its own chunk when a `/fr` page is first rendered (or preloaded). */
 const fr: Dictionary<EnDictionary> = {
@@ -75,6 +76,7 @@ const fr: Dictionary<EnDictionary> = {
   ocr,
   compare,
   download,
+  howto,
 };
 
 export default fr;
