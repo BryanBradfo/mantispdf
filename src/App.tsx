@@ -47,7 +47,8 @@ function PageSpinner() {
 /** The routed page; an error in it shows a notice and clears on the next navigation. */
 function Pages() {
   return (
-    <ErrorBoundary resetKey={useLocation().pathname}>
+    // A stale chunk (old tab after a deploy) defers to the update panel, which App keeps mounted outside.
+    <ErrorBoundary resetKey={useLocation().pathname} staleChunkAsUpdate>
       <Suspense fallback={<PageSpinner />}>
         <Routes>
           {ROUTES.map((r) => (

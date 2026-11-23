@@ -1,6 +1,6 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, useState, useSyncExternalStore, type ErrorInfo, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import { isStaleCodeError, reportStaleCode } from "../../pwa/swUpdate";
+import { getSwUpdateView, isStaleCodeError, reportStaleCode, subscribeSwUpdate } from "../../pwa/swUpdate";
 import { useT } from "../../i18n";
 import { primaryButton } from "../../styles/ui";
 
@@ -26,6 +26,12 @@ interface Props {
   resetKey?: string;
   /** Render nothing instead of the crash notice (an optional extra, like the desktop update panel). */
   silent?: boolean;
+  /**
+   * A chunk of an older deploy that fails to load shows the update panel (Reload) instead of the crash
+   * notice. Only for a boundary INSIDE the tree that keeps PwaUpdatePanel mounted (App's page boundary):
+   * an outer boundary would unmount the panel with everything else and leave a blank page.
+   */
+  staleChunkAsUpdate?: boolean;
 }
 
 /**
@@ -34,6 +40,18 @@ interface Props {
  */
 function staleCode(error: unknown): boolean {
   return isStaleCodeError(error) && navigator.onLine !== false && !isTauri();
+}
+
+/**
+ * While the update panel offers Reload, the page area stays empty; once the person chooses Later, the
+ * crash notice (with its own Reload) takes its place, so the area is never left blank.
+ */
+function StaleChunkNotice() {
+  const { visible } = useSyncExternalStore(subscribeSwUpdate, getSwUpdateView, getSwUpdateView);
+  // The panel appears just after this first render (componentDidCatch reports the stale chunk).
+  const [shown, setShown] = useState(visible);
+  if (visible && !shown) setShown(true);
+  return visible || !shown ? null : <CrashNotice />;
 }
 
 /** Catches a render error (or a lazy chunk that fails to load) so the app never goes blank. */
@@ -50,12 +68,12 @@ export default class ErrorBoundary extends Component<Props, { error: unknown; ke
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
     console.error(error, info.componentStack);
-    if (staleCode(error)) reportStaleCode();
+    if (this.props.staleChunkAsUpdate && staleCode(error)) reportStaleCode();
   }
 
   render() {
     if (!this.state.error) return this.props.children;
-    if (staleCode(this.state.error)) return null;
+    if (this.props.staleChunkAsUpdate && staleCode(this.state.error)) return <StaleChunkNotice />;
     return this.props.silent ? null : <CrashNotice />;
   }
 }

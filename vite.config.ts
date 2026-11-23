@@ -36,6 +36,9 @@ function folderId(dir: string): string {
   return hash.digest("hex").slice(0, 10);
 }
 
+/** The PWA kill switch (see VitePWA below and scripts/check-pwa.mjs, which reads the same variable). */
+const SW_KILL = process.env.MANTIS_SW_KILL === "1";
+
 const pwaIds: PwaBuildIds = {
   // The version react-pdf's pdf.js reports (pdfjs.version), which names the worker URL (src/lib/pdfWorkerUrl.ts).
   pdfjsVersion: (JSON.parse(readFileSync(new URL("node_modules/pdfjs-dist/package.json", import.meta.url), "utf8")) as { version: string })
@@ -86,18 +89,20 @@ export default defineConfig({
     prerenderedPreview(),
     // Installable web app: dist/manifest.webmanifest (linked from every page) and dist/sw.js. Registered by
     // src/pwa/start.ts (never in Tauri); "prompt": a new version waits for the person (PwaUpdatePanel).
-    // KILL SWITCH for a broken service worker: deploy with `selfDestroying: true` added below. sw.js then
-    // becomes a worker that unregisters itself, deletes every cache and reloads its open pages from the
-    // network; /sw.js is served no-cache (vercel.json), so browsers pick it up on their next visit. Remove
-    // the flag in a later deploy to bring the web app back. See CLAUDE.md (PWA).
+    // KILL SWITCH for a broken service worker: `MANTIS_SW_KILL=1 npm run build` (on Vercel: set the env var
+    // MANTIS_SW_KILL=1 and redeploy). sw.js is then vite-plugin-pwa's self-destroying worker: it unregisters
+    // itself, deletes its caches (best effort) and reloads its open pages from the network; /sw.js is served
+    // no-cache (vercel.json), so browsers pick it up on their next visit. scripts/check-pwa.mjs reads the same
+    // flag. Unset it in a later deploy to bring the web app back. See CLAUDE.md (PWA kill switch).
     VitePWA({
       registerType: "prompt",
       injectRegister: false,
       manifest: webManifest,
       includeManifestIcons: false,
       workbox: workboxOptions(pwaIds),
+      selfDestroying: SW_KILL,
     }),
-    pwaRuntimeCleanup(pwaIds),
+    ...(SW_KILL ? [] : [pwaRuntimeCleanup(pwaIds)]),
   ],
   define: {
     __MANTIS_VERSION__: JSON.stringify(pkg.version),
