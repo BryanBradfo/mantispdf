@@ -28,4 +28,14 @@ export default {
   copied: "Copied",
   version: "Version {version}",
   allReleases: "All releases",
+  // The web app card, above the desktop installers
+  installEyebrow: "Web app",
+  installHeading: "Install in your browser",
+  installIntro: "No download, no warning, works offline.",
+  installButton: "Install app",
+  installIos: "On iPhone or iPad: tap Share, then Add to Home Screen.",
+  installSafari: "In Safari, choose File, then Add to Dock.",
+  installFirefox: "Firefox cannot install web apps: the desktop app below is the option here.",
+  installOther: "Look for Install MantisPDF in your browser's address bar or menu.",
+  installDone: "Installed. Open MantisPDF from your apps.",
 } as const satisfies Namespace;

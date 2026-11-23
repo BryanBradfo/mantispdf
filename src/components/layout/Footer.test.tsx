@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { LocaleProvider, loadLocale, localeFromPath } from "../../i18n";
 import { TOOLS } from "../../lib/tools";
 import Footer from "./Footer";
+import { __resetInstallForTests, startInstallCapture } from "../../pwa/install";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -68,6 +69,22 @@ describe("Footer", () => {
     expect(first.getAttribute("href")).toBe("/download");
     expect(first.textContent).toBe("Desktop app");
     expect(first.target).toBe("");
+  });
+
+  it("offers Install app in the Project column only while the browser's install prompt is ready", async () => {
+    __resetInstallForTests();
+    const win = new EventTarget();
+    startInstallCapture({ navigator: { userAgent: "Chrome/142" }, addEventListener: (t, l) => win.addEventListener(t, l) });
+    await renderAt("/");
+    const install = () => [...footer().querySelectorAll("button")].find((b) => b.textContent === "Install app");
+    expect(install()).toBeUndefined();
+    const e = new Event("beforeinstallprompt", { cancelable: true });
+    Object.assign(e, { prompt: () => Promise.resolve(), userChoice: Promise.resolve({ outcome: "dismissed" }) });
+    act(() => void win.dispatchEvent(e));
+    expect(install()!.closest("#footer-project, section")).not.toBeNull();
+    await act(async () => install()!.click());
+    expect(install()).toBeUndefined();
+    __resetInstallForTests();
   });
 
   it("links the project on GitHub in a new tab, without an opener", async () => {

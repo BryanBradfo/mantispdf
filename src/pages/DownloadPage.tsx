@@ -5,6 +5,7 @@ import { PageSEO } from "../components/seo/PageSEO";
 import { downloadJsonLd } from "../seo/structuredData";
 import PixelIcon from "../components/brand/PixelIcon";
 import DecodeText from "../components/common/DecodeText";
+import InstallCard from "../components/pwa/InstallCard";
 import { useDictionary, useLocale, useT } from "../i18n";
 import {
   DESKTOP_OSES,
@@ -127,6 +128,9 @@ export default function DownloadPage() {
         <DecodeText text={t("heading")} trigger="mount" />
       </h1>
       <p className="mt-4 max-w-xl leading-relaxed text-ink-2">{t("intro", { count: TOOLS.length })}</p>
+
+      {/* The web app first: nothing to download, no warning from the OS. */}
+      <InstallCard />
 
       <div className="mt-10 border border-line">
         <div role="tablist" aria-label={t("osTabs")} className="grid grid-cols-3 border-b border-line">

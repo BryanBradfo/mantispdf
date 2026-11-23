@@ -29,6 +29,15 @@ const download: Messages<typeof en> = {
   copied: "Copié",
   version: "Version {version}",
   allReleases: "Toutes les versions",
+  installEyebrow: "Application web",
+  installHeading: "Installer dans votre navigateur",
+  installIntro: "Sans téléchargement, sans avertissement, fonctionne hors ligne.",
+  installButton: "Installer l’app",
+  installIos: "Sur iPhone ou iPad : touchez Partager, puis Sur l’écran d’accueil.",
+  installSafari: "Dans Safari, choisissez Fichier, puis Ajouter au Dock.",
+  installFirefox: "Firefox ne sait pas installer d’applications web : ici, la solution est l’application de bureau ci-dessous.",
+  installOther: "Cherchez Installer MantisPDF dans la barre d’adresse ou le menu de votre navigateur.",
+  installDone: "Installée. Ouvrez MantisPDF depuis vos applications.",
 };
 
 export default download;

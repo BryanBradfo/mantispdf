@@ -9,6 +9,7 @@ import { HtmlLang } from "./components/seo/PageSEO";
 import { LocaleProvider, localizeRoutes } from "./i18n";
 import ErrorBoundary from "./components/common/ErrorBoundary";
 import { APP_ROUTES } from "./routes";
+import PwaUpdatePanel from "./components/pwa/PwaUpdatePanel";
 
 const ROUTES = localizeRoutes(APP_ROUTES);
 
@@ -77,6 +78,8 @@ export default function App() {
               <Footer />
             </div>
             <DesktopExtras />
+            {/* The web app's "new version" panel; the desktop app has its own updater. */}
+            {!isTauri() && <PwaUpdatePanel />}
           </LocaleProvider>
         </Suspense>
       </ErrorBoundary>
