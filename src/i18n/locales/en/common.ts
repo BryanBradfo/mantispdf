@@ -222,6 +222,10 @@ export default {
   updateLastAutoFailed: "Last automatic check failed:",
   updateManual: "Update this install from the <link>download page</link>.",
   updateRestartRequired: "Restart MantisPDF to finish the update.",
+  // Web app (PWA): a new deploy is ready, and the install link
+  pwaUpdateReady: "A new version of MantisPDF is ready",
+  pwaReload: "Reload",
+  installApp: "Install app",
   settings: "Settings",
   // Unicode fonts (Edit PDF, Fill form)
   noFontChars: "No font can show these characters: {chars}",

@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/vanillajs" />
 
 /** package.json `version`, injected by `define` in vite.config.ts. */
 declare const __MANTIS_VERSION__: string;

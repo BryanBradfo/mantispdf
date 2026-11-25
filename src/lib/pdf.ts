@@ -17,14 +17,16 @@
 // same-origin module the <Document>s can spawn as a real worker. Every react-pdf
 // consumer imports through this module so the pin is always in effect.
 import { pdfjs, Document, Page, Thumbnail, Outline } from "react-pdf";
+import { pdfWorkerPath } from "./pdfWorkerUrl";
 
 // react-pdf's own index.js unconditionally runs `GlobalWorkerOptions.workerSrc =
 // 'pdf.worker.mjs'` (a bare specifier) at module load, which clobbers our value
 // and makes pdf.js fall back to a broken main-thread "fake worker" in production.
 // Pin our worker URL with a defineProperty whose setter ignores later writes, so
 // react-pdf's reset becomes a no-op. Use a fully-qualified URL (pdf.js runs
-// `new URL(workerSrc)` internally, which throws on a root-relative path).
-const WORKER_SRC = new URL("/pdf.worker.min.mjs", window.location.origin).href;
+// `new URL(workerSrc)` internally, which throws on a root-relative path). The URL carries the API version
+// (`?v=`), so a deploy that bumps pdf.js never pairs new code with a cached older worker.
+const WORKER_SRC = new URL(pdfWorkerPath(pdfjs.version), window.location.origin).href;
 Object.defineProperty(pdfjs.GlobalWorkerOptions, "workerSrc", {
   get: () => WORKER_SRC,
   set: () => {

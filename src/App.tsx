@@ -9,6 +9,7 @@ import { HtmlLang } from "./components/seo/PageSEO";
 import { LocaleProvider, localizeRoutes } from "./i18n";
 import ErrorBoundary from "./components/common/ErrorBoundary";
 import { APP_ROUTES } from "./routes";
+import PwaUpdatePanel from "./components/pwa/PwaUpdatePanel";
 
 const ROUTES = localizeRoutes(APP_ROUTES);
 
@@ -46,7 +47,8 @@ function PageSpinner() {
 /** The routed page; an error in it shows a notice and clears on the next navigation. */
 function Pages() {
   return (
-    <ErrorBoundary resetKey={useLocation().pathname}>
+    // A stale chunk (old tab after a deploy) defers to the update panel, which App keeps mounted outside.
+    <ErrorBoundary resetKey={useLocation().pathname} staleChunkAsUpdate>
       <Suspense fallback={<PageSpinner />}>
         <Routes>
           {ROUTES.map((r) => (
@@ -77,6 +79,8 @@ export default function App() {
               <Footer />
             </div>
             <DesktopExtras />
+            {/* The web app's "new version" panel; the desktop app has its own updater. */}
+            {!isTauri() && <PwaUpdatePanel />}
           </LocaleProvider>
         </Suspense>
       </ErrorBoundary>

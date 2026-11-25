@@ -4,6 +4,7 @@ import { HelmetProvider } from "react-helmet-async";
 import App from "./App";
 import { startFirstLoad } from "./firstLoad";
 import { dropPrerenderedHead } from "./seo/prerenderedHead";
+import { startPwa } from "./pwa/start";
 // UI fonts, self-hosted (no request leaves the app origin). Every subset is
 // declared with its unicode-range, so a page in Latin script downloads only
 // the latin files.
@@ -21,6 +22,9 @@ dropPrerenderedHead(document);
 
 // A /fr first load fetches the French dictionary and the page's chunk in parallel.
 startFirstLoad(window.location.pathname);
+
+// The installable web app: install prompt capture and service worker (never in the desktop app).
+startPwa();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

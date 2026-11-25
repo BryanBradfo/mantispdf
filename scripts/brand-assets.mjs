@@ -2,6 +2,7 @@
 // MantisMark / MantisHead path data, favicons, Open Graph images, the dithered footer banner, and the Tauri icon source.
 // Usage: node scripts/brand-assets.mjs [source.jpeg]   (then `npx tauri icon` runs on the 1024 px head)
 //        node scripts/brand-assets.mjs --footer        (only the footer banner, to iterate on it)
+//        node scripts/brand-assets.mjs --pwa           (only the web app icons of manifest.webmanifest)
 // The traces, favicons and OG images are deterministic; `tauri icon` output is not byte-stable, so
 // check `git status src-tauri/icons` after a run and `git checkout` it when only noise changed.
 import { execFileSync } from "node:child_process";
@@ -20,6 +21,7 @@ const { Resvg } = require("@resvg/resvg-js");
 
 const args = process.argv.slice(2);
 const footerOnly = args.includes("--footer");
+const pwaOnly = args.includes("--pwa");
 const source = resolve(args.find((a) => !a.startsWith("--")) ?? join(root, "assets/brand/mantis-source.jpeg"));
 const TRACE = { threshold: 128, turdSize: 8, optTolerance: 0.4, color: "currentColor", background: "transparent" };
 // Bust crop in source pixels: head, antennae and the raised forelegs, so the mantis reads even at 32 px.
@@ -247,7 +249,7 @@ export const FOOTER_MANTIS = { src: "brand/footer-mantis.png", width: ${W}, heig
 
 // 1. Traces: the whole drawing, and the head cropped from the same pixels.
 const image = await Jimp.read(source);
-footerBanner(image);
+if (!pwaOnly) footerBanner(image);
 if (footerOnly) process.exit(0);
 const markD = compactPath(await trace(source));
 const cropped = image.clone().crop(HEAD.x, HEAD.y, HEAD.w, HEAD.h);
@@ -258,8 +260,8 @@ const headBox = { x: 0, y: 0, w: SMALL.px, h: SMALL.px };
 // Full-detail bust for the large app icons (180 px and up), where the fine strokes survive.
 const bustD = compactPath(await trace(await cropped.getBufferAsync(Jimp.MIME_PNG)));
 
-write("src/components/brand/MantisMark.tsx", component("MantisMark", "The full mantis drawing, traced from the source art.", markBox, markD));
-write("src/components/brand/MantisHead.tsx", component("MantisHead", "The mantis bust (head and forelegs), cropped from the same trace, for small sizes.", headBox, headD));
+if (!pwaOnly) write("src/components/brand/MantisMark.tsx", component("MantisMark", "The full mantis drawing, traced from the source art.", markBox, markD));
+if (!pwaOnly) write("src/components/brand/MantisHead.tsx", component("MantisHead", "The mantis bust (head and forelegs), cropped from the same trace, for small sizes.", headBox, headD));
 
 // 2. Favicons and app icons: bust centred on its own bounding box, black ink on a white square with even padding.
 function iconSvg(d, [bg, fg] = ["#fff", "#000"]) {
@@ -271,8 +273,43 @@ function iconSvg(d, [bg, fg] = ["#fff", "#000"]) {
 }
 const faviconSvg = iconSvg(headD);
 const headSquare = iconSvg(bustD);
-write("public/favicon.svg", faviconSvg + "\n");
-write("public/favicon-32.png", png(faviconSvg, 32));
+if (!pwaOnly) write("public/favicon.svg", faviconSvg + "\n");
+if (!pwaOnly) write("public/favicon-32.png", png(faviconSvg, 32));
+
+// 2b. Web app icons (src/pwa/config.ts lists them in manifest.webmanifest): the full-detail bust on white at
+// 192 and 512 px, a 512 px maskable one with the bust inside the central safe zone (a circle of 80 % of the
+// side, which launchers may crop to), and 96 px shortcut icons: the tool's pixel glyph, black on white.
+function maskableSvg(d) {
+  const b = bbox(d);
+  // The bust's bounding square at 58 % of the side: its corners stay inside the 80 % safe circle.
+  const side = Math.round(Math.max(b.w, b.h) / 0.58);
+  const tx = (side - b.w) / 2 - b.x;
+  const ty = (side - b.h) / 2 - b.y;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}"><rect width="${side}" height="${side}" fill="#fff"/><g transform="translate(${tx} ${ty})" fill="#000"><path d="${d}" fill-rule="evenodd"/></g></svg>`;
+}
+/** The 16x16 `#`/`.` rows of one glyph in src/lib/pixelIcons.ts (read as text: this script does not load TypeScript). */
+function pixelGlyph(id) {
+  const src = readFileSync(join(root, "src/lib/pixelIcons.ts"), "utf8");
+  const body = new RegExp(`^  ${id}: \\[([^\\]]*)\\]`, "m").exec(src)?.[1];
+  const rows = body ? [...body.matchAll(/"([#.]{16})"/g)].map((m) => m[1]) : [];
+  if (rows.length !== 16) throw new Error(`no 16x16 glyph "${id}" in src/lib/pixelIcons.ts`);
+  return rows;
+}
+/** A glyph at 4 px a pixel (64 px) centred on a 96 px white square, crisp. */
+function shortcutSvg(rows) {
+  let d = "";
+  rows.forEach((row, y) => {
+    for (const run of row.matchAll(/#+/g)) d += `M${run.index} ${y}h${run[0].length}v1h-${run[0].length}z`;
+  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" shape-rendering="crispEdges"><rect width="24" height="24" fill="#fff"/><path transform="translate(4 4)" fill="#000" d="${d}"/></svg>`;
+}
+write("public/icons/pwa-192.png", png(headSquare, 192));
+write("public/icons/pwa-512.png", png(headSquare, 512));
+write("public/icons/pwa-maskable-512.png", png(maskableSvg(bustD), 512));
+for (const [id, file] of [["merge", "merge"], ["compress", "compress"], ["editPdf", "edit-pdf"], ["compare", "compare"]])
+  write(`public/icons/shortcut-${file}.png`, png(shortcutSvg(pixelGlyph(id)), 96));
+if (pwaOnly) process.exit(0);
+
 write("public/apple-touch-icon.png", png(headSquare, 180));
 
 // 3. Open Graph, one per locale: wordmark and tagline left, mark right, in Oswald.

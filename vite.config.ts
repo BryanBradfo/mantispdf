@@ -1,14 +1,63 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from "vitest/config";
-import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import type { Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import wasm from "vite-plugin-wasm";
+import { VitePWA } from "vite-plugin-pwa";
+import {
+  runtimeCacheNames,
+  runtimeCleanupFile,
+  runtimeCleanupScript,
+  webManifest,
+  workboxOptions,
+  type PwaBuildIds,
+} from "./src/pwa/config";
 
 // The desktop download links (src/lib/desktopRelease.ts) follow the package version.
 const pkg = JSON.parse(readFileSync(new URL("package.json", import.meta.url), "utf8")) as { version: string };
+
+/**
+ * Content id of a public/ runtime folder (names and bytes, md5, 10 hex): the service worker's cache name for
+ * it (src/pwa/config.ts). "none" before the prebuild copy (dev, unit tests). scripts/check-pwa.mjs recomputes it
+ * on dist/ and fails the build on a mismatch.
+ */
+function folderId(dir: string): string {
+  if (!existsSync(dir)) return "none";
+  const hash = createHash("md5");
+  const walk = (d: string): string[] =>
+    readdirSync(d)
+      .sort()
+      .flatMap((n) => (statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : [join(d, n)]));
+  for (const file of walk(dir)) hash.update(relative(dir, file).split("\\").join("/")).update("\0").update(readFileSync(file));
+  return hash.digest("hex").slice(0, 10);
+}
+
+/** The PWA kill switch (see VitePWA below and scripts/check-pwa.mjs, which reads the same variable). */
+const SW_KILL = process.env.MANTIS_SW_KILL === "1";
+
+const pwaIds: PwaBuildIds = {
+  // The version react-pdf's pdf.js reports (pdfjs.version), which names the worker URL (src/lib/pdfWorkerUrl.ts).
+  pdfjsVersion: (JSON.parse(readFileSync(new URL("node_modules/pdfjs-dist/package.json", import.meta.url), "utf8")) as { version: string })
+    .version,
+  fontsId: folderId(fileURLToPath(new URL("public/fonts-runtime", import.meta.url))),
+  ocrId: folderId(fileURLToPath(new URL("public/ocr-runtime", import.meta.url))),
+};
+
+/** Emits the script sw.js imports to delete older runtime caches on activate (src/pwa/config.ts). */
+function pwaRuntimeCleanup(ids: PwaBuildIds): Plugin {
+  const names = runtimeCacheNames(ids);
+  return {
+    name: "mantis-pwa-runtime-cleanup",
+    apply: "build",
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: runtimeCleanupFile(ids), source: runtimeCleanupScript([names.fonts, names.ocr]) });
+    },
+  };
+}
 
 /**
  * `vite preview` serves the prerendered pages as Vercel does (vercel.json): `/fr/merge` gets
@@ -34,7 +83,27 @@ function prerenderedPreview(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), wasm(), prerenderedPreview()],
+  plugins: [
+    react(),
+    wasm(),
+    prerenderedPreview(),
+    // Installable web app: dist/manifest.webmanifest (linked from every page) and dist/sw.js. Registered by
+    // src/pwa/start.ts (never in Tauri); "prompt": a new version waits for the person (PwaUpdatePanel).
+    // KILL SWITCH for a broken service worker: `MANTIS_SW_KILL=1 npm run build` (on Vercel: set the env var
+    // MANTIS_SW_KILL=1 and redeploy). sw.js is then vite-plugin-pwa's self-destroying worker: it unregisters
+    // itself, deletes its caches (best effort) and reloads its open pages from the network; /sw.js is served
+    // no-cache (vercel.json), so browsers pick it up on their next visit. scripts/check-pwa.mjs reads the same
+    // flag. Unset it in a later deploy to bring the web app back. See CLAUDE.md (PWA kill switch).
+    VitePWA({
+      registerType: "prompt",
+      injectRegister: false,
+      manifest: webManifest,
+      includeManifestIcons: false,
+      workbox: workboxOptions(pwaIds),
+      selfDestroying: SW_KILL,
+    }),
+    ...(SW_KILL ? [] : [pwaRuntimeCleanup(pwaIds)]),
+  ],
   define: {
     __MANTIS_VERSION__: JSON.stringify(pkg.version),
   },

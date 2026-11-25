@@ -205,6 +205,9 @@ const common: Messages<typeof en> = {
   updateLastAutoFailed: "La dernière recherche automatique a échoué\u00a0:",
   updateManual: "Mettez à jour depuis la <link>page de téléchargement</link>.",
   updateRestartRequired: "Redémarrez MantisPDF pour terminer la mise à jour.",
+  pwaUpdateReady: "Une nouvelle version de MantisPDF est prête",
+  pwaReload: "Recharger",
+  installApp: "Installer l’app",
   settings: "Réglages",
   // Polices Unicode (Modifier un PDF, Remplir un formulaire)
   noFontChars: "Aucune police ne peut afficher ces caractères\u00a0: {chars}",

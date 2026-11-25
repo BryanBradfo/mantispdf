@@ -7,6 +7,8 @@ import { GithubMark } from "../brand/GithubMark";
 import { FOOTER_MANTIS } from "../brand/footerMantis";
 import { SECTIONS, toolsIn } from "../../lib/tools";
 import { focusRing } from "../../styles/ui";
+import { promptInstall } from "../../pwa/install";
+import { useInstallState } from "../pwa/InstallCard";
 
 const GITHUB_URL = "https://github.com/BryanBradfo/mantispdf";
 
@@ -71,6 +73,7 @@ function External({ href, children }: { href: string; children: ReactNode }) {
 
 export default function Footer() {
   const t = useT("common");
+  const installState = useInstallState();
   const th = useT("home");
   const year = new Date().getFullYear();
 
@@ -135,6 +138,14 @@ export default function Footer() {
                 <Link to="/download" className={linkText}>
                   {t("footerDesktopApp")}
                 </Link>
+              </li>
+            )}
+            {/* Only while the browser offers its install prompt (never in Tauri: no prompt is captured there). */}
+            {installState === "available" && (
+              <li>
+                <button type="button" onClick={() => void promptInstall()} className={`${linkText} text-left`}>
+                  {t("installApp")}
+                </button>
               </li>
             )}
             <External href={GITHUB_URL}>
